@@ -1,0 +1,121 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ],
+    "ErrorOccurred": [
+      {
+        "matcher": "*",
+        "_tag": "orchestrator-tree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"/home/caleb/todin/.orchestrator/hook-emit.mjs\" \"/home/caleb/todin/.orchestrator/hook-events.jsonl\"",
+            "_tag": "orchestrator-tree"
+          }
+        ]
+      }
+    ]
+  }
+}
