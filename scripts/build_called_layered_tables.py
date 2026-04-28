@@ -105,6 +105,34 @@ def main() -> None:
     conn = sqlite3.connect(args.db)
     cur = conn.cursor()
 
+    # ---- preserve is_implemented flags across rebuild ----
+    # The structs/methods tables hold the authoritative port-progress flags;
+    # entities.is_fully_implemented_error_free_no_todo_no_stub is only
+    # populated for the initial seed. Snapshot the flags before DROP so we
+    # don't clobber porting progress.
+    saved_struct_impl: dict[str, int] = {}
+    saved_method_impl: dict[str, int] = {}
+    try:
+        saved_struct_impl = {
+            k: v for k, v in cur.execute(
+                "SELECT struct_key, is_implemented FROM structs "
+                "WHERE is_implemented = 1"
+            )
+        }
+    except sqlite3.OperationalError:
+        pass
+    try:
+        saved_method_impl = {
+            k: v for k, v in cur.execute(
+                "SELECT method_key, is_implemented FROM methods "
+                "WHERE is_implemented = 1"
+            )
+        }
+    except sqlite3.OperationalError:
+        pass
+    print(f"preserving {len(saved_struct_impl)} implemented structs, "
+          f"{len(saved_method_impl)} implemented methods across rebuild")
+
     print("recreating methods & structs tables...")
     cur.executescript("""
         DROP TABLE IF EXISTS methods;
@@ -159,7 +187,35 @@ def main() -> None:
                ))
     """)
     n_structs = cur.execute("SELECT COUNT(*) FROM structs").fetchone()[0]
-    print(f"  structs: {n_structs}")
+    print(f"  structs (direct): {n_structs}")
+
+    # ---- transitively include struct-graph ancestors ----
+    # The above query only pulls structs that own a tested method or are
+    # directly referenced by such a method. That misses abstract base classes
+    # whose methods are only invoked via subclass dispatch (e.g.
+    # AbstractConditionsAttachment, AbstractPlayerRulesAttachment), leaving
+    # subclasses unable to express `using parent: Parent`. Walk the
+    # struct->struct dependency graph from the current set and pull in any
+    # ancestors that exist in `entities`.
+    while True:
+        added = cur.execute("""
+            INSERT OR IGNORE INTO structs
+                (struct_key, java_file_path, java_lines, odin_file_path,
+                 is_implemented)
+            SELECT DISTINCT e.primary_key, e.java_file_path, e.java_lines,
+                            e.odin_file_path,
+                            e.is_fully_implemented_error_free_no_todo_no_stub
+            FROM entities e
+            JOIN dependencies d ON d.depends_on_key = e.primary_key
+            WHERE e.primary_key LIKE 'struct:%'
+              AND d.primary_key IN (SELECT struct_key FROM structs)
+              AND d.depends_on_key NOT IN (SELECT struct_key FROM structs)
+        """).rowcount
+        if not added:
+            break
+        print(f"  + transitive ancestors: {added}")
+    n_structs = cur.execute("SELECT COUNT(*) FROM structs").fetchone()[0]
+    print(f"  structs (with ancestors): {n_structs}")
     conn.commit()
 
     # ---- layer the structs (full reference graph) ----
@@ -201,6 +257,23 @@ def main() -> None:
         "UPDATE methods SET method_layer = ? WHERE method_key = ?",
         [(L, k) for k, L in layers_m.items()],
     )
+    conn.commit()
+
+    # ---- restore preserved is_implemented flags ----
+    if saved_struct_impl:
+        restored_s = cur.executemany(
+            "UPDATE structs SET is_implemented = 1 WHERE struct_key = ?",
+            [(k,) for k in saved_struct_impl],
+        ).rowcount
+        print(f"restored is_implemented on {restored_s}/"
+              f"{len(saved_struct_impl)} structs")
+    if saved_method_impl:
+        restored_m = cur.executemany(
+            "UPDATE methods SET is_implemented = 1 WHERE method_key = ?",
+            [(k,) for k in saved_method_impl],
+        ).rowcount
+        print(f"restored is_implemented on {restored_m}/"
+              f"{len(saved_method_impl)} methods")
     conn.commit()
 
     print("\n--- struct layer summary ---  layer | impl | total")

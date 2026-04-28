@@ -6,3 +6,12 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.history.History
 
+History :: struct {
+	writer:            ^HistoryWriter,
+	changes:           [dynamic]^Change,
+	game_data:         ^GameData,
+	panel:             ^HistoryPanel,
+	next_change_index: int,
+	seeking_enabled:   bool,
+}
+

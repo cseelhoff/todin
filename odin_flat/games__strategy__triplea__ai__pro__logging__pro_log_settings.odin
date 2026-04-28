@@ -6,3 +6,10 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.logging.ProLogSettings
 
+Pro_Log_Settings :: struct {
+	log_history_limited: bool,
+	log_history_limit:   int,
+	log_enabled:         bool,
+	log_level:           int,
+}
+

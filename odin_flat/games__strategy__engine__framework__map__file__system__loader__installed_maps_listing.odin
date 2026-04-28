@@ -6,3 +6,7 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.framework.map.file.system.loader.InstalledMapsListing
 
+Installed_Maps_Listing :: struct {
+	installed_maps: [dynamic]^Installed_Map,
+}
+

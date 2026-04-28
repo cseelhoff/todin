@@ -6,3 +6,4 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.TerritoryEffectHelper
 
+Territory_Effect_Helper :: struct {}

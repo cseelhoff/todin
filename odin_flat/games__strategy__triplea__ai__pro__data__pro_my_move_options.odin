@@ -6,3 +6,12 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.data.ProMyMoveOptions
 
+Pro_My_Move_Options :: struct {
+	territory_map:      map[^Territory]^Pro_Territory,
+	unit_move_map:      map[^Unit]map[^Territory]bool,
+	transport_move_map: map[^Unit]map[^Territory]bool,
+	bombard_map:        map[^Unit]map[^Territory]bool,
+	transport_list:     [dynamic]^Pro_Transport,
+	bomber_move_map:    map[^Unit]map[^Territory]bool,
+}
+

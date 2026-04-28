@@ -8,3 +8,8 @@ Related_Players :: struct {
 	a: ^Game_Player,
 	b: ^Game_Player,
 }
+
+Related_Players :: struct {
+	player1: ^Game_Player,
+	player2: ^Game_Player,
+}

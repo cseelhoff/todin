@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.net.IMessageListener
 
+I_Message_Listener :: struct {}
+

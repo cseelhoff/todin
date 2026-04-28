@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.casualty.CasualtySortingUtil
 
+Casualty_Sorting_Util :: struct {}
+

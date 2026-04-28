@@ -1,5 +1,13 @@
 # LLM porting instructions
 
+> **Driving prompt:** to actually run the port, paste the `PROMPT`
+> block from [`resume-prompt.md`](./resume-prompt.md) into a fresh
+> chat. That prompt implements the orchestrator loop described
+> below — query DB → dispatch ~12 parallel subagents → update DB →
+> repeat — and is the canonical entry point after `./bootstrap.sh`.
+> This file is the rulebook the orchestrator and every subagent
+> read; `resume-prompt.md` is the runner.
+
 You are an autonomous coding agent porting TripleA from Java to Odin.
 Your inputs are:
 
@@ -23,6 +31,56 @@ Your inputs are:
 You are not asked to design. The bootstrap already designed the order
 and the data layout. Your job is mechanical translation, validated at
 the end against snapshots.
+
+---
+
+## Subagent dispatch model (MANDATORY)
+
+**Every individual entity conversion MUST be delegated to its own
+subagent via the `runSubagent` tool.** The top-level (orchestrator)
+agent does not write Odin code directly; it only:
+
+1. Queries `port.sqlite` for the next batch of unimplemented entities.
+2. Spawns one subagent per `.odin` file / entity / conversion task.
+3. Collects the subagent's report, updates `is_implemented` in
+   `port.sqlite`, and proceeds to the next batch.
+
+Rules for subagent dispatch:
+
+- **One subagent = one entity = one `.odin` file edit.** A subagent
+  handling a struct touches only that struct's `odin_file_path`. A
+  subagent handling a method touches only its owner struct's file
+  (and only the proc it owns).
+- **Use the `Explore` agent for read-only scouting only** (e.g. "find
+  every field referenced by `GameStateJsonSerializer` for class `Foo`")
+  — `Explore` cannot write files. Use the **default coding subagent**
+  (omit `agentName` in the `runSubagent` call) for the actual
+  translation, since only it has file-write tools.
+- **Independent subagents may be dispatched in parallel** within the
+  same layer (Phase A is order-free across structs; Phase B is
+  order-free *within* a single `method_layer`). Never parallelize
+  across method layers.
+- **The subagent prompt must include**:
+  - The exact `struct_key` or `method_key`.
+  - Absolute paths to the Java source (`java_file_path`) and Odin
+    target (`odin_file_path`).
+  - A pointer to this file (`llm-instructions.md`) for the rules.
+  - The instruction to return a one-line status report
+    (`done` / `blocked: <reason>`) plus the list of any new
+    cross-struct references introduced.
+- **The orchestrator owns the database.** Subagents must NOT run
+  `UPDATE structs/methods SET is_implemented = 1`. They report
+  completion; the orchestrator records it. This keeps the tracker
+  authoritative.
+- **No subagent edits the harness.** If a subagent reports it needs
+  a harness change, the orchestrator stops, edits
+  `scripts/patch_triplea.py`, and re-runs the bootstrap.
+- **Layer ordering means dependencies already exist.** Phase A
+  finishes before Phase B; within Phase B, every batch belongs to a
+  single `method_layer` and all lower layers are complete. A
+  subagent must therefore **reference** existing types/procs in
+  `odin_flat/` rather than re-defining them. The dispatch templates
+  in [`resume-prompt.md`](./resume-prompt.md) bake this in.
 
 ---
 

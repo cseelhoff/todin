@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProMatches
 
+Pro_Matches :: struct {}
+

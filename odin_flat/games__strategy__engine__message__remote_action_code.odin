@@ -6,3 +6,4 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteActionCode
 
+Remote_Action_Code :: struct {}

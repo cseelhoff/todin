@@ -6,3 +6,10 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteMethodCall
 
+Remote_Method_Call :: struct {
+	remote_name:   string,
+	method_name:   string,
+	args:          []any,
+	method_number: int,
+	arg_types:     []string,
+}

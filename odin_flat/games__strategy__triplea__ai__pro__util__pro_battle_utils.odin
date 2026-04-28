@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProBattleUtils
 
+Pro_Battle_Utils :: struct {}
+

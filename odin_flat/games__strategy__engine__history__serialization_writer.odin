@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.history.SerializationWriter
 
+Serialization_Writer :: struct {}
+

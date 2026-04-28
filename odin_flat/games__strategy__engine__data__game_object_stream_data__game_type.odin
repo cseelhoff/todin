@@ -6,3 +6,10 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.data.GameObjectStreamData$GameType
 
+Game_Object_Stream_Data_Game_Type :: enum {
+	PLAYERID,
+	UNITTYPE,
+	TERRITORY,
+	PRODUCTIONRULE,
+	PRODUCTIONFRONTIER,
+}

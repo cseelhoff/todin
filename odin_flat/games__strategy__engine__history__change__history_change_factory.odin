@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.history.change.HistoryChangeFactory
 
+History_Change_Factory :: struct {}
+

@@ -6,3 +6,14 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.posted.game.pbem.PbemMessagePoster
 
+Pbem_Message_Poster :: struct {
+	game_properties:    ^Game_Properties,
+	save_game_file:     string,
+	turn_summary:       string,
+	turn_summary_ref:   string,
+	email_send_status:  string,
+	current_player:     ^Game_Player,
+	round_number:       int,
+	game_name_and_info: string,
+}
+

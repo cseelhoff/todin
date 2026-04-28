@@ -6,3 +6,6 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.MoveBatcher
 
+Move_Batcher :: struct {
+	move_sequences: [dynamic][dynamic]^Move_Description,
+}

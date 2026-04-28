@@ -6,3 +6,8 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.player.PlayerBridge
 
+Player_Bridge :: struct {
+	game:             ^IGame,
+	step_name:        string,
+	current_delegate: string,
+}

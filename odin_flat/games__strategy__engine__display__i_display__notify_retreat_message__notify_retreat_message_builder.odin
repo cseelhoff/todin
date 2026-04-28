@@ -6,3 +6,9 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.display.IDisplay$NotifyRetreatMessage$NotifyRetreatMessageBuilder
 
+Notify_Retreat_Message_Builder :: struct {
+	short_message:          string,
+	message:                string,
+	step:                   string,
+	retreating_player_name: string,
+}

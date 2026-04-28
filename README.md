@@ -227,20 +227,34 @@ Recommended porting order: ascending `id_design_layer`, then ascending
 
 ## What the LLM does next
 
-Once `port.sqlite` and `odin_flat/` exist, the LLM's job is mechanical:
+Once `port.sqlite` and `odin_flat/` exist, the LLM's job is mechanical.
 
-1. Pick the lowest-numbered unimplemented row in `structs` (then in
-   `methods`).
-2. Read the Java source at `java_file_path`.
-3. Translate to Odin in `odin_file_path`.
-4. Verify the port via the snapshot harness (one before/after JSON
-   pair captured per delegate step during the JaCoCo run — see the
-   plan for the harness location).
-5. Set `is_implemented = 1`.
+**The next step after `bootstrap.sh` is to open a fresh chat and paste
+the `PROMPT` block from [`resume-prompt.md`](./resume-prompt.md).** That
+prompt is idempotent: it queries `port.sqlite` for unfinished work,
+dispatches ~12 subagents in parallel (one per entity / `.odin` file),
+updates `is_implemented` after each batch, and stops cleanly when the
+context window fills. Re-paste the same prompt in a new chat to resume
+until both `structs` and `methods` are 100% implemented and Phase C
+snapshot validation passes.
 
-See [`llm-instructions.md`](./llm-instructions.md) for the full prompt
-that the LLM should be given, and [`plan.md`](./plan.md) for the
-high-level plan template.
+What each subagent does:
+
+1. Reads the Java source at `java_file_path`.
+2. Translates it to Odin in `odin_file_path` (struct only in Phase A,
+   method body in Phase B).
+3. References — never re-implements — types/procs already on disk
+   under `odin_flat/`; lower-layer entities are guaranteed complete
+   before higher layers begin.
+4. Reports `done` / `blocked`; the orchestrator updates the database.
+
+Final verification is the snapshot harness: 52 paired before/after
+JSON snapshots captured per delegate step during the JaCoCo run.
+
+See [`llm-instructions.md`](./llm-instructions.md) for the full ruleset
+and subagent dispatch model, [`resume-prompt.md`](./resume-prompt.md)
+for the copy-paste resumable prompt, and [`plan.md`](./plan.md) for
+the high-level plan template.
 
 ---
 

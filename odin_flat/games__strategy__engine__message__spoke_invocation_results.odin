@@ -6,3 +6,6 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.message.SpokeInvocationResults
 
+Spoke_Invocation_Results :: struct {
+	using invocation_results: Invocation_Results,
+}

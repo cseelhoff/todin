@@ -6,3 +6,6 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.message.WrappedInvocationHandler
 
+Wrapped_Invocation_Handler :: struct {
+	delegate: rawptr,
+}

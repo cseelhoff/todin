@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProPurchaseValidationUtils
 
+Pro_Purchase_Validation_Utils :: struct {}
+

@@ -6,3 +6,6 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.framework.GameDataManager
 
+// Utility class with only static methods and constants in Java; no instance state.
+Game_Data_Manager :: struct {}
+

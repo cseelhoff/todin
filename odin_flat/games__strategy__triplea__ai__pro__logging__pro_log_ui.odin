@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.logging.ProLogUi
 
+Pro_Log_Ui :: struct {}
+

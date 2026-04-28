@@ -26,6 +26,9 @@
             python3
             sqlite
 
+            # Interactive shell
+            zsh
+
             # Convenience
             git
             jq
@@ -36,6 +39,7 @@
           shellHook = ''
             export JAVA_HOME=${pkgs.jdk21.home}
             export PATH=$JAVA_HOME/bin:$PATH
+            export SHELL=${pkgs.zsh}/bin/zsh
             echo "triplea-port-bootstrap dev shell"
             echo "  JDK:    $(java -version 2>&1 | head -1)"
             echo "  Odin:   $(odin version 2>&1 | head -1)"
@@ -44,6 +48,8 @@
             echo ""
             echo "Run ./bootstrap.sh to build the full port-tracking database."
             echo "Or step through README.md one command at a time."
+            echo ""
+            echo "Tip: run \`nix develop -c zsh -i\` to drop into an interactive zsh."
           '';
         };
       });

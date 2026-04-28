@@ -6,3 +6,8 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteMethodCallResults
 
+Remote_Method_Call_Results :: struct {
+	return_value: rawptr,
+	exception:    rawptr,
+}
+

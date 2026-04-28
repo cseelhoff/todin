@@ -6,3 +6,9 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.engine.history.change.units.DamageUnitsHistoryChange
 
+Damage_Units_History_Change :: struct {
+	change:          ^Composite_Change,
+	location:        ^Territory,
+	damage_to_units: ^Integer_Map(^Unit),
+}
+
