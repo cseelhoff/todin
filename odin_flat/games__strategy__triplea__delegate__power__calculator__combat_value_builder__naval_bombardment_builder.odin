@@ -6,3 +6,4 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.power.calculator.CombatValueBuilder$NavalBombardmentBuilder
 
+Naval_Bombardment_Builder :: struct {}

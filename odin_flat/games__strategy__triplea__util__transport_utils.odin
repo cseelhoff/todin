@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.util.TransportUtils
 
+Transport_Utils :: struct {}
+

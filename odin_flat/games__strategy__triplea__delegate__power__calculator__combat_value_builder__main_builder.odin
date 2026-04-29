@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.power.calculator.CombatValueBuilder$MainBuilder
 
+Main_Builder :: struct {}
+

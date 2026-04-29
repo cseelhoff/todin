@@ -131,6 +131,28 @@ def descriptor_classes(desc: str) -> list[str]:
     ]
 
 
+# Source-form FQCN matcher used to pull generic type-argument classes from
+# javap's source-style declarations (e.g.
+#   `private java.util.List<org.triplea.foo.Bar$Baz> elements;`).
+# Bytecode descriptors lose generic info under type erasure, so the
+# `descriptor:` line for that field is just `Ljava/util/List;` — the
+# `Bar$Baz` reference would be invisible without harvesting the source
+# line. Inner classes are emitted by javap with `$` here, matching the
+# `struct:<fqcn>` keys we use elsewhere.
+SOURCE_FQCN_RE = re.compile(r"\b([a-zA-Z_][\w]*(?:\.[a-zA-Z_][\w]*)+(?:\$[A-Za-z_][\w]*)*)\b")
+
+
+def source_form_classes(text: str) -> list[str]:
+    """Extract every dotted-FQCN-looking token from a javap source-form line.
+
+    Used on field declarations and method headers to recover classes that
+    appear inside generic angle brackets (lost in the erased descriptor).
+    Excluded packages (java.*, javax.*, etc.) are filtered by the caller
+    via `_excluded`.
+    """
+    return [m.group(1) for m in SOURCE_FQCN_RE.finditer(text)]
+
+
 # ---------------------------------------------------------------------------
 # javap parser
 # ---------------------------------------------------------------------------
@@ -212,6 +234,12 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
             t = fm.group(1).split("<", 1)[0].rstrip("[]")
             if t and "." in t:
                 struct_deps_from_fields.add(t)
+            # Also harvest generic type-argument classes from the source
+            # line (e.g. `List<org.triplea.Foo$Bar>` → Foo$Bar). These are
+            # invisible in the erased descriptor.
+            for c in source_form_classes(line):
+                if not _excluded(c) and c != fqcn:
+                    struct_deps_from_fields.add(c)
             i += 1
             continue
 
@@ -282,6 +310,13 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
                 for c in descriptor_classes(descriptor):
                     if not _excluded(c):
                         struct_deps.add(c)
+                # and harvest generic type-argument classes from the
+                # source-form method header (recovers types lost to erasure
+                # in the descriptor, e.g. `List<Foo$Bar>` return types or
+                # parameters).
+                for c in source_form_classes(line):
+                    if not _excluded(c) and c != fqcn:
+                        struct_deps.add(c)
 
                 methods.append({
                     "name": mname,
@@ -295,8 +330,9 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
         i += 1
 
     # field-type deps belong to the struct itself, expressed as edges
-    # struct:fqcn -> struct:T for each field type T
-    return fqcn, ext, impl, methods
+    # struct:fqcn -> struct:T for each field type T (including generic
+    # type-arguments harvested from javap's source-form lines).
+    return fqcn, ext, impl, methods, struct_deps_from_fields
 
 
 def _excluded(fqcn: str) -> bool:
@@ -355,16 +391,16 @@ def build_java_source_index(triplea: Path) -> dict[str, str]:
 # Worker: run javap on one class file and return parsed result
 # ---------------------------------------------------------------------------
 
-def _javap_one(class_file: str) -> tuple[str, str, list[str], list[str], list[dict]]:
+def _javap_one(class_file: str) -> tuple[str, str, list[str], list[str], list[dict], set[str]]:
     try:
         out = subprocess.run(
             ["javap", "-p", "-c", "-s", class_file],
             capture_output=True, text=True, check=True, timeout=30,
         ).stdout
     except Exception as e:
-        return class_file, "", [], [], []
-    fqcn, ext, impl, methods = parse_javap(out)
-    return class_file, fqcn, ext, impl, methods
+        return class_file, "", [], [], [], set()
+    fqcn, ext, impl, methods, field_deps = parse_javap(out)
+    return class_file, fqcn, ext, impl, methods, field_deps
 
 
 # ---------------------------------------------------------------------------
@@ -398,25 +434,28 @@ def main() -> None:
 
     # parallel javap
     print(f"running javap with {args.workers} workers...")
-    parsed: list[tuple[str, list[str], list[str], list[dict]]] = []
+    parsed: list[tuple[str, list[str], list[str], list[dict], set[str]]] = []
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(_javap_one, str(p)): p for p, _ in cls_files}
         done = 0
         for fut in as_completed(futs):
-            _, fqcn, ext, impl, methods = fut.result()
+            _, fqcn, ext, impl, methods, field_deps = fut.result()
             if fqcn:
-                parsed.append((fqcn, ext, impl, methods))
+                parsed.append((fqcn, ext, impl, methods, field_deps))
             done += 1
             if done % 500 == 0:
                 print(f"    {done}/{len(cls_files)}")
     print(f"  parsed {len(parsed)} classes")
 
-    # write to sqlite
-    db_path.unlink(missing_ok=True)
+    # write to sqlite — preserve any sibling tables (structs/methods) so
+    # `build_called_layered_tables.py` can carry over `is_implemented` flags
+    # across re-runs. We only own `entities` and `dependencies` here.
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
     cur.executescript(
         """
+        DROP TABLE IF EXISTS dependencies;
+        DROP TABLE IF EXISTS entities;
         CREATE TABLE entities (
             primary_key   TEXT PRIMARY KEY,
             java_file_path TEXT,
@@ -441,7 +480,7 @@ def main() -> None:
     entity_rows: list[tuple] = []
     dep_rows: set[tuple[str, str]] = set()
 
-    for fqcn, ext, impl, methods in parsed:
+    for fqcn, ext, impl, methods, field_deps in parsed:
         # struct row
         top = fqcn.split("$", 1)[0]
         java_path = java_idx.get(top, "")
@@ -452,6 +491,11 @@ def main() -> None:
         for parent in ext + impl:
             if not _excluded(parent):
                 dep_rows.add((f"struct:{fqcn}", f"struct:{parent}"))
+        # field-type dep edges (including generic type-arguments lost to
+        # bytecode erasure but recovered from javap's source-form lines).
+        for ft in field_deps:
+            if not _excluded(ft) and ft != fqcn:
+                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}"))
         # method rows + their deps
         for m in methods:
             args_str = ",".join(m["args_java"])

@@ -109,6 +109,21 @@ Rules for subagent dispatch:
    `Territory` is fine even though `Player` is defined later in
    another file.
 
+   **Simple-name collisions (authoritative disambiguation table).**
+   Three Java classes share a simple name with a harness-required
+   engine type. The engine class keeps the bare Odin name; the twin
+   uses a prefix:
+
+   | Java struct_key                                                                                | Odin type name                  |
+   |------------------------------------------------------------------------------------------------|---------------------------------|
+   | `org.triplea.map.data.elements.PlayerList` (and inner `Player`, `Alliance`)                    | `Xml_Player_List(_Player|_Alliance)` |
+   | `org.triplea.map.data.elements.ResourceList` (and inner `Resource`)                            | `Xml_Resource_List(_Resource)`  |
+   | `games.strategy.triplea.delegate.battle.steps.change.suicide.RemoveUnits`                      | `Suicide_Remove_Units`          |
+
+   Bare names `Player_List`, `Resource_List`, `Remove_Units` are
+   reserved for the engine types listed in §1. All other map-data
+   XML element classes keep their file-derived names unchanged.
+
 4. **The harness scaffolding is authoritative.** Field names, sub-struct
    embeddings, and naming conventions in
    `triplea/conversion/odin_tests/test_common/*.odin` are not

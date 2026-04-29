@@ -6,3 +6,5 @@ package game
 // Java owners covered by this file:
 //   - org.triplea.game.client.ui.swing.laf.SubstanceLookAndFeelManager
 
+Substance_Look_And_Feel_Manager :: struct {}
+
