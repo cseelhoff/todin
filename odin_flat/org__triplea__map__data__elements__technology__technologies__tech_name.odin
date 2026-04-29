@@ -1,6 +1,6 @@
 package game
 
-Tech_Name :: struct {
+Technology_Technologies_Tech_Name :: struct {
 	name: string,
 	tech: string,
 }

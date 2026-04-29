@@ -1,3 +1,3 @@
 package game
 
-Select_Aa_Casualties :: struct {}
+Aa_Fire_And_Casualty_Step_Select_Aa_Casualties :: struct {}

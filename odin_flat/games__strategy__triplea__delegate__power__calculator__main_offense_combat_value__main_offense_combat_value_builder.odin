@@ -2,7 +2,7 @@ package game
 
 // Lombok @Builder for MainOffenseCombatValue. Mirrors the fields of
 // games.strategy.triplea.delegate.power.calculator.MainOffenseCombatValue.
-Main_Offense_Combat_Value_Builder :: struct {
+Main_Offense_Combat_Value_Main_Offense_Combat_Value_Builder :: struct {
 	game_sequence:                 ^Game_Sequence,
 	game_dice_sides:               i32,
 	lhtr_heavy_bombers:            bool,

@@ -2,14 +2,14 @@ package game
 
 // games.strategy.engine.data.GamePlayer
 //
-// A nation/AI/human player slot. Java extends NamedAttachable and implements
-// NamedUnitHolder; the snapshot harness pins the access path
-// `player.named.base.name`, so we embed `Named` directly and carry the
-// attachments map alongside it.
+// Java: `class GamePlayer extends NamedAttachable implements NamedUnitHolder`.
+// Single inheritance → embed Named_Attachable as the parent. The
+// NamedUnitHolder/UnitHolder interfaces contribute no fields. The harness
+// access path `player.named.base.name` resolves through the chained
+// `using` embeddings: Named_Attachable → Default_Named → Named.
 
 Game_Player :: struct {
-	using named:          Named,
-	attachments:          map[string]^I_Attachment,
+	using parent:         Named_Attachable,
 	optional:             bool,
 	can_be_disabled:      bool,
 	default_type:         string,

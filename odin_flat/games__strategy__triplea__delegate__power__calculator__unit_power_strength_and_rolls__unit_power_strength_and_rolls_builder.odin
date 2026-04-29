@@ -2,7 +2,7 @@ package game
 
 // Lombok @Builder for UnitPowerStrengthAndRolls. Mirrors the fields of
 // games.strategy.triplea.delegate.power.calculator.UnitPowerStrengthAndRolls.
-Unit_Power_Strength_And_Rolls_Builder :: struct {
+Unit_Power_Strength_And_Rolls_Unit_Power_Strength_And_Rolls_Builder :: struct {
 	power:              i32,
 	strength_and_rolls: ^Strength_And_Rolls,
 	unit:               ^Unit,

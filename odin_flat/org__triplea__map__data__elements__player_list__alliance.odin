@@ -1,6 +1,6 @@
 package game
 
-Map_Data_Alliance :: struct {
+Xml_Player_List_Alliance :: struct {
 	player:   string,
 	alliance: string,
 }

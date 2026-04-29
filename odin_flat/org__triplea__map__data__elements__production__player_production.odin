@@ -1,6 +1,6 @@
 package game
 
-Player_Production :: struct {
+Production_Player_Production :: struct {
 	player:   string,
 	frontier: string,
 }

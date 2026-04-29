@@ -1,6 +1,6 @@
 package game
 
-Held_Units :: struct {
+Initialize_Unit_Initialize_Held_Units :: struct {
 	unit_type: string,
 	player:    string,
 	quantity:  i32,

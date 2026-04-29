@@ -1,6 +1,6 @@
 package game
 
-Unit_Placement :: struct {
+Initialize_Unit_Initialize_Unit_Placement :: struct {
 	unit_type:   string,
 	territory:   string,
 	quantity:    i32,

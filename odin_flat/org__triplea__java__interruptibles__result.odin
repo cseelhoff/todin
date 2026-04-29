@@ -1,6 +1,6 @@
 package game
 
-Result :: struct($T: typeid) {
+Interruptibles_Result :: struct($T: typeid) {
 	completed:      bool,
 	result_present: bool,
 	result:         T,

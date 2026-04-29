@@ -1,5 +1,5 @@
 package game
 
-Territory_Effect :: struct {
+Territory_Effect_List_Territory_Effect :: struct {
 	name: string,
 }

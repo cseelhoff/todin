@@ -1,9 +1,9 @@
 package game
 
-Repair_Rule :: struct {
+Production_Repair_Rule :: struct {
 	name:    string,
-	costs:   [dynamic]^Rule_Cost,
-	results: [dynamic]^Rule_Result,
+	costs:   [dynamic]^Production_Rule_Cost,
+	results: [dynamic]^Production_Rule_Result,
 }
 
 // Java owners covered by this file:

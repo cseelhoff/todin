@@ -1,6 +1,6 @@
 package game
 
-Battle_Result_Description :: enum {
+Battle_Record_Battle_Result_Description :: enum {
 	BLITZED,
 	CONQUERED,
 	WON_WITHOUT_CONQUERING,

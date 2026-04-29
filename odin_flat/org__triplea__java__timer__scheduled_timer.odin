@@ -4,7 +4,7 @@ Scheduled_Timer :: struct {
 	task:          proc(),
 	delay_millis:  i64,
 	period_millis: i64,
-	timer:         rawptr,
+	timer:         ^Timer,
 	running:       bool,
 }
 

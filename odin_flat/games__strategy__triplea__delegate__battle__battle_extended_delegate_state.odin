@@ -14,6 +14,6 @@ Battle_Extended_Delegate_State :: struct {
 	need_to_check_defending_planes_can_land: bool,
 	need_to_cleanup:                         bool,
 	rocket_helper:                           ^Rockets_Fire_Helper,
-	current_battle:                          ^IBattle,
+	current_battle:                          ^I_Battle,
 }
 

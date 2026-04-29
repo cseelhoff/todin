@@ -1,6 +1,6 @@
 package game
 
-Map_Data_Player :: struct {
+Xml_Player_List_Player :: struct {
 	name:            string,
 	optional:        bool,
 	can_be_disabled: bool,

@@ -1,6 +1,6 @@
 package game
 
-Bombardment_Combat_Value_Builder :: struct {
+Bombardment_Combat_Value_Bombardment_Combat_Value_Builder :: struct {
 	game_dice_sides:               int,
 	lhtr_heavy_bombers:            bool,
 	strength_support_from_friends: ^Available_Supports,

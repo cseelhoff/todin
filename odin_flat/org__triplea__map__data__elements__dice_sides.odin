@@ -4,5 +4,5 @@ package game
 //   - org.triplea.map.data.elements.DiceSides
 
 Dice_Sides :: struct {
-	value: ^int,
+	value: i32,
 }

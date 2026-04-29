@@ -2,7 +2,7 @@ package game
 
 Firing_Group_Splitter_General :: struct {
 	side:       Battle_State_Side,
-	type:       Type,
+	type:       Firing_Group_Splitter_General_Type,
 	group_name: string,
 }
 // Java owners covered by this file:

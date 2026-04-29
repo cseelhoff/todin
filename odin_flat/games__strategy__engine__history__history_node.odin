@@ -1,16 +1,12 @@
 package game
 
-// Java owners covered by this file:
-//   - games.strategy.engine.history.HistoryNode
-//
-// Java extends javax.swing.tree.DefaultMutableTreeNode; per port
-// instructions the Swing parent is not embedded. Only fields
-// declared on HistoryNode itself are ported. The class declares
-// no instance fields (only static constants); `title` is carried
-// here because Java stores it in the parent's userObject which
-// we are not embedding.
+// games.strategy.engine.history.HistoryNode
+// Abstract superclass for all nodes in the History tree view.
+// Extends javax.swing.tree.DefaultMutableTreeNode (JDK shim).
+// Java declares no instance fields (only static constants); the
+// title is stored in the parent's userObject.
 
 History_Node :: struct {
-	title: string,
+	using parent: Default_Mutable_Tree_Node,
 }
 

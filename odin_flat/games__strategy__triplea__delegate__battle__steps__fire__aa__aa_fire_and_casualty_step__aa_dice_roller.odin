@@ -1,4 +1,4 @@
 package game
 
-Aa_Dice_Roller :: struct {}
+Aa_Fire_And_Casualty_Step_Aa_Dice_Roller :: struct {}
 

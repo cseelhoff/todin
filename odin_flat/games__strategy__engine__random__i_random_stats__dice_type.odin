@@ -5,7 +5,7 @@ package game
 
 // Identifies the purpose for which dice are rolled. Used to group dice
 // statistics into various buckets.
-Dice_Type :: enum {
+I_Random_Stats_Dice_Type :: enum {
 	COMBAT,
 	BOMBING,
 	NONCOMBAT,

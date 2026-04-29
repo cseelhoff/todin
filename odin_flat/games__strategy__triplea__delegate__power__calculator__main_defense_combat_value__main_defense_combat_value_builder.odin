@@ -1,6 +1,6 @@
 package game
 
-Main_Defense_Combat_Value_Builder :: struct {
+Main_Defense_Combat_Value_Main_Defense_Combat_Value_Builder :: struct {
 	game_sequence:                 ^Game_Sequence,
 	game_dice_sides:               i32,
 	lhtr_heavy_bombers:            bool,

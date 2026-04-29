@@ -1,14 +1,9 @@
 package game
 
-Map_Data_Production_Frontier_Frontier_Rules :: struct {
-	name: string,
-}
+// Ported from org.triplea.map.data.elements.Production$ProductionFrontier
 
-Map_Data_Production_Frontier :: struct {
+Production_Production_Frontier :: struct {
 	name:           string,
-	frontier_rules: [dynamic]^Map_Data_Production_Frontier_Frontier_Rules,
+	frontier_rules: [dynamic]^Production_Production_Frontier_Frontier_Rules,
 }
-
-// Java owners covered by this file:
-//   - org.triplea.map.data.elements.Production$ProductionFrontier
 

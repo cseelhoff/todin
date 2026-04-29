@@ -1,7 +1,7 @@
 package game
 
-Category :: struct {
+Technology_Player_Tech_Category :: struct {
 	name:  string,
-	techs: [dynamic]^Tech,
+	techs: [dynamic]^Technology_Player_Tech_Category_Tech,
 }
 

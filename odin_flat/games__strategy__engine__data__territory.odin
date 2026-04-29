@@ -2,11 +2,10 @@ package game
 
 // games.strategy.engine.data.Territory
 //
-// A map territory (sea or land). Owns its UnitCollection and references the
-// optional TerritoryAttachment.
+// extends NamedAttachable implements NamedUnitHolder, Comparable<Territory>
 
 Territory :: struct {
-	using named:          Named,
+	using parent:         Named_Attachable,
 	water:                bool,
 	owner:                ^Game_Player,
 	unit_collection:      ^Unit_Collection,

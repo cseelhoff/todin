@@ -4,6 +4,10 @@ package game
 //   - org.triplea.generic.xml.reader.exceptions.XmlParsingException
 
 Xml_Parsing_Exception :: struct {
+	using parent: Exception,
+}
+
+Xml_Parsing_Exception :: struct {
 	message: string,
 }
 

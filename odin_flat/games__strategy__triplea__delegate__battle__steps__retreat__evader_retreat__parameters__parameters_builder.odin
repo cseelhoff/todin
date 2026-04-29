@@ -1,6 +1,6 @@
 package game
 
-Evader_Retreat__Parameters__Parameters_Builder :: struct {
+Evader_Retreat_Parameters_Parameters_Builder :: struct {
 	battle_state:   ^Battle_State,
 	battle_actions: ^Battle_Actions,
 	side:           Battle_State_Side,

@@ -1,7 +1,7 @@
 package game
 
-Variable :: struct {
+Variable_List_Variable :: struct {
 	name:     string,
-	elements: [dynamic]^Element,
+	elements: [dynamic]^Variable_List_Variable_Element,
 }
 

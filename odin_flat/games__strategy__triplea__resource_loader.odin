@@ -4,7 +4,7 @@ package game
 //   - games.strategy.triplea.ResourceLoader
 
 Resource_Loader :: struct {
-	loader:      rawptr, // java.net.URLClassLoader (opaque in Odin)
+	loader:      ^Url_Class_Loader,
 	asset_paths: [dynamic]string,
 }
 

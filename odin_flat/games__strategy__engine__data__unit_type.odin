@@ -5,6 +5,6 @@ package game
 // A class of units (e.g. "infantry", "fighter"). Carries its UnitAttachment.
 
 Unit_Type :: struct {
-	using named:     Named,
-	unit_attachment: ^Unit_Attachment,
+	using named_attachable: Named_Attachable,
+	unit_attachment:        ^Unit_Attachment,
 }

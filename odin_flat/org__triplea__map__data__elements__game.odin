@@ -1,6 +1,6 @@
 package game
 
-Map_Data_Game :: struct {
+Game :: struct {
 	info:                  ^Info,
 	triplea:               ^Triplea,
 	attachment_list:       ^Attachment_List,
@@ -8,8 +8,8 @@ Map_Data_Game :: struct {
 	game_play:             ^Game_Play,
 	initialize:            ^Initialize,
 	map:                   ^Map,
-	resource_list:         ^Resource_List,
-	player_list:           ^Player_List,
+	resource_list:         ^Xml_Resource_List,
+	player_list:           ^Xml_Player_List,
 	unit_list:             ^Unit_List,
 	relationship_types:    ^Relationship_Types,
 	territory_effect_list: ^Territory_Effect_List,

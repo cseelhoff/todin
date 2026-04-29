@@ -1,7 +1,7 @@
 package game
 
-Retreat_Changes :: struct {
+Retreater_Retreat_Changes :: struct {
 	change:       ^Change,
-	history_text: [dynamic]^Retreat_History_Child,
+	history_text: [dynamic]^Retreater_Retreat_History_Child,
 }
 

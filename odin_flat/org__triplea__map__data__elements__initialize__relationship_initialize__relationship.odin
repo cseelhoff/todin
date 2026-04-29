@@ -1,6 +1,6 @@
 package game
 
-Xml_Relationship_Initialize_Relationship :: struct {
+Initialize_Relationship_Initialize_Relationship :: struct {
 	type:        string,
 	round_value: i32,
 	player1:     string,

@@ -4,5 +4,8 @@ package game
 //   - games.strategy.engine.random.IRandomStats
 
 I_Random_Stats :: struct {
+}
+
+I_Random_Stats :: struct {
 	using i_remote: I_Remote,
 }

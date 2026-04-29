@@ -1,6 +1,6 @@
 package game
 
-Die_Type :: enum {
+Die_Die_Type :: enum {
 	MISS,
 	HIT,
 	IGNORED,

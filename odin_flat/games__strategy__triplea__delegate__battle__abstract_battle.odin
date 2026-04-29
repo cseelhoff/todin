@@ -18,7 +18,7 @@ Abstract_Battle :: struct {
 	amphibious_land_attackers: [dynamic]^Unit,
 	bombarding_units: [dynamic]^Unit,
 	territory_effects: [dynamic]^Territory_Effect,
-	battle_result_description: Battle_Result_Description,
+	battle_result_description: Battle_Record_Battle_Result_Description,
 	who_won: I_Battle_Who_Won,
 	attacker_lost_tuv: i32,
 	defender_lost_tuv: i32,

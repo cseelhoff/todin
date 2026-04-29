@@ -1,6 +1,6 @@
 package game
 
-Game_Over_Invocation_Handler :: struct {
+Player_Bridge_Game_Over_Invocation_Handler :: struct {
 	delegate: rawptr,
 	game:     ^I_Game,
 }

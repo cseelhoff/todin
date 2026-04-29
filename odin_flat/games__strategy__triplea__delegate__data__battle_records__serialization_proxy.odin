@@ -1,5 +1,5 @@
 package game
 
-Serialization_Proxy :: struct {
+Battle_Records_Serialization_Proxy :: struct {
 	records: map[^Game_Player]map[Uuid]^Battle_Record,
 }

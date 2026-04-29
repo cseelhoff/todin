@@ -1,6 +1,6 @@
 package game
 
-Aa_Defense_Combat_Value_Builder :: struct {
+Aa_Defense_Combat_Value_Aa_Defense_Combat_Value_Builder :: struct {
 	strength_support_from_friends: ^Available_Supports,
 	strength_support_from_enemies: ^Available_Supports,
 	roll_support_from_friends:     ^Available_Supports,

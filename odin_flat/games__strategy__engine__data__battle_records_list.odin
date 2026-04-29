@@ -5,3 +5,7 @@ Battle_Records_List :: struct {
 	battle_records: map[i32]^Battle_Records,
 }
 
+battle_records_list_get_battle_records_map :: proc(self: ^Battle_Records_List) -> map[i32]^Battle_Records {
+	return self.battle_records
+}
+

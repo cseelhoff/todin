@@ -1,6 +1,6 @@
 package game
 
-Player_Repair :: struct {
+Production_Player_Repair :: struct {
 	player:   string,
 	frontier: string,
 }

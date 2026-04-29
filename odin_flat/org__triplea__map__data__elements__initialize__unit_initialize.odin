@@ -1,7 +1,7 @@
 package game
 
-Unit_Initialize :: struct {
-	unit_placements: [dynamic]^Unit_Placement,
-	held_units:      [dynamic]^Held_Units,
+Initialize_Unit_Initialize :: struct {
+	unit_placements: [dynamic]^Initialize_Unit_Initialize_Unit_Placement,
+	held_units:      [dynamic]^Initialize_Unit_Initialize_Held_Units,
 }
 

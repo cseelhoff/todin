@@ -4,6 +4,6 @@ package game
 //   - org.triplea.generic.xml.reader.exceptions.JavaDataModelException
 
 Java_Data_Model_Exception :: struct {
-	message: string,
+	using parent: Exception,
 }
 

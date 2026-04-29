@@ -1,3 +1,3 @@
 package game
 
-Bombardment_Casualty_Selector :: struct {}
+Naval_Bombardment_Bombardment_Casualty_Selector :: struct {}

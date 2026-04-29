@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 Change_Attachment_Change :: struct {
 	using change: Change,
 	attached_to:     ^Attachable,
@@ -11,4 +13,11 @@ Change_Attachment_Change :: struct {
 }
 // Java owners covered by this file:
 //   - games.strategy.engine.data.ChangeAttachmentChange
+
+// Synthetic constructor lambda: `name -> name.replaceAll("ttatch", "ttach")`
+// from `ChangeAttachmentChange(Attachable, String, Object, Object, String, boolean)`.
+change_attachment_change_lambda_new_0 :: proc(property: string) -> string {
+	result, _ := strings.replace_all(property, "ttatch", "ttach")
+	return result
+}
 

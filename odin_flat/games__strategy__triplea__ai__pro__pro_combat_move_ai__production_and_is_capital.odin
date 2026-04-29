@@ -3,8 +3,8 @@ package game
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.ProCombatMoveAi$ProductionAndIsCapital
 
-Production_And_Is_Capital :: struct {
-	production: int,
-	is_capital: int,
+Pro_Combat_Move_Ai_Production_And_Is_Capital :: struct {
+	production: i32,
+	is_capital: i32,
 }
 
