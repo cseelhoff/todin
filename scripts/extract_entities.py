@@ -61,6 +61,26 @@ EXCLUDED_PACKAGE_PREFIXES = (
     "io.netty.", "kotlin.", "scala.",
 )
 
+# UI-taint detection: TripleA classes whose ancestry roots in Swing/AWT
+# widgets are statically referenced by the snapshot harness's setup code
+# (constructors, factory wiring) but never actually rendered or interacted
+# with at runtime. JaCoCo records their class-init invocation, so they
+# leak into `actually_called_in_ai_test`. We tag them `is_ui = 1` here
+# and `build_called_layered_tables.py` skips them when building the
+# port-target structs/methods tables.
+#
+# Exception: java.awt.Point and java.awt.Color are pure value types used
+# throughout engine math (territory centers, player colors) and are
+# explicitly allowed as fields/parents.
+UI_PACKAGE_PREFIXES = ("javax.swing.", "java.awt.")
+UI_ALLOWED_TYPES = {"java.awt.Point", "java.awt.Color"}
+
+
+def _is_ui_jdk(fqcn: str) -> bool:
+    if not fqcn or fqcn in UI_ALLOWED_TYPES:
+        return False
+    return fqcn.startswith(UI_PACKAGE_PREFIXES)
+
 
 def find_class_dirs(triplea: Path) -> list[Path]:
     """Locate every .../build/classes/java/main directory below TRIPLEA_DIR."""
@@ -465,7 +485,8 @@ def main() -> None:
             is_fully_implemented_error_free_no_todo_no_stub
                             INTEGER NOT NULL DEFAULT 0,
             included        INTEGER NOT NULL DEFAULT 1,
-            actually_called_in_ai_test INTEGER NOT NULL DEFAULT 0
+            actually_called_in_ai_test INTEGER NOT NULL DEFAULT 0,
+            is_ui          INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE dependencies (
             primary_key   TEXT,
@@ -477,6 +498,30 @@ def main() -> None:
         """
     )
 
+    # ---- compute UI taint set ----
+    # Step 1: a class is directly tainted if any of its ext/impl parents is
+    # a Swing/AWT widget type (excluding Point/Color value types).
+    # Step 2: propagate transitively across TripleA-internal extends/implements
+    # so a subclass of a tainted TripleA class is itself tainted.
+    triplea_parents: dict[str, list[str]] = {}
+    ui_tainted: set[str] = set()
+    for fqcn, ext, impl, _methods, _field_deps in parsed:
+        parents = ext + impl
+        triplea_parents[fqcn] = [p for p in parents if not _excluded(p)]
+        if any(_is_ui_jdk(p) for p in parents):
+            ui_tainted.add(fqcn)
+    # transitive closure (TripleA-internal subclassing)
+    changed = True
+    while changed:
+        changed = False
+        for fqcn, parents in triplea_parents.items():
+            if fqcn in ui_tainted:
+                continue
+            if any(p in ui_tainted for p in parents):
+                ui_tainted.add(fqcn)
+                changed = True
+    print(f"  UI-tainted classes (Swing/AWT ancestry): {len(ui_tainted)}")
+
     entity_rows: list[tuple] = []
     dep_rows: set[tuple[str, str]] = set()
 
@@ -484,8 +529,9 @@ def main() -> None:
         # struct row
         top = fqcn.split("$", 1)[0]
         java_path = java_idx.get(top, "")
+        is_ui = 1 if fqcn in ui_tainted else 0
         entity_rows.append((
-            f"struct:{fqcn}", java_path, "", "", None, 0, 1, 0,
+            f"struct:{fqcn}", java_path, "", "", None, 0, 1, 0, is_ui,
         ))
         # struct-level dep edges
         for parent in ext + impl:
@@ -500,7 +546,7 @@ def main() -> None:
         for m in methods:
             args_str = ",".join(m["args_java"])
             mkey = f"proc:{fqcn}#{m['name']}({args_str})"
-            entity_rows.append((mkey, java_path, "", "", None, 0, 1, 0))
+            entity_rows.append((mkey, java_path, "", "", None, 0, 1, 0, is_ui))
             # owner edge
             dep_rows.add((mkey, f"struct:{fqcn}"))
             for s in m["deps_struct"]:
@@ -510,7 +556,7 @@ def main() -> None:
                 dep_rows.add((mkey, p))
 
     cur.executemany(
-        "INSERT OR IGNORE INTO entities VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT OR IGNORE INTO entities VALUES (?,?,?,?,?,?,?,?,?)",
         entity_rows,
     )
     cur.executemany(

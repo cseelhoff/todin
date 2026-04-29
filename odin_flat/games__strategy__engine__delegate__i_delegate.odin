@@ -4,7 +4,7 @@ package game
 // One file per Java class. Replace this header when the
 // class's structs and procs are fully ported.
 // Java owners covered by this file:
-//   - games.strategy.engine.delegate.IDelegate
+//   - games.strategy.engine.delegate.I_Delegate
 
-IDelegate :: struct {}
+I_Delegate :: struct {}
 

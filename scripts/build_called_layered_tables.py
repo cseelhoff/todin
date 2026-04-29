@@ -167,6 +167,7 @@ def main() -> None:
                is_fully_implemented_error_free_no_todo_no_stub
         FROM entities
         WHERE primary_key LIKE 'proc:%' AND actually_called_in_ai_test = 1
+          AND is_ui = 0
     """)
     n_methods = cur.execute("SELECT COUNT(*) FROM methods").fetchone()[0]
     print(f"  methods: {n_methods}")
@@ -179,6 +180,7 @@ def main() -> None:
                         e.is_fully_implemented_error_free_no_todo_no_stub
         FROM entities e
         WHERE e.primary_key LIKE 'struct:%'
+          AND e.is_ui = 0
           AND (e.primary_key IN (SELECT owner_struct_key FROM methods)
                OR e.primary_key IN (
                   SELECT d.depends_on_key FROM dependencies d
@@ -208,6 +210,7 @@ def main() -> None:
             FROM entities e
             JOIN dependencies d ON d.depends_on_key = e.primary_key
             WHERE e.primary_key LIKE 'struct:%'
+              AND e.is_ui = 0
               AND d.primary_key IN (SELECT struct_key FROM structs)
               AND d.depends_on_key NOT IN (SELECT struct_key FROM structs)
         """).rowcount

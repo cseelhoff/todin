@@ -14,5 +14,5 @@ Property_Value :: union {
 
 Game_Properties :: struct {
 	constant_properties: map[string]Property_Value,
-	editable_properties: map[string]^Editable_Property,
+	editable_properties: map[string]^Abstract_Editable_Property,
 }

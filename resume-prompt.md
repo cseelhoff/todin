@@ -223,9 +223,27 @@ truth across the whole port. Guidelines per category:
   actually use.
 - **I/O, networking, GUI** (`java.io.*`, `java.net.Socket`,
   `javax.swing.*`, `java.awt.*` beyond `Point`/`Color`): these
-  should NOT appear under `actually_called_in_ai_test = 1`. If
-  one does, that's a JaCoCo filter regression — STOP and
-  document, do NOT auto-shim.
+  should NOT appear under `actually_called_in_ai_test = 1` in the
+  general case — they're typically a JaCoCo filter regression.
+  However, **NIO socket plumbing is a known exception**: the AI
+  snapshot harness wires up a Messengers / Test_Server_Game
+  object whose constructor instantiates `NioReader` /
+  `NioWriter` for compile-/setup-time reasons, but no real
+  socket I/O happens during the snapshot run. For these JDK
+  NIO/concurrency-queue types, provision **opaque marker
+  shims** (no real semantics) so referencing structs compile:
+  - `java.nio.channels.SocketChannel` → `Socket_Channel :: struct {}`
+  - `java.nio.channels.Selector` → `Selector :: struct {}`
+  - `java.nio.channels.SelectionKey` → `Selection_Key :: struct {}`
+  - `java.nio.ByteBuffer` → `Byte_Buffer :: struct { data: [dynamic]u8, position: i32, limit: i32, capacity: i32 }`
+  - `java.util.concurrent.BlockingQueue` →
+    `Blocking_Queue :: struct { items: [dynamic]rawptr }`
+    plus `blocking_queue_take`, `blocking_queue_offer`,
+    `blocking_queue_poll` procs that do single-threaded
+    in-order push/pop on `items`.
+  All other I/O (Swing, AWT widgets, real `Socket`,
+  `FileInputStream`, ...) still triggers a STOP — those should
+  not appear in the structs table at all.
 
 **Workflow (orchestrator):**
 
@@ -306,7 +324,14 @@ Rules:
   `llm-instructions.md` §1 (the harness's authoritative type list).
 - Java primitives: boolean→bool, int→i32, long→i64, float→f32,
   double→f64, String→string, BigDecimal→f64.
-- Cross-struct refs become `^Type` pointers. NO `*_Id` types.
+- Cross-struct refs mirror the Java field type: a Java field
+  declared as another class (e.g. `Player owner`, `List<Unit>
+  units`) becomes `owner: ^Player` / `units: [dynamic]^Unit`. Do
+  NOT invent synthetic `*_Id` substitutions (no `owner_id:
+  string`, no `unit_ids: [dynamic]string` when Java holds the
+  objects directly). BUT if the Java field really is a `String`
+  / `UUID` / numeric id, keep it as `string` / etc. — mirror
+  Java exactly, do not "upgrade" string ids into pointers.
 - Collections: List<T>→[dynamic]^T, Map<K,V>→map[K]V,
   Set<T>→map[^T]struct{}.
 - Single inheritance: `using parent: Parent` as the FIRST field.

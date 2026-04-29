@@ -103,11 +103,29 @@ Rules for subagent dispatch:
      test (one test, 52 paired before/after JSON snapshots). Diff
      failures, fix, repeat until 52/52 pass.
 
-3. **Pointer-based data layout. No `*_Id` types.** Every cross-struct
-   reference is a raw `^Foo` pointer. Odin's package-level forward
-   declarations resolve all cycles automatically — `^Player` inside
-   `Territory` is fine even though `Player` is defined later in
-   another file.
+3. **Stay faithful to the Java field shapes.** The Odin port mirrors
+   Java's data layout one-to-one. Translate each field as the Java
+   declares it:
+   - A field declared as another class type (`Player owner`,
+     `List<Unit> units`, `Map<Territory, Integer> distances`) →
+     pointer / collection of pointers (`owner: ^Player`,
+     `units: [dynamic]^Unit`, `distances: map[^Territory]i32`).
+     Use Odin's package-level forward declarations to resolve
+     cycles; `^Player` inside `Territory` is fine even though
+     `Player` is defined in a later file.
+   - A field declared as a Java primitive or `String` stays a
+     primitive or `string` (`name: string`, `count: i32`,
+     `unit_id: string` if Java has `String unitId`).
+   - **Do NOT invent synthetic `*_Id` substitutions.** If the Java
+     field is `Player owner`, the Odin field is `owner: ^Player`,
+     never `owner_id: string` / `owner_id: i32`. Likewise
+     `List<Unit> units` is `units: [dynamic]^Unit`, never
+     `unit_ids: [dynamic]string`. The rule prohibits replacing a
+     real reference with a fabricated identifier; it does NOT
+     prohibit Java fields that genuinely are `String` /
+     `UUID` / numeric ids — those keep their Java type.
+   - Conversely, do NOT "upgrade" a Java `String someId` field
+     into `^Some_Type`. Mirror Java exactly.
 
    **Simple-name collisions (authoritative disambiguation table).**
    Three Java classes share a simple name with a harness-required

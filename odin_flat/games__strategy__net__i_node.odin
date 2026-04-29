@@ -2,6 +2,6 @@ package game
 
 // Ported from games.strategy.net.INode (Java interface)
 // Phase A: TYPE only. Empty marker struct for compatibility with other
-// structs that reference INode as a type.
+// structs that reference I_Node as a type.
 
-INode :: struct {}
+I_Node :: struct {}

@@ -5,4 +5,3 @@ Count_Down_Latch_Handler :: struct {
 	is_shut_down:                 bool,
 	release_latch_on_interrupt:   bool,
 }
-
