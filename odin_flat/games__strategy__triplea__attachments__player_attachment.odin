@@ -1,7 +1,7 @@
 package game
 
 Player_Attachment :: struct {
-	using parent:                       Default_Attachment,
+	using default_attachment: Default_Attachment,
 	vps:                                i32,
 	capture_vps:                        i32,
 	retain_capital_number:              i32,

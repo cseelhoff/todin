@@ -10,6 +10,6 @@ Battle_Tracker :: struct {
 	no_bombard_allowed:                    map[^Territory]struct{},
 	defending_air_that_can_not_land:       map[^Territory][dynamic]^Unit,
 	battle_records:                        ^Battle_Records,
-	relationship_changes_this_turn:        [dynamic]^Tuple,
+	relationship_changes_this_turn:        [dynamic]^Tuple(rawptr, rawptr),
 }
 

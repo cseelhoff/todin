@@ -1,15 +1,9 @@
 package game
 
-Offensive_First_Strike_State :: enum {
-	NOT_APPLICABLE,
-	REGULAR,
-	FIRST_STRIKE,
-}
-
 Offensive_First_Strike :: struct {
-	using battle_step: Battle_Step,
-	battle_state:      ^Battle_State,
-	battle_actions:    ^Battle_Actions,
-	state:             Offensive_First_Strike_State,
-	return_fire:       Must_Fight_Battle_Return_Fire,
+	using battle_step:  Battle_Step,
+	battle_state:    ^Battle_State,
+	battle_actions:  ^Battle_Actions,
+	state:           Offensive_First_Strike_State,
+	return_fire:     Must_Fight_Battle_Return_Fire,
 }

@@ -1,7 +1,7 @@
 package game
 
 Undoable_Move :: struct {
-	using parent: Abstract_Undoable_Move,
+	using abstract_undoable_move: Abstract_Undoable_Move,
 	reason_cant_undo: string,
 	description: string,
 	dependencies: map[^Undoable_Move]struct{},

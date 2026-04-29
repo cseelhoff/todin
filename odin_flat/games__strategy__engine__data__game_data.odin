@@ -294,20 +294,15 @@ game_data_get_delegate :: proc(self: ^Game_Data, name: string) -> ^I_Delegate {
 	delegate := game_data_get_delegate_optional(self, name)
 	if delegate == nil {
 		keys: [dynamic]string
-		defer delete(keys)
-		for key, _ in self.delegates {
-			append(&keys, key)
-		}
-		joined := strings.join(keys[:], ", ")
-		defer delete(joined)
-		fmt.panicf("%s delegate not found in list: [%s]", name, joined)
-	}
-	return delegate
+                for key, _ in self.delegates {
+                        append(&keys, key)
+                }
+                joined := strings.join(keys[:], ", ")
+                fmt.panicf("%s delegate not found in list: [%s]", name, joined)
+        }
+        return delegate
 }
 
-// games.strategy.engine.data.GameData#getHistory()
-//
-// Java: return getGameHistory(); — Lombok @Getter on the gameHistory field.
 game_data_get_history :: proc(self: ^Game_Data) -> ^History {
         return self.game_history
 }
@@ -374,9 +369,6 @@ game_data_set_dice_sides :: proc(self: ^Game_Data, dice_sides: i32) {
         } else {
                 self.dice_sides = 6
         }
-}
-game_data_get_technology_frontier :: proc(self: ^Game_Data) -> ^Technology_Frontier {
-	return self.technology_frontier
 }
 
 // games.strategy.engine.data.GameData#setGameName(java.lang.String)

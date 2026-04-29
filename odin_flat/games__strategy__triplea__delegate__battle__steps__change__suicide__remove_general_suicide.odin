@@ -1,5 +1,5 @@
 package game
 
 Remove_General_Suicide :: struct {
-	using parent: Suicide_Remove_Units,
+	using suicide_remove_units: Suicide_Remove_Units,
 }

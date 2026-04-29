@@ -1,7 +1,7 @@
 package game
 
 Abstract_Ai :: struct {
-	using parent: Abstract_Base_Player,
+	using abstract_base_player: Abstract_Base_Player,
 }
 
 // Java owners covered by this file:

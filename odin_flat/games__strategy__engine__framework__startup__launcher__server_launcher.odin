@@ -3,7 +3,7 @@ package game
 SERVER_LAUNCHER_RELAY_SERVER_PORT :: 6000
 
 Server_Launcher :: struct {
-	using parent:                              I_Launcher,
+	using i_launcher: I_Launcher,
 	game_data:                                 ^Game_Data,
 	game_selector_model:                       ^Game_Selector_Model,
 	launch_action:                             ^Launch_Action,

@@ -1,6 +1,6 @@
 package game
 
 Generic_Tech_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 	advance:      ^Tech_Advance,
 }

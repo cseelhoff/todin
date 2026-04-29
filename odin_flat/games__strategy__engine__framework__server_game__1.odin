@@ -1,7 +1,7 @@
 package game
 
 Server_Game_1 :: struct {
-	using parent: I_Game_Modified_Channel,
+	using i_game_modified_channel: I_Game_Modified_Channel,
 	history_writer: ^History_Writer,
 	outer: ^Server_Game,
 }

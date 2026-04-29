@@ -1,7 +1,7 @@
 package game
 
 History :: struct {
-	using parent:      Default_Tree_Model,
+	using default_tree_model: Default_Tree_Model,
 	writer:            ^History_Writer,
 	changes:           [dynamic]^Change,
 	game_data:         ^Game_Data,

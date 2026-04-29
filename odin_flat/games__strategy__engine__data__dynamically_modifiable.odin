@@ -2,7 +2,9 @@ package game
 
 import "core:fmt"
 
-Dynamically_Modifiable :: struct {}
+Dynamically_Modifiable :: struct {
+	get_property_map: map[string]^Mutable_Property,
+}
 
 // Mirrors Java's `DynamicallyModifiable.getPropertyOrThrow(String)`. Delegates
 // to `dynamically_modifiable_get_property` and panics with the same message

@@ -4,7 +4,7 @@ package game
 // Implements interface BattleStepStrings (constants only; not modeled).
 
 Strategic_Bombing_Raid_Battle :: struct {
-	using parent: Abstract_Battle,
+	using abstract_battle: Abstract_Battle,
 	targets: map[^Unit]map[^Unit]struct{},
 	stack: ^Execution_Stack,
 	steps: [dynamic]string,

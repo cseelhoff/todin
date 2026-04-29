@@ -4,5 +4,5 @@ package game
 //   - games.strategy.triplea.delegate.battle.NonFightingBattle
 
 Non_Fighting_Battle :: struct {
-	using parent: Dependent_Battle,
+	using dependent_battle: Dependent_Battle,
 }

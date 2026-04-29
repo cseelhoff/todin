@@ -2,7 +2,7 @@ package game
 
 Default_Named :: struct {
 	using named:  Named,
-	using parent: Game_Data_Component,
+	using game_data_component: Game_Data_Component,
 }
 
 default_named_get_name :: proc(self: ^Default_Named) -> string {
@@ -21,8 +21,8 @@ default_named_hash_code :: proc(self: ^Default_Named) -> i32 {
 	}
 
 	if self != nil {
-		for i in 0 ..< len(self.name) {
-			h = mix_byte(h, self.name[i])
+		for i in 0 ..< len(self.named.base.name) {
+			h = mix_byte(h, self.named.base.name[i])
 		}
 	}
 
@@ -43,5 +43,5 @@ default_named_read_object :: proc(self: ^Default_Named, stream: ^Object_Input_St
 
 // Mirrors Java's `DefaultNamed.toString` (simplified to return the name).
 default_named_to_string :: proc(self: ^Default_Named) -> string {
-	return self.name
+	return self.named.base.name
 }

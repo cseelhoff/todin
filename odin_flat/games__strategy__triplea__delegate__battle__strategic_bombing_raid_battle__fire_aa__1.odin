@@ -1,7 +1,7 @@
 package game
 
 Fire_Aa_1 :: struct {
-	using parent:        I_Executable,
+	using i_executable: I_Executable,
 	outer:               ^Fire_Aa,
 	current_possible_aa: [dynamic]^Unit,
 	current_type_aa:     string,

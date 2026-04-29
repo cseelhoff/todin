@@ -1,7 +1,7 @@
 package game
 
 Server_Messenger :: struct {
-	using parent:             I_Server_Messenger,
+	using i_server_messenger: I_Server_Messenger,
 	using nio_listener:       Nio_Socket_Listener,
 	new_node_lock:            rawptr,
 	acceptor_selector:        ^Selector,

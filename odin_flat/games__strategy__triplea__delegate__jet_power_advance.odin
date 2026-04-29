@@ -1,6 +1,6 @@
 package game
 
 Jet_Power_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 }
 

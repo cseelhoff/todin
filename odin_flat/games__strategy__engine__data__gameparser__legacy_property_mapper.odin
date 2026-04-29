@@ -5,5 +5,3 @@ package game
 
 Legacy_Property_Mapper :: struct {}
 
-Legacy_Property_Mapper :: struct {}
-

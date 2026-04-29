@@ -1,7 +1,7 @@
 package game
 
 Politics_Delegate :: struct {
-	using parent: Base_Triple_A_Delegate,
+	using base_triple_a_delegate: Base_Triple_A_Delegate,
 }
 
 // Java owners covered by this file:

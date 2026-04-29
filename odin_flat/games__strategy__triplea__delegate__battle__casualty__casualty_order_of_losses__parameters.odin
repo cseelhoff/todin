@@ -5,7 +5,7 @@ Casualty_Order_Of_Losses_Parameters :: struct {
 	player:               ^Game_Player,
 	combat_value:         ^Combat_Value,
 	battlesite:           ^Territory,
-	costs:                ^Integer_Map(^Unit_Type),
+	costs:                ^Integer_Map_Unit_Type,
 	data:                 ^Game_State,
 }
 // Java owners covered by this file:

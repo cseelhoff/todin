@@ -4,5 +4,5 @@ package game
 //   - games.strategy.triplea.ai.weak.WeakAi
 
 Weak_Ai :: struct {
-	using parent: Abstract_Ai,
+	using abstract_ai: Abstract_Ai,
 }

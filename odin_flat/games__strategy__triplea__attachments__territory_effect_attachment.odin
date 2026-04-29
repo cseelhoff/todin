@@ -3,7 +3,7 @@ package game
 // Port of games.strategy.triplea.attachments.TerritoryEffectAttachment.
 // An attachment for instances of TerritoryEffect.
 Territory_Effect_Attachment :: struct {
-	using parent:          Default_Attachment,
+	using default_attachment: Default_Attachment,
 	combat_defense_effect: Integer_Map,
 	combat_offense_effect: Integer_Map,
 	movement_cost_modifier: map[^Unit_Type]f64,

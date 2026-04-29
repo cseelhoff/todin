@@ -1,6 +1,6 @@
 package game
 
 Placement_Description :: struct {
-	using parent: Abstract_Move_Description,
+	using abstract_move_description: Abstract_Move_Description,
 	territory: ^Territory,
 }

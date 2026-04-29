@@ -1,7 +1,7 @@
 package game
 
 Tech_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 	tech_cost: i32,
 	heavy_bomber: bool,
 	long_range_air: bool,

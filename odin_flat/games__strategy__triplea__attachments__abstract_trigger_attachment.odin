@@ -1,7 +1,7 @@
 package game
 
 Abstract_Trigger_Attachment :: struct {
-	using parent: Abstract_Conditions_Attachment,
+	using abstract_conditions_attachment: Abstract_Conditions_Attachment,
 	uses: i32,
 	used_this_round: bool,
 	notification: string,

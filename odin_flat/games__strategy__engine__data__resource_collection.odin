@@ -7,6 +7,6 @@ package game
 Integer_Map_Resource :: map[^Resource]i32
 
 Resource_Collection :: struct {
-	using parent: Game_Data_Component,
+	using game_data_component: Game_Data_Component,
 	resources: Integer_Map_Resource,
 }

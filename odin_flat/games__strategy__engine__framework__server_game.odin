@@ -1,7 +1,7 @@
 package game
 
 Server_Game :: struct {
-	using parent:                       Abstract_Game,
+	using abstract_game: Abstract_Game,
 	random_stats:                       ^Random_Stats,
 	random_source:                      ^I_Random_Source,
 	delegate_random_source:             ^I_Random_Source,

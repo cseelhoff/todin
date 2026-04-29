@@ -4,7 +4,7 @@ package game
 //   - games.strategy.triplea.ai.pro.ProAi
 
 Pro_Ai :: struct {
-	using parent: Abstract_Pro_Ai,
+	using abstract_pro_ai: Abstract_Pro_Ai,
 }
 
 // Static field on ProAi: shared across all ProAi instances.

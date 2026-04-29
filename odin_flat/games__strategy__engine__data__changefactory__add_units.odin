@@ -1,7 +1,7 @@
 package game
 
 Add_Units :: struct {
-	using parent: Change,
+	using change: Change,
 	name:           string,
 	units:          [dynamic]^Unit,
 	type:           string,

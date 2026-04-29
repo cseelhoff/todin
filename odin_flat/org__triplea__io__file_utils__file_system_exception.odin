@@ -5,6 +5,6 @@ package game
 // available disk space.
 
 File_Utils_File_System_Exception :: struct {
-	using parent: Exception,
+	using exception: Exception,
 }
 

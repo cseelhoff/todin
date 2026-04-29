@@ -3,7 +3,7 @@ package game
 // Port of games.strategy.triplea.attachments.RulesAttachment (Phase A: type only).
 
 Rules_Attachment :: struct {
-	using parent: Abstract_Player_Rules_Attachment,
+	using abstract_player_rules_attachment: Abstract_Player_Rules_Attachment,
 	techs: [dynamic]^Tech_Advance,
 	tech_count: i32,
 	relationship: [dynamic]string,

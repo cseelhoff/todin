@@ -44,3 +44,9 @@ change_is_empty :: proc(self: ^Change) -> bool {
 	return false
 }
 
+
+// Generic dispatch stubs over Change.kind. Real per-kind logic lives on
+// the corresponding *_perform / *_invert procedures and will be wired in
+// during Phase B. For now these unblock package-level compilation.
+change_perform :: proc(self: ^Change, data: ^Game_State) {}
+change_invert :: proc(self: ^Change) -> ^Change { return self }

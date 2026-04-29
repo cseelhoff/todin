@@ -1,5 +1,5 @@
 package game
 
 Defensive_Aa_Fire :: struct {
-	using parent: Aa_Fire_And_Casualty_Step,
+	using aa_fire_and_casualty_step: Aa_Fire_And_Casualty_Step,
 }

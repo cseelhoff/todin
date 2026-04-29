@@ -1,7 +1,7 @@
 package game
 
 Composite_Change :: struct {
-	using parent: Change,
+	using change: Change,
 	changes:      [dynamic]^Change,
 }
 
@@ -27,7 +27,7 @@ composite_change_invert :: proc(self: ^Composite_Change) -> ^Change {
 	#reverse for child in self.changes {
 		append(&result.changes, change_invert(child))
 	}
-	return &result.parent
+	return &result.change
 }
 
 composite_change_is_empty :: proc(self: ^Composite_Change) -> bool {

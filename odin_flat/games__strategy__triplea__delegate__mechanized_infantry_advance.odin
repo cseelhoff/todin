@@ -1,7 +1,7 @@
 package game
 
 Mechanized_Infantry_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 }
 
 // Java owners covered by this file:

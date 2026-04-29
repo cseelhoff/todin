@@ -4,6 +4,6 @@ package game
 //   - games.strategy.triplea.delegate.PlaceDelegate
 
 Place_Delegate :: struct {
-	using parent: Abstract_Place_Delegate,
+	using abstract_place_delegate: Abstract_Place_Delegate,
 }
 

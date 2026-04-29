@@ -1,6 +1,6 @@
 package game
 
 Increased_Factory_Production_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 }
 

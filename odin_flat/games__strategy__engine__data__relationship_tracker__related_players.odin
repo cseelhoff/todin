@@ -9,7 +9,3 @@ Related_Players :: struct {
 	player2: ^Game_Player,
 }
 
-Related_Players :: struct {
-	player1: ^Game_Player,
-	player2: ^Game_Player,
-}

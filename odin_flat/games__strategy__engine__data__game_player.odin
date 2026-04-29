@@ -12,7 +12,7 @@ import "core:strings"
 // `using` embeddings: Named_Attachable → Default_Named → Named.
 
 Game_Player :: struct {
-	using parent:         Named_Attachable,
+	using named_attachable: Named_Attachable,
 	optional:             bool,
 	can_be_disabled:      bool,
 	default_type:         string,
@@ -27,23 +27,17 @@ Game_Player :: struct {
 	tech_attachment:      ^Tech_Attachment,
 }
 
-// Nested: GamePlayer.Type — a player type tag (e.g. human, AI).
-Game_Player_Type :: struct {
-	id:   string,
-	name: string,
-}
-
 // Java: @Nonnull @Override public GameData getData()
 // Wraps super.getData() in Preconditions.checkNotNull(...).
 game_player_get_data :: proc(self: ^Game_Player) -> ^Game_Data {
-	return game_data_component_get_data_or_throw(&self.parent.default_named.parent)
+   return game_data_component_get_data_or_throw(&self.named_attachable.default_named.game_data_component)
 }
 
 // Java: public PlayerAttachment getPlayerAttachment()
 // `(PlayerAttachment) getAttachment(Constants.PLAYER_ATTACHMENT_NAME)`.
 // Constants.PLAYER_ATTACHMENT_NAME == "playerAttachment".
 game_player_get_player_attachment :: proc(self: ^Game_Player) -> ^Player_Attachment {
-	return cast(^Player_Attachment)named_attachable_get_attachment(&self.parent, "playerAttachment")
+	return cast(^Player_Attachment)named_attachable_get_attachment(&self.named_attachable, "playerAttachment")
 }
 
 // Java: public Type getPlayerType()
@@ -59,7 +53,7 @@ game_player_get_player_type :: proc(self: ^Game_Player) -> Game_Player_Type {
 // `(RulesAttachment) getAttachment(Constants.RULES_ATTACHMENT_NAME)`.
 // Constants.RULES_ATTACHMENT_NAME == "rulesAttachment".
 game_player_get_rules_attachment :: proc(self: ^Game_Player) -> ^Rules_Attachment {
-	return cast(^Rules_Attachment)named_attachable_get_attachment(&self.parent, "rulesAttachment")
+	return cast(^Rules_Attachment)named_attachable_get_attachment(&self.named_attachable, "rulesAttachment")
 }
 
 // Java: public TechAttachment getTechAttachment()
@@ -71,7 +65,7 @@ game_player_get_rules_attachment :: proc(self: ^Game_Player) -> ^Rules_Attachmen
 // Constants.TECH_ATTACHMENT_NAME == "techAttachment".
 game_player_get_tech_attachment :: proc(self: ^Game_Player) -> ^Tech_Attachment {
 	if self.tech_attachment == nil {
-		self.tech_attachment = cast(^Tech_Attachment)named_attachable_get_attachment(&self.parent, "techAttachment")
+		self.tech_attachment = cast(^Tech_Attachment)named_attachable_get_attachment(&self.named_attachable, "techAttachment")
 		if self.tech_attachment == nil {
 			ta := new(Tech_Attachment)
 			ta.name = "techAttachment"
@@ -162,5 +156,5 @@ game_player_set_who_am_i :: proc(self: ^Game_Player, encoded_type: string) {
 // Java: @Override public String toString() { return "PlayerId named: " + getName(); }
 // Caller owns the returned string.
 game_player_to_string :: proc(self: ^Game_Player) -> string {
-	return strings.concatenate({"PlayerId named: ", default_named_get_name(&self.parent.default_named)})
+   return strings.concatenate({"PlayerId named: ", default_named_get_name(&self.named_attachable.default_named)})
 }

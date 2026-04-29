@@ -1,7 +1,7 @@
 package game
 
 Unit_Support_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 	unit_type:    map[^Unit_Type]struct{},
 	offence:      bool,
 	defence:      bool,

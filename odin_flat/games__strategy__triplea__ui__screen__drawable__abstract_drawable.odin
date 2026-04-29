@@ -1,5 +1,5 @@
 package game
 
 Abstract_Drawable :: struct {
-	using parent: I_Drawable,
+	using i_drawable: I_Drawable,
 }

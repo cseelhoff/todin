@@ -4,7 +4,7 @@ package game
 //   - games.strategy.triplea.attachments.RelationshipTypeAttachment
 
 Relationship_Type_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 	arche_type: string,
 	can_move_land_units_over_owned_land: string,
 	can_move_air_units_over_owned_land: string,

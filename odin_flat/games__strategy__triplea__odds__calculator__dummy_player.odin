@@ -4,7 +4,7 @@ package game
 //   - games.strategy.triplea.odds.calculator.DummyPlayer
 
 Dummy_Player :: struct {
-	using parent:             Abstract_Ai,
+	using abstract_ai: Abstract_Ai,
 	keep_at_least_one_land:   bool,
 	retreat_after_round:      i32,
 	retreat_after_x_units_left: i32,

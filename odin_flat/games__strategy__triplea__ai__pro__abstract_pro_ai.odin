@@ -1,7 +1,7 @@
 package game
 
 Abstract_Pro_Ai :: struct {
-	using parent: Abstract_Ai,
+	using abstract_ai: Abstract_Ai,
 
 	calc:     ^Pro_Odds_Calculator,
 	pro_data: ^Pro_Data,

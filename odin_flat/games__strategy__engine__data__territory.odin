@@ -5,7 +5,7 @@ package game
 // extends NamedAttachable implements NamedUnitHolder, Comparable<Territory>
 
 Territory :: struct {
-	using parent:         Named_Attachable,
+	using named_attachable: Named_Attachable,
 	water:                bool,
 	owner:                ^Game_Player,
 	unit_collection:      ^Unit_Collection,

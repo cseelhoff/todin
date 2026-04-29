@@ -1,7 +1,7 @@
 package game
 
 Must_Fight_Battle :: struct {
-	using parent: Dependent_Battle,
+	using dependent_battle: Dependent_Battle,
 	attacking_waiting_to_die: [dynamic]^Unit,
 	defending_waiting_to_die: [dynamic]^Unit,
 	killed: [dynamic]^Unit,

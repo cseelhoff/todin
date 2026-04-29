@@ -1,5 +1,5 @@
 package game
 
 End_Turn_Delegate :: struct {
-	using parent: Abstract_End_Turn_Delegate,
+	using abstract_end_turn_delegate: Abstract_End_Turn_Delegate,
 }

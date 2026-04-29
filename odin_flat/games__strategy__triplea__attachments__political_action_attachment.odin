@@ -1,7 +1,7 @@
 package game
 
 Political_Action_Attachment :: struct {
-	using parent: Abstract_User_Action_Attachment,
+	using abstract_user_action_attachment: Abstract_User_Action_Attachment,
 	relationship_change: [dynamic]string,
 }
 

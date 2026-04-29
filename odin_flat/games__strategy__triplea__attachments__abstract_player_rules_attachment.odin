@@ -7,7 +7,7 @@ ABSTRACT_PLAYER_RULES_ATTACHMENT_MOVEMENT_RESTRICTION_TYPE_ALLOWED :: "allowed"
 ABSTRACT_PLAYER_RULES_ATTACHMENT_MOVEMENT_RESTRICTION_TYPE_DISALLOWED :: "disallowed"
 
 Abstract_Player_Rules_Attachment :: struct {
-	using parent: Abstract_Rules_Attachment,
+	using abstract_rules_attachment: Abstract_Rules_Attachment,
 	movement_restriction_type: string,
 	movement_restriction_territories: [dynamic]string,
 	placement_any_territory: bool,

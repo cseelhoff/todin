@@ -1,5 +1,5 @@
 package game
 
 Paratroopers_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 }

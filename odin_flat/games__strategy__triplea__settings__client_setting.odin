@@ -1,7 +1,7 @@
 package game
 
 Client_Setting :: struct {
-	using parent: Game_Setting,
+	using game_setting: Game_Setting,
 	type: typeid,
 	name: string,
 	default_value: rawptr,

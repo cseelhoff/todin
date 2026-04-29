@@ -6,6 +6,6 @@ package game
 // implementation. No captured fields; only method overrides (Phase B).
 
 Client_Network_Bridge_1 :: struct {
-	using parent: Client_Network_Bridge,
+	using client_network_bridge: Client_Network_Bridge,
 }
 

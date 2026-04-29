@@ -1,7 +1,7 @@
 package game
 
 Canal_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 	canal_name: string,
 	land_territories: map[^Territory]struct{},
 	excluded_units: map[^Unit_Type]struct{},

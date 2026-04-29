@@ -4,6 +4,6 @@ package game
 //   - games.strategy.triplea.settings.ClientSetting$ValueEncodingException
 
 Client_Setting_Value_Encoding_Exception :: struct {
-	using parent: Exception,
+	using exception: Exception,
 }
 

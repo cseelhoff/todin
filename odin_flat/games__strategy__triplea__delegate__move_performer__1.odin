@@ -1,7 +1,7 @@
 package game
 
 Move_Performer_1 :: struct {
-	using parent: I_Executable,
+	using i_executable: I_Executable,
 	outer:        ^Move_Performer,
 	route:        ^Route,
 	units:        [dynamic]^Unit,

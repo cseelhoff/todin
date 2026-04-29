@@ -1,7 +1,7 @@
 package game
 
 Abstract_Conditions_Attachment :: struct {
-	using parent:                Default_Attachment,
+	using default_attachment: Default_Attachment,
 	conditions:                  [dynamic]^Rules_Attachment,
 	condition_type:              string,
 	invert:                      bool,

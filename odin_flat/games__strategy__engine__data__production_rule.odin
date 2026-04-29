@@ -1,8 +1,7 @@
 package game
 
 Production_Rule :: struct {
-	using parent: Default_Named,
-	using rule:   Rule,
+        using default_named: Default_Named,
 	costs:        Integer_Map,
 	results:      Integer_Map,
 }

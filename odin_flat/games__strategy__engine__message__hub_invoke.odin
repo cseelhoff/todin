@@ -4,5 +4,5 @@ package game
 //   - games.strategy.engine.message.HubInvoke
 
 Hub_Invoke :: struct {
-	using parent: Invoke,
+	using invoke: Invoke,
 }

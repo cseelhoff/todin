@@ -2,7 +2,7 @@ package game
 
 // Port of games.strategy.triplea.attachments.TechAbilityAttachment.
 Tech_Ability_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 
 	attack_bonus:                                 ^Integer_Map,
 	defense_bonus:                                ^Integer_Map,

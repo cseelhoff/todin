@@ -33,11 +33,6 @@ Mutable_Property :: struct {
 	resetter:      Mutable_Property_Resetter_Slot,
 }
 
-Mutable_Property_Invalid_Value_Exception :: struct {
-	message: string,
-	cause:   ^Mutable_Property_Invalid_Value_Exception,
-}
-
 
 // cast(Object) — instance. Java does an unchecked (T) value cast; in this
 // rawptr-erased port T is rawptr, so the cast is the identity.

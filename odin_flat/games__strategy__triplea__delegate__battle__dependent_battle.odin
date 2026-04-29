@@ -1,7 +1,7 @@
 package game
 
 Dependent_Battle :: struct {
-	using parent: Abstract_Battle,
+	using abstract_battle: Abstract_Battle,
 	attacking_from_map: map[^Territory][dynamic]^Unit,
 	attacking_from: map[^Territory]bool,
 	amphibious_attack_from: [dynamic]^Territory,

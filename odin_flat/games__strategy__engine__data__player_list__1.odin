@@ -4,6 +4,6 @@ package game
 // Source: PlayerList.createNullPlayer -> new GamePlayer(...) { isNull() = true }
 // No captured locals; overrides isNull() only.
 Player_List_1 :: struct {
-	using parent: Game_Player,
+	using game_player: Game_Player,
 }
 

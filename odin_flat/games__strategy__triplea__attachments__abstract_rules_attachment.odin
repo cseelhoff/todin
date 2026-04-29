@@ -1,7 +1,7 @@
 package game
 
 Abstract_Rules_Attachment :: struct {
-	using parent:    Abstract_Conditions_Attachment,
+	using abstract_conditions_attachment: Abstract_Conditions_Attachment,
 	each_multiple:   i32,
 	players:         [dynamic]^Game_Player,
 	objective_value: i32,

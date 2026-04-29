@@ -1,6 +1,6 @@
 package game
 
 Aa_Radar_Advance :: struct {
-	using parent: Tech_Advance,
+	using tech_advance: Tech_Advance,
 }
 

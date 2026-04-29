@@ -1,5 +1,5 @@
 package game
 
 Edit_Delegate :: struct {
-	using parent: Base_Persistent_Delegate,
+	using base_persistent_delegate: Base_Persistent_Delegate,
 }

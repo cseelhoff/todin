@@ -5,7 +5,7 @@ package game
 // UnitTypes. Empty collection fields default to nil/zero in Odin (matching
 // Java's null-default for memory/serialization minimization).
 Unit_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 
 	// movement related
 	is_air:                          bool,

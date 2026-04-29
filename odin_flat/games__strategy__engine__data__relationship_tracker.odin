@@ -7,6 +7,6 @@ package game
 // top-level structs here in their own files.
 
 Relationship_Tracker :: struct {
-	using parent: Game_Data_Component,
+	using game_data_component: Game_Data_Component,
 	relationships: map[^Related_Players]^Relationship,
 }

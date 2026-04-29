@@ -1,7 +1,7 @@
 package game
 
 Territory_Attachment :: struct {
-	using parent: Default_Attachment,
+	using default_attachment: Default_Attachment,
 	capital: string,
 	original_factory: bool,
 	production: i32,

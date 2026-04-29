@@ -1,7 +1,7 @@
 package game
 
 Air_Battle :: struct {
-	using parent: Abstract_Battle,
+	using abstract_battle: Abstract_Battle,
 	stack: Execution_Stack,
 	steps: [dynamic]string,
 	defending_waiting_to_die: [dynamic]^Unit,

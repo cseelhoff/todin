@@ -7,6 +7,6 @@ package game
 // title is stored in the parent's userObject.
 
 History_Node :: struct {
-	using parent: Default_Mutable_Tree_Node,
+	using default_mutable_tree_node: Default_Mutable_Tree_Node,
 }
 

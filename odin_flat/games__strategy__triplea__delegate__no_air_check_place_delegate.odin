@@ -6,6 +6,6 @@ package game
 // This extended delegate exists solely to do everything PlaceDelegate does, but NOT check for air
 // that can't land.
 No_Air_Check_Place_Delegate :: struct {
-	using parent: Place_Delegate,
+	using place_delegate: Place_Delegate,
 }
 

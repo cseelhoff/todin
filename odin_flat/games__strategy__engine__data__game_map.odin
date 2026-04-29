@@ -3,7 +3,7 @@ package game
 import "core:fmt"
 
 Game_Map :: struct {
-	using parent:     Game_Data_Component,
+	using game_data_component: Game_Data_Component,
 	territories:      [dynamic]^Territory,
 	connections:      map[^Territory]map[^Territory]struct{},
 	territory_lookup: map[string]^Territory,
@@ -432,6 +432,7 @@ game_map_get_neighbors_set_set_distance_bipredicate :: proc(
 			}
 		}
 	}
+	searched := searched
 	for n in new_frontier {
 		searched[n] = {}
 	}
@@ -500,6 +501,7 @@ game_map_get_neighbors_ignore_end_set_set :: proc(
 			new_frontier[n] = {}
 		}
 	}
+	searched := searched
 	for n in new_frontier {
 		searched[n] = {}
 	}

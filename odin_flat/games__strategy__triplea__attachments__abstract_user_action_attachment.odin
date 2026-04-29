@@ -1,7 +1,7 @@
 package game
 
 Abstract_User_Action_Attachment :: struct {
-	using parent: Abstract_Conditions_Attachment,
+	using abstract_conditions_attachment: Abstract_Conditions_Attachment,
 	text: string,
 	cost_pu: i32,
 	cost_resources: Integer_Map_Resource,

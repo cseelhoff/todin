@@ -1,7 +1,7 @@
 package game
 
 Finished_Battle :: struct {
-	using parent: Abstract_Battle,
+	using abstract_battle: Abstract_Battle,
 	amphibious_attack_from: [dynamic]^Territory,
 	attacking_from_map: map[^Territory][dynamic]^Unit,
 }

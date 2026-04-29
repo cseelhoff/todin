@@ -1,7 +1,7 @@
 package game
 
 Integer_Client_Setting :: struct {
-	using parent: Client_Setting,
+	using client_setting: Client_Setting,
 }
 
 // Java owners covered by this file:

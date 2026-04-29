@@ -1,5 +1,5 @@
 package game
 
 Territory_Effect :: struct {
-	using parent: Named_Attachable,
+	using named_attachable: Named_Attachable,
 }

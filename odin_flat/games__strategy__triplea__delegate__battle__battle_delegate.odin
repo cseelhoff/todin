@@ -1,7 +1,7 @@
 package game
 
 Battle_Delegate :: struct {
-	using parent: Base_Triple_A_Delegate,
+	using base_triple_a_delegate: Base_Triple_A_Delegate,
 	battle_tracker: ^Battle_Tracker,
 	need_to_initialize: bool,
 	need_to_scramble: bool,
