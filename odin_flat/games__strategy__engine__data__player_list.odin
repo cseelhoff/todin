@@ -2,10 +2,10 @@ package game
 
 // games.strategy.engine.data.PlayerList
 //
-// All players in the game, keyed by name (also keeps insertion order via
-// the dynamic array for iteration parity with Java's List<GamePlayer>).
+// Wrapper around the set of players in a game.
 
 Player_List :: struct {
-	players: map[string]^Game_Player,
-	order:   [dynamic]^Game_Player,
+	using parent: Game_Data_Component,
+	players:      map[string]^Game_Player,
+	null_player:  ^Game_Player,
 }

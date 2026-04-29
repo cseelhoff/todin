@@ -6,10 +6,9 @@ package game
 // optional TerritoryAttachment.
 
 Territory :: struct {
-	using named:           Named,
-	water:                 bool,
-	owner:                 ^Game_Player,
-	unit_collection:       ^Unit_Collection,
-	territory_attachment:  ^Territory_Attachment,
-	neighbors:             [dynamic]^Territory,
+	using named:          Named,
+	water:                bool,
+	owner:                ^Game_Player,
+	unit_collection:      ^Unit_Collection,
+	territory_attachment: ^Territory_Attachment,
 }

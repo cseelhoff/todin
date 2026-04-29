@@ -13,6 +13,9 @@ Property_Value :: union {
 }
 
 Game_Properties :: struct {
+	using game_data_component: Game_Data_Component,
 	constant_properties: map[string]Property_Value,
-	editable_properties: map[string]^Abstract_Editable_Property,
+	editable_properties: map[string]^Editable_Property,
+	ordering: [dynamic]string,
+	player_properties: map[string]^Editable_Property,
 }

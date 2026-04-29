@@ -74,12 +74,29 @@ EXCLUDED_PACKAGE_PREFIXES = (
 # explicitly allowed as fields/parents.
 UI_PACKAGE_PREFIXES = ("javax.swing.", "java.awt.")
 UI_ALLOWED_TYPES = {"java.awt.Point", "java.awt.Color"}
+# TripleA's own Swing helper package (`org.triplea.swing.*`) is also a UI
+# boundary: any engine class that takes one of its types as a field or
+# method-signature element is real UI client code (e.g. the startup-mc /
+# selector-panel models that thread a Swing parent through their public
+# API). Treat those references the same as raw javax.swing/java.awt refs
+# when seeding the taint set.
+UI_TRIPLEA_PREFIXES = ("org.triplea.swing.",)
 
 
 def _is_ui_jdk(fqcn: str) -> bool:
+    """Direct Swing/AWT JDK widget type, excluding the Point/Color value types."""
     if not fqcn or fqcn in UI_ALLOWED_TYPES:
         return False
     return fqcn.startswith(UI_PACKAGE_PREFIXES)
+
+
+def _is_ui_taint_source(fqcn: str) -> bool:
+    """Type whose appearance as a field/method-signature element should taint
+    the referencing TripleA class. Same as `_is_ui_jdk` plus the TripleA-side
+    `org.triplea.swing.*` helper package."""
+    if not fqcn or fqcn in UI_ALLOWED_TYPES:
+        return False
+    return fqcn.startswith(UI_PACKAGE_PREFIXES) or fqcn.startswith(UI_TRIPLEA_PREFIXES)
 
 
 def find_class_dirs(triplea: Path) -> list[Path]:
@@ -500,15 +517,44 @@ def main() -> None:
 
     # ---- compute UI taint set ----
     # Step 1: a class is directly tainted if any of its ext/impl parents is
-    # a Swing/AWT widget type (excluding Point/Color value types).
+    # a Swing/AWT widget type (excluding Point/Color value types), OR if
+    # any of its field types or any of its method-signature types (params
+    # / return / generic args harvested from javap source-form lines) is a
+    # UI boundary type. The signature-level seed catches engine classes
+    # like ClientModel that never extend a Swing widget but thread
+    # `java.awt.Component` / `java.awt.Frame` / `org.triplea.swing.*`
+    # through their public API — those classes are real Swing client
+    # code and must not enter the structs table.
     # Step 2: propagate transitively across TripleA-internal extends/implements
     # so a subclass of a tainted TripleA class is itself tainted.
     triplea_parents: dict[str, list[str]] = {}
     ui_tainted: set[str] = set()
-    for fqcn, ext, impl, _methods, _field_deps in parsed:
+    for fqcn, ext, impl, methods, field_deps in parsed:
         parents = ext + impl
         triplea_parents[fqcn] = [p for p in parents if not _excluded(p)]
+        # the `org.triplea.swing.*` helper package is itself UI by
+        # definition — taint regardless of ancestry, in case a helper
+        # there doesn't directly extend a Swing widget.
+        if fqcn.startswith(UI_TRIPLEA_PREFIXES):
+            ui_tainted.add(fqcn)
+            continue
         if any(_is_ui_jdk(p) for p in parents):
+            ui_tainted.add(fqcn)
+            continue
+        # field-type seed
+        if any(_is_ui_taint_source(t) for t in field_deps):
+            ui_tainted.add(fqcn)
+            continue
+        # method-signature seed: scan every per-method struct dep, which
+        # already includes the method's descriptor classes plus any
+        # generic-erased classes harvested from the javap source-form
+        # method header.
+        sig_hit = False
+        for m in methods:
+            if any(_is_ui_taint_source(t) for t in m["deps_struct"]):
+                sig_hit = True
+                break
+        if sig_hit:
             ui_tainted.add(fqcn)
     # transitive closure (TripleA-internal subclassing)
     changed = True
