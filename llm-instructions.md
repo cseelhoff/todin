@@ -285,6 +285,19 @@ Phase C starts only after Phase A and Phase B are 100% complete.
   use a primitive (BigDecimal → `f64`).
 - **Functional interface.** Use Odin's `proc` type literal:
   `predicate: proc(^Unit) -> bool`.
+
+  **Closure capture (Predicate / BiPredicate / Function).** When a
+  Java lambda captures variables (e.g.
+  `predicate.test(it) → other.test(it, captured_x)`), Odin's bare
+  `proc` type cannot carry environment. Convention: pair the proc
+  with a `rawptr` userdata, i.e. method signatures take
+  `predicate: proc(rawptr, ^T) -> bool, predicate_ctx: rawptr`. A
+  Predicate→BiPredicate (or similar) adapter heap-allocates a
+  small ctx struct holding the inner predicate + its ctx, and
+  passes that struct's pointer as `rawptr`. For non-capturing
+  lambdas / method references, prefer the simpler
+  `proc(^T) -> bool` form (no ctx needed). Adopt the rawptr form
+  ONLY when the Java code actually captures.
 - **Reflection.** Replace with explicit code.
 - **Swing/AWT/UI.** Should not be flagged
   `actually_called_in_ai_test = 1`. If it is, the JaCoCo filter is

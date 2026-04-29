@@ -10,6 +10,25 @@ Default_Named_Base :: struct {
 	name: string,
 }
 
+// Runtime discriminator for Java `instanceof` checks against Named
+// subtypes that the JVM exposes as distinct classes. Default zero
+// value `.Other` covers every embedding struct whose constructor has
+// not been ported yet; constructors set this explicitly when they
+// are implemented in Phase B. The set of variants is driven by the
+// `instanceof` checks in
+// games/strategy/engine/data/GameObjectStreamData.java (canSerialize
+// and the GameObjectStreamData(Named) constructor).
+Named_Kind :: enum {
+	Other,
+	Game_Player,
+	Unit_Type,
+	Territory,
+	Production_Rule,
+	Production_Frontier,
+	I_Attachment,
+}
+
 Named :: struct {
 	base: Default_Named_Base,
+	kind: Named_Kind,
 }

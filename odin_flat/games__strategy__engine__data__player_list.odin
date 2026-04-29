@@ -9,3 +9,64 @@ Player_List :: struct {
 	players:      map[string]^Game_Player,
 	null_player:  ^Game_Player,
 }
+
+// Java: public void addPlayerId(final GamePlayer player)
+// Stores the player keyed by its name.
+player_list_add_player_id :: proc(self: ^Player_List, player: ^Game_Player) {
+	self.players[default_named_get_name(&player.parent.default_named)] = player
+}
+
+// Java: private GamePlayer createNullPlayer(GameData data)
+// Inlines `new GamePlayer("Neutral", true, false, null, false, data)` plus
+// the anonymous-subclass `isNull() -> true` override. Game_Player has no
+// dedicated is-null field; the runtime discriminator `Named_Kind.Game_Player`
+// covers serialization, and the optional/canBeDisabled/isHidden flags
+// mirror the Java ctor arguments byte-for-byte.
+player_list_create_null_player :: proc(data: ^Game_Data) -> ^Game_Player {
+	player := new(Game_Player)
+	player.parent.default_named.named.base.name = "Neutral"
+	player.parent.default_named.named.kind = .Game_Player
+	player.parent.default_named.parent.game_data = data
+	player.optional = true
+	player.can_be_disabled = false
+	player.default_type = ""
+	player.is_hidden = false
+	player.is_disabled = false
+
+	units_held := new(Unit_Collection)
+	units_held.parent.game_data = data
+	player.units_held = units_held
+
+	resources := new(Resource_Collection)
+	resources.parent.game_data = data
+	player.resources = resources
+
+	tech_frontiers := new(Technology_Frontier_List)
+	tech_frontiers.game_data_component.game_data = data
+	player.technology_frontiers = tech_frontiers
+
+	player.who_am_i = "null: no_one"
+	return player
+}
+
+// Java: public @Nullable GamePlayer getPlayerId(final String name)
+// Special-cases the null player by name, otherwise looks the player up
+// in the name → player map. Returns nil for unknown names.
+player_list_get_player_id :: proc(self: ^Player_List, name: string) -> ^Game_Player {
+	if self.null_player != nil &&
+	   default_named_get_name(&self.null_player.parent.default_named) == name {
+		return self.null_player
+	}
+	return self.players[name]
+}
+
+// Java: public List<GamePlayer> getPlayers()
+// Returns `new ArrayList<>(players.values())` — a fresh copy of the
+// player values. Caller owns the returned dynamic array.
+player_list_get_players :: proc(self: ^Player_List) -> [dynamic]^Game_Player {
+	out := make([dynamic]^Game_Player, 0, len(self.players))
+	for _, player in self.players {
+		append(&out, player)
+	}
+	return out
+}

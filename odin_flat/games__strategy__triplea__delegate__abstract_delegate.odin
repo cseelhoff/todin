@@ -1,7 +1,7 @@
 package game
 
 Abstract_Delegate :: struct {
-	name:                  string,
+	using i_delegate:      I_Delegate,
 	display_name:          string,
 	player:                ^Game_Player,
 	bridge:                ^Delegate_Bridge,

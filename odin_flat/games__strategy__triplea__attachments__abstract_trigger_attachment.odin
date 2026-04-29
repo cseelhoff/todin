@@ -5,7 +5,7 @@ Abstract_Trigger_Attachment :: struct {
 	uses: i32,
 	used_this_round: bool,
 	notification: string,
-	when: [dynamic]^Tuple(string, string),
+	when_triggers: [dynamic]^Tuple(string, string),
 }
 // Java owners covered by this file:
 //   - games.strategy.triplea.attachments.AbstractTriggerAttachment

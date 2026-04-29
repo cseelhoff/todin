@@ -11,6 +11,5 @@ Headless_Watcher_Thread_Messaging :: struct {
 Headed_Watcher_Thread_Messaging :: struct {
 	using base: Watcher_Thread_Messaging,
         parent:     ^Component,
-// Java owners covered by this file:
-//   - games.strategy.engine.framework.startup.WatcherThreadMessaging
+}
 
