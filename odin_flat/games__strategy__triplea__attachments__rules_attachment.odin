@@ -24,3 +24,19 @@ Rules_Attachment :: struct {
 	unit_presence: ^Integer_Map,
 }
 
+// Port of `RulesAttachment.isSatisfied(Map<ICondition, Boolean>)`.
+// Looks up `this` in the supplied tested-conditions map and returns the
+// pre-computed result, mirroring Java's `Preconditions.checkNotNull` /
+// `checkState` invariants with Odin asserts.
+rules_attachment_is_satisfied :: proc(
+	self: ^Rules_Attachment,
+	tested_conditions: map[^I_Condition]bool,
+) -> bool {
+	assert(self != nil)
+	assert(tested_conditions != nil)
+	key := cast(^I_Condition)rawptr(self)
+	value, ok := tested_conditions[key]
+	assert(ok)
+	return value
+}
+

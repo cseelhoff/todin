@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:strings"
+
 Trigger_Attachment :: struct {
 	using abstract_trigger_attachment:  Abstract_Trigger_Attachment,
 	frontier:                           ^Production_Frontier,
@@ -31,5 +34,387 @@ Trigger_Attachment :: struct {
 	territory_effects:                  [dynamic]^Territory_Effect,
 	territory_effect_attachment_name:   ^Tuple(string, string),
 	territory_effect_property:          [dynamic]^Tuple(string, string),
+}
+
+// Java owners covered by this file:
+//   - games.strategy.triplea.attachments.TriggerAttachment
+//
+// Predicate factories that don't capture state return a bare
+//   proc(^Trigger_Attachment) -> bool
+// matching the established convention in
+// `abstract_trigger_attachment.odin` (`notification_match`). Capturing
+// factories follow the (proc, rawptr) ctx pair convention used there.
+//
+// Optional<X> is mirrored as the raw value with a sentinel for
+// absence: empty string for Optional<String>, nil for Optional<^T>.
+
+// ---------------------------------------------------------------------------
+// Simple field accessors (`getListProperty` / `getMapProperty` /
+// `getIntegerMapProperty` in Java are pass-throughs; nil/empty Odin
+// values already iterate as empty).
+// ---------------------------------------------------------------------------
+
+// Java: private List<Tuple<String, String>> getActivateTrigger()
+trigger_attachment_get_activate_trigger :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.activate_trigger)
+}
+
+// Java: private Map<String, Map<TechAdvance, Boolean>> getAvailableTech()
+trigger_attachment_get_available_tech :: proc(self: ^Trigger_Attachment) -> map[string]map[^Tech_Advance]bool {
+	return default_attachment_get_map_property(self.available_tech)
+}
+
+// Java: private List<String> getChangeOwnership()
+trigger_attachment_get_change_ownership :: proc(self: ^Trigger_Attachment) -> [dynamic]string {
+	return default_attachment_get_list_property(self.change_ownership)
+}
+
+// Java: private Optional<ProductionFrontier> getFrontier()
+//   Optional.ofNullable(frontier) — port returns the raw pointer; nil = absent.
+trigger_attachment_get_frontier :: proc(self: ^Trigger_Attachment) -> ^Production_Frontier {
+	return self.frontier
+}
+
+// Java: private Map<Territory, IntegerMap<UnitType>> getPlacement()
+trigger_attachment_get_placement :: proc(self: ^Trigger_Attachment) -> map[^Territory]^Integer_Map {
+	return default_attachment_get_map_property(self.placement)
+}
+
+// Java: private List<Tuple<String, String>> getPlayerProperty()
+trigger_attachment_get_player_property :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.player_property)
+}
+
+// Java: private List<GamePlayer> getPlayers()
+trigger_attachment_get_players :: proc(self: ^Trigger_Attachment) -> [dynamic]^Game_Player {
+	return default_attachment_get_list_property(self.players)
+}
+
+// Java: List<String> getProductionRule()
+trigger_attachment_get_production_rule :: proc(self: ^Trigger_Attachment) -> [dynamic]string {
+	return default_attachment_get_list_property(self.production_rule)
+}
+
+// Java: private IntegerMap<UnitType> getPurchase()
+//   getIntegerMapProperty(purchase) — return raw pointer; nil = empty.
+trigger_attachment_get_purchase :: proc(self: ^Trigger_Attachment) -> ^Integer_Map {
+	return self.purchase
+}
+
+// Java: private List<String> getRelationshipChange()
+trigger_attachment_get_relationship_change :: proc(self: ^Trigger_Attachment) -> [dynamic]string {
+	return default_attachment_get_list_property(self.relationship_change)
+}
+
+// Java: private List<Tuple<String, String>> getRelationshipTypeProperty()
+trigger_attachment_get_relationship_type_property :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.relationship_type_property)
+}
+
+// Java: private List<RelationshipType> getRelationshipTypes()
+trigger_attachment_get_relationship_types :: proc(self: ^Trigger_Attachment) -> [dynamic]^Relationship_Type {
+	return default_attachment_get_list_property(self.relationship_types)
+}
+
+// Java: private Map<Territory, IntegerMap<UnitType>> getRemoveUnits()
+trigger_attachment_get_remove_units :: proc(self: ^Trigger_Attachment) -> map[^Territory]^Integer_Map {
+	return default_attachment_get_map_property(self.remove_units)
+}
+
+// Java: private Optional<String> getResource()
+//   Optional.ofNullable(resource) — empty string represents absent.
+trigger_attachment_get_resource :: proc(self: ^Trigger_Attachment) -> string {
+	return self.resource
+}
+
+// Java: private int getResourceCount()
+trigger_attachment_get_resource_count :: proc(self: ^Trigger_Attachment) -> i32 {
+	return self.resource_count
+}
+
+// Java: private Map<String, Boolean> getSupport()
+trigger_attachment_get_support :: proc(self: ^Trigger_Attachment) -> map[string]bool {
+	return default_attachment_get_map_property(self.support)
+}
+
+// Java: private List<TechAdvance> getTech()
+trigger_attachment_get_tech :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tech_Advance {
+	return default_attachment_get_list_property(self.tech)
+}
+
+// Java: private List<Territory> getTerritories()
+trigger_attachment_get_territories :: proc(self: ^Trigger_Attachment) -> [dynamic]^Territory {
+	return default_attachment_get_list_property(self.territories)
+}
+
+// Java: private List<Tuple<String, String>> getTerritoryEffectProperty()
+trigger_attachment_get_territory_effect_property :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.territory_effect_property)
+}
+
+// Java: private List<TerritoryEffect> getTerritoryEffects()
+trigger_attachment_get_territory_effects :: proc(self: ^Trigger_Attachment) -> [dynamic]^Territory_Effect {
+	return default_attachment_get_list_property(self.territory_effects)
+}
+
+// Java: private List<Tuple<String, String>> getTerritoryProperty()
+trigger_attachment_get_territory_property :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.territory_property)
+}
+
+// Java: private List<Tuple<String, String>> getUnitProperty()
+trigger_attachment_get_unit_property :: proc(self: ^Trigger_Attachment) -> [dynamic]^Tuple(string, string) {
+	return default_attachment_get_list_property(self.unit_property)
+}
+
+// Java: private List<UnitType> getUnitType()
+trigger_attachment_get_unit_type :: proc(self: ^Trigger_Attachment) -> [dynamic]^Unit_Type {
+	return default_attachment_get_list_property(self.unit_types)
+}
+
+// Java: private Optional<String> getVictory()
+//   Optional.ofNullable(victory) — empty string represents absent.
+trigger_attachment_get_victory :: proc(self: ^Trigger_Attachment) -> string {
+	return self.victory
+}
+
+// ---------------------------------------------------------------------------
+// getTriggers(GamePlayer player, Predicate<TriggerAttachment> cond)
+// Iterates `player.getAttachments()`, retains those that are
+// TriggerAttachments and satisfy `cond`. Java tests `instanceof
+// TriggerAttachment`; in the port, TriggerAttachments are the
+// attachments registered under the `Constants.TRIGGER_ATTACHMENT_PREFIX`
+// ("triggerAttachment") prefix — same convention used by
+// `political_action_attachment_get_political_action_attachments`.
+// ---------------------------------------------------------------------------
+trigger_attachment_get_triggers :: proc(
+	player: ^Game_Player,
+	cond: proc(rawptr, ^Trigger_Attachment) -> bool,
+	cond_ctx: rawptr,
+) -> map[^Trigger_Attachment]struct{} {
+	assert(cond != nil) // Preconditions.checkNotNull(cond)
+	trigs: map[^Trigger_Attachment]struct{}
+	attachments := named_attachable_get_attachments(&player.named_attachable)
+	for name, att in attachments {
+		if !strings.has_prefix(name, "triggerAttachment") {
+			continue
+		}
+		ta := cast(^Trigger_Attachment)att
+		if cond(cond_ctx, ta) {
+			trigs[ta] = {}
+		}
+	}
+	return trigs
+}
+
+// ---------------------------------------------------------------------------
+// collectForAllTriggersMatching(Set<GamePlayer>, Predicate<TriggerAttachment>)
+// Streams every player's matching triggers into one Set.
+// ---------------------------------------------------------------------------
+trigger_attachment_collect_for_all_triggers_matching :: proc(
+	players: map[^Game_Player]struct{},
+	trigger_match: proc(rawptr, ^Trigger_Attachment) -> bool,
+	trigger_match_ctx: rawptr,
+) -> map[^Trigger_Attachment]struct{} {
+	assert(trigger_match != nil) // Preconditions.checkNotNull
+	result: map[^Trigger_Attachment]struct{}
+	for player in players {
+		per_player := trigger_attachment_get_triggers(player, trigger_match, trigger_match_ctx)
+		for t in per_player {
+			result[t] = {}
+		}
+	}
+	return result
+}
+
+// ---------------------------------------------------------------------------
+// Match factories — each returns Predicate<TriggerAttachment>.
+// All of these are non-capturing → bare-proc form (no ctx).
+// ---------------------------------------------------------------------------
+
+// Java: t -> t.getFrontier().isPresent()
+trigger_attachment_lambda_prod_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return trigger_attachment_get_frontier(t) != nil
+}
+trigger_attachment_prod_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_prod_match
+}
+
+// Java: t -> !t.getProductionRule().isEmpty()
+trigger_attachment_lambda_prod_frontier_edit_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_production_rule(t)) > 0
+}
+trigger_attachment_prod_frontier_edit_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_prod_frontier_edit_match
+}
+
+// Java: t -> !t.getTech().isEmpty()
+trigger_attachment_lambda_tech_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_tech(t)) > 0
+}
+trigger_attachment_tech_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_tech_match
+}
+
+// Java: t -> !t.getAvailableTech().isEmpty()
+trigger_attachment_lambda_tech_available_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_available_tech(t)) > 0
+}
+trigger_attachment_tech_available_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_tech_available_match
+}
+
+// Java: t -> !t.getRemoveUnits().isEmpty()
+trigger_attachment_lambda_remove_units_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_remove_units(t)) > 0
+}
+trigger_attachment_remove_units_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_remove_units_match
+}
+
+// Java: t -> !t.getPlacement().isEmpty()
+trigger_attachment_lambda_place_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_placement(t)) > 0
+}
+trigger_attachment_place_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_place_match
+}
+
+// Java: t -> !t.getPurchase().isEmpty()
+trigger_attachment_lambda_purchase_match :: proc(t: ^Trigger_Attachment) -> bool {
+	p := trigger_attachment_get_purchase(t)
+	return p != nil && len(p.map_values) > 0
+}
+trigger_attachment_purchase_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_purchase_match
+}
+
+// Java: t -> t.getResource().isPresent() && t.getResourceCount() != 0
+trigger_attachment_lambda_resource_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return trigger_attachment_get_resource(t) != "" && trigger_attachment_get_resource_count(t) != 0
+}
+trigger_attachment_resource_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_resource_match
+}
+
+// Java: t -> !t.getSupport().isEmpty()
+trigger_attachment_lambda_support_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_support(t)) > 0
+}
+trigger_attachment_support_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_support_match
+}
+
+// Java: t -> !t.getChangeOwnership().isEmpty()
+trigger_attachment_lambda_change_ownership_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_change_ownership(t)) > 0
+}
+trigger_attachment_change_ownership_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_change_ownership_match
+}
+
+// Java: t -> !t.getUnitType().isEmpty() && !t.getUnitProperty().isEmpty()
+trigger_attachment_lambda_unit_property_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_unit_type(t)) > 0 && len(trigger_attachment_get_unit_property(t)) > 0
+}
+trigger_attachment_unit_property_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_unit_property_match
+}
+
+// Java: t -> !t.getTerritories().isEmpty() && !t.getTerritoryProperty().isEmpty()
+trigger_attachment_lambda_territory_property_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_territories(t)) > 0 && len(trigger_attachment_get_territory_property(t)) > 0
+}
+trigger_attachment_territory_property_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_territory_property_match
+}
+
+// Java: t -> !t.getPlayerProperty().isEmpty()
+trigger_attachment_lambda_player_property_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_player_property(t)) > 0
+}
+trigger_attachment_player_property_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_player_property_match
+}
+
+// Java: t -> !t.getRelationshipTypes().isEmpty() && !t.getRelationshipTypeProperty().isEmpty()
+trigger_attachment_lambda_relationship_type_property_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_relationship_types(t)) > 0 && len(trigger_attachment_get_relationship_type_property(t)) > 0
+}
+trigger_attachment_relationship_type_property_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_relationship_type_property_match
+}
+
+// Java: t -> !t.getTerritoryEffects().isEmpty() && !t.getTerritoryEffectProperty().isEmpty()
+trigger_attachment_lambda_territory_effect_property_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_territory_effects(t)) > 0 && len(trigger_attachment_get_territory_effect_property(t)) > 0
+}
+trigger_attachment_territory_effect_property_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_territory_effect_property_match
+}
+
+// Java: t -> !t.getRelationshipChange().isEmpty()
+trigger_attachment_lambda_relationship_change_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_relationship_change(t)) > 0
+}
+trigger_attachment_relationship_change_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_relationship_change_match
+}
+
+// Java: t -> !t.getVictory().orElse("").isEmpty()
+trigger_attachment_lambda_victory_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return trigger_attachment_get_victory(t) != ""
+}
+trigger_attachment_victory_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_victory_match
+}
+
+// Java: t -> !t.getActivateTrigger().isEmpty()
+trigger_attachment_lambda_activate_trigger_match :: proc(t: ^Trigger_Attachment) -> bool {
+	return len(trigger_attachment_get_activate_trigger(t)) > 0
+}
+trigger_attachment_activate_trigger_match :: proc() -> proc(^Trigger_Attachment) -> bool {
+	return trigger_attachment_lambda_activate_trigger_match
+}
+
+// ---------------------------------------------------------------------------
+// Captured-state lambda bodies (synthetic Java method signatures keep
+// the captured variables as leading parameters).
+// ---------------------------------------------------------------------------
+
+// Java: lambda$getVictoryOrThrow$28 — Supplier<IllegalStateException>
+//   () -> new IllegalStateException(String.format(
+//             "No expected victory for TriggerAttachment %s", this))
+// Captures `this`. Returns the message that would be thrown.
+trigger_attachment_lambda_get_victory_or_throw_28 :: proc(self: ^Trigger_Attachment) -> string {
+	return fmt.aprintf("No expected victory for TriggerAttachment %v", self)
+}
+
+// Java: lambda$setSupport$29(String name, UnitSupportAttachment support)
+//   support -> support.getName().equals(name)
+trigger_attachment_lambda_set_support_29 :: proc(name: string, support: ^Unit_Support_Attachment) -> bool {
+	return support.name == name
+}
+
+// Java: lambda$triggerSupportChange$7(Map.Entry<String,Boolean> entry,
+//                                     UnitSupportAttachment s)
+//   s -> s.getName().equals(entry.getKey())
+// Map.Entry's "key" is the support-name string.
+trigger_attachment_lambda_trigger_support_change_7 :: proc(entry_key: string, s: ^Unit_Support_Attachment) -> bool {
+	return s.name == entry_key
+}
+
+// Java: lambda$triggerSupportChange$8(Map.Entry<String,Boolean> entry)
+//   () -> new IllegalStateException(
+//             "Could not find unitSupportAttachment. name: " + entry.getKey())
+trigger_attachment_lambda_trigger_support_change_8 :: proc(entry_key: string) -> string {
+	return fmt.aprintf("Could not find unitSupportAttachment. name: %s", entry_key)
+}
+
+// Java: lambda$triggerTerritoryPropertyChange$3(Territory territory)
+//   () -> new IllegalStateException(
+//             "Triggers: No territory attachment for: " + territory.getName())
+trigger_attachment_lambda_trigger_territory_property_change_3 :: proc(territory: ^Territory) -> string {
+	return fmt.aprintf("Triggers: No territory attachment for: %s", default_named_get_name(&territory.named_attachable.default_named))
 }
 

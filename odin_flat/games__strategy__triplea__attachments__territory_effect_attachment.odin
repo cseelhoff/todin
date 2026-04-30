@@ -11,3 +11,59 @@ Territory_Effect_Attachment :: struct {
 	units_not_allowed:     [dynamic]^Unit_Type,
 }
 
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#get(TerritoryEffect, String)
+//   static TerritoryEffectAttachment get(TerritoryEffect te, String nameOfAttachment) {
+//       return getAttachment(te, nameOfAttachment, TerritoryEffectAttachment.class);
+//   }
+// `Territory_Effect` embeds `Named_Attachable`, whose attachment map stores
+// `^I_Attachment` values keyed by name. Java's `getAttachment` would
+// `Optional.orElseThrow` on a missing key; this port returns nil, matching
+// the convention used by `relationship_type_attachment_get` and other
+// sibling static accessors.
+territory_effect_attachment_get :: proc(te: ^Territory_Effect, name_of_attachment: string) -> ^Territory_Effect_Attachment {
+	return cast(^Territory_Effect_Attachment)named_attachable_get_attachment(&te.named_attachable, name_of_attachment)
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getCombatDefenseEffect()
+//   private IntegerMap<UnitType> getCombatDefenseEffect() {
+//       return getIntegerMapProperty(combatDefenseEffect);
+//   }
+// Java's `getIntegerMapProperty` substitutes a fresh empty IntegerMap when
+// the field is null. The Odin field is an `Integer_Map` value (not a
+// nullable pointer), so the unset state is already a zero-valued struct
+// with a nil inner map — semantically equivalent to "empty" for reads.
+territory_effect_attachment_get_combat_defense_effect :: proc(self: ^Territory_Effect_Attachment) -> Integer_Map {
+	return self.combat_defense_effect
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getCombatOffenseEffect()
+//   private IntegerMap<UnitType> getCombatOffenseEffect() {
+//       return getIntegerMapProperty(combatOffenseEffect);
+//   }
+// See note on getCombatDefenseEffect — same passthrough rationale.
+territory_effect_attachment_get_combat_offense_effect :: proc(self: ^Territory_Effect_Attachment) -> Integer_Map {
+	return self.combat_offense_effect
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getMovementCostModifier()
+//   public Map<UnitType, BigDecimal> getMovementCostModifier() {
+//       return getMapProperty(movementCostModifier);
+//   }
+// `default_attachment_get_map_property` returns the map as-is (a nil map
+// iterates as empty in Odin), matching Java's null→empty substitution.
+territory_effect_attachment_get_movement_cost_modifier :: proc(self: ^Territory_Effect_Attachment) -> map[^Unit_Type]f64 {
+	return default_attachment_get_map_property(self.movement_cost_modifier)
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getNoBlitz()
+//   public List<UnitType> getNoBlitz() { return getListProperty(noBlitz); }
+territory_effect_attachment_get_no_blitz :: proc(self: ^Territory_Effect_Attachment) -> [dynamic]^Unit_Type {
+	return default_attachment_get_list_property(self.no_blitz)
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getUnitsNotAllowed()
+//   public List<UnitType> getUnitsNotAllowed() { return getListProperty(unitsNotAllowed); }
+territory_effect_attachment_get_units_not_allowed :: proc(self: ^Territory_Effect_Attachment) -> [dynamic]^Unit_Type {
+	return default_attachment_get_list_property(self.units_not_allowed)
+}
+

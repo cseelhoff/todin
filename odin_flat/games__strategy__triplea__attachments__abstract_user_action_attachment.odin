@@ -10,3 +10,17 @@ Abstract_User_Action_Attachment :: struct {
 	action_accept: [dynamic]^Game_Player,
 }
 
+abstract_user_action_attachment_can_perform :: proc(
+	self: ^Abstract_User_Action_Attachment,
+	tested_conditions: map[^I_Condition]bool,
+) -> bool {
+	return self.conditions == nil ||
+		abstract_conditions_attachment_is_satisfied(&self.abstract_conditions_attachment, tested_conditions)
+}
+
+abstract_user_action_attachment_has_attempts_left :: proc(
+	self: ^Abstract_User_Action_Attachment,
+) -> bool {
+	return self.attempts_left_this_turn > 0
+}
+

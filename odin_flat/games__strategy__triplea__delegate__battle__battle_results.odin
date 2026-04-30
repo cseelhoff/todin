@@ -8,3 +8,11 @@ Battle_Results :: struct {
 	who_won:                    I_Battle_Who_Won,
 }
 
+battle_results_get_remaining_attacking_units :: proc(self: ^Battle_Results) -> [dynamic]^Unit {
+	return self.remaining_attacking_units
+}
+
+battle_results_get_remaining_defending_units :: proc(self: ^Battle_Results) -> [dynamic]^Unit {
+	return self.remaining_defending_units
+}
+
