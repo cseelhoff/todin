@@ -14,3 +14,11 @@ in_game_lobby_watcher_wrapper_get_game_id :: proc(self: ^In_Game_Lobby_Watcher_W
 	}
 	return self.lobby_watcher.game_id
 }
+
+in_game_lobby_watcher_wrapper_get_in_game_lobby_watcher :: proc(self: ^In_Game_Lobby_Watcher_Wrapper) -> ^In_Game_Lobby_Watcher {
+	return self.lobby_watcher
+}
+
+in_game_lobby_watcher_wrapper_set_in_game_lobby_watcher :: proc(self: ^In_Game_Lobby_Watcher_Wrapper, watcher: ^In_Game_Lobby_Watcher) {
+	self.lobby_watcher = watcher
+}

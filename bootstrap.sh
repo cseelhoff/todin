@@ -146,6 +146,13 @@ step 7 "build methods + structs tables (SCC-layered)"
 python3 "$SCRIPTS/build_called_layered_tables.py" --db "$PORT_DB"
 
 # ---------------------------------------------------------------------------
+# 7b. Auto-mark trivially-implemented methods (abstract interface + UI/IO
+#     lambdas) so the orchestrator doesn't re-dispatch them forever.
+# ---------------------------------------------------------------------------
+step "7b" "auto-mark abstract-interface + UI lambda methods is_implemented=1"
+python3 "$SCRIPTS/auto_implement_trivial_methods.py" --db "$PORT_DB"
+
+# ---------------------------------------------------------------------------
 # 8. ID-based design what-if layering (resolves cycles)
 # ---------------------------------------------------------------------------
 step 8 "ID-based design layering (id_design_layer, scc_id)"

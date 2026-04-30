@@ -6,3 +6,9 @@ Vault_1 :: struct {
 	outer: ^Vault,
 }
 
+vault_1_new :: proc(outer: ^Vault) -> ^Vault_1 {
+	self := new(Vault_1)
+	self.outer = outer
+	return self
+}
+

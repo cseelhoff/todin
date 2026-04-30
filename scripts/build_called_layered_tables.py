@@ -212,11 +212,19 @@ def main() -> None:
     #  - interface methods (e.g. IEditableProperty#getValue()) only
     #    recorded against the concrete subclass; callers that hold the
     #    interface type need the abstract proc to call into.
-    # The first pass also folds in `struct -> proc` edges from constant-
-    # pool method references (`Foo::new`, `Foo::bar`) attributed at
-    # class scope by extract_entities.py: any struct whose method is in
-    # `methods` may cp-reference further procs through method-reference
-    # syntax that javap's `-c` invokedynamic comment doesn't expose.
+    #
+    # IMPORTANT: closure is proc->proc only. We deliberately do NOT
+    # follow `struct -> proc` edges here. Constant-pool references
+    # attributed at class scope by extract_entities.py include every
+    # type mentioned in field declarations and constructor signatures,
+    # which causes massive overshoot (e.g. ServerGame's constructor
+    # signature mentioning InGameLobbyWatcherWrapper would otherwise
+    # drag in the entire lobby/network/auth subsystem -- thousands of
+    # methods that the AI snapshot never executes). If a struct->proc
+    # edge corresponds to a real call, the call also exists at the
+    # method level (the constructor or static initializer that does
+    # the actual `Foo::bar` lookup), so the proc->proc pass picks it
+    # up there.
     while True:
         added_calls = cur.execute("""
             INSERT OR IGNORE INTO methods
@@ -231,10 +239,7 @@ def main() -> None:
             JOIN dependencies d ON d.depends_on_key = e.primary_key
             WHERE e.primary_key LIKE 'proc:%'
               AND e.is_ui = 0
-              AND (
-                   d.primary_key IN (SELECT method_key FROM methods)
-                OR d.primary_key IN (SELECT owner_struct_key FROM methods)
-              )
+              AND d.primary_key IN (SELECT method_key FROM methods)
               AND d.depends_on_key NOT IN (SELECT method_key FROM methods)
         """).rowcount
         if not added_calls:

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Lobby_Watcher_Keep_Alive_Task :: struct {
 	game_id:           string,
 	game_id_setter:    proc(_: string),
@@ -19,4 +21,10 @@ make_Lobby_Watcher_Keep_Alive_Task :: proc(
 	self.keep_alive_sender = keep_alive_sender
 	self.game_poster = game_poster
 	return self
+}
+
+lobby_watcher_keep_alive_task_message_connectivity_check_fails :: proc(self: ^Lobby_Watcher_Keep_Alive_Task) {
+	fmt.eprintln(
+		"Failed to re-post game back to the lobby, connectivity check to your host failed. This is unexpected and means your host is no longer reachable from the public internet, your game is no longer listed on the lobby.",
+	)
 }

@@ -23,3 +23,40 @@ Server_Launcher :: struct {
 	game_relay_server:                         ^Game_Relay_Server,
 }
 
+// Java: lambda inside `launchInternal` passed to `Interruptibles.await`.
+//   () -> {
+//     if (!abortLaunch
+//         && !errorLatch.await(
+//             ClientSetting.serverObserverJoinWaitTime.getValueOrThrow(),
+//             TimeUnit.SECONDS)) {
+//       log.warn("Waiting on error latch timed out!");
+//     }
+//   }
+// `serverObserverJoinWaitTime` defaults to 180 in
+// ClientSetting.java; inlined here because the IntegerClientSetting
+// global is not part of the AI snapshot harness surface.
+server_launcher_lambda_launch_internal_0 :: proc(self: ^Server_Launcher) {
+	if !self.abort_launch &&
+		!count_down_latch_await_timeout(self.error_latch, 180, .SECONDS) {
+		// Java: log.warn("Waiting on error latch timed out!")
+	}
+}
+
+// Java: ServerReady.countDownAll — release every pending client slot.
+//   for (int i = 0; i < clients; i++) latch.countDown();
+server_launcher_server_ready_count_down_all :: proc(self: ^Server_Launcher_Server_Ready) {
+	for i: i32 = 0; i < self.clients; i += 1 {
+		count_down_latch_count_down(self.latch)
+	}
+}
+
+// Java: lambda inside ServerReady.await passed to Interruptibles.await.
+//   () -> latch.await(timeout, timeUnit)
+server_launcher_server_ready_lambda_await_0 :: proc(
+	self: ^Server_Launcher_Server_Ready,
+	timeout: i64,
+	unit: Time_Unit,
+) -> bool {
+	return count_down_latch_await_timeout(self.latch, timeout, unit)
+}
+

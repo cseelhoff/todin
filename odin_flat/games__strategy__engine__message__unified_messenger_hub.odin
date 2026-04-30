@@ -8,3 +8,7 @@ Unified_Messenger_Hub :: struct {
 	invocations:      map[Uuid]^Invocation_In_Progress,
 }
 
+unified_messenger_hub_lambda_message_received_0 :: proc(k: string) -> [dynamic]^I_Node {
+	return make([dynamic]^I_Node)
+}
+
