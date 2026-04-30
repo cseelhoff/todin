@@ -14,3 +14,7 @@ Scramble_Logic :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.ScrambleLogic
 
+scramble_logic_get_airbase_that_can_scramble_predicate :: proc(self: ^Scramble_Logic) -> proc(u: ^Unit) -> bool {
+	return self.airbase_that_can_scramble_predicate
+}
+
