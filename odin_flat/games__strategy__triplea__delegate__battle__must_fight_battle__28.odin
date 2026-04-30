@@ -8,3 +8,9 @@ Must_Fight_Battle_28 :: struct {
 	this_0:             ^Must_Fight_Battle,
 }
 
+must_fight_battle_28_new :: proc(outer: ^Must_Fight_Battle) -> ^Must_Fight_Battle_28 {
+	self := new(Must_Fight_Battle_28)
+	self.this_0 = outer
+	return self
+}
+

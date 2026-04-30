@@ -9,3 +9,10 @@ Must_Fight_Battle_29 :: struct {
 	loop:               ^I_Executable,
 }
 
+must_fight_battle_29_new :: proc(outer: ^Must_Fight_Battle, executable: ^I_Executable) -> ^Must_Fight_Battle_29 {
+	self := new(Must_Fight_Battle_29)
+	self.this_0 = outer
+	self.loop = executable
+	return self
+}
+

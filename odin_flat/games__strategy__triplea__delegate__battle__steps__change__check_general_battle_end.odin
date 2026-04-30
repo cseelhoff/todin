@@ -9,3 +9,74 @@ Check_General_Battle_End :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd
 
+check_general_battle_end_new :: proc(
+	battle_state: ^Battle_State,
+	battle_actions: ^Battle_Actions,
+) -> ^Check_General_Battle_End {
+	self := new(Check_General_Battle_End)
+	self.battle_state = battle_state
+	self.battle_actions = battle_actions
+	return self
+}
+
+check_general_battle_end_get_all_step_details :: proc(
+	self: ^Check_General_Battle_End,
+) -> [dynamic]^Battle_Step_Step_Details {
+	return make([dynamic]^Battle_Step_Step_Details)
+}
+
+check_general_battle_end_get_battle_actions :: proc(
+	self: ^Check_General_Battle_End,
+) -> ^Battle_Actions {
+	return self.battle_actions
+}
+
+check_general_battle_end_get_battle_state :: proc(
+	self: ^Check_General_Battle_End,
+) -> ^Battle_State {
+	return self.battle_state
+}
+
+check_general_battle_end_get_order :: proc(
+	self: ^Check_General_Battle_End,
+) -> Battle_Step_Order {
+	return .GENERAL_BATTLE_END_CHECK
+}
+
+check_general_battle_end_has_no_targets :: proc(
+	self: ^Check_General_Battle_End,
+	firing_groups: [dynamic]^Firing_Group,
+) -> bool {
+	return len(firing_groups) == 0
+}
+
+// Mirrors Java `Predicate<Unit> inAnyFiringGroup(Iterable<FiringGroup>)`.
+// The returned rawptr is a heap-allocated capture of `firing_groups`
+// to be passed alongside `check_general_battle_end_lambda_in_any_firing_group_1`.
+check_general_battle_end_in_any_firing_group :: proc(
+	self: ^Check_General_Battle_End,
+	firing_groups: [dynamic]^Firing_Group,
+) -> rawptr {
+	captured := new([dynamic]^Firing_Group)
+	captured^ = firing_groups
+	return rawptr(captured)
+}
+
+check_general_battle_end_lambda_can_attacker_retreat_in_stalemate_2 :: proc(b: bool) -> bool {
+	return b
+}
+
+check_general_battle_end_lambda_in_any_firing_group_1 :: proc(
+	firing_groups: [dynamic]^Firing_Group,
+	u: ^Unit,
+) -> bool {
+	for fg in firing_groups {
+		for unit in fg.firing_units {
+			if unit == u {
+				return true
+			}
+		}
+	}
+	return false
+}
+

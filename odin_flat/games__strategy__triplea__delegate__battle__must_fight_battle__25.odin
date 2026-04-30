@@ -5,3 +5,9 @@ package game
 
 Must_Fight_Battle_25 :: struct {}
 
+must_fight_battle_25_new :: proc(outer: ^Must_Fight_Battle) -> ^Must_Fight_Battle_25 {
+	self := new(Must_Fight_Battle_25)
+	_ = outer
+	return self
+}
+
