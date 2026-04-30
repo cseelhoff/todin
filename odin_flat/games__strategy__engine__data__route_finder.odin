@@ -5,7 +5,8 @@ import "core:slice"
 Route_Finder :: struct {
 	move_validator: ^Move_Validator,
 	game_map:       ^Game_Map,
-	condition:      proc(t: ^Territory) -> bool,
+	condition:      proc(rawptr, ^Territory) -> bool,
+	condition_ctx:  rawptr,
 	units:          [dynamic]^Unit,
 	player:         ^Game_Player,
 }
@@ -58,6 +59,7 @@ route_finder_find_route_by_cost_with_cost_fn :: proc(
 			self,
 			current,
 			self.condition,
+			self.condition_ctx,
 			self.units,
 			self.player,
 		)
@@ -130,4 +132,39 @@ route_finder_get_route :: proc(
 	}
 	delete(territories)
 	return route
+}
+
+// Mirrors the Java lambda `t -> BigDecimal.ONE` inside
+// RouteFinder#findRouteByDistance, used as the per-territory cost function
+// passed to findRouteByCost. BigDecimal collapses to f64 per the port
+// rules, so BigDecimal.ONE becomes 1.0.
+route_finder_lambda_find_route_by_distance_0 :: proc(territory: ^Territory) -> f64 {
+	return 1.0
+}
+
+// Mirrors the private all-args RouteFinder constructor synthesized by
+// Lombok's @RequiredArgsConstructor(access = PRIVATE): assigns each final
+// field directly. Java's `Predicate<Territory> condition` is translated
+// per llm-instructions.md's closure-capture rule into a paired
+// `proc(rawptr, ^Territory) -> bool` plus its `rawptr` userdata so
+// capturing predicates from Java callers survive the port. The Collection
+// is `Collection<Unit>` per the Java declaration; we accept the already-
+// materialized [dynamic]^Unit. `player` is @Nullable in Java, so a nil
+// pointer is allowed here.
+route_finder_new :: proc(
+	move_validator: ^Move_Validator,
+	game_map: ^Game_Map,
+	predicate: proc(rawptr, ^Territory) -> bool,
+	predicate_ctx: rawptr,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^Route_Finder {
+	self := new(Route_Finder)
+	self.move_validator = move_validator
+	self.game_map = game_map
+	self.condition = predicate
+	self.condition_ctx = predicate_ctx
+	self.units = units
+	self.player = player
+	return self
 }

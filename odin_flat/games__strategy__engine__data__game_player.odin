@@ -82,6 +82,12 @@ game_player_get_technology_frontier_list :: proc(self: ^Game_Player) -> ^Technol
 	return self.technology_frontiers
 }
 
+// Java: @Getter private final ResourceCollection resources;
+// Lombok-generated `public ResourceCollection getResources()`.
+game_player_get_resources :: proc(self: ^Game_Player) -> ^Resource_Collection {
+	return self.resources
+}
+
 // Java: @Override public String getType() { return UnitHolder.PLAYER; }
 // UnitHolder.PLAYER == "P".
 game_player_get_type :: proc(self: ^Game_Player) -> string {
@@ -157,4 +163,45 @@ game_player_set_who_am_i :: proc(self: ^Game_Player, encoded_type: string) {
 // Caller owns the returned string.
 game_player_to_string :: proc(self: ^Game_Player) -> string {
    return strings.concatenate({"PlayerId named: ", default_named_get_name(&self.named_attachable.default_named)})
+}
+
+// Java: @Getter private RepairFrontier repairFrontier; → Lombok-generated
+// `public RepairFrontier getRepairFrontier() { return this.repairFrontier; }`.
+game_player_get_repair_frontier :: proc(self: ^Game_Player) -> ^Repair_Frontier {
+	return self.repair_frontier
+}
+
+// Java: public boolean isDefaultTypeAi() { return DEFAULT_TYPE_AI.equals(defaultType); }
+// DEFAULT_TYPE_AI == "AI". Java String.equals returns false for null receiver
+// targets; here defaultType may be the empty string when unset, so a plain
+// equality check matches the Java semantics.
+game_player_is_default_type_ai :: proc(self: ^Game_Player) -> bool {
+	return self.default_type == "AI"
+}
+
+// Java: public boolean getOptional() { return optional; }
+game_player_get_optional :: proc(self: ^Game_Player) -> bool {
+	return self.optional
+}
+
+// Java: public boolean getIsDisabled() { return isDisabled; }
+game_player_get_is_disabled :: proc(self: ^Game_Player) -> bool {
+	return self.is_disabled
+}
+
+// Java: public boolean isDefaultTypeDoesNothing() { return DEFAULT_TYPE_DOES_NOTHING.equals(defaultType); }
+// DEFAULT_TYPE_DOES_NOTHING == "DoesNothing". Mirrors game_player_is_default_type_ai.
+game_player_is_default_type_does_nothing :: proc(self: ^Game_Player) -> bool {
+	return self.default_type == "DoesNothing"
+}
+
+// Java: @Getter private String whoAmI → public String getWhoAmI()
+// Lombok-generated accessor; returns the encoded "<type>:<name>" string.
+game_player_get_who_am_i :: proc(self: ^Game_Player) -> string {
+	return self.who_am_i
+}
+
+// Java: public boolean getCanBeDisabled() { return canBeDisabled; }
+game_player_get_can_be_disabled :: proc(self: ^Game_Player) -> bool {
+	return self.can_be_disabled
 }

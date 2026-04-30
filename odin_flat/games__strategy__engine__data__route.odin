@@ -193,3 +193,9 @@ route_is_unload :: proc(self: ^Route) -> bool {
 route_iterator :: proc(self: ^Route) -> [dynamic]^Territory {
 	return route_get_all_territories(self)
 }
+
+// Mirrors Java Route#getStart() (Lombok @Getter on `private final Territory
+// start`). Returns the route's start territory.
+route_get_start :: proc(self: ^Route) -> ^Territory {
+	return self.start
+}

@@ -21,3 +21,7 @@ change_attachment_change_lambda_new_0 :: proc(property: string) -> string {
 	return result
 }
 
+change_attachment_change_get_attachment_name :: proc(self: ^Change_Attachment_Change) -> string {
+	return self.attachment_name
+}
+

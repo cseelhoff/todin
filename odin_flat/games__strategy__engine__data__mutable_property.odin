@@ -332,3 +332,21 @@ lambda_mutable_property_no_string_setter_1 :: proc(value: string) {
 	_ = value
 	panic("No String Setter has been defined!")
 }
+
+// noSetter() — static factory returning a ThrowingConsumer<T, Exception>
+// that always throws UnsupportedOperationException("No Setter has been
+// defined!"). Mirrors the Java `noSetter()` helper that builds the
+// "no setter" slot consumed by ofReadOnly / ofReadOnlySimple.
+mutable_property_no_setter_impl :: proc(ctx: rawptr, value: rawptr) -> Maybe(string) {
+	_ = ctx
+	_ = value
+	panic("No Setter has been defined!")
+}
+mutable_property_no_setter :: proc() -> Mutable_Property_Setter_Slot {
+	return Mutable_Property_Setter_Slot{fn = mutable_property_no_setter_impl, ctx = nil}
+}
+
+// resetValue() — instance. Calls resetter.run().
+mutable_property_reset_value :: proc(self: ^Mutable_Property) {
+	self.resetter.fn(self.resetter.ctx)
+}

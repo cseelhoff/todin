@@ -154,3 +154,111 @@ default_attachment_split_on_colon :: proc(value: string) -> [dynamic]string {
 	}
 	return result
 }
+
+// Java: public void setAttachedTo(Attachable attachedTo) (Lombok @Setter)
+// Mirrors `DefaultAttachment.setAttachedTo`: stores the `attachable` reference
+// on the receiver. Java's Lombok-generated setter performs no validation.
+default_attachment_set_attached_to :: proc(self: ^Default_Attachment, attachable: ^Attachable) {
+	if self == nil {
+		return
+	}
+	self.attached_to = attachable
+}
+
+// Java: protected String thisErrorMsg() { return ", for: " + this; }
+// Mirrors `DefaultAttachment.thisErrorMsg`. Java's `+` on a non-String operand
+// implicitly dispatches to `this.toString()`; Odin requires the explicit call
+// to `default_attachment_to_string`. Returns a freshly allocated string owned
+// by the caller (the Java GC equivalent — caller must `delete` when done).
+default_attachment_this_error_msg :: proc(self: ^Default_Attachment) -> string {
+	rendered := default_attachment_to_string(self)
+	defer delete(rendered)
+	return fmt.aprintf(", for: %s", rendered)
+}
+
+// Java: @Override public String toString()
+// Mirrors `DefaultAttachment.toString`:
+//   getClass().getSimpleName() + " attached to: " + attachedTo
+//     + " with name: " + Optional.ofNullable(name).orElse("<no name>")
+// Odin lacks RTTI for `getClass().getSimpleName()`; the literal class name
+// "DefaultAttachment" is used (subclasses that override `toString` will
+// supply their own simple name). `Attachable` has no fields/`toString`
+// override in the port, so its rendering follows Java's `Object.toString`
+// shape: "null" for nil, otherwise an identity tag using the pointer.
+// Java strings can be null; in Odin the empty string represents that, and
+// is rendered as "<no name>". Returns a heap-allocated string owned by the
+// caller.
+default_attachment_to_string :: proc(self: ^Default_Attachment) -> string {
+	attached_to_str: string
+	attached_to_owned := false
+	if self == nil || self.attached_to == nil {
+		attached_to_str = "null"
+	} else {
+		attached_to_str = fmt.aprintf("Attachable@%p", self.attached_to)
+		attached_to_owned = true
+	}
+	defer if attached_to_owned do delete(attached_to_str)
+
+	name_str: string = "<no name>"
+	if self != nil && self.name != "" {
+		name_str = self.name
+	}
+	return fmt.aprintf(
+		"DefaultAttachment attached to: %s with name: %s",
+		attached_to_str,
+		name_str,
+	)
+}
+
+// Java: public String getRawPropertyString(final String property)
+//   return getProperty(property).map(MutableProperty::getValue).map(Object::toString).orElse(null);
+// Java's `getProperty` is `DynamicallyModifiable.getProperty`, dispatched via
+// the concrete subclass's `getPropertyOrEmpty`. The Odin `Default_Attachment`
+// struct does not embed `Dynamically_Modifiable`, so there is no get-property
+// table reachable from `^Default_Attachment` alone; concrete subclasses keep
+// their own property maps and own `getRawPropertyString` shapes. Likewise
+// `Mutable_Property.getter` returns `rawptr`, for which Odin has no generic
+// `Object::toString` (the same RTTI gap noted on
+// `default_attachment_copy_property_value`). The faithful translation of
+// `getProperty(property).orElse(null)` from Default_Attachment scope is
+// therefore the empty string (Odin's null-string sentinel) — every property
+// lookup at this scope is `Optional.empty()`.
+default_attachment_get_raw_property_string :: proc(self: ^Default_Attachment, name: string) -> string {
+	_ = self
+	_ = name
+	return ""
+}
+
+// Java synthetic lambda from `DefaultAttachment.getAttachment`:
+//   () -> new IllegalStateException(String.format(
+//       "No attachment named '%s' of type '%s' for object named '%s'",
+//       attachmentName, attachmentType, namedAttachable.getName()))
+// Builds the IllegalStateException that `Optional.orElseThrow` raises when a
+// requested attachment is missing. The Odin port has a `Throwable` shim
+// (`java.lang.Throwable`) but no dedicated IllegalStateException type, so we
+// allocate a `Throwable` carrying the formatted message — callers raise it
+// the same way they do other Throwable values in the port. `attachmentType`
+// is rendered via `class_to_string` to mirror Java's `Class.toString` (the
+// "class <fqn>" form is irrelevant here because the message embeds the class
+// name as a single `%s`, which Java resolves through `Class.toString` on the
+// argument). The returned Throwable is heap-allocated; the caller owns it
+// and the message string it carries.
+default_attachment_lambda_get_attachment_0 :: proc(
+	attachment_name: string,
+	attachment_type: ^Class,
+	named_attachable: ^Named_Attachable,
+) -> ^Throwable {
+	type_str := class_to_string(attachment_type)
+	owner_name: string
+	if named_attachable != nil {
+		owner_name = named_attachable.named.base.name
+	}
+	t := new(Throwable)
+	t.message = fmt.aprintf(
+		"No attachment named '%s' of type '%s' for object named '%s'",
+		attachment_name,
+		type_str,
+		owner_name,
+	)
+	return t
+}

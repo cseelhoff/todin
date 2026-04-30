@@ -29,3 +29,11 @@ make_Default_Delegate_Bridge :: proc(
 	self.random_source = random_source
 	return self
 }
+
+default_delegate_bridge_get_data :: proc(self: ^Default_Delegate_Bridge) -> ^Game_Data {
+	return self.game_data
+}
+
+default_delegate_bridge_get_history_writer :: proc(self: ^Default_Delegate_Bridge) -> ^History_Writer {
+	return transmute(^History_Writer)self.history_writer
+}

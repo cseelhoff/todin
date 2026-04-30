@@ -51,3 +51,28 @@ unit_type_list_get_unit_type_or_throw :: proc(self: ^Unit_Type_List, name: strin
 unit_type_list_add_unit_type :: proc(self: ^Unit_Type_List, ut: ^Unit_Type) {
 	self.unit_types[default_named_get_name(&ut.named_attachable.default_named)] = ut
 }
+
+// games.strategy.engine.data.UnitTypeList#getUnitTypes(java.lang.String[])
+unit_type_list_get_unit_types :: proc(self: ^Unit_Type_List, names: [dynamic]string) -> [dynamic]^Unit_Type {
+	types: [dynamic]^Unit_Type
+	seen := make(map[^Unit_Type]struct{})
+	defer delete(seen)
+	for name in names {
+		ut := self.unit_types[name] or_else nil
+		if ut != nil {
+			if _, exists := seen[ut]; !exists {
+				seen[ut] = {}
+				append(&types, ut)
+			}
+		}
+	}
+	return types
+}
+
+// games.strategy.engine.data.UnitTypeList#lambda$getUnitTypeOrThrow$0(java.lang.String)
+// Supplier producing the IllegalStateException thrown by getUnitTypeOrThrow.
+unit_type_list_lambda_get_unit_type_or_throw_0 :: proc(name: string) -> ^Throwable {
+	err := new(Throwable)
+	err.message = fmt.aprintf("UnitTypeList has no unit type for %s", name)
+	return err
+}

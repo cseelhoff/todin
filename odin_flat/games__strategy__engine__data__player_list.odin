@@ -91,3 +91,23 @@ player_list_read_object :: proc(self: ^Player_List, in_stream: ^Object_Input_Str
 		)
 	}
 }
+
+// Java: public int size()
+// Returns the number of players in the name → player map.
+player_list_size :: proc(self: ^Player_List) -> i32 {
+	return i32(len(self.players))
+}
+
+// Java: public Stream<GamePlayer> stream()
+// Returns `players.values().stream()`. The Odin port surfaces the
+// underlying dynamic-array snapshot of the player values; callers
+// iterate it directly. Caller owns the returned dynamic array.
+player_list_stream :: proc(self: ^Player_List) -> [dynamic]^Game_Player {
+	return player_list_get_players(self)
+}
+
+// Java: public GamePlayer getNullPlayer() (Lombok @Getter)
+// Returns the cached null player created in the Player_List constructor.
+player_list_get_null_player :: proc(self: ^Player_List) -> ^Game_Player {
+	return self.null_player
+}

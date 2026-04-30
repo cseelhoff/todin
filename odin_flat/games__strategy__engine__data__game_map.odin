@@ -810,3 +810,57 @@ game_map_get_neighbors_set_distance_predicate :: proc(
 	return neighbors
 }
 
+
+// Java synthetic lambda from `GameMap.getRouteOrElseThrow`:
+//   () -> new IllegalStateException("Route expected to be returned")
+// Supplied to `Optional.orElseThrow` when no Route can be found between
+// the start and end Territories. The Odin port has no dedicated
+// IllegalStateException type, so the lambda allocates a `Throwable`
+// shim (`java.lang.Throwable`) carrying the same message — matching the
+// convention used by `default_attachment_lambda_get_attachment_0`. The
+// returned `^Throwable` is heap-allocated and owned by the caller; no
+// variables are captured.
+game_map_lambda_get_route_or_else_throw_12 :: proc() -> ^Throwable {
+	t := new(Throwable)
+	t.message = "Route expected to be returned"
+	return t
+}
+
+
+// Java synthetic lambda from `GameMap.getRouteForUnitOrElseThrow`:
+//   () -> new IllegalStateException("Route expected to be returned")
+// Supplied to `Optional.orElseThrow` when `getRouteForUnits` (called with
+// a single-unit `List.of(unit)`) yields no route between the start and
+// end Territories. The Odin port has no dedicated IllegalStateException
+// type, so the lambda allocates a `Throwable` shim
+// (`java.lang.Throwable`) carrying the same message — matching the
+// convention used by `default_attachment_lambda_get_attachment_0` and
+// the sibling `game_map_lambda_get_route_or_else_throw_12`. The returned
+// `^Throwable` is heap-allocated and owned by the caller; no variables
+// are captured.
+game_map_lambda_get_route_for_unit_or_else_throw_13 :: proc() -> ^Throwable {
+	t := new(Throwable)
+	t.message = "Route expected to be returned"
+	return t
+}
+
+// Java synthetic lambda from `GameMap.getTerritoryOrThrow(String s)`:
+//   () -> new IllegalArgumentException(
+//             String.format("Territory with name %s could not be found", s))
+// Supplied to `Optional.orElseThrow` when the territory-name lookup
+// returns null. Java's lambda is a zero-arg `Supplier` that captures the
+// outer parameter `s`; in Odin we lift the captured string into a
+// formal parameter (`name`), matching the `lambda$0` index. The Odin
+// port has no dedicated IllegalArgumentException type, so the lambda
+// allocates a `Throwable` shim (`java.lang.Throwable`) carrying the
+// formatted message — matching the convention used by
+// `default_attachment_lambda_get_attachment_0` and the sibling
+// `game_map_lambda_get_route_or_else_throw_12`. The returned
+// `^Throwable` is heap-allocated and owned by the caller; the formatted
+// `message` string is also heap-allocated (via `fmt.aprintf`) and owned
+// alongside the Throwable.
+game_map_lambda_get_territory_or_throw_0 :: proc(name: string) -> ^Throwable {
+	t := new(Throwable)
+	t.message = fmt.aprintf("Territory with name %s could not be found", name)
+	return t
+}

@@ -461,3 +461,64 @@ game_data_post_de_serialize :: proc(self: ^Game_Data) {
 	self.delegates = make(map[string]^I_Delegate)
 	game_data_fix_up_null_players(self)
 }
+
+// games.strategy.engine.data.GameData#notifyTerritoryAttachmentChanged(Territory)
+//
+// Java: territoryListeners.forEach(territoryListener -> territoryListener.attachmentChanged(t));
+// Territory_Listener is an empty interface stub in odin_flat (only the Swing
+// BottomBar implements it in Java; never registered in the AI snapshot path),
+// so the slice is always empty here. The loop mirrors Java's forEach for
+// fidelity; the body is a no-op because there is no callable dispatch field
+// on the listener struct.
+game_data_notify_territory_attachment_changed :: proc(self: ^Game_Data, territory: ^Territory) {
+	for territory_listener in self.territory_listeners {
+		_ = territory_listener
+		_ = territory
+	}
+}
+
+// games.strategy.engine.data.GameData#setGameHistory(History)
+// Lombok-generated @Setter for the `gameHistory` field.
+game_data_set_game_history :: proc(self: ^Game_Data, history: ^History) {
+	self.game_history = history
+}
+
+// games.strategy.engine.data.GameData#getAttachmentOrderAndValues()
+// Lombok-generated @Getter for the `attachmentOrderAndValues` field, which
+// records the parse order of <attachment> XML elements and their raw
+// (option name, value) string pairs so the game can be re-saved in the
+// same order it was loaded.
+game_data_get_attachment_order_and_values :: proc(self: ^Game_Data) -> [dynamic]^Tuple(^I_Attachment, [dynamic]^Tuple(string, string)) {
+	return self.attachment_order_and_values
+}
+
+// games.strategy.engine.data.GameData#getGameName()
+// Lombok-generated @Getter for the `gameName` field.
+game_data_get_game_name :: proc(self: ^Game_Data) -> string {
+	return self.game_name
+}
+
+// games.strategy.engine.data.GameData#addToAttachmentOrderAndValues(Tuple)
+// Java: attachmentOrderAndValues.add(attachmentAndValues);
+game_data_add_to_attachment_order_and_values :: proc(self: ^Game_Data, tuple: ^Tuple(^I_Attachment, [dynamic]^Tuple(string, string))) {
+        append(&self.attachment_order_and_values, tuple)
+}
+
+// games.strategy.engine.data.GameData#getGameHistory()
+// Lombok-generated @Getter for the `gameHistory` field.
+game_data_get_game_history :: proc(self: ^Game_Data) -> ^History {
+	return self.game_history
+}
+
+// games.strategy.engine.data.GameData#setAttachmentOrderAndValues(List)
+// Lombok-generated @Setter for the `attachmentOrderAndValues` field.
+// Java assigns the supplied list directly: `this.attachmentOrderAndValues = attachmentOrderAndValues;`
+game_data_set_attachment_order_and_values :: proc(self: ^Game_Data, list: [dynamic]^Tuple(^I_Attachment, [dynamic]^Tuple(string, string))) {
+	self.attachment_order_and_values = list
+}
+
+// games.strategy.engine.data.GameData#getTerritoryEffectList()
+// Java: return territoryEffectList;
+game_data_get_territory_effect_list :: proc(self: ^Game_Data) -> map[string]^Territory_Effect {
+	return self.territory_effect_list
+}

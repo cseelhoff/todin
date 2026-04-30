@@ -9,3 +9,7 @@ technology_frontier_list_add_technology_frontier :: proc(self: ^Technology_Front
 	append(&self.technology_frontiers, tf)
 }
 
+technology_frontier_list_get_frontiers :: proc(self: ^Technology_Frontier_List) -> []^Technology_Frontier {
+	return self.technology_frontiers[:]
+}
+

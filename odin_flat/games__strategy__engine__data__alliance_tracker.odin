@@ -108,3 +108,48 @@ alliance_tracker_write_replace :: proc(self: ^Alliance_Tracker) -> ^Alliance_Tra
 	}
 	return proxy
 }
+
+// AllianceTracker.getAlliancesPlayerIsIn(GamePlayer): returns the alliance
+// names `player` belongs to, or `Set.of(player.getName())` if the player is
+// in no alliance. The Java code returns the live `alliances.get(player)`
+// Collection<String> from the Multimap; we materialize an equivalent
+// `[dynamic]string` because the Odin tracker stores the inverted
+// alliance-name → players map.
+alliance_tracker_get_alliances_player_is_in :: proc(
+	self: ^Alliance_Tracker,
+	player: ^Game_Player,
+) -> [dynamic]string {
+	result := make([dynamic]string)
+	for alliance_name, members in self.alliances {
+		for m in members {
+			if m == player {
+				append(&result, alliance_name)
+				break
+			}
+		}
+	}
+	if len(result) == 0 {
+		append(&result, player.named.base.name)
+	}
+	return result
+}
+
+// AllianceTracker(Multimap<GamePlayer, String>): construct from a
+// player → alliance-names multimap. The Odin tracker stores the inverted
+// alliance-name → players map, so we invert the entries on construction.
+alliance_tracker_new :: proc(alliances: ^Multimap(^Game_Player, string)) -> ^Alliance_Tracker {
+	self := new(Alliance_Tracker)
+	self.alliances = make(map[string][dynamic]^Game_Player)
+	if alliances != nil {
+		for player, names in alliances.entries {
+			for alliance_name in names {
+				if alliance_name not_in self.alliances {
+					self.alliances[alliance_name] = make([dynamic]^Game_Player)
+				}
+				members := &self.alliances[alliance_name]
+				append(members, player)
+			}
+		}
+	}
+	return self
+}

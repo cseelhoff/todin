@@ -88,3 +88,21 @@ game_sequence_get_step :: proc(self: ^Game_Sequence) -> ^Game_Step {
 	}
 	return game_sequence_get_step_at(self, self.current_index)
 }
+
+// Mirrors Java GameSequence#setRoundOffset(int):
+//     this.roundOffset = roundOffset;
+game_sequence_set_round_offset :: proc(self: ^Game_Sequence, value: i32) {
+	self.round_offset = value
+}
+
+// Mirrors Java GameSequence#setStepIndex(int):
+//     if ((newIndex < 0) || (newIndex >= steps.size())) {
+//         throw new IllegalArgumentException("New index out of range: " + newIndex);
+//     }
+//     currentIndex = newIndex;
+game_sequence_set_step_index :: proc(self: ^Game_Sequence, value: i32) {
+	if value < 0 || value >= i32(len(self.steps)) {
+		return
+	}
+	self.current_index = value
+}

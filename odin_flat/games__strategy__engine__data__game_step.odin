@@ -104,3 +104,15 @@ game_step_is_tech_step_name :: proc(step_name: string) -> bool {
 game_step_set_max_run_count :: proc(self: ^Game_Step, count: i32) {
 	self.max_run_count = count
 }
+
+game_step_get_properties :: proc(self: ^Game_Step) -> map[string]string {
+	return self.properties
+}
+
+game_step_get_delegate_name :: proc(self: ^Game_Step) -> string {
+	return self.delegate_name
+}
+
+game_step_get_name :: proc(self: ^Game_Step) -> string {
+	return self.name
+}

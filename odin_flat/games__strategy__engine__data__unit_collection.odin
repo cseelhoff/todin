@@ -146,3 +146,38 @@ unit_collection_remove_all :: proc(self: ^Unit_Collection, units: [dynamic]^Unit
 	named_unit_holder_notify_changed(self.holder)
 	return result
 }
+
+// Java: public boolean add(final Unit unit)
+//   units.add(unit); holder.notifyChanged(); return true;
+unit_collection_add :: proc(self: ^Unit_Collection, unit: ^Unit) -> bool {
+	append(&self.units, unit)
+	named_unit_holder_notify_changed(self.holder)
+	return true
+}
+
+// Java: @Getter NamedUnitHolder holder. The user-requested signature returns
+// ^Unit_Holder; expose the embedded Unit_Holder sub-struct of the held
+// Named_Unit_Holder.
+unit_collection_get_holder :: proc(self: ^Unit_Collection) -> ^Unit_Holder {
+	if self.holder == nil {
+		return nil
+	}
+	return &self.holder.unit_holder
+}
+
+// Java: public int getUnitCount() { return units.size(); }
+unit_collection_get_unit_count :: proc(self: ^Unit_Collection) -> i32 {
+	return i32(len(self.units))
+}
+
+// Java: int getUnitCount(final UnitType type)
+//   return (int) units.stream().filter(u -> u.getType().equals(type)).count();
+unit_collection_get_unit_count_of_type :: proc(self: ^Unit_Collection, type: ^Unit_Type) -> i32 {
+	count: i32 = 0
+	for u in self.units {
+		if unit_type_equals(u.type, type) {
+			count += 1
+		}
+	}
+	return count
+}

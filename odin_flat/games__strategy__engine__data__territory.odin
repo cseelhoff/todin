@@ -47,3 +47,20 @@ territory_compare_to :: proc(self: ^Territory, other: ^Territory) -> i32 {
 territory_get_type :: proc(self: ^Territory) -> string {
 	return "T"
 }
+
+// games.strategy.engine.data.Territory#getOwner()
+// Lombok @Getter on the `owner` field.
+territory_get_owner :: proc(self: ^Territory) -> ^Game_Player {
+	return self.owner
+}
+
+// games.strategy.engine.data.Territory#isWater()
+territory_is_water :: proc(self: ^Territory) -> bool {
+	return self.water
+}
+
+// games.strategy.engine.data.Territory#getUnitCollection()
+// Lombok @Getter on the `unitCollection` field.
+territory_get_unit_collection :: proc(self: ^Territory) -> ^Unit_Collection {
+	return self.unit_collection
+}

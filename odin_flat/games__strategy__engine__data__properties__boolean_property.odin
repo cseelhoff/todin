@@ -10,3 +10,7 @@ Boolean_Property :: struct {
 boolean_property_get_value :: proc(self: ^Boolean_Property) -> bool {
 	return self.value
 }
+
+boolean_property_set_value :: proc(self: ^Boolean_Property, value: bool) {
+	self.value = value
+}

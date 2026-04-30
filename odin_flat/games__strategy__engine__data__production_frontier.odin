@@ -34,3 +34,15 @@ production_frontier_get_rules :: proc(self: ^Production_Frontier) -> [dynamic]^P
 	return self.cached_rules
 }
 
+// Mirrors Java ProductionFrontier#removeRule(ProductionRule). Throws if the
+// rule is not present, otherwise removes it and invalidates the cached
+// unmodifiable view.
+production_frontier_remove_rule :: proc(self: ^Production_Frontier, rule: ^Production_Rule) {
+	idx, found := slice.linear_search(self.rules[:], rule)
+	if !found {
+		fmt.panicf("Rule not present: %v", rule)
+	}
+	ordered_remove(&self.rules, idx)
+	clear(&self.cached_rules)
+}
+

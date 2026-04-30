@@ -234,3 +234,129 @@ unit_to_string :: proc(self: ^Unit) -> string {
 }nit_to_string_no_owner :: proc(self: ^Unit) -> string {
 	return self.type.name
 }
+
+unit_get_already_moved :: proc(self: ^Unit) -> f64 {
+	return self.already_moved
+}
+
+// games.strategy.engine.data.Unit#canEqual(java.lang.Object)
+//
+// Lombok @EqualsAndHashCode-generated `return other instanceof Unit`. Odin's
+// rawptr carries no runtime type tag, so the faithful translation is the
+// pointer-validity check the Java instanceof collapses to once the caller has
+// already typed `other` as a Unit reference.
+unit_can_equal :: proc(self: ^Unit, other: rawptr) -> bool {
+	return other != nil
+}
+
+unit_get_bonus_movement :: proc(self: ^Unit) -> i32 {
+	return self.bonus_movement
+}
+
+unit_get_disabled :: proc(self: ^Unit) -> bool {
+	return self.disabled
+}
+
+unit_get_hits :: proc(self: ^Unit) -> i32 {
+	return self.hits
+}
+
+unit_get_id :: proc(self: ^Unit) -> Uuid {
+	return self.id
+}
+
+unit_get_launched :: proc(self: ^Unit) -> i32 {
+	return self.launched
+}
+
+unit_get_max_scramble_count :: proc(self: ^Unit) -> i32 {
+	return self.max_scramble_count
+}
+
+unit_get_original_owner :: proc(self: ^Unit) -> ^Game_Player {
+	return self.original_owner
+}
+
+unit_get_originated_from :: proc(self: ^Unit) -> ^Territory {
+	return self.originated_from
+}
+
+unit_get_owner :: proc(self: ^Unit) -> ^Game_Player {
+	return self.owner
+}
+
+unit_get_transported_by :: proc(self: ^Unit) -> ^Unit {
+	return self.transported_by
+}
+
+unit_get_type :: proc(self: ^Unit) -> ^Unit_Type {
+	return self.type
+}
+
+unit_get_unit_damage :: proc(self: ^Unit) -> i32 {
+	return self.unit_damage
+}
+
+unit_get_unloaded :: proc(self: ^Unit) -> [dynamic]^Unit {
+	return self.unloaded
+}
+
+unit_get_unloaded_to :: proc(self: ^Unit) -> ^Territory {
+	return self.unloaded_to
+}
+
+unit_get_was_loaded_after_combat :: proc(self: ^Unit) -> bool {
+	return self.was_loaded_after_combat
+}
+
+unit_get_was_scrambled :: proc(self: ^Unit) -> bool {
+	return self.was_scrambled
+}
+
+unit_set_airborne :: proc(self: ^Unit, value: bool) {
+	self.airborne = value
+}
+
+unit_set_bonus_movement :: proc(self: ^Unit, v: i32) {
+	self.bonus_movement = v
+}
+
+unit_set_charged_flat_fuel_cost :: proc(self: ^Unit, v: bool) {
+	self.charged_flat_fuel_cost = v
+}
+
+unit_set_disabled :: proc(self: ^Unit, v: bool) {
+	self.disabled = v
+}
+
+unit_set_hits :: proc(self: ^Unit, v: i32) {
+	self.hits = v
+}
+
+unit_set_launched :: proc(self: ^Unit, v: i32) {
+	self.launched = v
+}
+
+unit_set_max_scramble_count :: proc(self: ^Unit, v: i32) {
+	self.max_scramble_count = v
+}
+
+unit_set_originated_from :: proc(self: ^Unit, t: ^Territory) {
+	self.originated_from = t
+}
+
+unit_set_submerged :: proc(self: ^Unit, v: bool) {
+	self.submerged = v
+}
+
+unit_set_was_in_air_battle :: proc(self: ^Unit, v: bool) {
+	self.was_in_air_battle = v
+}
+
+unit_set_was_loaded_after_combat :: proc(self: ^Unit, v: bool) {
+	self.was_loaded_after_combat = v
+}
+
+unit_set_was_scrambled :: proc(self: ^Unit, v: bool) {
+	self.was_scrambled = v
+}

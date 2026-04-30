@@ -95,3 +95,23 @@ game_data_variables_create_foreach_variables_map :: proc(
 	}
 	return foreach_map
 }
+
+game_data_variables_find_nested_variables :: proc(
+	value: string,
+	variables: map[string][dynamic]string,
+) -> [dynamic]string {
+	result: [dynamic]string
+	nested, ok := variables[value]
+	if !ok {
+		append(&result, value)
+		return result
+	}
+	for s in nested {
+		inner := game_data_variables_find_nested_variables(s, variables)
+		for v in inner {
+			append(&result, v)
+		}
+		delete(inner)
+	}
+	return result
+}

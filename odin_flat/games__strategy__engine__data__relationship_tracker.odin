@@ -65,3 +65,21 @@ relationship_tracker_is_at_war_with_any_of_these_players :: proc(self: ^Relation
 	}
 	return false
 }
+
+// games.strategy.engine.data.RelationshipTracker#isAlliedWithAnyOfThesePlayers(GamePlayer, Collection<GamePlayer>)
+//
+//   public boolean isAlliedWithAnyOfThesePlayers(
+//       final GamePlayer gamePlayer, final Collection<GamePlayer> possibleAllies) {
+//     return possibleAllies.stream()
+//         .anyMatch(
+//             p2 -> Matches.relationshipTypeIsAllied().test(getRelationshipType(gamePlayer, p2)));
+//   }
+relationship_tracker_is_allied_with_any_of_these_players :: proc(self: ^Relationship_Tracker, player: ^Game_Player, others: [dynamic]^Game_Player) -> bool {
+	predicate := matches_relationship_type_is_allied()
+	for p2 in others {
+		if predicate(relationship_tracker_get_relationship_type(self, player, p2)) {
+			return true
+		}
+	}
+	return false
+}
