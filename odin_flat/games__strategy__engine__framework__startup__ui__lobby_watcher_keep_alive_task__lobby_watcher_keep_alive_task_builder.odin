@@ -13,3 +13,7 @@ Lobby_Watcher_Keep_Alive_Task_Builder :: struct {
 // Java owners covered by this file:
 //   - games.strategy.engine.framework.startup.ui.LobbyWatcherKeepAliveTask$LobbyWatcherKeepAliveTaskBuilder
 
+make_Lobby_Watcher_Keep_Alive_Task_Lobby_Watcher_Keep_Alive_Task_Builder :: proc() -> Lobby_Watcher_Keep_Alive_Task_Builder {
+	return Lobby_Watcher_Keep_Alive_Task_Builder{}
+}
+

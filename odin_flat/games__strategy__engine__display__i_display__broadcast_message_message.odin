@@ -7,3 +7,10 @@ Broadcast_Message_Message :: struct {
 	title:   string,
 }
 
+make_I_Display_Broadcast_Message_Message :: proc(message: string, title: string) -> Broadcast_Message_Message {
+	return Broadcast_Message_Message{
+		message = message,
+		title   = title,
+	}
+}
+

@@ -9,3 +9,7 @@ Game_Data_Manager_Options_Options_Builder :: struct {
 	with_attachment_xml_data: bool,
 }
 
+make_Game_Data_Manager_Options_Options_Builder :: proc() -> Game_Data_Manager_Options_Options_Builder {
+	return Game_Data_Manager_Options_Options_Builder{}
+}
+

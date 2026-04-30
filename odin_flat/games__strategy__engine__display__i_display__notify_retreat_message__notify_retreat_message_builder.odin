@@ -9,3 +9,7 @@ I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder :: struct {
 	step:                   string,
 	retreating_player_name: string,
 }
+
+make_I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder :: proc() -> I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder {
+	return I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder{}
+}

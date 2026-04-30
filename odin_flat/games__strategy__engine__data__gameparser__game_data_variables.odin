@@ -6,6 +6,10 @@ Game_Data_Variables :: struct {
 	variables: map[string][dynamic]string,
 }
 
+make_Game_Data_Variables :: proc(variables: map[string][dynamic]string) -> Game_Data_Variables {
+	return Game_Data_Variables{variables = variables}
+}
+
 game_data_variables_replace_foreach_variables :: proc(s: string, vars: map[string]string) -> string {
 	result := s
 	allocated := false
@@ -75,4 +79,19 @@ game_data_variables_replace_variables :: proc(self: ^Game_Data_Variables, s: str
 		return strings.clone(result)
 	}
 	return result
+}
+game_data_variables_create_foreach_variables_map :: proc(
+	foreach_variables: []string,
+	current_index: int,
+	variables: ^map[string][dynamic]string,
+) -> map[string]string {
+	foreach_map := make(map[string]string)
+	for foreach_variable in foreach_variables {
+		foreach_value := variables[foreach_variable]
+		stripped, _ := strings.replace_all(foreach_variable, "$", "")
+		key := strings.concatenate({"@", stripped, "@"})
+		delete(stripped)
+		foreach_map[key] = foreach_value[current_index]
+	}
+	return foreach_map
 }

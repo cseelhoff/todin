@@ -303,3 +303,32 @@ mutable_property_set_value :: proc(
 lambda_mutable_property_no_getter_2 :: proc() -> rawptr {
 	panic("No Getter has been defined!")
 }
+
+// lambda$noResetter$3() — Java-bytecode-equivalent free-standing helper
+// for the Runnable body synthesised inside noResetter(). The lambda
+// captures nothing and unconditionally throws
+// IllegalStateException("No Resetter has been defined!"); in this port
+// unchecked-exception throws are surfaced as `panic`.
+lambda_mutable_property_no_resetter_3 :: proc() {
+	panic("No Resetter has been defined!")
+}
+
+// lambda$noSetter$0(Object) — Java-bytecode-equivalent free-standing
+// helper for the ThrowingConsumer body synthesised inside noSetter().
+// The lambda captures nothing and unconditionally throws
+// UnsupportedOperationException("No Setter has been defined!"); in this
+// port unchecked-exception throws are surfaced as `panic`.
+lambda_mutable_property_no_setter_0 :: proc(value: rawptr) {
+	_ = value
+	panic("No Setter has been defined!")
+}
+
+// lambda$noStringSetter$1(String) — Java-bytecode-equivalent free-standing
+// helper for the ThrowingConsumer<String, Exception> body synthesised inside
+// noStringSetter(). The lambda captures nothing and unconditionally throws
+// UnsupportedOperationException("No String Setter has been defined!"); in
+// this port unchecked-exception throws are surfaced as `panic`.
+lambda_mutable_property_no_string_setter_1 :: proc(value: string) {
+	_ = value
+	panic("No String Setter has been defined!")
+}

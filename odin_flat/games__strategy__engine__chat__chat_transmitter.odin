@@ -12,6 +12,7 @@ Chat_Transmitter :: struct {
 	disconnect:          proc(self: ^Chat_Transmitter),
 	send_message:        proc(self: ^Chat_Transmitter, message: string),
 	slap:                proc(self: ^Chat_Transmitter, user_name: ^User_Name),
+	update_status:       proc(self: ^Chat_Transmitter, status: string),
 	get_local_user_name: proc(self: ^Chat_Transmitter) -> ^User_Name,
 }
 
@@ -38,6 +39,11 @@ chat_transmitter_send_message :: proc(self: ^Chat_Transmitter, message: string) 
 // games.strategy.engine.chat.ChatTransmitter#slap(org.triplea.domain.data.UserName)
 chat_transmitter_slap :: proc(self: ^Chat_Transmitter, user_name: ^User_Name) {
 	self.slap(self, user_name)
+}
+
+// games.strategy.engine.chat.ChatTransmitter#updateStatus(java.lang.String)
+chat_transmitter_update_status :: proc(self: ^Chat_Transmitter, status: string) {
+	self.update_status(self, status)
 }
 
 // games.strategy.engine.chat.ChatTransmitter#getLocalUserName()

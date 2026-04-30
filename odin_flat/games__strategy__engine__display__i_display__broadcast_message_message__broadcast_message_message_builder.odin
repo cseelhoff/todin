@@ -8,3 +8,7 @@ I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder :: struct 
 	title:   string,
 }
 
+make_I_Display_Broadcast_Message_Message_Builder :: proc() -> I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder {
+	return I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder{}
+}
+

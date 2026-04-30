@@ -11,3 +11,8 @@ I_Display_Notify_Dice_Message_Notify_Dice_Message_Builder :: struct {
 	player_name:             string,
 }
 
+make_I_Display_Notify_Dice_Message_Notify_Dice_Message_Builder :: proc() -> ^I_Display_Notify_Dice_Message_Notify_Dice_Message_Builder {
+	self := new(I_Display_Notify_Dice_Message_Notify_Dice_Message_Builder)
+	return self
+}
+

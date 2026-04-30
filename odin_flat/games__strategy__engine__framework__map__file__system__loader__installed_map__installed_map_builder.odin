@@ -8,3 +8,8 @@ Installed_Map_Installed_Map_Builder :: struct {
 	content_root:         ^Path,
 }
 
+// Ported from InstalledMap$InstalledMapBuilder#<init>() (Lombok no-arg builder constructor).
+make_Installed_Map_Installed_Map_Builder :: proc() -> Installed_Map_Installed_Map_Builder {
+	return Installed_Map_Installed_Map_Builder{}
+}
+

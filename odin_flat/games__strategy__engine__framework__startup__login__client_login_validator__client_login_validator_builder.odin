@@ -5,3 +5,7 @@ Client_Login_Validator_Builder :: struct {
 	password:         string,
 }
 
+make_Client_Login_Validator_Client_Login_Validator_Builder :: proc() -> Client_Login_Validator_Builder {
+	return Client_Login_Validator_Builder{}
+}
+

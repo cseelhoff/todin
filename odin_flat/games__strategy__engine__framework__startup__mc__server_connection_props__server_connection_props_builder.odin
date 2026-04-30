@@ -6,3 +6,7 @@ Server_Connection_Props_Builder :: struct {
 	password: [dynamic]rune,
 }
 
+make_Server_Connection_Props_Server_Connection_Props_Builder :: proc() -> Server_Connection_Props_Builder {
+	return Server_Connection_Props_Builder{}
+}
+

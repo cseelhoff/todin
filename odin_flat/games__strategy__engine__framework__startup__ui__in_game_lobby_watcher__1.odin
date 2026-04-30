@@ -10,5 +10,13 @@ package game
 // Implements IConnectionChangeListener; both connectionAdded/connectionRemoved
 // invoke the outer InGameLobbyWatcher.updatePlayerCount(). No fields of its own;
 // captures the enclosing InGameLobbyWatcher instance.
-In_Game_Lobby_Watcher_1 :: struct {}
+In_Game_Lobby_Watcher_1 :: struct {
+	this_0: ^In_Game_Lobby_Watcher,
+}
+
+make_In_Game_Lobby_Watcher_1 :: proc(this_0: ^In_Game_Lobby_Watcher) -> ^In_Game_Lobby_Watcher_1 {
+	self := new(In_Game_Lobby_Watcher_1)
+	self.this_0 = this_0
+	return self
+}
 

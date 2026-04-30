@@ -104,3 +104,31 @@ unit_property_name_values :: proc() -> []Unit_Property_Name {
 	}
 }
 
+unit_property_name_values_public :: proc() -> []Unit_Property_Name {
+	return unit_property_name_values()
+}
+
+make_Unit_Property_Name :: proc(name: string, ordinal: int, custom_field: string) -> Unit_Property_Name {
+	switch ordinal {
+	case 0:  return .Transported_By
+	case 1:  return .Unloaded
+	case 2:  return .Loaded_This_Turn
+	case 3:  return .Unloaded_To
+	case 4:  return .Unloaded_In_Combat_Phase
+	case 5:  return .Already_Moved
+	case 6:  return .Bonus_Movement
+	case 7:  return .Submerged
+	case 8:  return .Was_In_Combat
+	case 9:  return .Loaded_After_Combat
+	case 10: return .Unloaded_Amphibious
+	case 11: return .Originated_From
+	case 12: return .Was_Scrambled
+	case 13: return .Max_Scramble_Count
+	case 14: return .Was_In_Air_Battle
+	case 15: return .Launched
+	case 16: return .Airborne
+	case 17: return .Charged_Flat_Fuel_Cost
+	}
+	return .Transported_By
+}
+

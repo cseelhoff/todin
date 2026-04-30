@@ -10,3 +10,10 @@ Default_Game_Chooser_Entry :: struct {
 	installed_map: ^Installed_Map,
 	game_name:     string,
 }
+
+make_Default_Game_Chooser_Entry :: proc(installed_map: ^Installed_Map, game_name: string) -> Default_Game_Chooser_Entry {
+	return Default_Game_Chooser_Entry{
+		installed_map = installed_map,
+		game_name     = game_name,
+	}
+}

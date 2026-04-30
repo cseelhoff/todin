@@ -13,3 +13,7 @@ Game_Selector_Model :: struct {
     ready_for_save_load: Count_Down_Latch,
 }
 
+make_Game_Selector_Model :: proc() -> Game_Selector_Model {
+    return Game_Selector_Model{}
+}
+
