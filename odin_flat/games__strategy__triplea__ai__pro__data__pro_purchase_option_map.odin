@@ -17,3 +17,95 @@ Pro_Purchase_Option_Map :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.data.ProPurchaseOptionMap
 
+pro_purchase_option_map_get_land_fodder_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.land_fodder_options
+}
+
+pro_purchase_option_map_get_land_attack_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.land_attack_options
+}
+
+pro_purchase_option_map_get_land_defense_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.land_defense_options
+}
+
+pro_purchase_option_map_get_land_zero_move_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.land_zero_move_options
+}
+
+pro_purchase_option_map_get_air_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.air_options
+}
+
+pro_purchase_option_map_get_sea_defense_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.sea_defense_options
+}
+
+pro_purchase_option_map_get_sea_transport_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.sea_transport_options
+}
+
+pro_purchase_option_map_get_aa_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.aa_options
+}
+
+pro_purchase_option_map_get_factory_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	return self.factory_options
+}
+
+pro_purchase_option_map_get_land_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	seen: map[^Pro_Purchase_Option]struct{}
+	defer delete(seen)
+	result: [dynamic]^Pro_Purchase_Option
+	for ppo in self.land_fodder_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	for ppo in self.land_attack_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	for ppo in self.land_defense_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	return result
+}
+
+pro_purchase_option_map_get_sea_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	seen: map[^Pro_Purchase_Option]struct{}
+	defer delete(seen)
+	result: [dynamic]^Pro_Purchase_Option
+	for ppo in self.sea_defense_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	for ppo in self.sea_transport_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	for ppo in self.sea_carrier_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	for ppo in self.sea_sub_options {
+		if _, ok := seen[ppo]; !ok {
+			seen[ppo] = {}
+			append(&result, ppo)
+		}
+	}
+	return result
+}
+

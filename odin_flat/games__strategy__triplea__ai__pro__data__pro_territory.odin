@@ -41,3 +41,267 @@ Pro_Territory :: struct {
 	max_scramble_units:      [dynamic]^Unit,
 }
 
+// ---- Phase B procs (layer 0) ----
+
+pro_territory_get_territory :: proc(self: ^Pro_Territory) -> ^Territory {
+	return self.territory
+}
+
+pro_territory_get_max_units :: proc(self: ^Pro_Territory) -> map[^Unit]struct{} {
+	return self.max_units
+}
+
+pro_territory_get_units :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.units
+}
+
+pro_territory_get_bombers :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.bombers
+}
+
+pro_territory_get_max_battle_result :: proc(self: ^Pro_Territory) -> ^Pro_Battle_Result {
+	return self.max_battle_result
+}
+
+pro_territory_get_value :: proc(self: ^Pro_Territory) -> f64 {
+	return self.value
+}
+
+pro_territory_get_sea_value :: proc(self: ^Pro_Territory) -> f64 {
+	return self.sea_value
+}
+
+pro_territory_is_can_hold :: proc(self: ^Pro_Territory) -> bool {
+	return self.can_hold
+}
+
+pro_territory_is_can_attack :: proc(self: ^Pro_Territory) -> bool {
+	return self.can_attack
+}
+
+pro_territory_get_strength_estimate :: proc(self: ^Pro_Territory) -> f64 {
+	return self.strength_estimate
+}
+
+pro_territory_get_max_amphib_units :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.max_amphib_units
+}
+
+pro_territory_get_amphib_attack_map :: proc(self: ^Pro_Territory) -> map[^Unit][dynamic]^Unit {
+	return self.amphib_attack_map
+}
+
+pro_territory_get_transport_territory_map :: proc(self: ^Pro_Territory) -> map[^Unit]^Territory {
+	return self.transport_territory_map
+}
+
+pro_territory_is_need_amphib_units :: proc(self: ^Pro_Territory) -> bool {
+	return self.need_amphib_units
+}
+
+pro_territory_is_strafing :: proc(self: ^Pro_Territory) -> bool {
+	return self.strafing
+}
+
+pro_territory_get_is_transporting_map :: proc(self: ^Pro_Territory) -> map[^Unit]bool {
+	return self.is_transporting_map
+}
+
+pro_territory_get_max_bombard_units :: proc(self: ^Pro_Territory) -> map[^Unit]struct{} {
+	return self.max_bombard_units
+}
+
+pro_territory_get_bombard_options_map :: proc(self: ^Pro_Territory) -> map[^Unit]map[^Territory]struct{} {
+	return self.bombard_options_map
+}
+
+pro_territory_get_bombard_territory_map :: proc(self: ^Pro_Territory) -> map[^Unit]^Territory {
+	return self.bombard_territory_map
+}
+
+pro_territory_is_currently_wins :: proc(self: ^Pro_Territory) -> bool {
+	return self.currently_wins
+}
+
+pro_territory_get_battle_result :: proc(self: ^Pro_Territory) -> ^Pro_Battle_Result {
+	return self.battle_result
+}
+
+pro_territory_get_max_enemy_units :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.max_enemy_units
+}
+
+pro_territory_get_max_enemy_bombard_units :: proc(self: ^Pro_Territory) -> map[^Unit]struct{} {
+	return self.max_enemy_bombard_units
+}
+
+pro_territory_get_min_battle_result :: proc(self: ^Pro_Territory) -> ^Pro_Battle_Result {
+	return self.min_battle_result
+}
+
+pro_territory_get_temp_units :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.temp_units
+}
+
+pro_territory_get_temp_amphib_attack_map :: proc(self: ^Pro_Territory) -> map[^Unit][dynamic]^Unit {
+	return self.temp_amphib_attack_map
+}
+
+pro_territory_get_load_value :: proc(self: ^Pro_Territory) -> f64 {
+	return self.load_value
+}
+
+pro_territory_get_max_scramble_units :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	return self.max_scramble_units
+}
+
+pro_territory_get_all_defenders :: proc(self: ^Pro_Territory) -> map[^Unit]struct{} {
+	defenders := make(map[^Unit]struct{})
+	for u in self.units {
+		defenders[u] = {}
+	}
+	for u in self.cant_move_units {
+		defenders[u] = {}
+	}
+	for u in self.temp_units {
+		defenders[u] = {}
+	}
+	return defenders
+}
+
+pro_territory_get_max_defenders :: proc(self: ^Pro_Territory) -> [dynamic]^Unit {
+	defenders: [dynamic]^Unit
+	for u in self.max_units {
+		append(&defenders, u)
+	}
+	for u in self.cant_move_units {
+		append(&defenders, u)
+	}
+	return defenders
+}
+
+pro_territory_get_cant_move_units :: proc(self: ^Pro_Territory) -> map[^Unit]struct{} {
+	return self.cant_move_units
+}
+
+pro_territory_add_unit :: proc(self: ^Pro_Territory, unit: ^Unit) {
+	append(&self.units, unit)
+}
+
+pro_territory_add_units :: proc(self: ^Pro_Territory, units: [dynamic]^Unit) {
+	for u in units {
+		append(&self.units, u)
+	}
+}
+
+pro_territory_add_max_amphib_units :: proc(self: ^Pro_Territory, amphib_units: [dynamic]^Unit) {
+	for u in amphib_units {
+		append(&self.max_amphib_units, u)
+	}
+}
+
+pro_territory_add_max_unit :: proc(self: ^Pro_Territory, unit: ^Unit) {
+	self.max_units[unit] = {}
+}
+
+pro_territory_add_max_units :: proc(self: ^Pro_Territory, units: [dynamic]^Unit) {
+	for u in units {
+		self.max_units[u] = {}
+	}
+}
+
+pro_territory_set_value :: proc(self: ^Pro_Territory, value: f64) {
+	self.value = value
+}
+
+pro_territory_set_can_hold :: proc(self: ^Pro_Territory, can_hold: bool) {
+	self.can_hold = can_hold
+}
+
+pro_territory_set_need_amphib_units :: proc(self: ^Pro_Territory, need_amphib_units: bool) {
+	self.need_amphib_units = need_amphib_units
+}
+
+pro_territory_set_strafing :: proc(self: ^Pro_Territory, strafing: bool) {
+	self.strafing = strafing
+}
+
+pro_territory_set_can_attack :: proc(self: ^Pro_Territory, can_attack: bool) {
+	self.can_attack = can_attack
+}
+
+pro_territory_set_strength_estimate :: proc(self: ^Pro_Territory, strength_estimate: f64) {
+	self.strength_estimate = strength_estimate
+}
+
+pro_territory_add_cant_move_unit :: proc(self: ^Pro_Territory, unit: ^Unit) {
+	self.cant_move_units[unit] = {}
+}
+
+pro_territory_add_cant_move_units :: proc(self: ^Pro_Territory, units: [dynamic]^Unit) {
+	for u in units {
+		self.cant_move_units[u] = {}
+	}
+}
+
+pro_territory_set_max_enemy_units :: proc(self: ^Pro_Territory, max_enemy_units: [dynamic]^Unit) {
+	new_list: [dynamic]^Unit
+	for u in max_enemy_units {
+		append(&new_list, u)
+	}
+	self.max_enemy_units = new_list
+}
+
+pro_territory_set_min_battle_result :: proc(self: ^Pro_Territory, min_battle_result: ^Pro_Battle_Result) {
+	self.min_battle_result = min_battle_result
+}
+
+pro_territory_add_temp_unit :: proc(self: ^Pro_Territory, unit: ^Unit) {
+	append(&self.temp_units, unit)
+}
+
+pro_territory_add_temp_units :: proc(self: ^Pro_Territory, units: [dynamic]^Unit) {
+	for u in units {
+		append(&self.temp_units, u)
+	}
+}
+
+pro_territory_put_temp_amphib_attack_map :: proc(self: ^Pro_Territory, transport: ^Unit, amphib_units: [dynamic]^Unit) {
+	self.temp_amphib_attack_map[transport] = amphib_units
+}
+
+pro_territory_set_load_value :: proc(self: ^Pro_Territory, load_value: f64) {
+	self.load_value = load_value
+}
+
+pro_territory_set_sea_value :: proc(self: ^Pro_Territory, sea_value: f64) {
+	self.sea_value = sea_value
+}
+
+pro_territory_add_max_bombard_unit :: proc(self: ^Pro_Territory, unit: ^Unit) {
+	self.max_bombard_units[unit] = {}
+}
+
+pro_territory_add_bombard_options_map :: proc(self: ^Pro_Territory, unit: ^Unit, t: ^Territory) {
+	inner, ok := self.bombard_options_map[unit]
+	if !ok {
+		inner = make(map[^Territory]struct{})
+	}
+	inner[t] = {}
+	self.bombard_options_map[unit] = inner
+}
+
+pro_territory_set_max_enemy_bombard_units :: proc(self: ^Pro_Territory, max_enemy_bombard_units: map[^Unit]struct{}) {
+	self.max_enemy_bombard_units = max_enemy_bombard_units
+}
+
+pro_territory_set_max_battle_result :: proc(self: ^Pro_Territory, max_battle_result: ^Pro_Battle_Result) {
+	self.max_battle_result = max_battle_result
+}
+
+
+pro_territory_put_all_amphib_attack_map :: proc(self: ^Pro_Territory, amphib_attack_map: map[^Unit][dynamic]^Unit) {
+	for transport, units in amphib_attack_map {
+		pro_territory_put_amphib_attack_map(self, transport, units)
+	}
+}

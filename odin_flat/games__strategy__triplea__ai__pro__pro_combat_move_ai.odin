@@ -13,3 +13,7 @@ Pro_Combat_Move_Ai :: struct {
 	is_bombing:        bool,
 }
 
+pro_combat_move_ai_is_bombing :: proc(self: ^Pro_Combat_Move_Ai) -> bool {
+	return self.is_bombing
+}
+

@@ -9,3 +9,18 @@ Pro_Non_Combat_Move_Ai :: struct {
 	territory_manager:  ^Pro_Territory_Manager,
 }
 
+pro_non_combat_move_ai_combined_stream :: proc(
+	units1: [dynamic]^Unit,
+	units2: [dynamic]^Unit,
+	allocator := context.allocator,
+) -> [dynamic]^Unit {
+	combined := make([dynamic]^Unit, 0, len(units1) + len(units2), allocator)
+	for u in units1 {
+		append(&combined, u)
+	}
+	for u in units2 {
+		append(&combined, u)
+	}
+	return combined
+}
+

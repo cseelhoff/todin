@@ -2,9 +2,15 @@
 
 > **Copy the entire "PROMPT" block below and paste it into a fresh chat
 > any time the context window fills up. It is idempotent: it always
-> queries `port.sqlite` for the next unfinished work and dispatches one
-> subagent per entity. Re-run until both `structs` and `methods` are
-> 100% `is_implemented = 1`.**
+> queries `port.sqlite` for the next unfinished work and dispatches a
+> batch of subagents (one subagent per Odin file). Re-run until both
+> `structs` and `methods` are 100% `is_implemented = 1`.**
+
+> **Granularity:** Phase A still uses one subagent per struct (one row
+> per file). Phase B groups by `odin_file_path` — a single subagent is
+> assigned **every** unimplemented method belonging to the same Odin
+> file, ported in one shot, and the orchestrator marks all of those
+> `method_key`s `is_implemented = 1` together on success.
 
 ---
 
@@ -38,9 +44,9 @@ at the start of the session, then proceed.
      snapshot tests per `llm-instructions.md` §Phase C, then
      `task_complete`.
 
-3. **Pull the next batch (12 entities)** from the DB.
+3. **Pull the next batch from the DB.**
 
-   Phase A query:
+   Phase A query — one row = one struct = one subagent (12 per batch):
    ```sh
    sqlite3 -separator '|' port.sqlite "
      SELECT struct_key, java_file_path, odin_file_path, struct_layer
@@ -49,29 +55,88 @@ at the start of the session, then proceed.
      LIMIT 12;"
    ```
 
-   Phase B query (NEVER cross a `method_layer` boundary in one batch —
-   trim the batch at the layer change):
+   **Phase B query — single combined query, file-grouped at the
+   current layer.** The current layer `L` is the minimum
+   `method_layer` that still has at least one unimplemented method.
+   The query below computes `L` in a CTE, picks up to 8 distinct
+   `odin_file_path`s that have any unimplemented method at layer
+   `L`, and returns every unimplemented layer-`L` method whose
+   `odin_file_path` is in that batch — all in one round-trip.
+
+   Methods at higher layers in the same file are NOT included; they
+   wait for their own layer's pass. This is by design (cross-layer
+   dependency safety) and avoids the back-and-forth of computing
+   `L` in a separate step.
+
    ```sh
    sqlite3 -separator '|' port.sqlite "
-     SELECT method_key, owner_struct_key, java_file_path, odin_file_path, method_layer
-     FROM methods WHERE is_implemented = 0
-     ORDER BY method_layer, method_key
-     LIMIT 12;"
+     WITH cur_layer AS (
+       SELECT MIN(method_layer) AS L
+       FROM methods WHERE is_implemented = 0
+     ),
+     batch_files AS (
+       SELECT DISTINCT m.odin_file_path
+       FROM methods m, cur_layer
+       WHERE m.is_implemented = 0
+         AND m.method_layer = cur_layer.L
+       ORDER BY m.odin_file_path
+       LIMIT 8
+     )
+     SELECT cur_layer.L AS layer,
+            m.odin_file_path,
+            m.method_key,
+            m.owner_struct_key,
+            m.java_file_path
+     FROM methods m, cur_layer
+     WHERE m.is_implemented = 0
+       AND m.method_layer = cur_layer.L
+       AND m.odin_file_path IN (SELECT odin_file_path FROM batch_files)
+     ORDER BY m.odin_file_path, m.method_key;"
    ```
 
-4. **Dispatch one subagent per row, in parallel**, using `runSubagent`
+   - If the result set is empty, Phase B is complete — advance to
+     Phase C.
+   - Otherwise the first column of every row is the layer `L` (the
+     same value on every row, by construction). Read it from the
+     first row and record it in session memory under
+     `Current method_layer:` so progress notes stay accurate.
+   - The orchestrator groups the rows by `odin_file_path`
+     client-side: each unique file becomes ONE subagent dispatch
+     carrying the full list of layer-`L` `method_key`s for that
+     file.
+
+4. **Dispatch one subagent per group, in parallel**, using `runSubagent`
    with `agentName` omitted (the default coding subagent — `Explore`
    cannot write files). Use the prompt templates in the next section.
-   All 12 calls go in a single tool-call block.
+   All calls in the batch go in a single tool-call block.
 
-5. **Collect results.** Each subagent returns one line:
-   `done: <referenced types>` or `blocked: <reason>`.
+   - Phase A: one subagent per struct row (≤12 per batch).
+   - Phase B: one subagent per `odin_file_path` (≤8 per batch),
+     handling every unimplemented method in that file at the
+     current `method_layer`.
 
-6. **Update the database** for every `done:` row in a single
-   `sqlite3 ... "UPDATE ... WHERE ... IN (...)"` call. Remember to
-   backslash-escape `$` in inner-class keys
-   (e.g. `'struct:foo.Bar\$Baz'`). For `blocked:` rows, do NOT mark
-   them implemented — proceed to step 6a.
+5. **Collect results.**
+   - Phase A subagents return one line:
+     `done: <referenced types>` or `blocked: <reason>`.
+   - Phase B subagents return one line:
+     `done: <space-separated method_keys that succeeded> | <comma-separated procs/types referenced>`,
+     or
+     `partial: <done method_keys> | blocked: <method_key> <reason>`,
+     or
+     `blocked: <reason>` (whole-file blocker, e.g. file header
+     conflict; nothing in the file got ported).
+
+6. **Update the database.**
+   - Phase A: for every `done:` row, run a single
+     `UPDATE structs SET is_implemented=1 WHERE struct_key IN (...)`.
+   - Phase B: collect all `method_key`s reported as done across
+     every subagent in the batch (including the done portion of any
+     `partial:` reply) and run a single
+     `UPDATE methods SET is_implemented=1 WHERE method_key IN (...)`.
+   - Remember to backslash-escape `$` in inner-class keys
+     (e.g. `'struct:foo.Bar\$Baz'`, `'proc:foo.Bar\$Baz#thing()'`).
+   - For `blocked:` rows / blocked method_keys inside a `partial:`
+     reply, do NOT mark them implemented — proceed to step 6a.
 
 6a. **Triage every `blocked:` row before the next batch.** Do not
     silently re-queue blocked entries; they will likely block again.
@@ -93,6 +158,13 @@ at the start of the session, then proceed.
        - A referenced type/proc is genuinely absent from `odin_flat/`
          (provisioning gap — most often an inner class without its
          own file).
+       - **Cross-layer dependency** — most often in Phase B, where
+         a layer-N method calls a helper that lives at layer M > N.
+         The bootstrap layering should normally prevent this, but
+         Lombok-generated helpers, varargs forwarders, and a few
+         genuine SCC edges occasionally end up at a higher layer
+         than their callers. This is a **benign skip**: see step
+         6a.2 below — leave the method unimplemented and continue.
        - Name collision between a map-data XML element class and an
          engine class of the same simple name.
        - Odin file already contains content that conflicts with the
@@ -100,7 +172,19 @@ at the start of the session, then proceed.
        - Subagent misread the rules (e.g. tried to define an inner
          class inline).
 
-    2. **Decide: trivial auto-fix vs. stop.**
+    2. **Decide: skip, trivial auto-fix, or stop.**
+       - **Benign skip — cross-layer dependency.** If the blocker
+         is "depends on `<other_method_key>` at method_layer M
+         (not yet ported)" and that other method genuinely lives
+         at a higher layer in `port.sqlite`, **do nothing**: leave
+         the blocked `method_key` marked `is_implemented = 0` and
+         move on with the rest of the batch. The higher layer's
+         own pass will pick it up. Record the skip in session
+         memory under "Skipped (cross-layer dependency)" so the
+         pattern is visible across runs, but **do not stop the
+         loop and do not auto-fix**. Treat partial-batch successes
+         the same way: mark the done method_keys, leave the
+         blocked one as `is_implemented = 0`, and continue.
        - **Trivial & obvious** → fix it inline and re-dispatch ONE
          subagent for that single entity in the next batch. Examples
          of trivial fixes the orchestrator MAY perform directly:
@@ -137,7 +221,10 @@ at the start of the session, then proceed.
          entries", then call `task_complete`.
 
     3. **Never** mark a blocked entity `is_implemented = 1`, and
-       never bypass the rule against editing the harness.
+       never bypass the rule against editing the harness. A
+       blocked method that is left `is_implemented = 0` is fine
+       — it will be revisited automatically on a later batch (its
+       own layer's pass, or after the dependency is filled in).
 
 7. **Update session memory** (`/memories/session/triplea-port-progress.md`)
    with the new counters and any blockers (including auto-fixes
@@ -272,8 +359,12 @@ document it for manual review.
 
 Every subagent prompt MUST tell the subagent:
 
-- It is doing **one** entity. The orchestrator owns the DB; the
-  subagent must NOT update `port.sqlite`.
+- It is doing a single **unit of work**: in Phase A that's one
+  struct (one Odin file); in Phase B that's **one Odin file's worth
+  of methods** — every unimplemented `method_key` whose
+  `odin_file_path` matches the assigned file, at the current
+  `method_layer`. The orchestrator owns the DB; the subagent must
+  NOT update `port.sqlite`.
 - All previously-needed Odin dependencies are **already implemented**
   in `odin_flat/` (Phase A finishes before Phase B; methods are
   ordered by `method_layer`). The subagent should **reference
@@ -287,8 +378,9 @@ Every subagent prompt MUST tell the subagent:
   — Odin resolves them at the package level.
 - Read `/home/caleb/todin/llm-instructions.md` at the start of the
   subagent's work for the rules summary.
-- Return exactly one line: `done: <comma-separated types referenced>`
-  or `blocked: <reason>`.
+- Return exactly one line. Phase A: `done: <types>` /
+  `blocked: <reason>`. Phase B: see the per-method status format
+  in the Phase B template (`done:` / `partial:` / `blocked:`).
 
 #### Phase A subagent prompt template (struct)
 
@@ -367,19 +459,32 @@ or:
   blocked: <reason>
 ```
 
-#### Phase B subagent prompt template (method)
+#### Phase B subagent prompt template (file-grouped methods)
+
+A single Phase B subagent ports **every** unimplemented method that
+lives in one Odin file, in one shot. The orchestrator builds the
+method list from the SQL batch query above (all rows sharing the
+same `odin_file_path` at the current `method_layer`) and substitutes
+it into the template below.
 
 ```
-Port one Java method to Odin per /home/caleb/todin/llm-instructions.md
-(read it first; obey all rules).
+Port a batch of Java methods to Odin per
+/home/caleb/todin/llm-instructions.md (read it first; obey all rules).
 
-Entity: <METHOD_KEY>
-Owner struct: <OWNER_STRUCT_KEY>
-Java source: <JAVA_FILE_PATH> (focus on the method matching METHOD_KEY)
-Odin target: <ODIN_FILE_PATH> (append the proc to this file)
+Odin target file: <ODIN_FILE_PATH>
+Owner struct(s): <distinct OWNER_STRUCT_KEYs in this file>
+Java source(s):  <distinct JAVA_FILE_PATHs (usually one)>
+Current method_layer: <N>
 
-Phase B: METHOD body. The owner struct already exists in the Odin
-file with `package game` header — do NOT redefine it.
+Methods to port (port ALL of them, in this file, in one edit pass):
+  - <METHOD_KEY_1>
+  - <METHOD_KEY_2>
+  - ...
+  - <METHOD_KEY_K>
+
+Phase B: METHOD bodies. The owner struct(s) already exist in the
+target Odin file with `package game` header — do NOT redefine them.
+Append (or insert) one Odin proc per listed method_key.
 
 Rules:
 - Instance Foo.bar(int x) → `foo_bar :: proc(self: ^Foo, x: i32) -> ...`.
@@ -388,8 +493,8 @@ Rules:
 - `obj.method(args)` calls become `foo_method(obj, args)`.
 - Functional interface → Odin `proc` type literal.
 - No reflection. No stubs. No `panic("not impl")`. No `// TODO`. No
-  logging-only stub. The body must be REAL behavior or return
-  `blocked: <reason>`.
+  logging-only stub. Each body must be REAL behavior, or that
+  specific method_key must be reported `blocked`.
 
 Already-ported dependencies: every method at a lower `method_layer`
 is ALREADY implemented in /home/caleb/todin/odin_flat/, and ALL
@@ -397,26 +502,43 @@ structs are implemented (Phase A is complete). Reference existing
 procs and types; do NOT re-implement them. If a referenced proc is
 missing, run:
   grep -l "<proc_name> :: proc" /home/caleb/todin/odin_flat/
-to confirm. Only if truly absent, return
-`blocked: missing <proc_name>`.
+to confirm. Only if truly absent, mark just the affected
+method_key(s) `blocked: missing <proc_name>` and continue with
+the rest of the batch.
 
 JDK boundary types: if you need to call a JDK method (e.g.
 `latch.countDown()`, `executor.submit(task)`, `instant.toEpoch
 Milli()`), call the corresponding shim proc in `odin_flat/`
 (`count_down_latch_count_down(self)`, `executor_service_submit(
 self, task)`, `instant_to_epoch_milli(self)`). Grep first to find
-the exact proc name. If the shim is genuinely absent, return:
-  `blocked: missing JDK proc <fully.qualified.Class.method>`
-The orchestrator will extend the shim and re-dispatch you. Never
-inline-implement JDK behavior in a TripleA proc — it must live
-in the shim file so all callers stay consistent.
+the exact proc name. If the shim is genuinely absent, mark the
+affected method_key(s) `blocked: missing JDK proc
+<fully.qualified.Class.method>`. Never inline-implement JDK
+behavior — the orchestrator extends the shim and re-dispatches.
+
+Per-method status: you may succeed on some method_keys and fail on
+others within the same file. Report each method_key's outcome
+explicitly so the orchestrator can mark only the successful ones
+done. Blocked method_keys are fine — the orchestrator will leave
+them `is_implemented = 0` and a later batch (often a higher
+`method_layer` pass, or a re-run after a missing dep is filled in)
+will pick them up. Do NOT try to "force" a blocked method by
+inventing stubs; honest blocking is the correct behavior.
 
 DO NOT update port.sqlite.
 
-Return exactly one line:
-  done: <comma-separated procs/types referenced, or "none">
-or:
-  blocked: <reason>
+Return EXACTLY one line, in one of these three forms:
+
+  done: <space-separated method_keys all succeeded> | <comma-separated procs/types referenced, or "none">
+
+  partial: <space-separated method_keys done> | blocked: <method_key> <reason>; <method_key> <reason>; ...
+
+  blocked: <whole-file reason — nothing was ported>
+
+Examples:
+  done: proc:foo.Bar#a() proc:foo.Bar#b(int) | unit_get_owner, territory_get_units
+  partial: proc:foo.Bar#a() | blocked: proc:foo.Bar#b(int) missing JDK proc java.time.Instant.now
+  blocked: file header conflict — manual cleanup needed
 ```
 
 ### Session memory template (`/memories/session/triplea-port-progress.md`)
@@ -449,10 +571,12 @@ Workspace: /home/caleb/todin
   `triplea/conversion/odin_tests/test_common/`) → STOP. Per
   `llm-instructions.md`, fix `scripts/patch_triplea.py` and re-run
   bootstrap. Document the change in session memory before stopping.
-- A `blocked:` row's root cause is not trivially auto-fixable (see
-  step 6a) → STOP after printing the diagnosis and suggested next
-  step. Do not keep dispatching new batches that will hit the same
-  blocker.
+- A `blocked:` row's root cause is **not** a benign cross-layer
+  skip and is not trivially auto-fixable (see step 6a) → STOP
+  after printing the diagnosis and suggested next step. Cross-
+  layer dependency blockers are NOT a stop condition — they are
+  expected and handled by simply leaving the method
+  `is_implemented = 0` and continuing.
 - Context budget feels tight (~70% used) → save progress and
   `task_complete` with the resume instruction.
 

@@ -36,42 +36,61 @@ the end against snapshots.
 
 ## Subagent dispatch model (MANDATORY)
 
-**Every individual entity conversion MUST be delegated to its own
-subagent via the `runSubagent` tool.** The top-level (orchestrator)
-agent does not write Odin code directly; it only:
+**Every conversion task MUST be delegated to a subagent via the
+`runSubagent` tool.** The top-level (orchestrator) agent does not
+write Odin code directly (except for JDK shim infrastructure — see
+`resume-prompt.md`); it only:
 
-1. Queries `port.sqlite` for the next batch of unimplemented entities.
-2. Spawns one subagent per `.odin` file / entity / conversion task.
-3. Collects the subagent's report, updates `is_implemented` in
+1. Queries `port.sqlite` for the next batch of unimplemented work.
+2. Spawns subagents in parallel (see granularity below).
+3. Collects each subagent's report, updates `is_implemented` in
    `port.sqlite`, and proceeds to the next batch.
+
+**Granularity:**
+
+- **Phase A — one subagent per struct.** Each subagent edits exactly
+  one struct's `odin_file_path`.
+- **Phase B — one subagent per Odin file.** Methods are grouped by
+  `odin_file_path`: a single subagent receives the full list of
+  unimplemented `method_key`s that belong to one Odin file (at the
+  current `method_layer`) and ports all of them in one editing
+  pass. A given file commonly has many methods (sometimes dozens);
+  porting them together avoids redundant file reads and keeps
+  related procs visually adjacent. The subagent reports per-method
+  success/failure so the orchestrator can mark only the genuinely
+  ported `method_key`s `is_implemented = 1`.
 
 Rules for subagent dispatch:
 
-- **One subagent = one entity = one `.odin` file edit.** A subagent
-  handling a struct touches only that struct's `odin_file_path`. A
-  subagent handling a method touches only its owner struct's file
-  (and only the proc it owns).
+- **Independent subagents may be dispatched in parallel** within the
+  same layer (Phase A is order-free across structs; Phase B is
+  order-free *within* a single `method_layer`). Never parallelize
+  across method layers, and never mix layers inside a single Phase
+  B batch — the orchestrator pins each batch to the current minimum
+  unfinished `method_layer` (see `resume-prompt.md` for the SQL).
 - **Use the `Explore` agent for read-only scouting only** (e.g. "find
   every field referenced by `GameStateJsonSerializer` for class `Foo`")
   — `Explore` cannot write files. Use the **default coding subagent**
   (omit `agentName` in the `runSubagent` call) for the actual
   translation, since only it has file-write tools.
-- **Independent subagents may be dispatched in parallel** within the
-  same layer (Phase A is order-free across structs; Phase B is
-  order-free *within* a single `method_layer`). Never parallelize
-  across method layers.
 - **The subagent prompt must include**:
-  - The exact `struct_key` or `method_key`.
-  - Absolute paths to the Java source (`java_file_path`) and Odin
-    target (`odin_file_path`).
+  - For Phase A: the exact `struct_key`, the Java source path
+    (`java_file_path`), and the Odin target (`odin_file_path`).
+  - For Phase B: the Odin target file (`odin_file_path`), the
+    distinct owner struct key(s) and Java source path(s) for that
+    file, and the **complete list of `method_key`s** to port in
+    that file.
   - A pointer to this file (`llm-instructions.md`) for the rules.
-  - The instruction to return a one-line status report
-    (`done` / `blocked: <reason>`) plus the list of any new
-    cross-struct references introduced.
+  - The instruction to return a one-line status report. Phase A:
+    `done` / `blocked`. Phase B: `done` / `partial` / `blocked`,
+    enumerating per-`method_key` outcomes (see the Phase B template
+    in [`resume-prompt.md`](./resume-prompt.md)).
 - **The orchestrator owns the database.** Subagents must NOT run
   `UPDATE structs/methods SET is_implemented = 1`. They report
   completion; the orchestrator records it. This keeps the tracker
-  authoritative.
+  authoritative. In Phase B the orchestrator may mark a strict
+  subset of a subagent's assigned `method_key`s done when the
+  subagent reports `partial:`.
 - **No subagent edits the harness.** If a subagent reports it needs
   a harness change, the orchestrator stops, edits
   `scripts/patch_triplea.py`, and re-runs the bootstrap.
@@ -222,20 +241,28 @@ A struct is `is_implemented = 1` only when:
 
 ## Phase B workflow (methods)
 
-Pick the next method:
+Phase B batches methods **by `odin_file_path`**. The orchestrator
+pulls every unimplemented method at the current minimum
+`method_layer`, groups the rows by their target Odin file, and
+dispatches one subagent per file (up to ~8 files in parallel). The
+exact SQL lives in [`resume-prompt.md`](./resume-prompt.md); a
+single subagent receives a file-and-method-list bundle of the form:
 
-```sql
-SELECT method_key, owner_struct_key, java_file_path, method_layer
-FROM methods
-WHERE is_implemented = 0
-ORDER BY method_layer, method_key
-LIMIT 1;
+```
+odin_file_path: <ODIN_FILE_PATH>
+method_layer:   <N>
+methods:
+  - <method_key_1>
+  - <method_key_2>
+  - ...
 ```
 
-For each method:
+For each method the subagent must:
 
-1. Read the Java source at `java_file_path`, focused on `method_key`.
-2. Open the owner struct's Odin file at `odin_file_path`.
+1. Read the Java source at `java_file_path`, focused on the
+   specific `method_key`.
+2. Open the owner struct's Odin file at `odin_file_path` (the same
+   file shared by every method in the bundle).
 3. Translate:
    - Instance `Foo.bar(int x)` → `foo_bar :: proc(self: ^Foo, x: i32) -> ...`.
    - Static `Foo.baz(...)` → `foo_baz :: proc(...)`.
@@ -244,9 +271,12 @@ For each method:
    - Functional interfaces → Odin `proc` type literal.
 4. **No reflection.** The Java side's reflection is read-only and
    not part of the port surface.
-5. Mark method done:
+5. Report per-method status back to the orchestrator (see Phase B
+   subagent template in `resume-prompt.md`). The orchestrator runs
+   a single batched update for the successful method_keys:
    ```sql
-   UPDATE methods SET is_implemented = 1 WHERE method_key = '...';
+   UPDATE methods SET is_implemented = 1
+   WHERE method_key IN ('...', '...', ...);
    ```
 
 A method is `is_implemented = 1` only when:

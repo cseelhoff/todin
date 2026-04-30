@@ -21,3 +21,24 @@ Abstract_Pro_Ai :: struct {
 	stored_political_actions:    [dynamic]^Political_Action_Attachment,
 	stored_strafing_territories: [dynamic]^Territory,
 }
+
+abstract_pro_ai_get_pro_data :: proc(self: ^Abstract_Pro_Ai) -> ^Pro_Data {
+	return self.pro_data
+}
+
+abstract_pro_ai_get_calc :: proc(self: ^Abstract_Pro_Ai) -> ^Pro_Odds_Calculator {
+	return self.calc
+}
+
+abstract_pro_ai_set_stored_strafing_territories :: proc(self: ^Abstract_Pro_Ai, strafing_territories: [dynamic]^Territory) {
+	self.stored_strafing_territories = strafing_territories
+}
+
+abstract_pro_ai_has_non_combat_move :: proc(self: ^Abstract_Pro_Ai, steps: [dynamic]^Game_Step) -> bool {
+	for s in steps {
+		if game_step_is_non_combat_move_step_name(s.name) {
+			return true
+		}
+	}
+	return false
+}
