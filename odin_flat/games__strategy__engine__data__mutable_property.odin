@@ -33,6 +33,27 @@ Mutable_Property :: struct {
 	resetter:      Mutable_Property_Resetter_Slot,
 }
 
+// <init>(ThrowingConsumer, ThrowingConsumer, Supplier, Runnable) — private
+// constructor. Allocates and assigns the four slots after Preconditions
+// .checkNotNull (modelled as `assert` on each slot's fn pointer).
+make_Mutable_Property :: proc(
+	setter: Mutable_Property_Setter_Slot,
+	string_setter: Mutable_Property_String_Setter_Slot,
+	getter: Mutable_Property_Getter_Slot,
+	resetter: Mutable_Property_Resetter_Slot,
+) -> ^Mutable_Property {
+	assert(setter.fn != nil)
+	assert(string_setter.fn != nil)
+	assert(getter.fn != nil)
+	assert(resetter.fn != nil)
+	p := new(Mutable_Property)
+	p.setter = setter
+	p.string_setter = string_setter
+	p.getter = getter
+	p.resetter = resetter
+	return p
+}
+
 
 // cast(Object) — instance. Java does an unchecked (T) value cast; in this
 // rawptr-erased port T is rawptr, so the cast is the identity.
@@ -272,4 +293,13 @@ mutable_property_set_value :: proc(
 	value: rawptr,
 ) -> Maybe(^Mutable_Property_Invalid_Value_Exception) {
 	return mutable_property_set_typed_value(self, value)
+}
+
+// lambda$noGetter$2() — Java-bytecode-equivalent free-standing helper
+// for the Supplier body synthesised inside noGetter(). The lambda
+// captures nothing and unconditionally throws
+// UnsupportedOperationException("No Getter has been defined!"); in this
+// port checked-exception throws are surfaced as `panic`.
+lambda_mutable_property_no_getter_2 :: proc() -> rawptr {
+	panic("No Getter has been defined!")
 }

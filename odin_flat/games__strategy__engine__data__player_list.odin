@@ -70,3 +70,24 @@ player_list_get_players :: proc(self: ^Player_List) -> [dynamic]^Game_Player {
 	}
 	return out
 }
+
+// Java: public Iterator<GamePlayer> iterator()
+// "an iterator of a new ArrayList copy of the players." In Odin we
+// surface the snapshot directly as a dynamic array — callers iterate
+// it with `for p in player_list_iterator(self)`.
+player_list_iterator :: proc(self: ^Player_List) -> [dynamic]^Game_Player {
+	return player_list_get_players(self)
+}
+
+// Java: private void readObject(ObjectInputStream in)
+// `in.defaultReadObject()` is the opaque JDK shim (no-op in the port).
+// The post-read fixup creates the null player when an old save game
+// deserialized a Player_List with a missing nullPlayer field.
+player_list_read_object :: proc(self: ^Player_List, in_stream: ^Object_Input_Stream) {
+	_ = in_stream
+	if self.null_player == nil {
+		self.null_player = player_list_create_null_player(
+			game_data_component_get_data(&self.game_data_component),
+		)
+	}
+}

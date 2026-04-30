@@ -31,4 +31,18 @@ Named_Kind :: enum {
 Named :: struct {
 	base: Default_Named_Base,
 	kind: Named_Kind,
+	get_name: proc(self: ^Named) -> string,
+}
+
+// Dispatch for the Java `Named#getName()` interface method. Falls back
+// to the canonical name stored in `base.name` when no override has been
+// installed by an embedding struct's constructor.
+named_get_name :: proc(self: ^Named) -> string {
+	if self == nil {
+		return ""
+	}
+	if self.get_name != nil {
+		return self.get_name(self)
+	}
+	return self.base.name
 }

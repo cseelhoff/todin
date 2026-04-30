@@ -19,3 +19,12 @@ Game_Properties :: struct {
 	ordering: [dynamic]string,
 	player_properties: map[string]^Editable_Property,
 }
+
+game_properties_add_editable_property :: proc(self: ^Game_Properties, property: ^Editable_Property) {
+	self.editable_properties[property.name] = property
+	append(&self.ordering, property.name)
+}
+
+game_properties_add_player_property :: proc(self: ^Game_Properties, property: ^Editable_Property) {
+	self.player_properties[property.name] = property
+}

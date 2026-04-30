@@ -4,6 +4,10 @@ Game_Data_Component :: struct {
 	game_data: ^Game_Data,
 }
 
+make_Game_Data_Component :: proc(game_data: ^Game_Data) -> Game_Data_Component {
+	return Game_Data_Component{game_data = game_data}
+}
+
 // Java: private void writeObject(ObjectOutputStream stream) throws IOException
 // Mirrors the Java serialization hook. In the JDK shim, both
 // ObjectOutputStream and GameObjectOutputStream are opaque markers and

@@ -7,3 +7,7 @@ Player_List_1 :: struct {
 	using game_player: Game_Player,
 }
 
+player_list_1_is_null :: proc(self: ^Player_List_1) -> bool {
+	return true
+}
+

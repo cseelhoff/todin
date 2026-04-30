@@ -5,6 +5,26 @@ Game_Object_Stream_Data :: struct {
     type: Game_Object_Stream_Data_Game_Type,
 }
 
+make_Game_Object_Stream_Data :: proc(named: ^Named) -> Game_Object_Stream_Data {
+    self: Game_Object_Stream_Data
+    self.name = named.base.name
+    switch named.kind {
+    case .Game_Player:
+        self.type = .PLAYERID
+    case .Territory:
+        self.type = .TERRITORY
+    case .Unit_Type:
+        self.type = .UNITTYPE
+    case .Production_Rule:
+        self.type = .PRODUCTIONRULE
+    case .Production_Frontier:
+        self.type = .PRODUCTIONFRONTIER
+    case .I_Attachment, .Other:
+        panic("Wrong type")
+    }
+    return self
+}
+
 game_object_stream_data_can_serialize :: proc(obj: ^Named) -> bool {
     if obj == nil {
         return false

@@ -7,3 +7,7 @@ Abstract_Editable_Property :: struct {
 	name:         string,
 	description:  string,
 }
+
+abstract_editable_property_get_name :: proc(self: ^Abstract_Editable_Property) -> string {
+	return self.name
+}

@@ -625,6 +625,36 @@ game_map_lambda_get_neighbors_3 :: proc(_ctx: rawptr, _t: ^Territory) -> bool {
 // `Game_Map_Neighbors_Distance_Predicate_Ctx`.
 game_map_lambda_get_neighbors_4 :: game_map_neighbors_distance_predicate_trampoline
 
+// Java synthetic: GameMap#lambda$getNeighbors$5(Predicate, Territory, Territory) -> boolean.
+// From `public Set<Territory> getNeighbors(Set<Territory>, int, Predicate<Territory>)`:
+//     final Set<Territory> neighbors =
+//         getNeighbors(
+//             frontier, new HashSet<>(frontier), distance,
+//             (it, it2) -> territoryCondition.test(it2));
+// Captures the (non-null) `territoryCondition` Predicate<Territory> and adapts
+// it to the BiPredicate<Territory, Territory> shape demanded by the private
+// BFS overload. Unlike lambda$getNeighbors$1/$2/$4, this site does NOT
+// short-circuit on null — the public overload that produces this lambda has
+// already established that the predicate is non-null — so we cannot reuse
+// the null-OR trampoline. Per the closure-capture convention
+// (llm-instructions.md), the Predicate is carried as proc + rawptr ctx
+// inside `Game_Map_Neighbors_Predicate_Trampoline_Ctx`, and the
+// non-capturing trampoline below unwraps it and invokes the inner Predicate
+// on the second argument (`it2`), exactly mirroring the Java body.
+Game_Map_Neighbors_Predicate_Trampoline_Ctx :: struct {
+	cond:     proc(rawptr, ^Territory) -> bool,
+	cond_ctx: rawptr,
+}
+
+game_map_lambda_get_neighbors_5 :: proc(
+	ctx: rawptr,
+	_: ^Territory,
+	it2: ^Territory,
+) -> bool {
+	inner := cast(^Game_Map_Neighbors_Predicate_Trampoline_Ctx)ctx
+	return inner.cond(inner.cond_ctx, it2)
+}
+
 // Java synthetic: GameMap#lambda$getNeighbors$6(BiPredicate, Territory) -> Set<Territory>.
 // From private GameMap.getNeighbors(Set<Territory>, Set<Territory>, int, BiPredicate):
 //     final Set<Territory> newFrontier =
@@ -739,5 +769,44 @@ game_map_set_connection :: proc(self: ^Game_Map, from: ^Territory, to: ^Territor
 	}
 	modified[to] = {}
 	self.connections[from] = modified
+}
+
+// Mirrors public GameMap.getNeighbors(Set<Territory>, int, Predicate<Territory>):
+//     final Set<Territory> neighbors =
+//         getNeighbors(
+//             frontier, new HashSet<>(frontier), distance,
+//             (it, it2) -> territoryCondition.test(it2));
+//     neighbors.removeAll(frontier);
+//     return neighbors;
+// The Java lambda captures `territoryCondition`, so we route through the
+// private BiPredicate overload via the heap-allocated trampoline pattern
+// (see llm-instructions.md). Reuses Game_Map_Neighbors_Distance_Predicate_Ctx
+// since the captured-state shape is identical (a single Predicate<Territory>).
+game_map_get_neighbors_set_distance_predicate :: proc(
+	self: ^Game_Map,
+	frontier: map[^Territory]struct{},
+	distance: i32,
+	cond: proc(rawptr, ^Territory) -> bool,
+	cond_ctx: rawptr,
+) -> map[^Territory]struct{} {
+	inner := new(Game_Map_Neighbors_Distance_Predicate_Ctx)
+	inner.cond = cond
+	inner.cond_ctx = cond_ctx
+	searched := make(map[^Territory]struct{})
+	for t in frontier {
+		searched[t] = {}
+	}
+	neighbors := game_map_get_neighbors_set_set_distance_bipredicate(
+		self,
+		frontier,
+		searched,
+		distance,
+		game_map_neighbors_distance_predicate_trampoline,
+		inner,
+	)
+	for t in frontier {
+		delete_key(&neighbors, t)
+	}
+	return neighbors
 }
 

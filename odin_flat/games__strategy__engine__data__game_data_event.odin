@@ -50,3 +50,20 @@ game_data_event_lookup_event :: proc(change: ^Change) -> (Game_Data_Event, bool)
 	return .Unit_Moved, false
 }
 
+// Java: synthetic GameDataEvent#$values()
+// Returns a fresh slice containing all enum members in declaration order.
+game_data_event_values :: proc() -> []Game_Data_Event {
+	return []Game_Data_Event{
+		.Unit_Moved,
+		.Game_Step_Changed,
+		.Tech_Attachment_Changed,
+	}
+}
+
+// Java: synthetic GameDataEvent#<init>(String, int)
+// In Odin enums don't need an explicit constructor; this stub maps the
+// (name, ordinal) pair onto the enum value via ordinal lookup.
+make_Game_Data_Event :: proc(name: string, ordinal: int) -> Game_Data_Event {
+	return Game_Data_Event(ordinal)
+}
+

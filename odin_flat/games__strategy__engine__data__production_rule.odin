@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Production_Rule :: struct {
         using default_named: Default_Named,
 	costs:        Integer_Map,
@@ -8,4 +10,21 @@ Production_Rule :: struct {
 
 // Java owners covered by this file:
 //   - games.strategy.engine.data.ProductionRule
+
+production_rule_get_costs :: proc(self: ^Production_Rule) -> Integer_Map {
+	result := Integer_Map{}
+	result.map_values = make(map[rawptr]i32)
+	for k, v in self.costs.map_values {
+		result.map_values[k] = v
+	}
+	return result
+}
+
+production_rule_to_string :: proc(self: ^Production_Rule) -> string {
+	return fmt.aprintf("ProductionRule:%s", default_named_get_name(&self.default_named))
+}
+
+production_rule_get_results :: proc(self: ^Production_Rule) -> Integer_Map {
+	return self.results
+}
 

@@ -194,12 +194,16 @@ def source_form_classes(text: str) -> list[str]:
 # javap parser
 # ---------------------------------------------------------------------------
 
-# Class signature line, e.g.:
-#   public class games.strategy.engine.data.Unit extends games...GameDataComponent implements games...DynamicallyModifiable {
+# Class signature line. javap emits this two ways:
+#   non-verbose (`-c`): one line ending in `{`, e.g.
+#     `public class games.strategy.engine.data.Unit extends ... {`
+#   verbose (`-v`): the signature line has no trailing `{` (the `{` opens
+#     the body 400+ lines later, after the constant pool dump).
+# `SIG_RE` matches both forms (the trailing `{` is optional).
 SIG_RE = re.compile(
     r"^[\w\s]*?(?:class|interface|enum)\s+(\S+?)(?:\<.*?\>)?"
     r"(?:\s+extends\s+([^{]+?))?"
-    r"(?:\s+implements\s+([^{]+?))?\s*\{",
+    r"(?:\s+implements\s+([^{]+?))?\s*\{?\s*$",
 )
 
 # Field declaration (rough, javap omits Code: for fields):
@@ -219,11 +223,42 @@ FIELD_RE = re.compile(
 #   anewarray     #N                  // class games/.../Foo
 #   checkcast     #N                  // class games/.../Foo
 #   instanceof    #N                  // class games/.../Foo
+# javap formats invocations one of two ways:
+#  (a) `// Method games/.../X.foo:(args)ret`  -- explicit owner, common case
+#  (b) `// Method foo:(args)ret`             -- owner-less, used when the
+#       caller invokes a method on the same class (most often `new`+
+#       `<init>`, but also any plain `this.foo()` / `super.foo()` site).
+# We must capture both; otherwise every same-class call edge is silently
+# dropped, including all constructor invocations after `new`.
 INVOKE_RE = re.compile(
     r"//\s*(?:Method|InterfaceMethod)\s+([\w/$]+)(?:\.|\#)([^:]+):(\([^)]*\)[^\s]*)"
 )
+INVOKE_NO_OWNER_RE = re.compile(
+    r"//\s*(?:Method|InterfaceMethod)\s+(\"<init>\"|[A-Za-z_$][\w$]*):(\([^)]*\)[^\s]*)"
+)
 NEW_RE = re.compile(r"//\s*class\s+([\w/$\[\];]+)")
 FIELD_REF_RE = re.compile(r"//\s*Field\s+(?:[\w/$]+\.)?[\w$]+:([^;\s]+;)")
+
+# Constant-pool method references (only visible with `javap -v`). These
+# appear for every method reference (`Foo::bar`, `Foo::new`) used in the
+# class, including the targets of method-reference-style lambdas which
+# javap's `-c` invokedynamic comment doesn't expose. Captures both
+# Methodref / InterfaceMethodref pool entries and MethodHandle entries
+# resolving to them.
+CP_METHODREF_RE = re.compile(
+    r"=\s*(?:Methodref|InterfaceMethodref|MethodHandle)\b.*?//\s*"
+    r"(?:REF_\w+\s+)?"
+    r"([\w/$]+)\.[\w<>\"$]+:(\([^)]*\)[^\s]*)"
+)
+
+
+def _normalize_method_name(name: str) -> str:
+    """javap quotes special method names like `"<init>"`. Strip quotes so
+    method-key lookups match the entity row that `_extract_method_name`
+    emits (which uses the unquoted form)."""
+    if name.startswith('"') and name.endswith('"'):
+        name = name[1:-1]
+    return name
 
 
 def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
@@ -243,17 +278,38 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
 
     i = 0
     n = len(lines)
-    while i < n and not lines[i].strip().endswith("{"):
+    # Find the class signature line. With `-c`, the sig line ends in `{`.
+    # With `-v`, the sig line has no trailing `{` (the `{` opens the body
+    # 400+ lines later, past the constant pool). We accept either: scan
+    # for the first line whose `(class|interface|enum) <fqcn>` pattern
+    # matches SIG_RE.
+    sig_idx = -1
+    while i < n:
+        s = lines[i].strip()
+        if re.search(r"\b(class|interface|enum)\s+[\w$.]+", s):
+            m = SIG_RE.search(lines[i])
+            if m:
+                sig_idx = i
+                break
         i += 1
-    if i < n:
-        m = SIG_RE.search(lines[i])
+    if sig_idx >= 0:
+        m = SIG_RE.search(lines[sig_idx])
         if m:
             fqcn = m.group(1)
             ext_raw = (m.group(2) or "").strip()
             impl_raw = (m.group(3) or "").strip()
             ext = _split_types(ext_raw)
             impl = _split_types(impl_raw)
-        i += 1
+        i = sig_idx + 1
+        # In verbose mode the actual class body opens 400+ lines later
+        # with a standalone `{` after the constant pool dump. Skip past
+        # the constant pool so we don't try to parse pool entries as
+        # field/method declarations.
+        if not lines[sig_idx].rstrip().endswith("{"):
+            while i < n and lines[i].strip() != "{":
+                i += 1
+            if i < n:
+                i += 1  # step past the `{` line
 
     # Walk method blocks. javap -p -c emits methods alternating with their
     # bytecode. A method header looks like:
@@ -311,7 +367,7 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
                 body.append(lines[k])
                 k += 1
 
-            mname = _extract_method_name(line)
+            mname = _extract_method_name(line, fqcn)
             if mname:
                 args = decode_args(descriptor.split(":", 1)[0]
                                    if ":" in descriptor else descriptor)
@@ -319,9 +375,11 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
                 proc_deps: set[str] = set()
                 struct_deps: set[str] = set()
                 for bl in body:
+                    matched = False
                     for m_inv in INVOKE_RE.finditer(bl):
+                        matched = True
                         owner = m_inv.group(1).replace("/", ".")
-                        meth = m_inv.group(2)
+                        meth = _normalize_method_name(m_inv.group(2))
                         mdesc = m_inv.group(3)
                         try:
                             margs = decode_args(mdesc)
@@ -332,6 +390,24 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
                                 f"proc:{owner}#{meth}({','.join(margs)})"
                             )
                             struct_deps.add(owner)
+                            for c in descriptor_classes(mdesc):
+                                if not _excluded(c):
+                                    struct_deps.add(c)
+                    if not matched:
+                        # Fallback for owner-less invokes — owner is the
+                        # current class. This catches every `<init>` after
+                        # `new`, plus same-class virtual / static calls.
+                        for m_inv2 in INVOKE_NO_OWNER_RE.finditer(bl):
+                            meth = _normalize_method_name(m_inv2.group(1))
+                            mdesc = m_inv2.group(2)
+                            try:
+                                margs = decode_args(mdesc)
+                            except Exception:
+                                margs = []
+                            if fqcn and not _excluded(fqcn):
+                                proc_deps.add(
+                                    f"proc:{fqcn}#{meth}({','.join(margs)})"
+                                )
                             for c in descriptor_classes(mdesc):
                                 if not _excluded(c):
                                     struct_deps.add(c)
@@ -369,7 +445,39 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
     # field-type deps belong to the struct itself, expressed as edges
     # struct:fqcn -> struct:T for each field type T (including generic
     # type-arguments harvested from javap's source-form lines).
-    return fqcn, ext, impl, methods, struct_deps_from_fields
+    #
+    # Constant-pool method references: every `Foo::bar` / `Foo::new`
+    # (method-reference-style lambda) shows up as a Methodref +
+    # MethodHandle entry in the verbose constant pool. The InvokeDynamic
+    # bytecode comment omits the target class, so without the constant
+    # pool we can't see (e.g.) `TwoIfBySeaEndTurnDelegate::new` in
+    # `XmlGameElementMapper.newTwoIfBySeaDelegateFactories()`. We harvest
+    # them as class-level struct deps + class-level proc deps; per-method
+    # attribution would need bootstrap-method table parsing which isn't
+    # worth the complexity for the gain.
+    cp_struct_deps: set[str] = set()
+    cp_proc_deps: set[str] = set()
+    for ln in lines:
+        m_cp = CP_METHODREF_RE.search(ln)
+        if not m_cp:
+            continue
+        owner = m_cp.group(1).replace("/", ".")
+        # extract the method name between `.` and `:`
+        # we re-find it in the // comment
+        cm = re.search(r"//\s*(?:REF_\w+\s+)?[\w/$]+\.([\w<>\"$]+):(\([^)]*\)[^\s]*)", ln)
+        if cm and not _excluded(owner):
+            meth = _normalize_method_name(cm.group(1))
+            mdesc = cm.group(2)
+            try:
+                margs = decode_args(mdesc)
+            except Exception:
+                margs = []
+            cp_proc_deps.add(f"proc:{owner}#{meth}({','.join(margs)})")
+            cp_struct_deps.add(owner)
+            for c in descriptor_classes(mdesc):
+                if not _excluded(c):
+                    cp_struct_deps.add(c)
+    return fqcn, ext, impl, methods, struct_deps_from_fields, cp_struct_deps, cp_proc_deps
 
 
 def _excluded(fqcn: str) -> bool:
@@ -387,9 +495,11 @@ def _split_types(s: str) -> list[str]:
     return [t.strip() for t in s.split(",") if t.strip()]
 
 
-def _extract_method_name(sig_line: str) -> str:
+def _extract_method_name(sig_line: str, fqcn: str = "") -> str:
     """From `  public java.lang.String foo(int, int);` extract `foo`.
-    For `  Unit(UnitType, GamePlayer);` (constructor) extract `<init>`."""
+    For `  public games.strategy.engine.data.Unit(UnitType, GamePlayer);`
+    (constructor) extract `<init>` so the method-key matches the form
+    javap uses on call sites (`Method "<init>":...`)."""
     sig = sig_line.strip().rstrip(";")
     paren = sig.find("(")
     if paren < 0:
@@ -397,8 +507,17 @@ def _extract_method_name(sig_line: str) -> str:
     head = sig[:paren].strip()
     parts = head.split()
     name = parts[-1] if parts else ""
-    # constructor heuristic: name == simple class name (no return type)
-    return name if name else ""
+    if not name:
+        return ""
+    # Constructor heuristic: javap emits the FQ class name (or the simple
+    # name for inner classes via `Outer.Inner` form) where a normal method
+    # would have a return type + name. Match either against `fqcn`.
+    if fqcn:
+        simple = fqcn.split(".")[-1].split("$")[-1]
+        last = name.split(".")[-1].split("$")[-1]
+        if name == fqcn or last == simple:
+            return "<init>"
+    return name
 
 
 # ---------------------------------------------------------------------------
@@ -428,16 +547,16 @@ def build_java_source_index(triplea: Path) -> dict[str, str]:
 # Worker: run javap on one class file and return parsed result
 # ---------------------------------------------------------------------------
 
-def _javap_one(class_file: str) -> tuple[str, str, list[str], list[str], list[dict], set[str]]:
+def _javap_one(class_file: str):
     try:
         out = subprocess.run(
-            ["javap", "-p", "-c", "-s", class_file],
-            capture_output=True, text=True, check=True, timeout=30,
+            ["javap", "-p", "-c", "-s", "-v", class_file],
+            capture_output=True, text=True, check=True, timeout=60,
         ).stdout
-    except Exception as e:
-        return class_file, "", [], [], [], set()
-    fqcn, ext, impl, methods, field_deps = parse_javap(out)
-    return class_file, fqcn, ext, impl, methods, field_deps
+    except Exception:
+        return class_file, "", [], [], [], set(), set(), set()
+    fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs = parse_javap(out)
+    return class_file, fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs
 
 
 # ---------------------------------------------------------------------------
@@ -471,14 +590,14 @@ def main() -> None:
 
     # parallel javap
     print(f"running javap with {args.workers} workers...")
-    parsed: list[tuple[str, list[str], list[str], list[dict], set[str]]] = []
+    parsed: list = []
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = {ex.submit(_javap_one, str(p)): p for p, _ in cls_files}
         done = 0
         for fut in as_completed(futs):
-            _, fqcn, ext, impl, methods, field_deps = fut.result()
+            _, fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs = fut.result()
             if fqcn:
-                parsed.append((fqcn, ext, impl, methods, field_deps))
+                parsed.append((fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs))
             done += 1
             if done % 500 == 0:
                 print(f"    {done}/{len(cls_files)}")
@@ -529,7 +648,7 @@ def main() -> None:
     # so a subclass of a tainted TripleA class is itself tainted.
     triplea_parents: dict[str, list[str]] = {}
     ui_tainted: set[str] = set()
-    for fqcn, ext, impl, methods, field_deps in parsed:
+    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs in parsed:
         parents = ext + impl
         triplea_parents[fqcn] = [p for p in parents if not _excluded(p)]
         # the `org.triplea.swing.*` helper package is itself UI by
@@ -571,7 +690,7 @@ def main() -> None:
     entity_rows: list[tuple] = []
     dep_rows: set[tuple[str, str]] = set()
 
-    for fqcn, ext, impl, methods, field_deps in parsed:
+    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs in parsed:
         # struct row
         top = fqcn.split("$", 1)[0]
         java_path = java_idx.get(top, "")
@@ -588,6 +707,14 @@ def main() -> None:
         for ft in field_deps:
             if not _excluded(ft) and ft != fqcn:
                 dep_rows.add((f"struct:{fqcn}", f"struct:{ft}"))
+        # constant-pool method-reference targets (`Foo::new`, `Foo::bar`)
+        # — attributed at class scope since javap doesn't tell us which
+        # invokedynamic site uses each pool entry.
+        for ft in cp_structs:
+            if not _excluded(ft) and ft != fqcn:
+                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}"))
+        for pk in cp_procs:
+            dep_rows.add((f"struct:{fqcn}", pk))
         # method rows + their deps
         for m in methods:
             args_str = ",".join(m["args_java"])

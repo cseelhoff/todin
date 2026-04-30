@@ -4,6 +4,12 @@ Game_Data_Event_Listeners :: struct {
 	listeners: map[Game_Data_Event][dynamic]proc(),
 }
 
+make_Game_Data_Event_Listeners :: proc() -> Game_Data_Event_Listeners {
+	return Game_Data_Event_Listeners{
+		listeners = make(map[Game_Data_Event][dynamic]proc()),
+	}
+}
+
 game_data_event_listeners_add_listener :: proc(self: ^Game_Data_Event_Listeners, event: Game_Data_Event, runnable: proc()) {
 	if event not_in self.listeners {
 		self.listeners[event] = make([dynamic]proc())

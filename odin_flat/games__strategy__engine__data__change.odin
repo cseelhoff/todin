@@ -35,6 +35,12 @@ Change_Kind :: enum {
 
 Change :: struct {
 	kind: Change_Kind,
+	// Java: public abstract Change invert();
+	// Subtype constructors set this to the kind-specific invert proc.
+	invert: proc(self: ^Change) -> ^Change,
+	// Java: protected abstract void perform(GameState data);
+	// Subtype constructors set this to the kind-specific perform proc.
+	perform: proc(self: ^Change, data: ^Game_State),
 }
 
 // Java owners covered by this file:
@@ -44,9 +50,20 @@ change_is_empty :: proc(self: ^Change) -> bool {
 	return false
 }
 
+make_Change :: proc() -> Change {
+	return Change{}
+}
+
 
 // Generic dispatch stubs over Change.kind. Real per-kind logic lives on
 // the corresponding *_perform / *_invert procedures and will be wired in
 // during Phase B. For now these unblock package-level compilation.
-change_perform :: proc(self: ^Change, data: ^Game_State) {}
-change_invert :: proc(self: ^Change) -> ^Change { return self }
+change_perform :: proc(self: ^Change, data: ^Game_State) {
+	if self == nil { return }
+	if self.perform != nil { self.perform(self, data) }
+}
+change_invert :: proc(self: ^Change) -> ^Change {
+	if self == nil { return nil }
+	if self.invert != nil { return self.invert(self) }
+	return self
+}

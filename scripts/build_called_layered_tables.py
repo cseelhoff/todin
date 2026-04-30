@@ -170,7 +170,78 @@ def main() -> None:
           AND is_ui = 0
     """)
     n_methods = cur.execute("SELECT COUNT(*) FROM methods").fetchone()[0]
-    print(f"  methods: {n_methods}")
+    print(f"  methods (JaCoCo seed): {n_methods}")
+
+    # ---- include lambda$* siblings of any included class ----
+    # Lambda methods are invoked exclusively via invokedynamic, which we
+    # don't capture as proc->proc edges. JaCoCo records most lambdas, but
+    # factory-style lambdas (e.g. `() -> new TwoIfBySeaEndTurnDelegate()`
+    # inside `XmlGameElementMapper.newTwoIfBySeaDelegateFactories()`) are
+    # constructed during setup but never executed in the AI snapshot, so
+    # they're filtered out -- yet their body's `new T()` references are
+    # the only way `T` enters the struct graph. Include every lambda$
+    # method of any class that already has at least one included method,
+    # regardless of the JaCoCo flag, so static struct dependencies
+    # transitively reach into the lambda bodies.
+    added_lambdas = cur.execute("""
+        INSERT OR IGNORE INTO methods
+            (method_key, owner_struct_key, java_file_path, java_lines,
+             odin_file_path, is_implemented)
+        SELECT e.primary_key,
+               'struct:' || substr(e.primary_key, 6, instr(e.primary_key,'#') - 6),
+               e.java_file_path, e.java_lines, e.odin_file_path,
+               e.is_fully_implemented_error_free_no_todo_no_stub
+        FROM entities e
+        WHERE e.primary_key LIKE 'proc:%'
+          AND e.is_ui = 0
+          AND substr(e.primary_key,
+                     instr(e.primary_key,'#') + 1,
+                     7) = 'lambda$'
+          AND ('struct:' || substr(e.primary_key, 6,
+                                   instr(e.primary_key,'#') - 6))
+              IN (SELECT DISTINCT owner_struct_key FROM methods)
+    """).rowcount
+    print(f"  + lambda$ siblings: {added_lambdas}")
+
+    # ---- transitive proc->proc closure ----
+    # Pull in any non-UI proc that an already-included method calls,
+    # regardless of the JaCoCo flag. This fixes two systemic gaps:
+    #  - private static helpers (e.g. XmlGameElementMapper#handleMissingObject)
+    #    that JaCoCo missed because the AI snapshot never hits the error
+    #    path, but whose callers are included.
+    #  - interface methods (e.g. IEditableProperty#getValue()) only
+    #    recorded against the concrete subclass; callers that hold the
+    #    interface type need the abstract proc to call into.
+    # The first pass also folds in `struct -> proc` edges from constant-
+    # pool method references (`Foo::new`, `Foo::bar`) attributed at
+    # class scope by extract_entities.py: any struct whose method is in
+    # `methods` may cp-reference further procs through method-reference
+    # syntax that javap's `-c` invokedynamic comment doesn't expose.
+    while True:
+        added_calls = cur.execute("""
+            INSERT OR IGNORE INTO methods
+                (method_key, owner_struct_key, java_file_path, java_lines,
+                 odin_file_path, is_implemented)
+            SELECT DISTINCT
+                   e.primary_key,
+                   'struct:' || substr(e.primary_key, 6, instr(e.primary_key,'#') - 6),
+                   e.java_file_path, e.java_lines, e.odin_file_path,
+                   e.is_fully_implemented_error_free_no_todo_no_stub
+            FROM entities e
+            JOIN dependencies d ON d.depends_on_key = e.primary_key
+            WHERE e.primary_key LIKE 'proc:%'
+              AND e.is_ui = 0
+              AND (
+                   d.primary_key IN (SELECT method_key FROM methods)
+                OR d.primary_key IN (SELECT owner_struct_key FROM methods)
+              )
+              AND d.depends_on_key NOT IN (SELECT method_key FROM methods)
+        """).rowcount
+        if not added_calls:
+            break
+        print(f"  + transitive proc calls: {added_calls}")
+    n_methods = cur.execute("SELECT COUNT(*) FROM methods").fetchone()[0]
+    print(f"  methods (with closure): {n_methods}")
 
     cur.execute("""
         INSERT INTO structs (struct_key, java_file_path, java_lines,
