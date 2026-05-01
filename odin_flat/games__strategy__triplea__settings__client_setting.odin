@@ -32,3 +32,83 @@ client_setting_save_games_folder_path :: proc() -> ^Path_Client_Setting {
         }
         return _client_setting_save_games_folder_path
 }
+
+// Java: protected ClientSetting(Class<T> type, String name, T defaultValue).
+// The two-arg form (no default) delegates to this; the orchestrator only
+// asked for the three-arg constructor. `default_value` may be nil (Java
+// allowed @Nullable).
+client_setting_new :: proc(type: typeid, name: string, default_value: rawptr) -> ^Client_Setting {
+        // Java: Preconditions.checkNotNull(type); Preconditions.checkNotNull(name).
+        // typeid is a value type, can't be nil. `name` non-nullness is structural
+        // in Odin; an empty string would still satisfy the original null check.
+        self := new(Client_Setting)
+        self.type = type
+        self.name = name
+        self.default_value = default_value
+        self.listeners = make([dynamic]proc(^Game_Setting))
+        return self
+}
+
+// Java: public final Optional<T> getDefaultValue() { return Optional.ofNullable(defaultValue); }
+// Optional<T> → (rawptr, bool) where the bool models `isPresent()`.
+client_setting_get_default_value :: proc(self: ^Client_Setting) -> (rawptr, bool) {
+        return self.default_value, self.default_value != nil
+}
+
+// Java: private boolean isDefaultValue(T value) { return value.equals(defaultValue); }
+// With the generic value erased to rawptr, only reference equality is
+// available — matches Java's behavior when `T` is a reference type without
+// a custom equals (and is the conservative fallback otherwise).
+client_setting_is_default_value :: proc(self: ^Client_Setting, value: rawptr) -> bool {
+        return value == self.default_value
+}
+
+// Java: listeners.forEach(listener -> listener.accept(this)) (null-encoded branch).
+// lambda$setEncodedValue$1 is the per-listener body, called once per registered
+// Consumer<GameSetting<T>>.
+client_setting_lambda_set_encoded_value_1 :: proc(self: ^Client_Setting, listener: proc(^Game_Setting)) {
+        listener(&self.game_setting)
+}
+
+// Java: listeners.forEach(listener -> listener.accept(this)) (put-success branch).
+// Identical body to lambda$setEncodedValue$1; javac emits two synthetic
+// methods because the lambda appears twice in the source.
+client_setting_lambda_set_encoded_value_2 :: proc(self: ^Client_Setting, listener: proc(^Game_Setting)) {
+        listener(&self.game_setting)
+}
+
+// Java: private static final AtomicReference<Preferences> preferencesRef = new AtomicReference<>();
+@(private="file") _client_setting_preferences_ref: ^Preferences
+
+// Java: private static void flush(final Preferences preferences) { try { preferences.flush(); } catch ... }
+// BackingStoreException is swallowed and logged in Java; the in-memory shim
+// can't fail, so we just call through.
+client_setting_flush :: proc(preferences: ^Preferences) {
+	preferences_flush(preferences)
+}
+
+// Java: private static Preferences getPreferences()
+// Optional.ofNullable(preferencesRef.get()).orElseThrow(() -> new IllegalStateException(...))
+client_setting_get_preferences :: proc() -> ^Preferences {
+	if _client_setting_preferences_ref == nil {
+		return client_setting_lambda_get_preferences_0()
+	}
+	return _client_setting_preferences_ref
+}
+
+// Java: () -> new IllegalStateException("ClientSetting framework has not been initialized. ...")
+// Odin has no checked exceptions in this port; the snapshot harness must
+// have called setPreferences. Fall back to a fresh in-memory node so callers
+// keep functioning rather than crashing the snapshot run.
+client_setting_lambda_get_preferences_0 :: proc() -> ^Preferences {
+	if _client_setting_preferences_ref == nil {
+		_client_setting_preferences_ref = preferences_user_node_for_package()
+	}
+	return _client_setting_preferences_ref
+}
+
+// Java: @VisibleForTesting public static void setPreferences(final Preferences preferences)
+client_setting_set_preferences :: proc(preferences: ^Preferences) {
+	_client_setting_preferences_ref = preferences
+}
+
