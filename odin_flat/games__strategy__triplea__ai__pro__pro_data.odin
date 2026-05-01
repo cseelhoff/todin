@@ -93,3 +93,66 @@ pro_data_get_unit_territory :: proc(self: ^Pro_Data, unit: ^Unit) -> ^Territory 
 pro_data_get_win_percentage :: proc(self: ^Pro_Data) -> f64 {
 	return self.win_percentage
 }
+
+
+// games.strategy.triplea.ai.pro.ProData#<init>()
+// Java: implicit default constructor; field initializers set the
+// defaults below (isSimulation=false, winPercentage=95,
+// minWinPercentage=75, myCapital=null, empty collections,
+// minCostPerHitPoint=Double.MAX_VALUE).
+pro_data_new :: proc() -> ^Pro_Data {
+	self := new(Pro_Data)
+	self.is_simulation = false
+	self.win_percentage = 95
+	self.min_win_percentage = 75
+	self.my_capital = nil
+	self.my_unit_territories = make([dynamic]^Territory)
+	self.unit_territory_map = make(map[^Unit]^Territory)
+	self.unit_value_map = make(map[^Unit_Type]i32)
+	self.purchase_options = nil
+	self.units_to_be_consumed = make(map[^Unit]struct{})
+	self.min_cost_per_hit_point = max(f64)
+	return self
+}
+
+
+// games.strategy.triplea.ai.pro.ProData#getUnitValue(games.strategy.engine.data.UnitType)
+// Java: return unitValueMap.getInt(type);
+// IntegerMap.getInt returns 0 for absent keys, matching the Odin
+// map default for an unset i32 value.
+pro_data_get_unit_value :: proc(self: ^Pro_Data, type: ^Unit_Type) -> i32 {
+	if v, ok := self.unit_value_map[type]; ok {
+		return v
+	}
+	return 0
+}
+
+
+// games.strategy.triplea.ai.pro.ProData#newUnitTerritoryMap(games.strategy.engine.data.GameState)
+// Java: iterate every territory on the map and record each unit's
+// owning territory in a fresh HashMap.
+pro_data_new_unit_territory_map :: proc(data: ^Game_State) -> map[^Unit]^Territory {
+	unit_territory_map := make(map[^Unit]^Territory)
+	for t in game_map_get_territories(game_state_get_map(data)) {
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			unit_territory_map[u] = t
+		}
+	}
+	return unit_territory_map
+}
+
+
+// games.strategy.triplea.ai.pro.ProData#getMinCostPerHitPoint(java.util.List)
+// Java: scan the provided land purchase options and return the
+// smallest cost-per-hit-point, defaulting to Double.MAX_VALUE when
+// the list is empty.
+pro_data_get_min_cost_per_hit_point_from :: proc(self: ^Pro_Data, land_purchase_options: [dynamic]^Pro_Purchase_Option) -> f64 {
+	min_cost_per_hit_point := max(f64)
+	for ppo in land_purchase_options {
+		c := pro_purchase_option_get_cost_per_hit_point(ppo)
+		if c < min_cost_per_hit_point {
+			min_cost_per_hit_point = c
+		}
+	}
+	return min_cost_per_hit_point
+}

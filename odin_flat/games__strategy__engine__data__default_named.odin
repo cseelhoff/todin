@@ -5,6 +5,16 @@ Default_Named :: struct {
 	using game_data_component: Game_Data_Component,
 }
 
+default_named_new :: proc(name: string, data: ^Game_Data) -> ^Default_Named {
+	if len(name) == 0 {
+		panic("Name must not be empty")
+	}
+	self := new(Default_Named)
+	self.named = Named{base = Default_Named_Base{name = name}}
+	self.game_data_component = make_Game_Data_Component(data)
+	return self
+}
+
 default_named_get_name :: proc(self: ^Default_Named) -> string {
 	return self.named.base.name
 }

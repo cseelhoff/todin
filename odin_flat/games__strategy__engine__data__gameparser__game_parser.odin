@@ -214,3 +214,277 @@ game_parser_parse_player_list :: proc(self: ^Game_Parser, xml_player_list: ^Xml_
 		player_list_add_player_id(game_data_get_player_list(self.data), player)
 	}
 }
+
+// Java: private void parseDiceSides(final DiceSides diceSides)
+//   data.setDiceSides(diceSides == null ? 6 : diceSides.getValue());
+game_parser_parse_dice_sides :: proc(self: ^Game_Parser, dice_sides: ^Dice_Sides) {
+	if dice_sides == nil {
+		game_data_set_dice_sides(self.data, 6)
+	} else {
+		game_data_set_dice_sides(self.data, dice_sides_get_value(dice_sides))
+	}
+}
+
+// Java: private void parseUnits(final UnitList unitList)
+//   unitList.getUnits().stream()
+//       .map(UnitList.Unit::getName)
+//       .map(name -> new UnitType(name, data))
+//       .forEach(data.getUnitTypeList()::addUnitType);
+// `UnitList` here is the XML element class `org.triplea.map.data.elements.UnitList`,
+// mapped to `Unit_List` in the Odin port (the engine's `UnitsList` is `Units_List`).
+game_parser_parse_units :: proc(self: ^Game_Parser, unit_list: ^Unit_List) {
+	for u in unit_list_get_units(unit_list) {
+		ut := game_parser_lambda_parse_units_16(self, u.name)
+		unit_type_list_add_unit_type(game_data_get_unit_type_list(self.data), ut)
+	}
+}
+
+// Java: private GamePlayer getPlayerId(final String name) throws GameParseException
+//   return getPlayerIdOptional(name).orElseThrow(() -> new GameParseException(...));
+// Synthetic throw supplier that captures `name` and constructs the exception.
+// Mirrored as a panicking proc.
+game_parser_lambda_get_player_id_3 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find player name: %s", name)
+}
+
+// Java: private RelationshipType getRelationshipType(final String name)
+//   return Optional.ofNullable(data.getRelationshipTypeList().getRelationshipType(name))
+//       .orElseThrow(() -> new GameParseException("Could not find relationship type: %s"));
+game_parser_get_relationship_type :: proc(self: ^Game_Parser, name: string) -> ^Relationship_Type {
+	rt := relationship_type_list_get_relationship_type(
+		game_data_get_relationship_type_list(self.data),
+		name,
+	)
+	if rt == nil {
+		fmt.panicf("Could not find relationship type: %s", name)
+	}
+	return rt
+}
+
+// Synthetic throw supplier for getRelationshipType (captures `name`).
+game_parser_lambda_get_relationship_type_4 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find relationship type: %s", name)
+}
+
+// Java: private TerritoryEffect getTerritoryEffect(final String name)
+//   return Optional.ofNullable(data.getTerritoryEffectList().get(name))
+//       .orElseThrow(() -> new GameParseException("Could not find territory effect: %s"));
+// Odin: TerritoryEffectList is exposed as map[string]^Territory_Effect on Game_Data.
+game_parser_get_territory_effect :: proc(self: ^Game_Parser, name: string) -> ^Territory_Effect {
+	tel := game_data_get_territory_effect_list(self.data)
+	te := tel[name]
+	if te == nil {
+		fmt.panicf("Could not find territory effect: %s", name)
+	}
+	return te
+}
+
+// Synthetic throw supplier for getTerritoryEffect (captures `name`).
+game_parser_lambda_get_territory_effect_5 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find territory effect: %s", name)
+}
+
+// Java: private ProductionRule getProductionRule(final String name)
+//   return Optional.ofNullable(data.getProductionRuleList().getProductionRule(name))
+//       .orElseThrow(() -> new GameParseException("Could not find production rule: %s"));
+game_parser_get_production_rule :: proc(self: ^Game_Parser, name: string) -> ^Production_Rule {
+	pr := production_rule_list_get_production_rule(
+		game_data_get_production_rule_list(self.data),
+		name,
+	)
+	if pr == nil {
+		fmt.panicf("Could not find production rule: %s", name)
+	}
+	return pr
+}
+
+// Synthetic throw supplier for getProductionRule (captures `name`).
+game_parser_lambda_get_production_rule_6 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find production rule: %s", name)
+}
+
+// Java: private RepairRule getRepairRule(final String name)
+//   return Optional.ofNullable(data.getRepairRules().getRepairRule(name))
+//       .orElseThrow(() -> new GameParseException("Could not find repair rule: %s"));
+game_parser_get_repair_rule :: proc(self: ^Game_Parser, name: string) -> ^Repair_Rule {
+	rr := repair_rules_get_repair_rule(game_data_get_repair_rules(self.data), name)
+	if rr == nil {
+		fmt.panicf("Could not find repair rule: %s", name)
+	}
+	return rr
+}
+
+// Synthetic throw supplier for getRepairRule (captures `name`).
+game_parser_lambda_get_repair_rule_7 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find repair rule: %s", name)
+}
+
+// Java: private Territory getTerritory(final String name)
+//   return Optional.ofNullable(data.getMap().getTerritoryOrNull(name))
+//       .orElseThrow(() -> new GameParseException("Could not find territory: %s"));
+game_parser_get_territory :: proc(self: ^Game_Parser, name: string) -> ^Territory {
+	t := game_map_get_territory_or_null(game_data_get_map(self.data), name)
+	if t == nil {
+		fmt.panicf("Could not find territory: %s", name)
+	}
+	return t
+}
+
+// Synthetic throw supplier for getTerritory (captures `name`).
+game_parser_lambda_get_territory_8 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find territory: %s", name)
+}
+
+// Java: private Optional<UnitType> getUnitTypeOptional(final String name)
+//   return data.getUnitTypeList().getUnitType(name);
+// Per port convention, Optional<X> is mirrored as ^X (nil = absent).
+game_parser_get_unit_type_optional :: proc(self: ^Game_Parser, name: string) -> ^Unit_Type {
+	return unit_type_list_get_unit_type(game_data_get_unit_type_list(self.data), name)
+}
+
+// Java: private Optional<Resource> getResourceOptional(final String name)
+//   return data.getResourceList().getResourceOptional(name);
+// Per port convention, Optional<X> is mirrored as ^X (nil = absent).
+game_parser_get_resource_optional :: proc(self: ^Game_Parser, name: string) -> ^Resource {
+	return resource_list_get_resource_optional(game_data_get_resource_list(self.data), name)
+}
+
+// Java: private TechAdvance getTechnology(final String name)
+//   final TechnologyFrontier frontier = data.getTechnologyFrontier();
+//   return Optional.ofNullable(frontier.getAdvanceByName(name))
+//       .or(() -> Optional.ofNullable(frontier.getAdvanceByProperty(name)))
+//       .orElseThrow(() -> new GameParseException("Could not find technology: %s"));
+game_parser_get_technology :: proc(self: ^Game_Parser, name: string) -> ^Tech_Advance {
+	frontier := game_data_get_technology_frontier(self.data)
+	ta := technology_frontier_get_advance_by_name(frontier, name)
+	if ta == nil {
+		ta = technology_frontier_get_advance_by_property(frontier, name)
+	}
+	if ta == nil {
+		fmt.panicf("Could not find technology: %s", name)
+	}
+	return ta
+}
+
+// Synthetic `or` supplier for getTechnology (captures `frontier` and `name`).
+//   () -> Optional.ofNullable(frontier.getAdvanceByProperty(name))
+// Returns ^Tech_Advance (nil = absent) per Optional convention.
+game_parser_lambda_get_technology_9 :: proc(
+	frontier: ^Technology_Frontier,
+	name: string,
+) -> ^Tech_Advance {
+	return technology_frontier_get_advance_by_property(frontier, name)
+}
+
+// Synthetic throw supplier for getTechnology (captures `name`).
+game_parser_lambda_get_technology_10 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find technology: %s", name)
+}
+
+// Java: private IDelegate getDelegate(final String name)
+//   return data.getDelegateOptional(name)
+//       .orElseThrow(() -> new GameParseException("Could not find delegate: %s"));
+game_parser_get_delegate :: proc(self: ^Game_Parser, name: string) -> ^I_Delegate {
+	d := game_data_get_delegate_optional(self.data, name)
+	if d == nil {
+		fmt.panicf("Could not find delegate: %s", name)
+	}
+	return d
+}
+
+// Synthetic throw supplier for getDelegate (captures `name`).
+game_parser_lambda_get_delegate_11 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find delegate: %s", name)
+}
+
+// Java: private ProductionFrontier getProductionFrontier(final String name)
+//   return Optional.ofNullable(data.getProductionFrontierList().getProductionFrontier(name))
+//       .orElseThrow(() -> new GameParseException("Could not find production frontier: %s"));
+game_parser_get_production_frontier :: proc(self: ^Game_Parser, name: string) -> ^Production_Frontier {
+	pf := production_frontier_list_get_production_frontier(
+		game_data_get_production_frontier_list(self.data),
+		name,
+	)
+	if pf == nil {
+		fmt.panicf("Could not find production frontier: %s", name)
+	}
+	return pf
+}
+
+// Synthetic throw supplier for getProductionFrontier (captures `name`).
+game_parser_lambda_get_production_frontier_12 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find production frontier: %s", name)
+}
+
+// Java: private RepairFrontier getRepairFrontier(final String name)
+//   return Optional.ofNullable(data.getRepairFrontierList().getRepairFrontier(name))
+//       .orElseThrow(() -> new GameParseException("Could not find repair frontier: %s"));
+game_parser_get_repair_frontier :: proc(self: ^Game_Parser, name: string) -> ^Repair_Frontier {
+	rf := repair_frontier_list_get_repair_frontier(
+		game_data_get_repair_frontier_list(self.data),
+		name,
+	)
+	if rf == nil {
+		fmt.panicf("Could not find repair frontier: %s", name)
+	}
+	return rf
+}
+
+// Synthetic throw supplier for getRepairFrontier (captures `name`).
+game_parser_lambda_get_repair_frontier_13 :: proc(name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Could not find repair frontier: %s", name)
+}
+
+// Synthetic throw supplier for parseDelegates (captures `className`):
+//   () -> new GameParseException(String.format("Class <%s> is not a delegate.", className))
+game_parser_lambda_parse_delegates_22 :: proc(class_name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Class <%s> is not a delegate.", class_name)
+}
+
+// Synthetic throw supplier for parseAttachment (captures `className`):
+//   () -> new GameParseException(String.format(
+//       "Attachment of type %s could not be instantiated", className))
+game_parser_lambda_parse_attachment_23 :: proc(class_name: string) -> ^Game_Parse_Exception {
+	fmt.panicf("Attachment of type %s could not be instantiated", class_name)
+}
+
+// Synthetic throw supplier for setOptions (captures `name` and `attachment`):
+//   () -> new GameParseException(String.format(
+//       "Missing property definition for option ''%s'' in attachment ''%s''",
+//       name, attachment.getName()))
+game_parser_lambda_set_options_24 :: proc(
+	name: string,
+	attachment: ^I_Attachment,
+) -> ^Game_Parse_Exception {
+	fmt.panicf(
+		"Missing property definition for option '%s' in attachment '%s'",
+		name,
+		i_attachment_get_name(attachment),
+	)
+}
+
+// Synthetic outer lambda from GameParser.parse(Path, boolean)'s
+// gameData.ifPresent(...) call (captures `xmlFile`, takes `data`):
+//   data ->
+//       FileUtils.findFileInParentFolders(xmlFile, MAP_YAML_FILE_NAME)
+//           .flatMap(MapDescriptionYaml::fromFile)
+//           .ifPresent(mapDescriptionYaml -> {
+//               data.setGameName(mapDescriptionYaml.findGameNameFromXmlFileName(xmlFile));
+//               data.setMapName(mapDescriptionYaml.getMapName());
+//           });
+// The inner ifPresent body is inlined here (it is the only call site).
+game_parser_lambda_parse_1 :: proc(xml_file: Path, data: ^Game_Data) {
+	yaml_path := file_utils_find_file_in_parent_folders(xml_file, MAP_YAML_FILE_NAME)
+	if yaml_path == nil {
+		return
+	}
+	yaml, ok := map_description_yaml_from_file(yaml_path^)
+	if !ok || yaml == nil {
+		return
+	}
+	game_data_set_game_name(
+		data,
+		map_description_yaml_find_game_name_from_xml_file_name(yaml, xml_file),
+	)
+	game_data_set_map_name(data, map_description_yaml_get_map_name(yaml))
+}

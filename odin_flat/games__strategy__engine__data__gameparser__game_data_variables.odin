@@ -115,3 +115,21 @@ game_data_variables_find_nested_variables :: proc(
 	}
 	return result
 }
+
+// Java: lambda$parse$0(Map<String,List<String>> variables, String value)
+// Originates from: current.getElements().stream().map(...).flatMap(value -> findNestedVariables(value, variables))
+game_data_variables_lambda_parse_0 :: proc(
+	variables: map[string][dynamic]string,
+	value: string,
+) -> [dynamic]string {
+	return game_data_variables_find_nested_variables(value, variables)
+}
+
+// Java: lambda$findNestedVariables$1(Map<String,List<String>> variables, String s)
+// Originates from: variables.get(value).stream().flatMap(s -> findNestedVariables(s, variables))
+game_data_variables_lambda_find_nested_variables_1 :: proc(
+	variables: map[string][dynamic]string,
+	s: string,
+) -> [dynamic]string {
+	return game_data_variables_find_nested_variables(s, variables)
+}

@@ -75,3 +75,16 @@ ai_utils_get_production_rule :: proc(unit_type: ^Unit_Type, player: ^Game_Player
 	return nil
 }
 
+// Java: public static @Nullable Unit getLastUnitMatching(
+//     List<Unit> units, Predicate<Unit> match, int endIndex)
+//   final int index = getIndexOfLastUnitMatching(units, match, endIndex);
+//   if (index == -1) return null;
+//   return units.get(index);
+ai_utils_get_last_unit_matching :: proc(units: [dynamic]^Unit, match: proc(^Unit) -> bool, end_index: i32) -> ^Unit {
+	index := ai_utils_get_index_of_last_unit_matching(units, match, end_index)
+	if index == -1 {
+		return nil
+	}
+	return units[index]
+}
+

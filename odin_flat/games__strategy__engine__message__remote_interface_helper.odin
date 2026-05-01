@@ -5,6 +5,20 @@ package game
 
 Remote_Interface_Helper :: struct {}
 
+// Java: static int getNumber(Method) — reads the @RemoteActionCode
+// annotation value from the supplied method. Java throws
+// IllegalArgumentException when the annotation is absent; Odin has no
+// exceptions, so callers are expected to filter via
+// `method.has_remote_action_code` first (the only call site, the
+// `getMethod` lambda, already does). The Method shim stores the
+// annotation value directly, so no reflection is needed.
+remote_interface_helper_get_number :: proc(method: ^Method) -> i32 {
+	if method == nil {
+		return 0
+	}
+	return method.remote_action_code
+}
+
 // Predicate equivalent to the Java lambda
 //   method -> getNumber(method) == methodNumber
 // inside RemoteInterfaceHelper#getMethod. Returns true when the

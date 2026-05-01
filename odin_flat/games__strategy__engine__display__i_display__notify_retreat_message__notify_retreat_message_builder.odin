@@ -33,3 +33,14 @@ i_display_notify_retreat_message_notify_retreat_message_builder_step :: proc(sel
 	self.step = step
 	return self
 }
+
+i_display_notify_retreat_message_notify_retreat_message_builder_build :: proc(self: ^I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder) -> ^Notify_Retreat_Message {
+	msg := new(Notify_Retreat_Message)
+	msg^ = Notify_Retreat_Message{
+		short_message          = self.short_message,
+		message                = self.message,
+		step                   = self.step,
+		retreating_player_name = self.retreating_player_name,
+	}
+	return msg
+}

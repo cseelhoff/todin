@@ -195,8 +195,6 @@ unit_set_was_amphibious :: proc(self: ^Unit, value: bool) -> ^Unit {
 	return self
 }
 
-u
-
 unit_to_string :: proc(self: ^Unit) -> string {
 	// TODO: none of these should happen,... except that they did a couple times.
 	if self.type == nil || self.owner == nil || self.game_data == nil {
@@ -231,7 +229,9 @@ unit_to_string :: proc(self: ^Unit) -> string {
 		default_named_get_name(&self.type.named_attachable.default_named),
 		default_named_get_name(&self.owner.named_attachable.default_named),
 	)
-}nit_to_string_no_owner :: proc(self: ^Unit) -> string {
+}
+
+unit_to_string_no_owner :: proc(self: ^Unit) -> string {
 	return self.type.name
 }
 
@@ -359,4 +359,79 @@ unit_set_was_loaded_after_combat :: proc(self: ^Unit, v: bool) {
 
 unit_set_was_scrambled :: proc(self: ^Unit, v: bool) {
 	self.was_scrambled = v
+}
+
+// games.strategy.engine.data.Unit#equals(java.lang.Object)
+//
+// Lombok @EqualsAndHashCode(of = "id", callSuper = false): two Units are equal
+// iff their UUID `id` fields are equal. The Java code accepts an arbitrary
+// Object, returning false on any non-Unit. Odin's rawptr carries no runtime
+// type tag; the orchestrator instructions specify casting `other` to `^Unit`
+// and comparing UUIDs.
+unit_equals :: proc(self: ^Unit, other: rawptr) -> bool {
+	if self == nil {
+		return other == nil
+	}
+	if other == nil {
+		return false
+	}
+	if rawptr(self) == other {
+		return true
+	}
+	o := cast(^Unit)other
+	return self.id == o.id
+}
+
+// games.strategy.engine.data.Unit#hashCode()
+//
+// Lombok @EqualsAndHashCode(of = "id"): hash derives only from the UUID. Java's
+// UUID.hashCode folds the 128-bit value into 32 bits via XOR of the high/low
+// 64-bit halves and then high32 ^ low32. Reproduced here over the 16-byte
+// representation so equal UUIDs hash equal.
+unit_hash_code :: proc(self: ^Unit) -> i32 {
+	if self == nil {
+		return 0
+	}
+	hi: u64 = 0
+	for i in 0 ..< 8 {
+		hi = (hi << 8) | u64(self.id[i])
+	}
+	lo: u64 = 0
+	for i in 8 ..< 16 {
+		lo = (lo << 8) | u64(self.id[i])
+	}
+	folded := hi ~ lo
+	return i32(u32(folded ~ (folded >> 32)))
+}
+
+// games.strategy.engine.data.Unit#isEquivalent(games.strategy.engine.data.Unit)
+//
+// Two units are "equivalent" (interchangeable for stacking) when they share
+// type, owner, and current hit count. Mirrors the Java predicate exactly.
+unit_is_equivalent :: proc(self: ^Unit, unit: ^Unit) -> bool {
+	if self == nil || unit == nil {
+		return false
+	}
+	return self.type != nil &&
+		self.type == unit.type &&
+		self.owner != nil &&
+		self.owner == unit.owner &&
+		self.hits == unit.hits
+}
+
+// games.strategy.engine.data.Unit#setOwner(games.strategy.engine.data.GamePlayer)
+//
+// Java: owner = Optional.ofNullable(player).orElse(getData().getPlayerList().getNullPlayer()).
+// A null argument resolves to the GameData's PlayerList null-player sentinel.
+unit_set_owner :: proc(self: ^Unit, player: ^Game_Player) {
+	if player != nil {
+		self.owner = player
+		return
+	}
+	data := game_data_component_get_data(&self.game_data_component)
+	if data == nil || data.player_list == nil {
+		self.owner = nil
+		return
+	}
+	self.owner = player_list_get_null_player(data.player_list)
 }

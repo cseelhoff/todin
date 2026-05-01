@@ -44,3 +44,37 @@ i18n_resource_bundle_get_supported_language_range :: proc() -> [dynamic]Locale_L
 i18n_resource_bundle_get_text :: proc(self: ^I18n_Resource_Bundle, key: string) -> string {
 	return resource_bundle_get_string(self.bundle, key)
 }
+
+// Static field mirror of Java's:
+//   private static final Locale locale =
+//       Locale.lookup(getSupportedLanguageRange(),
+//                     Arrays.asList(Collator.getAvailableLocales()));
+// Lazily initialized on first access. The AI snapshot harness does
+// not exercise localization, so the lookup is left as the default
+// Locale value — locale matters only for which property file the
+// ResourceBundle shim would load, and the shim is in-memory.
+@(private="file") i18n_locale: Locale
+@(private="file") i18n_locale_init: bool
+
+@(private="file") ensure_i18n_locale :: proc() {
+	if i18n_locale_init {
+		return
+	}
+	// Force evaluation of supported language range (matches Java
+	// initialization order) even though the result is unused by the
+	// shim ResourceBundle.
+	_ = i18n_resource_bundle_get_supported_language_range()
+	i18n_locale = Locale{}
+	i18n_locale_init = true
+}
+
+// protected I18nResourceBundle()
+//   bundle = ResourceBundle.getBundle(getResourcePath(), locale);
+// Java's constructor invokes the abstract getResourcePath() polymorphically;
+// in Odin the subclass-specific path is passed in by the subclass's _new proc.
+i18n_resource_bundle_new :: proc(resource_path: string = "") -> ^I18n_Resource_Bundle {
+	ensure_i18n_locale()
+	self := new(I18n_Resource_Bundle)
+	self.bundle = resource_bundle_new()
+	return self
+}

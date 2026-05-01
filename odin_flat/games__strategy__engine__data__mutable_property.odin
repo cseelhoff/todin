@@ -150,6 +150,30 @@ mutable_property_lambda_of_mapper_4 :: proc(
 	return setter.fn(setter.ctx, mapped)
 }
 
+// lambda$ofMapper$5(ThrowingConsumer setter, Supplier defaultValue):
+// Java-bytecode-equivalent free-standing helper for the Runnable body
+// synthesised inside ofMapper as the resetter:
+//   () -> {
+//     try { setter.accept(defaultValue.get()); }
+//     catch (RuntimeException e) { throw e; }
+//     catch (Exception e) { throw new IllegalStateException("Unexpected Error while resetting value", e); }
+//   }
+// The two captured locals (setter, defaultValue) are passed explicitly.
+// Checked-exception failures from the setter are surfaced via the
+// Maybe(string) error channel; the Java IllegalStateException wrap is
+// modelled as a panic, mirroring the unchecked-exception convention used
+// by the other no_* lambdas in this file.
+mutable_property_lambda_of_mapper_5 :: proc(
+	setter: Mutable_Property_Setter_Slot,
+	default_value: Mutable_Property_Getter_Slot,
+) {
+	v := default_value.fn(default_value.ctx)
+	err := setter.fn(setter.ctx, v)
+	if err != nil {
+		panic("Unexpected Error while resetting value")
+	}
+}
+
 // Captured environment for ofMapper's two synthetic lambdas:
 //   stringSetter: o -> setter.accept(mapper.apply(o))
 //   resetter:     () -> setter.accept(defaultValue.get())

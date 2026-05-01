@@ -14,6 +14,61 @@ Resource_Collection :: struct {
 	resources: Integer_Map_Resource,
 }
 
+// public static final int MAX_FIT_VALUE = 10000
+RESOURCE_COLLECTION_MAX_FIT_VALUE :: 10000
+
+// public ResourceCollection(final GameData data)
+resource_collection_new :: proc(data: ^Game_Data) -> ^Resource_Collection {
+	self := new(Resource_Collection)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.resources = make(Integer_Map_Resource)
+	return self
+}
+
+// private void change(final Resource resource, final int quantity)
+// Mirrors IntegerMap.add(key, qty): resources[resource] += quantity.
+resource_collection_change :: proc(self: ^Resource_Collection, resource: ^Resource, quantity: i32) {
+	existing, _ := self.resources[resource]
+	self.resources[resource] = existing + quantity
+}
+
+// public int getQuantity(final Resource resource)
+// IntegerMap.getInt returns 0 for missing keys.
+resource_collection_get_quantity :: proc(self: ^Resource_Collection, resource: ^Resource) -> i32 {
+	value, ok := self.resources[resource]
+	if !ok {
+		return 0
+	}
+	return value
+}
+
+// public boolean isEmpty()
+resource_collection_is_empty :: proc(self: ^Resource_Collection) -> bool {
+	return len(self.resources) == 0
+}
+
+// games.strategy.engine.data.ResourceCollection#lambda$fitsHowOften$0(java.util.Map$Entry)
+//
+// Java synthetic method backing the mapToInt lambda inside fitsHowOften:
+//   costEntry -> {
+//     int resourceCost = costEntry.getValue();
+//     if (resourceCost == 0) {
+//       return MAX_FIT_VALUE;
+//     } else {
+//       return this.resources.getInt(costEntry.getKey()) / resourceCost;
+//     }
+//   }
+// Captures `this`; takes a Map.Entry<Resource, Integer>. Odin lacks
+// Map.Entry; the entry is passed as (key, value) which is how callers
+// iterate cost.entrySet().
+resource_collection_lambda_fits_how_often_0 :: proc(self: ^Resource_Collection, entry_key: ^Resource, entry_value: i32) -> i32 {
+	resource_cost := entry_value
+	if resource_cost == 0 {
+		return RESOURCE_COLLECTION_MAX_FIT_VALUE
+	}
+	return resource_collection_get_quantity(self, entry_key) / resource_cost
+}
+
 resource_collection_remove_resource_up_to :: proc(self: ^Resource_Collection, resource: ^Resource, quantity: i32) {
 	if quantity < 0 {
 		panic("quantity must be positive")

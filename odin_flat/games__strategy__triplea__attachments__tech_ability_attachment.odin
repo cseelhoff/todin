@@ -1,5 +1,18 @@
 package game
 
+import "core:fmt"
+
+// Java: TechAbilityAttachment.ABILITY_CAN_BLITZ / ABILITY_CAN_BOMBARD.
+// Public string constants enumerating the abilities understood by
+// `setUnitAbilitiesGained`.
+ABILITY_CAN_BLITZ   :: "canBlitz"
+ABILITY_CAN_BOMBARD :: "canBombard"
+
+// Java: Constants.TECH_ABILITY_ATTACHMENT_NAME ("techAbilityAttachment").
+// Inlined here to avoid pulling in the entire Constants file for a single
+// string literal; the canonical Java value is preserved verbatim.
+TECH_ABILITY_ATTACHMENT_NAME :: "techAbilityAttachment"
+
 // Port of games.strategy.triplea.attachments.TechAbilityAttachment.
 Tech_Ability_Attachment :: struct {
 	using default_attachment: Default_Attachment,
@@ -233,3 +246,181 @@ tech_ability_attachment_lambda_set_unit_abilities_gained_6 :: proc(
 	return make(map[string]struct {})
 }
 
+
+// --- get(TechAdvance) ----------------------------------------------------
+
+// Java: public static TechAbilityAttachment get(final TechAdvance type)
+// Mirrors the static lookup used throughout the file: when `type` is a
+// GenericTechAdvance aliasing a hardcoded advance, return that hardcoded
+// advance's TechAbilityAttachment; otherwise return `type`'s own. The
+// Java `instanceof GenericTechAdvance` test is preserved through the
+// `is_generic` discriminator added on Tech_Advance (no RTTI / reflection).
+tech_ability_attachment_get :: proc(type: ^Tech_Advance) -> ^Tech_Ability_Attachment {
+	if type == nil {
+		return nil
+	}
+	if type.is_generic {
+		generic := cast(^Generic_Tech_Advance)type
+		hard_coded_advance := generic_tech_advance_get_advance(generic)
+		if hard_coded_advance != nil {
+			raw := named_attachable_get_attachment(
+				&hard_coded_advance.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+			)
+			return cast(^Tech_Ability_Attachment)raw
+		}
+	}
+	raw := named_attachable_get_attachment(&type.named_attachable, TECH_ABILITY_ATTACHMENT_NAME)
+	return cast(^Tech_Ability_Attachment)raw
+}
+
+// --- splitAndValidate / getIntInRange -----------------------------------
+
+// Java: @VisibleForTesting String[] splitAndValidate(name, value)
+// Splits `value` on ':' and panics with the Java GameParseException message
+// when the input is empty or has more than two colon-separated fields.
+// The caller owns the returned `[dynamic]string` (mirrors the convention
+// used by `default_attachment_split_on_colon`).
+tech_ability_attachment_split_and_validate :: proc(
+	self: ^Tech_Ability_Attachment,
+	name: string,
+	value: string,
+) -> [dynamic]string {
+	string_array := default_attachment_split_on_colon(value)
+	if len(value) == 0 || len(string_array) > 2 {
+		suffix := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(suffix)
+		fmt.panicf("%s cannot be empty or have more than two fields%s", name, suffix)
+	}
+	return string_array
+}
+
+// Java: @VisibleForTesting int getIntInRange(name, value, max, allowUndefined)
+// Parses `value` as an int and validates it lies in
+// [allowUndefined ? -1 : 0, max]; otherwise panics with the Java
+// GameParseException message. Mirrors the static-format string verbatim.
+tech_ability_attachment_get_int_in_range :: proc(
+	self: ^Tech_Ability_Attachment,
+	name: string,
+	value: string,
+	max: i32,
+	allow_undefined: bool,
+) -> i32 {
+	int_value := default_attachment_get_int(&self.default_attachment, value)
+	min_value: i32 = 0
+	if allow_undefined {
+		min_value = -1
+	}
+	if int_value < min_value || int_value > max {
+		suffix := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(suffix)
+		undefined_clause := ""
+		if allow_undefined {
+			undefined_clause = " -1 (no effect), or be"
+		}
+		fmt.panicf(
+			"%s must be%s between 0 and %d, was %s%s",
+			name,
+			undefined_clause,
+			max,
+			value,
+			suffix,
+		)
+	}
+	return int_value
+}
+
+// --- mapToInt lambdas missing from the existing block ------------------
+
+// Java: lambda$getWarBondDiceSides$2 — `t -> t.getWarBondDiceSides()`
+// mapToInt callback inside the static getWarBondDiceSides(Collection).
+// Operates on a non-null TechAbilityAttachment surfaced by the preceding
+// filter(Objects::nonNull) stage.
+tech_ability_attachment_lambda_get_war_bond_dice_sides_2 :: proc(
+	t: ^Tech_Ability_Attachment,
+) -> i32 {
+	return tech_ability_attachment_get_war_bond_dice_sides_no_args(t)
+}
+
+// Java: lambda$getWarBondDiceNumber$4 — `t -> t.getWarBondDiceNumber()`
+// mapToInt callback inside the static getWarBondDiceNumber(Collection).
+// Mirror of $2 above for the dice-number stream.
+tech_ability_attachment_lambda_get_war_bond_dice_number_4 :: proc(
+	t: ^Tech_Ability_Attachment,
+) -> i32 {
+	return tech_ability_attachment_get_war_bond_dice_number_no_args(t)
+}
+
+// --- setRocketDiceNumber(String) ----------------------------------------
+
+// Java: private void setRocketDiceNumber(String value)
+// Splits `value` on ':' (must be exactly two segments: count:unitType),
+// resolves the unit type, parses the count as int, and stores the entry
+// in `rocketDiceNumber`, lazily allocating the IntegerMap.
+tech_ability_attachment_set_rocket_dice_number :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	s := default_attachment_split_on_colon(value)
+	defer delete(s)
+	if len(s) != 2 {
+		suffix := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(suffix)
+		fmt.panicf("rocketDiceNumber must have two fields%s", suffix)
+	}
+	if self.rocket_dice_number == nil {
+		self.rocket_dice_number = integer_map_new()
+	}
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	count := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.rocket_dice_number, rawptr(ut), count)
+}
+
+// --- setUnitAbilitiesGained(String) -------------------------------------
+
+// Java: private void setUnitAbilitiesGained(String value)
+// Splits on ':' (must have at least two segments: unitType:ability[:ability...]),
+// resolves the unit type, lazily allocates `unitAbilitiesGained`, then for
+// each ability segment validates it against the supported set
+// {ABILITY_CAN_BLITZ, ABILITY_CAN_BOMBARD} and adds it to the unit's
+// ability set. Java calls `String.intern()` on the ability before adding;
+// Odin has no string-intern table so the value is added as-is.
+tech_ability_attachment_set_unit_abilities_gained :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	s := default_attachment_split_on_colon(value)
+	defer delete(s)
+	if len(s) < 2 {
+		suffix := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(suffix)
+		fmt.panicf(
+			"unitAbilitiesGained must list the unit type, then all abilities gained%s",
+			suffix,
+		)
+	}
+	unit_type := s[0]
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, unit_type)
+	if self.unit_abilities_gained == nil {
+		self.unit_abilities_gained = make(map[^Unit_Type]map[string]struct {})
+	}
+	if _, exists := self.unit_abilities_gained[ut]; !exists {
+		self.unit_abilities_gained[ut] =
+			tech_ability_attachment_lambda_set_unit_abilities_gained_6(ut)
+	}
+	abilities := &self.unit_abilities_gained[ut]
+	for i := 1; i < len(s); i += 1 {
+		ability := s[i]
+		if !(ability == ABILITY_CAN_BLITZ || ability == ABILITY_CAN_BOMBARD) {
+			suffix := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(suffix)
+			fmt.panicf(
+				"unitAbilitiesGained so far only supports: %s and %s%s",
+				ABILITY_CAN_BLITZ,
+				ABILITY_CAN_BOMBARD,
+				suffix,
+			)
+		}
+		abilities[ability] = struct {}{}
+	}
+}

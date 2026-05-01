@@ -36,9 +36,38 @@ abstract_pro_ai_set_stored_strafing_territories :: proc(self: ^Abstract_Pro_Ai, 
 
 abstract_pro_ai_has_non_combat_move :: proc(self: ^Abstract_Pro_Ai, steps: [dynamic]^Game_Step) -> bool {
 	for s in steps {
-		if game_step_is_non_combat_move_step_name(s.name) {
+		if abstract_pro_ai_lambda__has_non_combat_move__0(s) {
 			return true
 		}
 	}
 	return false
+}
+
+// Java: s -> GameStep.isNonCombatMoveStepName(s.getName())
+abstract_pro_ai_lambda__has_non_combat_move__0 :: proc(s: ^Game_Step) -> bool {
+	return game_step_is_non_combat_move_step_name(s.name)
+}
+
+// Java: private static List<GameStep> getGameStepsForPlayer(
+//           GameData gameData, GamePlayer gamePlayer, int startStep)
+abstract_pro_ai_get_game_steps_for_player :: proc(
+	game_data: ^Game_Data,
+	game_player: ^Game_Player,
+	start_step: i32,
+) -> [dynamic]^Game_Step {
+	step_index: i32 = 0
+	game_steps: [dynamic]^Game_Step
+	for game_step in game_sequence_iterator(game_data_get_sequence(game_data)) {
+		if step_index >= start_step && game_player == game_step_get_player_id(game_step) {
+			append(&game_steps, game_step)
+		}
+		step_index += 1
+	}
+	return game_steps
+}
+
+// Java: public boolean shouldBomberBomb(final Territory territory) {
+//           return combatMoveAi.isBombing(); }
+abstract_pro_ai_should_bomber_bomb :: proc(self: ^Abstract_Pro_Ai, territory: ^Territory) -> bool {
+	return pro_combat_move_ai_is_bombing(self.combat_move_ai)
 }

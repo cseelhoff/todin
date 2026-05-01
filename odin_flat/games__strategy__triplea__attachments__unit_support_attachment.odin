@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Unit_Support_Attachment :: struct {
@@ -156,6 +157,150 @@ unit_support_attachment_set_number :: proc(self: ^Unit_Support_Attachment, numbe
 // Java: public UnitSupportAttachment setPlayers(final List<GamePlayer> value) { players = value; return this; }
 unit_support_attachment_set_players :: proc(self: ^Unit_Support_Attachment, value: [dynamic]^Game_Player) -> ^Unit_Support_Attachment {
 	self.players = value
+	return self
+}
+
+// Java: filter lambda inside `get(UnitType)`:
+//   attachment -> attachment.getName().startsWith(Constants.SUPPORT_ATTACHMENT_PREFIX)
+// `Constants.SUPPORT_ATTACHMENT_PREFIX = "supportAttachment"`.
+unit_support_attachment_lambda__get__0 :: proc(attachment: ^I_Attachment) -> bool {
+	return strings.has_prefix(i_attachment_get_name(attachment), "supportAttachment")
+}
+
+// Java: public static Set<UnitSupportAttachment> get(final UnitTypeList unitTypeList)
+//   return unitTypeList.stream()
+//       .map(UnitSupportAttachment::get)
+//       .flatMap(Collection::stream)
+//       .collect(Collectors.toSet());
+unit_support_attachment_get_for_unit_type_list :: proc(unit_type_list: ^Unit_Type_List) -> map[^Unit_Support_Attachment]struct {} {
+	result: map[^Unit_Support_Attachment]struct {}
+	if unit_type_list == nil {
+		return result
+	}
+	types := unit_type_list_stream(unit_type_list)
+	defer delete(types)
+	for ut in types {
+		inner := unit_support_attachment_get(ut)
+		for usa, _ in inner {
+			result[usa] = {}
+		}
+		delete(inner)
+	}
+	return result
+}
+
+// Java: public UnitSupportAttachment setBonusType(final String type) throws GameParseException
+//   final String[] s = splitOnColon(type);
+//   if (s.length > 2) throw new GameParseException("bonusType can only have value and count: " + type + thisErrorMsg());
+//   if (s.length == 1) bonusType = new BonusType(s[0], 1);
+//   else               bonusType = new BonusType(s[1], getInt(s[0]));
+//   return this;
+unit_support_attachment_set_bonus_type :: proc(self: ^Unit_Support_Attachment, type_str: string) -> ^Unit_Support_Attachment {
+	parts := default_attachment_split_on_colon(type_str)
+	defer delete(parts)
+	if len(parts) > 2 {
+		err := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(err)
+		fmt.panicf("bonusType can only have value and count: %s%s", type_str, err)
+	}
+	if len(parts) == 1 {
+		one: i32 = 1
+		self.bonus_type = unit_support_attachment_bonus_type_new(parts[0], &one)
+	} else {
+		count := default_attachment_get_int(&self.default_attachment, parts[0])
+		self.bonus_type = unit_support_attachment_bonus_type_new(parts[1], &count)
+	}
+	return self
+}
+
+// Java: public UnitSupportAttachment setDice(final String dice) throws GameParseException
+//   resetDice();
+//   this.dice = dice.intern();
+//   for (final String element : splitOnColon(dice)) {
+//     if (equalsIgnoreCase(ROLL))         roll        = true;
+//     else if (eIC(STRENGTH))             strength    = true;
+//     else if (eIC(AA_ROLL))              aaRoll      = true;
+//     else if (eIC(AA_STRENGTH))          aaStrength  = true;
+//     else throw new GameParseException(dice + " dice must be roll, strength, AAroll, or AAstrength: " + thisErrorMsg());
+//   }
+//   return this;
+unit_support_attachment_set_dice :: proc(self: ^Unit_Support_Attachment, dice: string) -> ^Unit_Support_Attachment {
+	unit_support_attachment_reset_dice(self)
+	self.dice = dice
+	parts := default_attachment_split_on_colon(dice)
+	defer delete(parts)
+	for element in parts {
+		if strings.equal_fold(element, "roll") {
+			self.roll = true
+		} else if strings.equal_fold(element, "strength") {
+			self.strength = true
+		} else if strings.equal_fold(element, "AAroll") {
+			self.aa_roll = true
+		} else if strings.equal_fold(element, "AAstrength") {
+			self.aa_strength = true
+		} else {
+			err := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(err)
+			fmt.panicf("%s dice must be roll, strength, AAroll, or AAstrength: %s", dice, err)
+		}
+	}
+	return self
+}
+
+// Java: public UnitSupportAttachment setFaction(final String faction) throws GameParseException
+//   this.faction = faction; allied = false; enemy = false;
+//   for (final String element : splitOnColon(faction)) {
+//     if (eIC(ALLIED))      allied = true;
+//     else if (eIC(ENEMY))  enemy  = true;
+//     else throw new GameParseException(faction + " faction must be allied, or enemy" + thisErrorMsg());
+//   }
+//   return this;
+unit_support_attachment_set_faction :: proc(self: ^Unit_Support_Attachment, faction: string) -> ^Unit_Support_Attachment {
+	self.faction = faction
+	self.allied = false
+	self.enemy = false
+	parts := default_attachment_split_on_colon(faction)
+	defer delete(parts)
+	for element in parts {
+		if strings.equal_fold(element, "allied") {
+			self.allied = true
+		} else if strings.equal_fold(element, "enemy") {
+			self.enemy = true
+		} else {
+			err := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(err)
+			fmt.panicf("%s faction must be allied, or enemy%s", faction, err)
+		}
+	}
+	return self
+}
+
+// Java: public UnitSupportAttachment setSide(final String side) throws GameParseException
+//   defence = false; offence = false;
+//   for (final String element : splitOnColon(side)) {
+//     if (eIC(DEFENCE))      defence = true;
+//     else if (eIC(OFFENCE)) offence = true;
+//     else throw new GameParseException(side + " side must be defence or offence" + thisErrorMsg());
+//   }
+//   this.side = side.intern();
+//   return this;
+unit_support_attachment_set_side :: proc(self: ^Unit_Support_Attachment, side: string) -> ^Unit_Support_Attachment {
+	self.defence = false
+	self.offence = false
+	parts := default_attachment_split_on_colon(side)
+	defer delete(parts)
+	for element in parts {
+		if strings.equal_fold(element, "defence") {
+			self.defence = true
+		} else if strings.equal_fold(element, "offence") {
+			self.offence = true
+		} else {
+			err := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(err)
+			fmt.panicf("%s side must be defence or offence%s", side, err)
+		}
+	}
+	self.side = side
 	return self
 }
 

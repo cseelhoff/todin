@@ -15,3 +15,8 @@ player_types_type_new_player_with_name :: proc(self: ^Player_Types_Type, name: s
 	return self.new_player_with_name(self, name)
 }
 
+// Java single-arg ctor `Type(String label)` delegates to `this(label, true)`.
+player_types_type_new :: proc(label: string) -> ^Player_Types_Type {
+	return player_types_type_new_full(label, true)
+}
+

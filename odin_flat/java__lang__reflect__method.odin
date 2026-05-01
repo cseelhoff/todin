@@ -11,6 +11,10 @@ package game
 Method :: struct {
         name:                   string,
         declaring_class:        ^Class,
+        // Parameter types in declaration order. Populated only by code
+        // paths that actually need them (currently dormant in the AI
+        // snapshot run); nil/empty otherwise.
+        parameter_types:        []^Class,
         // @RemoteActionCode(int value) when present.
         remote_action_code:     i32,
         has_remote_action_code: bool,

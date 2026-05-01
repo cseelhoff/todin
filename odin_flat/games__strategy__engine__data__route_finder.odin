@@ -168,3 +168,26 @@ route_finder_new :: proc(
 	self.player = player
 	return self
 }
+
+// Mirrors the public 4-arg Java constructor
+// RouteFinder(GameMap, Predicate<Territory>, Collection<Unit>, GamePlayer):
+// builds a fresh MoveValidator over the map's GameData (with
+// isNonCombat=false, since the Java comment notes MoveValidator is only
+// used for canal checks here, where isNonCombat is unused) and chains to
+// the Lombok-generated all-args constructor. The Predicate is paired
+// with a `rawptr` userdata per llm-instructions.md's closure-capture
+// rule — Java callers may pass capturing lambdas. `player` is @Nullable
+// in Java, so a nil pointer is allowed.
+route_finder_new_with_units_player :: proc(
+	game_map: ^Game_Map,
+	condition: proc(rawptr, ^Territory) -> bool,
+	condition_ctx: rawptr,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^Route_Finder {
+	move_validator := move_validator_new(
+		game_data_component_get_data(&game_map.game_data_component),
+		false,
+	)
+	return route_finder_new(move_validator, game_map, condition, condition_ctx, units, player)
+}

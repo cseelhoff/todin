@@ -181,3 +181,34 @@ pro_purchase_option_to_string :: proc(self: ^Pro_Purchase_Option, allocator := c
 		allocator = allocator,
 	)
 }
+
+pro_purchase_option_calculate_efficiency :: proc(
+	self: ^Pro_Purchase_Option,
+	attack_factor: f64,
+	defense_factor: f64,
+	support_attack_factor: f64,
+	support_defense_factor: f64,
+	distance_factor: f64,
+	sea_factor: f64,
+	data: ^Game_Data,
+) -> f64 {
+	hit_point_per_unit_factor := 3.0 + f64(self.hit_points) / f64(self.quantity)
+	attack_value :=
+		attack_factor *
+		(self.attack + support_attack_factor * f64(self.quantity)) *
+		6.0 /
+		f64(data.dice_sides)
+	defense_value :=
+		defense_factor *
+		(self.defense + support_defense_factor * f64(self.quantity)) *
+		6.0 /
+		f64(data.dice_sides)
+	return math.pow(
+		((2.0 * f64(self.hit_points)) + attack_value + defense_value) *
+		hit_point_per_unit_factor *
+		distance_factor *
+		sea_factor /
+		f64(self.cost),
+		30,
+	) / f64(self.quantity)
+}

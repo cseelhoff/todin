@@ -28,3 +28,7 @@ production_rule_get_results :: proc(self: ^Production_Rule) -> Integer_Map {
 	return self.results
 }
 
+production_rule_add_cost :: proc(self: ^Production_Rule, resource: ^Resource, cost: i32) {
+	integer_map_put(&self.costs, rawptr(resource), cost)
+}
+

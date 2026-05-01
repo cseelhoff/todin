@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Territory :: struct {
 	pro_data:                ^Pro_Data,
 	territory:               ^Territory,
@@ -303,5 +305,141 @@ pro_territory_set_max_battle_result :: proc(self: ^Pro_Territory, max_battle_res
 pro_territory_put_all_amphib_attack_map :: proc(self: ^Pro_Territory, amphib_attack_map: map[^Unit][dynamic]^Unit) {
 	for transport, units in amphib_attack_map {
 		pro_territory_put_amphib_attack_map(self, transport, units)
+	}
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#<init>(ProTerritory, ProData)
+// Java copy constructor: ProTerritory(final ProTerritory patd, final ProData proData).
+pro_territory_new_from_other :: proc(patd: ^Pro_Territory, pro_data: ^Pro_Data) -> ^Pro_Territory {
+	self := new(Pro_Territory)
+	self.territory = patd.territory
+	self.pro_data = pro_data
+
+	self.max_units = make(map[^Unit]struct{})
+	for u in patd.max_units {
+		self.max_units[u] = {}
+	}
+	self.units = make([dynamic]^Unit)
+	for u in patd.units {
+		append(&self.units, u)
+	}
+	self.bombers = make([dynamic]^Unit)
+	for u in patd.bombers {
+		append(&self.bombers, u)
+	}
+	self.max_battle_result = patd.max_battle_result
+	self.value = patd.value
+	self.sea_value = patd.sea_value
+	self.can_hold = patd.can_hold
+	self.can_attack = patd.can_attack
+	self.strength_estimate = patd.strength_estimate
+
+	self.max_amphib_units = make([dynamic]^Unit)
+	for u in patd.max_amphib_units {
+		append(&self.max_amphib_units, u)
+	}
+	self.amphib_attack_map = make(map[^Unit][dynamic]^Unit)
+	for k, v in patd.amphib_attack_map {
+		self.amphib_attack_map[k] = v
+	}
+	self.transport_territory_map = make(map[^Unit]^Territory)
+	for k, v in patd.transport_territory_map {
+		self.transport_territory_map[k] = v
+	}
+	self.need_amphib_units = patd.need_amphib_units
+	self.strafing = patd.strafing
+	self.is_transporting_map = make(map[^Unit]bool)
+	for k, v in patd.is_transporting_map {
+		self.is_transporting_map[k] = v
+	}
+	self.max_bombard_units = make(map[^Unit]struct{})
+	for u in patd.max_bombard_units {
+		self.max_bombard_units[u] = {}
+	}
+	self.bombard_options_map = make(map[^Unit]map[^Territory]struct{})
+	for k, v in patd.bombard_options_map {
+		self.bombard_options_map[k] = v
+	}
+	self.bombard_territory_map = make(map[^Unit]^Territory)
+	for k, v in patd.bombard_territory_map {
+		self.bombard_territory_map[k] = v
+	}
+
+	self.currently_wins = patd.currently_wins
+	self.battle_result = patd.battle_result
+
+	self.cant_move_units = make(map[^Unit]struct{})
+	for u in patd.cant_move_units {
+		self.cant_move_units[u] = {}
+	}
+	self.max_enemy_units = make([dynamic]^Unit)
+	for u in patd.max_enemy_units {
+		append(&self.max_enemy_units, u)
+	}
+	self.max_enemy_bombard_units = make(map[^Unit]struct{})
+	for u in patd.max_enemy_bombard_units {
+		self.max_enemy_bombard_units[u] = {}
+	}
+	self.min_battle_result = patd.min_battle_result
+	self.temp_units = make([dynamic]^Unit)
+	for u in patd.temp_units {
+		append(&self.temp_units, u)
+	}
+	self.temp_amphib_attack_map = make(map[^Unit][dynamic]^Unit)
+	for k, v in patd.temp_amphib_attack_map {
+		self.temp_amphib_attack_map[k] = v
+	}
+	self.load_value = patd.load_value
+
+	self.max_scramble_units = make([dynamic]^Unit)
+	for u in patd.max_scramble_units {
+		append(&self.max_scramble_units, u)
+	}
+	return self
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#getMaxEnemyDefenders(GamePlayer)
+// Java:
+//   final List<Unit> defenders = territory.getMatches(Matches.enemyUnit(player));
+//   defenders.addAll(maxScrambleUnits);
+//   return defenders;
+pro_territory_get_max_enemy_defenders :: proc(self: ^Pro_Territory, player: ^Game_Player) -> [dynamic]^Unit {
+	defenders: [dynamic]^Unit
+	pred, ctx := matches_enemy_unit(player)
+	uc := territory_get_unit_collection(self.territory)
+	for u in unit_collection_get_units(uc) {
+		if pred(ctx, u) {
+			append(&defenders, u)
+		}
+	}
+	for u in self.max_scramble_units {
+		append(&defenders, u)
+	}
+	return defenders
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#getResultString()
+pro_territory_get_result_string :: proc(self: ^Pro_Territory) -> string {
+	name := default_named_get_name(&self.territory.named_attachable.default_named)
+	if self.battle_result != nil {
+		return fmt.aprintf(
+			"territory=%s, win%%=%v, TUVSwing=%v, hasRemainingLandUnit=%v",
+			name,
+			self.battle_result.win_percentage,
+			self.battle_result.tuv_swing,
+			self.battle_result.has_land_unit_remaining,
+		)
+	}
+	return fmt.aprintf("territory=%s", name)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#setBattleResult(ProBattleResult)
+pro_territory_set_battle_result :: proc(self: ^Pro_Territory, battle_result: ^Pro_Battle_Result) {
+	self.battle_result = battle_result
+	if battle_result == nil {
+		self.currently_wins = false
+	} else if battle_result.win_percentage >= pro_data_get_win_percentage(self.pro_data) &&
+	   battle_result.has_land_unit_remaining {
+		self.currently_wins = true
 	}
 }

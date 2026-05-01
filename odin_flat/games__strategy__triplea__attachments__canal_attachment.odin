@@ -131,3 +131,131 @@ canal_attachment_get_by_predicate :: proc(
 canal_attachment_lambda_get_property_or_empty_5 :: proc() -> bool {
 	return false
 }
+
+// Java synthetic lambda from `CanalAttachment.getPropertyOrEmpty`'s
+// `MutableProperty.ofMapper(DefaultAttachment::getBool, ...)` arm. Javac
+// emits a static bridge `lambda$getPropertyOrEmpty$4(String) -> Boolean`
+// because the functional interface (`ThrowingFunction<String, Boolean, ?>`)
+// returns the boxed type while `DefaultAttachment.getBool` returns the
+// primitive `boolean`. The Odin port has no boxing distinction; the
+// bridge is a thin forwarder. `getBool` is static in Java; the Odin
+// signature carries an unused `self` for project convention, so we pass
+// `nil`.
+canal_attachment_lambda_get_property_or_empty_4 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// Java synthetic lambda inside `CanalAttachment.setLandTerritories(String)`:
+//   () -> new GameParseException(
+//             MessageFormat.format("TerritoryAttachment: No territory found for {0}; ...",
+//                                  territoryName, landTerritories))
+// Captured locals: `territoryName`, `landTerritories`. Used as the
+// `Optional.orElseThrow(Supplier)` argument when `getTerritory(...)` is
+// empty. Returns the exception object; the caller decides how to surface
+// it. (`set_land_territories` in this file currently inlines the panic
+// for callsite ergonomics, but the Java-bytecode-equivalent helper is
+// preserved here.)
+canal_attachment_lambda_set_land_territories_3 :: proc(
+	territory_name: string,
+	land_territories: string,
+) -> ^Game_Parse_Exception {
+	return make_Game_Parse_Exception(
+		fmt.aprintf(
+			"TerritoryAttachment: No territory found for %s; Setting landTerritories not possible with value %s",
+			territory_name,
+			land_territories,
+		),
+	)
+}
+
+// Java synthetic lambda inside private `get(Territory, Predicate)`:
+//   attachment -> attachment.getName().startsWith(Constants.CANAL_ATTACHMENT_PREFIX)
+// The stream operates on `Map<String, IAttachment>.values()`, so the
+// parameter type is `IAttachment`. No captured environment.
+canal_attachment_lambda_get_2 :: proc(attachment: ^I_Attachment) -> bool {
+	return strings.has_prefix(i_attachment_get_name(attachment), CANAL_ATTACHMENT_PREFIX)
+}
+
+// Java synthetic lambda inside `hasCanal(Territory, String)`:
+//   canalAttachment -> canalAttachment.getCanalName().equals(canalName)
+// Captures `canalName`. Uses Java `String.equals`; Odin string equality
+// (`==`) is content-based so it matches.
+canal_attachment_lambda_has_canal_0 :: proc(
+	canal_name: string,
+	canal_attachment: ^Canal_Attachment,
+) -> bool {
+	return canal_attachment_get_canal_name(canal_attachment) == canal_name
+}
+
+// Captured environment for the `hasCanal` lambda when adapting it to
+// the rawptr-keyed Predicate convention used by
+// `canal_attachment_get_by_predicate`.
+Canal_Attachment_Has_Canal_Ctx :: struct {
+	canal_name: string,
+}
+
+canal_attachment_has_canal_predicate_thunk :: proc(
+	ctx: rawptr,
+	ca: ^Canal_Attachment,
+) -> bool {
+	c := cast(^Canal_Attachment_Has_Canal_Ctx)ctx
+	return canal_attachment_lambda_has_canal_0(c.canal_name, ca)
+}
+
+// Java: private static boolean hasCanal(final Territory t, final String canalName)
+//   return !get(t, ca -> ca.getCanalName().equals(canalName)).isEmpty();
+// Uses the Predicate overload of `get`. The result list is allocated by
+// `_by_predicate`; we must release it (and the captured ctx) once the
+// emptiness check is done so callers don't leak temporaries.
+canal_attachment_has_canal :: proc(t: ^Territory, canal_name: string) -> bool {
+	ctx := new(Canal_Attachment_Has_Canal_Ctx)
+	defer free(ctx)
+	ctx.canal_name = canal_name
+	matches := canal_attachment_get_by_predicate(
+		t,
+		canal_attachment_has_canal_predicate_thunk,
+		ctx,
+	)
+	defer delete(matches)
+	return len(matches) != 0
+}
+
+// Captured environment for the `get(Territory, Route)` lambda
+// (`lambda$get$1`, ported separately at a higher method_layer). The ctx
+// carries the captured `onRoute` reference.
+Canal_Attachment_Get_By_Route_Ctx :: struct {
+	route: ^Route,
+}
+
+canal_attachment_get_by_route_predicate_thunk :: proc(
+	ctx: rawptr,
+	attachment: ^Canal_Attachment,
+) -> bool {
+	c := cast(^Canal_Attachment_Get_By_Route_Ctx)ctx
+	return canal_attachment_is_canal_on_route(
+		canal_attachment_get_canal_name(attachment),
+		c.route,
+	)
+}
+
+// Java: public static List<CanalAttachment> get(final Territory t, final Route onRoute)
+//   return get(t, attachment -> isCanalOnRoute(attachment.getCanalName(), onRoute));
+// Delegates to the Predicate overload. Ownership: the returned dynamic
+// array is owned by the caller (mirrors the existing `_by_predicate`
+// contract); the small captured ctx is leaked intentionally for the
+// duration of the call — `_by_predicate` does not retain it past return,
+// but the caller can't free it without knowing the layout, so we free
+// it here before returning.
+canal_attachment_get :: proc(
+	t: ^Territory,
+	on_route: ^Route,
+) -> [dynamic]^Canal_Attachment {
+	ctx := new(Canal_Attachment_Get_By_Route_Ctx)
+	defer free(ctx)
+	ctx.route = on_route
+	return canal_attachment_get_by_predicate(
+		t,
+		canal_attachment_get_by_route_predicate_thunk,
+		ctx,
+	)
+}

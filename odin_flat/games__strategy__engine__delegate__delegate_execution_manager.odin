@@ -67,3 +67,25 @@ delegate_execution_manager_resume_delegate_execution :: proc(
 delegate_execution_manager_set_game_over :: proc(self: ^Delegate_Execution_Manager) {
 	self.is_game_over = true
 }
+
+// Java: `if (isGameOver) throw new GameOverException("Game Over");`
+delegate_execution_manager_assert_game_not_over :: proc(self: ^Delegate_Execution_Manager) {
+	if self.is_game_over {
+		panic("Game Over")
+	}
+}
+
+// Java: `checkState(!currentThreadHasReadLock(), "Already locked?");
+//        readWriteLock.readLock().lock();
+//        currentThreadHasReadLock.set(Boolean.TRUE);`
+// In the single-threaded AI snapshot harness the read lock is a no-op
+// marker, so only the per-thread flag is observable.
+delegate_execution_manager_enter_delegate_execution :: proc(self: ^Delegate_Execution_Manager) {
+	if delegate_execution_manager_current_thread_has_read_lock(self) {
+		panic("Already locked?")
+	}
+	if self.current_thread_has_read_lock == nil {
+		self.current_thread_has_read_lock = thread_local_new()
+	}
+	thread_local_set(self.current_thread_has_read_lock, true)
+}

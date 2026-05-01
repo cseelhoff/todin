@@ -262,3 +262,125 @@ default_attachment_lambda_get_attachment_0 :: proc(
 	)
 	return t
 }
+
+// Java: protected DefaultAttachment(String name, Attachable attachable, GameData gameData)
+// Constructor → calls super(gameData), setName(name), setAttachedTo(attachable).
+// Allocates a fresh `Default_Attachment` and applies the same setter chain
+// the Java constructor does, so the legacy "ttatch" -> "ttach" spelling fix
+// in `set_name` is honored. Subclass constructors should allocate their own
+// concrete struct and embed/initialize via field assignment instead of
+// calling this proc directly.
+default_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Default_Attachment {
+	self := new(Default_Attachment)
+	self.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(self, name)
+	default_attachment_set_attached_to(self, attachable)
+	return self
+}
+
+// Java: protected static <T extends IAttachment> T getAttachment(
+//           NamedAttachable namedAttachable, String attachmentName, Class<T> attachmentType)
+// Java performs a reflective `attachmentType.cast(...)` and throws an
+// IllegalStateException when the attachment is missing. Odin lacks runtime
+// type checks on `^I_Attachment`; the port reduces to a name lookup on the
+// owner's attachment map, returning the stored `^I_Attachment` (the caller
+// performs the typed reinterpret_cast at the call site, mirroring the
+// pattern used by e.g. `unit_attachment_get` in the port). When the
+// attachment is missing the proc panics with the same message Java's
+// IllegalStateException carries (built via
+// `default_attachment_lambda_get_attachment_0`). The `Class` token is kept
+// for fidelity with the Java signature and for the error message; it is
+// otherwise unused at runtime.
+default_attachment_get_attachment :: proc(
+	named_attachable: ^Named_Attachable,
+	attachment_name: string,
+	attachment_type: ^Class,
+) -> ^I_Attachment {
+	if named_attachable == nil {
+		panic("namedAttachable must not be null")
+	}
+	if attachment_type == nil {
+		panic("attachmentType must not be null")
+	}
+	result := named_attachable_get_attachment(named_attachable, attachment_name)
+	if result == nil {
+		err := default_attachment_lambda_get_attachment_0(
+			attachment_name,
+			attachment_type,
+			named_attachable,
+		)
+		message := err.message
+		fmt.panicf("%s", message)
+	}
+	return result
+}
+
+// Java: protected Optional<Territory> getTerritory(@Nullable String territoryName)
+// Returns the Territory looked up by name on the GameData's GameMap, or nil
+// when the name is not registered. Odin uses `nil` as the empty-Optional
+// sentinel; Java's `Optional.ofNullable` collapses to a direct nil pass-through.
+default_attachment_get_territory :: proc(self: ^Default_Attachment, territory_name: string) -> ^Territory {
+	if self == nil {
+		return nil
+	}
+	data := game_data_component_get_data(&self.game_data_component)
+	if data == nil {
+		return nil
+	}
+	gmap := game_data_get_map(data)
+	if gmap == nil {
+		return nil
+	}
+	return game_map_get_territory_or_null(gmap, territory_name)
+}
+
+// Java: public UnitType getUnitTypeOrThrow(String unitType) throws GameParseException
+// Mirrors `getDataOrThrow().getUnitTypeList().getUnitType(unitType)
+//   .orElseThrow(() -> new GameParseException("No unit type: " + unitType + thisErrorMsg()))`.
+// Java raises GameParseException; the port panics with the same message string,
+// constructed by `default_attachment_lambda_get_unit_type_or_throw_3`.
+default_attachment_get_unit_type_or_throw :: proc(self: ^Default_Attachment, unit_type: string) -> ^Unit_Type {
+	data := game_data_component_get_data_or_throw(&self.game_data_component)
+	utl := game_data_get_unit_type_list(data)
+	ut := unit_type_list_get_unit_type(utl, unit_type)
+	if ut == nil {
+		err := default_attachment_lambda_get_unit_type_or_throw_3(self, unit_type)
+		message := err.message
+		fmt.panicf("%s", message)
+	}
+	return ut
+}
+
+// Java synthetic lambda from `DefaultAttachment.getUnitTypeOrThrow`:
+//   () -> new GameParseException("No unit type: " + unitType + thisErrorMsg())
+// Builds the GameParseException raised when a unit type lookup fails. The
+// returned exception is heap-allocated and owns its message string; the
+// caller takes ownership.
+default_attachment_lambda_get_unit_type_or_throw_3 :: proc(
+	self: ^Default_Attachment,
+	unit_type: string,
+) -> ^Game_Parse_Exception {
+	suffix := default_attachment_this_error_msg(self)
+	defer delete(suffix)
+	message := fmt.aprintf("No unit type: %s%s", unit_type, suffix)
+	return make_Game_Parse_Exception(message)
+}
+
+// Java synthetic lambda from `DefaultAttachment.parsePlayerList`:
+//   () -> new GameParseException(MessageFormat.format(
+//       "DefaultAttachment: Parsing PlayerList with value {0} not possible; No player found for {1}",
+//       value, name))
+// Builds the GameParseException raised when a player-name segment in a
+// colon-separated PlayerList does not resolve to a known player. Returns a
+// heap-allocated exception whose message string is owned by the caller.
+default_attachment_lambda_parse_player_list_2 :: proc(
+	value: string,
+	name: string,
+) -> ^Game_Parse_Exception {
+	message := fmt.aprintf(
+		"DefaultAttachment: Parsing PlayerList with value %s not possible; No player found for %s",
+		value,
+		name,
+	)
+	return make_Game_Parse_Exception(message)
+}

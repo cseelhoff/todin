@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Political_Action_Attachment :: struct {
@@ -42,4 +43,62 @@ political_action_attachment_get_relationship_change :: proc(
 	self: ^Political_Action_Attachment,
 ) -> [dynamic]string {
 	return default_attachment_get_list_property(self.relationship_change)
+}
+
+// Java: public List<RelationshipChange> getRelationshipChanges()
+//   return getRelationshipChange().stream()
+//       .map(this::parseRelationshipChange)
+//       .collect(Collectors.toList());
+// Inlines the private `parseRelationshipChange(String)` helper: each entry of
+// `relationshipChange` is a "player1:player2:relationType" triple split on ':'
+// (Java asserts length == 3); the two players are resolved against the player
+// list and the relationship type against the relationship-type list. Java's
+// `getPlayerByName` (DefaultAttachment) and `getData()` are inlined here as
+// they are elsewhere in the port. An unknown player or relationship-type name
+// would cause Java to throw IllegalStateException; the Odin port preserves
+// the failure mode via panic.
+political_action_attachment_get_relationship_changes :: proc(
+	self: ^Political_Action_Attachment,
+) -> [dynamic]^Political_Action_Attachment_Relationship_Change {
+	result: [dynamic]^Political_Action_Attachment_Relationship_Change
+	encoded := political_action_attachment_get_relationship_change(self)
+	game_data := game_data_component_get_data(&self.game_data_component)
+	player_list := game_data_get_player_list(game_data)
+	rel_type_list := game_data_get_relationship_type_list(game_data)
+	for entry in encoded {
+		tokens := default_attachment_split_on_colon(entry)
+		defer delete(tokens)
+		assert(len(tokens) == 3)
+		p1 := player_list_get_player_id(player_list, tokens[0])
+		if p1 == nil {
+			err := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(err)
+			fmt.panicf(
+				"Invalid relationshipChange declaration: %s \n first player: %s unknown%s",
+				entry,
+				tokens[0],
+				err,
+			)
+		}
+		p2 := player_list_get_player_id(player_list, tokens[1])
+		if p2 == nil {
+			err := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(err)
+			fmt.panicf(
+				"Invalid relationshipChange declaration: %s \n second player: %s unknown%s",
+				entry,
+				tokens[1],
+				err,
+			)
+		}
+		change := new(Political_Action_Attachment_Relationship_Change)
+		change.player1 = p1
+		change.player2 = p2
+		change.relationship_type = relationship_type_list_get_relationship_type(
+			rel_type_list,
+			tokens[2],
+		)
+		append(&result, change)
+	}
+	return result
 }

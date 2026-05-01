@@ -117,3 +117,63 @@ pro_purchase_validation_utils_remove_invalid_purchase_options :: proc(
 	}
 }
 
+// Mirrors Java's 5-arg overload
+//   List<ProPurchaseOption> findPurchaseOptionsForTerritory(
+//       ProData proData, GamePlayer player,
+//       List<ProPurchaseOption> purchaseOptions, Territory t, boolean isBid)
+// which simply delegates to the 6-arg form using t as the factory
+// territory. Suffix _5 mirrors the project's unit_type_create_5
+// convention for distinguishing Odin overloads by parameter count.
+pro_purchase_validation_utils_find_purchase_options_for_territory_5 :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	purchase_options: [dynamic]^Pro_Purchase_Option,
+	t: ^Territory,
+	is_bid: bool,
+) -> [dynamic]^Pro_Purchase_Option {
+	return pro_purchase_validation_utils_find_purchase_options_for_territory(
+		pro_data,
+		player,
+		purchase_options,
+		t,
+		t,
+		is_bid,
+	)
+}
+
+// Mirrors Java's private static
+//   int findNumberOfConstructionTypeToPlace(
+//       ProPurchaseOption purchaseOption, List<Unit> unitsToPlace,
+//       Map<Territory, ProPurchaseTerritory> purchaseTerritories,
+//       Territory territory)
+// which counts how many units of the option's UnitType are already
+// queued for placement in the given territory — both in unitsToPlace
+// and across every ProPlaceTerritory belonging to the supplied
+// purchaseTerritories map whose territory equals `territory`.
+pro_purchase_validation_utils_find_number_of_construction_type_to_place :: proc(
+	purchase_option: ^Pro_Purchase_Option,
+	units_to_place: [dynamic]^Unit,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	territory: ^Territory,
+) -> i32 {
+	target_type := pro_purchase_option_get_unit_type(purchase_option)
+	num_construction_type_to_place: i32 = 0
+	for u in units_to_place {
+		if unit_get_type(u) == target_type {
+			num_construction_type_to_place += 1
+		}
+	}
+	for _, t in purchase_territories {
+		for place_territory in pro_purchase_territory_get_can_place_territories(t) {
+			if pro_place_territory_get_territory(place_territory) == territory {
+				for u in pro_place_territory_get_place_units(place_territory) {
+					if unit_get_type(u) == target_type {
+						num_construction_type_to_place += 1
+					}
+				}
+			}
+		}
+	}
+	return num_construction_type_to_place
+}
+

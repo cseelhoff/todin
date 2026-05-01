@@ -90,6 +90,13 @@ player_manager_to_string :: proc(self: ^Player_Manager) -> string {
 	return strings.join(parts[:], ", ")
 }
 
+// games.strategy.engine.data.PlayerManager#lambda$toString$0(Map.Entry)
+//
+// Java: e -> String.format("%s=%s", e.getKey(), e.getValue().getName())
+player_manager_lambda_to_string_0 :: proc(entry_key: string, entry_value: ^I_Node) -> string {
+	return fmt.aprintf("%s=%s", entry_key, (^Node)(entry_value).name)
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.data.PlayerManager
 

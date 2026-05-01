@@ -6,3 +6,33 @@ Remove_Units :: struct {
 // Java owners covered by this file:
 //   - games.strategy.engine.data.changefactory.RemoveUnits
 
+// Java: RemoveUnits#<init>(String, String, Collection<Unit>, Map<UUID,String>)
+//   this.name = name; this.type = type;
+//   this.units = List.copyOf(units); this.unitOwnerMap = unitOwnerMap;
+remove_units_new :: proc(
+	name: string,
+	type: string,
+	units: [dynamic]^Unit,
+	unit_owner_map: map[Uuid]string,
+) -> ^Remove_Units {
+	ru := new(Remove_Units)
+	ru.kind = .Remove_Units
+	ru.name = name
+	ru.type = type
+	copied: [dynamic]^Unit
+	for u in units {
+		append(&copied, u)
+	}
+	ru.units = copied
+	ru.unit_owner_map = unit_owner_map
+	return ru
+}
+
+// Java: RemoveUnits#perform(GameState)
+//   final UnitHolder holder = data.getUnitHolder(name, type);
+//   holder.getUnitCollection().removeAll(units);
+remove_units_perform :: proc(self: ^Remove_Units, state: ^Game_State) {
+	holder := game_state_get_unit_holder(state, self.name, self.type)
+	unit_collection_remove_all(unit_holder_get_unit_collection(holder), self.units)
+}
+

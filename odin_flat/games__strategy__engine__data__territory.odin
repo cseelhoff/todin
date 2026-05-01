@@ -64,3 +64,31 @@ territory_is_water :: proc(self: ^Territory) -> bool {
 territory_get_unit_collection :: proc(self: ^Territory) -> ^Unit_Collection {
 	return self.unit_collection
 }
+
+// games.strategy.engine.data.Territory#setOwner(GamePlayer)
+// Java:
+//   this.owner = Optional.ofNullable(owner).orElse(getData().getPlayerList().getNullPlayer());
+//   getData().notifyTerritoryOwnerChanged(this);
+territory_set_owner :: proc(self: ^Territory, owner: ^Game_Player) {
+	data := game_data_component_get_data(&self.named_attachable.default_named.game_data_component)
+	if owner != nil {
+		self.owner = owner
+	} else {
+		self.owner = player_list_get_null_player(game_data_get_player_list(data))
+	}
+	game_data_notify_territory_owner_changed(data, self)
+}
+
+// games.strategy.engine.data.Territory#notifyChanged()
+// Java: getData().notifyTerritoryUnitsChanged(this);
+territory_notify_changed :: proc(self: ^Territory) {
+	data := game_data_component_get_data(&self.named_attachable.default_named.game_data_component)
+	game_data_notify_territory_units_changed(data, self)
+}
+
+// games.strategy.engine.data.Territory#notifyAttachmentChanged()
+// Java: getData().notifyTerritoryAttachmentChanged(this);
+territory_notify_attachment_changed :: proc(self: ^Territory) {
+	data := game_data_component_get_data(&self.named_attachable.default_named.game_data_component)
+	game_data_notify_territory_attachment_changed(data, self)
+}

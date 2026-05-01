@@ -21,3 +21,10 @@ production_rule_list_get_production_rule :: proc(self: ^Production_Rule_List, na
 	return self.production_rules[name]
 }
 
+production_rule_list_new :: proc(data: ^Game_Data) -> ^Production_Rule_List {
+	self := new(Production_Rule_List)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.production_rules = make(map[string]^Production_Rule)
+	return self
+}
+

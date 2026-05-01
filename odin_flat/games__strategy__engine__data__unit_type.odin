@@ -90,3 +90,16 @@ unit_type_create :: proc(
 ) -> [dynamic]^Unit {
 	return unit_type_create_5(self, quantity, owner, false, 0, 0)
 }
+
+// Mirrors Java's `UnitType.getUnitAttachment()`:
+//   if (unitAttachment == null) {
+//     unitAttachment = UnitAttachment.get(this, Constants.UNIT_ATTACHMENT_NAME);
+//   }
+//   return unitAttachment;
+// `Constants.UNIT_ATTACHMENT_NAME` is the literal "unitAttachment".
+unit_type_get_unit_attachment :: proc(self: ^Unit_Type) -> ^Unit_Attachment {
+	if self.unit_attachment == nil {
+		self.unit_attachment = unit_attachment_get(self, "unitAttachment")
+	}
+	return self.unit_attachment
+}

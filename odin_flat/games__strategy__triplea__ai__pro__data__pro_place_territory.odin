@@ -62,3 +62,17 @@ pro_place_territory_set_can_hold :: proc(self: ^Pro_Place_Territory, can_hold: b
 	self.can_hold = can_hold
 }
 
+pro_place_territory_equals :: proc(self: ^Pro_Place_Territory, other: ^Pro_Place_Territory) -> bool {
+	if self == other {
+		return true
+	}
+	if self == nil || other == nil {
+		return false
+	}
+	return self.territory == other.territory
+}
+
+pro_place_territory_to_string :: proc(self: ^Pro_Place_Territory) -> string {
+	return territory_to_string(self.territory)
+}
+

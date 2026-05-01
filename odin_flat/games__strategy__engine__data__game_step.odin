@@ -116,3 +116,28 @@ game_step_get_delegate_name :: proc(self: ^Game_Step) -> string {
 game_step_get_name :: proc(self: ^Game_Step) -> string {
 	return self.name
 }
+
+game_step_new :: proc(
+	name: string,
+	display_name: string,
+	player: ^Game_Player,
+	delegate: ^I_Delegate,
+	data: ^Game_Data,
+	step_properties: map[string]string,
+) -> ^Game_Step {
+	self := new(Game_Step)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.name = name
+	self.display_name = display_name
+	self.player = player
+	self.delegate_name = i_delegate_get_name(delegate)
+	self.properties = step_properties
+	self.run_count = 0
+	self.max_run_count = -1
+	return self
+}
+
+game_step_get_delegate_optional :: proc(self: ^Game_Step) -> ^I_Delegate {
+	data := game_data_component_get_data(&self.game_data_component)
+	return game_data_get_delegate_optional(data, self.delegate_name)
+}

@@ -522,3 +522,93 @@ game_data_set_attachment_order_and_values :: proc(self: ^Game_Data, list: [dynam
 game_data_get_territory_effect_list :: proc(self: ^Game_Data) -> map[string]^Territory_Effect {
 	return self.territory_effect_list
 }
+
+// games.strategy.engine.data.GameData#addGameDataEventListener(GameDataEvent, Runnable)
+//
+// Java:
+//   public void addGameDataEventListener(final GameDataEvent event, final Runnable listener) {
+//     gameDataEventListeners.addListener(event, listener);
+//   }
+// Runnable maps to Odin's `proc()` per the JDK shim convention.
+game_data_add_game_data_event_listener :: proc(self: ^Game_Data, event: Game_Data_Event, listener: proc()) {
+	game_data_event_listeners_add_listener(self.game_data_event_listeners, event, listener)
+}
+
+// games.strategy.engine.data.GameData#fireGameDataEvent(GameDataEvent)
+//
+// Java:
+//   public void fireGameDataEvent(final GameDataEvent event) {
+//     gameDataEventListeners.accept(event);
+//   }
+game_data_fire_game_data_event :: proc(self: ^Game_Data, event: Game_Data_Event) {
+	game_data_event_listeners_accept(self.game_data_event_listeners, event)
+}
+
+// games.strategy.engine.data.GameData#setMapName(String)
+//
+// Java:
+//   public void setMapName(final String mapName) {
+//     properties.set(Constants.MAP_NAME, mapName);
+//   }
+// Constants.MAP_NAME is the literal "mapName". game_properties_set takes
+// rawptr (Java Serializable shim); box the string on the heap so the
+// property store owns a stable pointer to the value.
+game_data_set_map_name :: proc(self: ^Game_Data, map_name: string) {
+	boxed := new(string)
+	boxed^ = map_name
+	game_properties_set(self.properties, "mapName", rawptr(boxed))
+}
+
+// games.strategy.engine.data.GameData#lambda$notifyTerritoryUnitsChanged$2(Territory, TerritoryListener)
+//
+// Java: territoryListener -> territoryListener.unitsChanged(t)
+// `t` is the captured Territory; `territory_listener` is the iterating var.
+game_data_lambda_notify_territory_units_changed_2 :: proc(t: ^Territory, territory_listener: ^Territory_Listener) {
+	territory_listener_units_changed(territory_listener, t)
+}
+
+// games.strategy.engine.data.GameData#lambda$notifyTerritoryAttachmentChanged$3(Territory, TerritoryListener)
+//
+// Java: territoryListener -> territoryListener.attachmentChanged(t)
+game_data_lambda_notify_territory_attachment_changed_3 :: proc(t: ^Territory, territory_listener: ^Territory_Listener) {
+	territory_listener_attachment_changed(territory_listener, t)
+}
+
+// games.strategy.engine.data.GameData#lambda$notifyTerritoryOwnerChanged$4(Territory, TerritoryListener)
+//
+// Java: territoryListener -> territoryListener.ownerChanged(t)
+game_data_lambda_notify_territory_owner_changed_4 :: proc(t: ^Territory, territory_listener: ^Territory_Listener) {
+	territory_listener_owner_changed(territory_listener, t)
+}
+
+// games.strategy.engine.data.GameData#lambda$preGameDisablePlayers$6(Predicate, GamePlayer)
+//
+// Java: p -> (p.getCanBeDisabled() && shouldDisablePlayer.test(p))
+// The captured Predicate<GamePlayer> is modeled as a non-capturing
+// `proc(^Game_Player) -> bool` here; the outer preGameDisablePlayers (layer 3)
+// will adapt any closure-pair predicate before passing it in.
+game_data_lambda_pre_game_disable_players_6 :: proc(should_disable_player: proc(^Game_Player) -> bool, p: ^Game_Player) -> bool {
+	return game_player_get_can_be_disabled(p) && should_disable_player(p)
+}
+
+// games.strategy.engine.data.GameData#lambda$preGameDisablePlayers$7(Set, GamePlayer)
+//
+// Java:
+//   p -> {
+//     p.setIsDisabled(true);
+//     playersWhoShouldBeRemoved.add(p);
+//   }
+// Set<GamePlayer> -> map[^Game_Player]struct{}. The setIsDisabled setter is
+// a Lombok @Setter; we assign the field directly to mirror its body.
+game_data_lambda_pre_game_disable_players_7 :: proc(players_who_should_be_removed: ^map[^Game_Player]struct {}, p: ^Game_Player) {
+	p.is_disabled = true
+	players_who_should_be_removed[p] = {}
+}
+
+// games.strategy.engine.data.GameData#lambda$performChange$8(Change, GameDataChangeListener)
+//
+// Java: listener -> listener.gameDataChanged(change)
+// `change` is captured; `listener` is the iterating var.
+game_data_lambda_perform_change_8 :: proc(change: ^Change, listener: ^Game_Data_Change_Listener) {
+	game_data_change_listener_game_data_changed(listener, change)
+}

@@ -23,6 +23,10 @@ repair_rule_get_results :: proc(self: ^Repair_Rule) -> ^Integer_Map {
 	return self.results
 }
 
+repair_rule_add_cost :: proc(self: ^Repair_Rule, resource: ^Resource, quantity: i32) {
+	integer_map_put(self.costs, rawptr(resource), quantity)
+}
+
 repair_rule_to_string :: proc(self: ^Repair_Rule) -> string {
 	return fmt.aprintf("RepairRule:%s", default_named_get_name(&self.default_named))
 }

@@ -5,6 +5,12 @@ Game_Object_Stream_Data :: struct {
     type: Game_Object_Stream_Data_Game_Type,
 }
 
+game_object_stream_data_new :: proc(named: ^Named) -> ^Game_Object_Stream_Data {
+    self := new(Game_Object_Stream_Data)
+    self^ = make_Game_Object_Stream_Data(named)
+    return self
+}
+
 make_Game_Object_Stream_Data :: proc(named: ^Named) -> Game_Object_Stream_Data {
     self: Game_Object_Stream_Data
     self.name = named.base.name

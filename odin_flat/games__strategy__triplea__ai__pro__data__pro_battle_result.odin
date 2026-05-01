@@ -50,3 +50,7 @@ pro_battle_result_new :: proc(
 	self.battle_rounds = battle_rounds
 	return self
 }
+
+pro_battle_result_new_empty :: proc() -> ^Pro_Battle_Result {
+	return pro_battle_result_new(0, -1, false, make([dynamic]^Unit), make([dynamic]^Unit), 0)
+}

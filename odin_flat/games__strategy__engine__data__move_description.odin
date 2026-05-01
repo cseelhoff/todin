@@ -20,6 +20,28 @@ move_description_lambda_new_0 :: proc(key: ^Unit, value: [dynamic]^Unit) -> map[
 	return result
 }
 
+move_description_new :: proc(
+	units: []^Unit,
+	route: ^Route,
+	units_to_sea_transports: map[^Unit]^Unit,
+	air_transports_dependents: map[^Unit][dynamic]^Unit,
+) -> ^Move_Description {
+	assert(route != nil)
+	assert(route_has_steps(route))
+	self := new(Move_Description)
+	self.abstract_move_description = make_Abstract_Move_Description(units)
+	self.route = route
+	self.units_to_sea_transports = make(map[^Unit]^Unit)
+	for k, v in units_to_sea_transports {
+		self.units_to_sea_transports[k] = v
+	}
+	self.air_transports_dependents = make(map[^Unit]map[^Unit]struct{})
+	for k, v in air_transports_dependents {
+		self.air_transports_dependents[k] = move_description_lambda_new_0(k, v)
+	}
+	return self
+}
+
 move_description_get_units_to_sea_transports :: proc(self: ^Move_Description) -> map[^Unit]^Unit {
 	return self.units_to_sea_transports
 }

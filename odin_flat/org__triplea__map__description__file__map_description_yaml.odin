@@ -9,6 +9,23 @@ Map_Description_Yaml :: struct {
 	map_game_list:      [dynamic]^Map_Description_Yaml_Map_Game,
 }
 
+// Java: public static final String MAP_YAML_FILE_NAME = "map.yml".
+MAP_YAML_FILE_NAME :: "map.yml"
+
+// Java: public static Optional<MapDescriptionYaml> fromFile(Path
+// mapDescriptionYamlFile). Provisioned (orchestrator-level) for the
+// AI snapshot port: the snapshot harness never parses XML maps, so
+// the call site (GameParser#lambda$parse$1) is unreachable at
+// runtime. Returns (nil, false) — the Optional.empty() equivalent.
+map_description_yaml_from_file :: proc(
+	map_description_yaml_file: Path,
+) -> (
+	^Map_Description_Yaml,
+	bool,
+) {
+	return nil, false
+}
+
 // Lombok @Getter for `mapName`.
 map_description_yaml_get_map_name :: proc(self: ^Map_Description_Yaml) -> string {
 	return self.map_name

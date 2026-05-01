@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Purchase_Utils :: struct {}
 
 // Java: public static Comparator<Unit> getCostComparator(final ProData proData)
@@ -34,23 +36,129 @@ pro_purchase_utils_get_cost_comparator :: proc(
 	return pro_purchase_utils_cost_comparator_less, rawptr(ctx)
 }
 
+// Java synthetic lambda: ProPurchaseUtils#lambda$incrementUnitProductionForBidTerritories$0(ProPurchaseTerritory).
+//
+// Origin: inside incrementUnitProductionForBidTerritories the forEach body
+//     ppt -> ppt.setUnitProduction(ppt.getUnitProduction() + 1)
+// generates this synthetic non-capturing lambda. Hoisted to a free
+// top-level proc following the canonical lambda naming convention.
+pro_purchase_utils_lambda__increment_unit_production_for_bid_territories__0 :: proc(
+	ppt: ^Pro_Purchase_Territory,
+) {
+	pro_purchase_territory_set_unit_production(
+		ppt,
+		pro_purchase_territory_get_unit_production(ppt) + 1,
+	)
+}
+
 // Java: public static void incrementUnitProductionForBidTerritories(
 //     final Map<Territory, ProPurchaseTerritory> purchaseTerritories) {
 //   purchaseTerritories.values().forEach(
 //       ppt -> ppt.setUnitProduction(ppt.getUnitProduction() + 1));
 // }
-//
-// The forEach lambda is non-capturing, so it inlines as a simple loop
-// over the map values.
 pro_purchase_utils_increment_unit_production_for_bid_territories :: proc(
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
 ) {
 	for _, ppt in purchase_territories {
-		pro_purchase_territory_set_unit_production(
-			ppt,
-			pro_purchase_territory_get_unit_production(ppt) + 1,
-		)
+		pro_purchase_utils_lambda__increment_unit_production_for_bid_territories__0(ppt)
 	}
+}
+
+// Java: public static int getMaxConstructions(
+//     final List<ProPurchaseOption> zeroMoveDefensePurchaseOptions) {
+//   final IntegerMap<String> constructionTypesPerTurn = new IntegerMap<>();
+//   for (final ProPurchaseOption ppo : zeroMoveDefensePurchaseOptions) {
+//     if (ppo.isConstruction()) {
+//       constructionTypesPerTurn.put(ppo.getConstructionType(), ppo.getConstructionTypePerTurn());
+//     }
+//   }
+//   return constructionTypesPerTurn.totalValues();
+// }
+//
+// Java's IntegerMap<String> uses value-based String equality; modeled here
+// with a local map[string]i32 (last-put wins, matching IntegerMap.put), then
+// summed for totalValues().
+pro_purchase_utils_get_max_constructions :: proc(
+	zero_move_defense_purchase_options: [dynamic]^Pro_Purchase_Option,
+) -> i32 {
+	construction_types_per_turn := make(map[string]i32)
+	defer delete(construction_types_per_turn)
+	for ppo in zero_move_defense_purchase_options {
+		if pro_purchase_option_is_construction(ppo) {
+			construction_types_per_turn[pro_purchase_option_get_construction_type(ppo)] =
+				pro_purchase_option_get_construction_type_per_turn(ppo)
+		}
+	}
+	total: i32 = 0
+	for _, v in construction_types_per_turn {
+		total += v
+	}
+	return total
+}
+
+// Java: private static GamePlayer getOriginalFactoryOwner(
+//     final Territory territory, final GamePlayer player) {
+//   final Collection<Unit> factoryUnits = territory.getMatches(Matches.unitCanProduceUnits());
+//   if (factoryUnits.isEmpty()) {
+//     throw new IllegalStateException("No factory in territory: " + territory);
+//   }
+//   for (final Unit factory2 : factoryUnits) {
+//     if (player.equals(factory2.getOriginalOwner())) {
+//       return factory2.getOriginalOwner();
+//     }
+//   }
+//   return CollectionUtils.getAny(factoryUnits).getOriginalOwner();
+// }
+pro_purchase_utils_get_original_factory_owner :: proc(
+	territory: ^Territory,
+	player: ^Game_Player,
+) -> ^Game_Player {
+	pred, ctx := matches_unit_can_produce_units()
+	factory_units: [dynamic]^Unit
+	defer delete(factory_units)
+	for u in territory.unit_collection.units {
+		if pred(ctx, u) {
+			append(&factory_units, u)
+		}
+	}
+	if len(factory_units) == 0 {
+		panic(fmt.tprintf("No factory in territory: %s", territory_to_string(territory)))
+	}
+	for factory2 in factory_units {
+		if player == unit_get_original_owner(factory2) {
+			return unit_get_original_owner(factory2)
+		}
+	}
+	return unit_get_original_owner(factory_units[0])
+}
+
+// Java: public static List<Unit> getPlaceUnits(
+//     final Territory t, final Map<Territory, ProPurchaseTerritory> purchaseTerritories) {
+//   final List<Unit> placeUnits = new ArrayList<>();
+//   for (final ProPurchaseTerritory purchaseTerritory : purchaseTerritories.values()) {
+//     for (final ProPlaceTerritory ppt : purchaseTerritory.getCanPlaceTerritories()) {
+//       if (t.equals(ppt.getTerritory())) {
+//         placeUnits.addAll(ppt.getPlaceUnits());
+//       }
+//     }
+//   }
+//   return placeUnits;
+// }
+pro_purchase_utils_get_place_units :: proc(
+	t: ^Territory,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> [dynamic]^Unit {
+	place_units: [dynamic]^Unit
+	for _, purchase_territory in purchase_territories {
+		for ppt in pro_purchase_territory_get_can_place_territories(purchase_territory) {
+			if t == pro_place_territory_get_territory(ppt) {
+				for u in pro_place_territory_get_place_units(ppt) {
+					append(&place_units, u)
+				}
+			}
+		}
+	}
+	return place_units
 }
 
 // Java synthetic lambda: ProPurchaseUtils#lambda$getUnitsToConsume$2(Set, Unit) -> boolean.

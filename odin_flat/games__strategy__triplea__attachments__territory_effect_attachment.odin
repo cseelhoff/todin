@@ -67,3 +67,35 @@ territory_effect_attachment_get_units_not_allowed :: proc(self: ^Territory_Effec
 	return default_attachment_get_list_property(self.units_not_allowed)
 }
 
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#get(TerritoryEffect)
+//   public static TerritoryEffectAttachment get(TerritoryEffect te) {
+//       return get(te, Constants.TERRITORYEFFECT_ATTACHMENT_NAME);
+//   }
+// `Constants.TERRITORYEFFECT_ATTACHMENT_NAME` is the literal
+// `"territoryEffectAttachment"` (Constants.java line 38). The 2-arg
+// overload `territory_effect_attachment_get` already covers the lookup;
+// this single-arg form just supplies the canonical attachment name.
+// Suffix `_1` distinguishes this 1-arg overload from the 2-arg sibling
+// already defined above in this file.
+territory_effect_attachment_get_1 :: proc(te: ^Territory_Effect) -> ^Territory_Effect_Attachment {
+	return territory_effect_attachment_get(te, "territoryEffectAttachment")
+}
+
+// games.strategy.triplea.attachments.TerritoryEffectAttachment#getCombatEffect(UnitType, boolean)
+//   public int getCombatEffect(final UnitType type, final boolean defending) {
+//       return defending
+//           ? getCombatDefenseEffect().getInt(type)
+//           : getCombatOffenseEffect().getInt(type);
+//   }
+// `Integer_Map.map_values` is keyed by `rawptr`; cast the `^Unit_Type`
+// to `rawptr` for lookup. `integer_map_get_int` returns 0 for absent
+// keys, matching Java's `IntegerMap.getInt` contract.
+territory_effect_attachment_get_combat_effect :: proc(self: ^Territory_Effect_Attachment, type: ^Unit_Type, defending: bool) -> i32 {
+	if defending {
+		def := territory_effect_attachment_get_combat_defense_effect(self)
+		return integer_map_get_int(&def, cast(rawptr)type)
+	}
+	off := territory_effect_attachment_get_combat_offense_effect(self)
+	return integer_map_get_int(&off, cast(rawptr)type)
+}
+

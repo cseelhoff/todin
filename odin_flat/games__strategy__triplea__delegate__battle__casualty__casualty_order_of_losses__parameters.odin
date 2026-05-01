@@ -29,3 +29,7 @@ casualty_order_of_losses_parameters_new :: proc(
 	return self
 }
 
+casualty_order_of_losses__parameters_builder :: proc() -> ^Casualty_Order_Of_Losses_Parameters_Parameters_Builder {
+	return casualty_order_of_losses_parameters_parameters_builder_new()
+}
+

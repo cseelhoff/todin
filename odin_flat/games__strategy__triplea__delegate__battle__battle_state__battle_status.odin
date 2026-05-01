@@ -24,6 +24,17 @@ battle_status_new :: proc(
 	return self
 }
 
+// Lombok @Value(staticConstructor = "of") factory.
+battle_state__battle_status_of :: proc(
+	round: i32,
+	max_rounds: i32,
+	is_over: bool,
+	is_amphibious: bool,
+	is_headless: bool,
+) -> ^Battle_State_Battle_Status {
+	return battle_status_new(round, max_rounds, is_over, is_amphibious, is_headless)
+}
+
 battle_status_get_round :: proc(self: ^Battle_State_Battle_Status) -> i32 {
 	return self.round
 }

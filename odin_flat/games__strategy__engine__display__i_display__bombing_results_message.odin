@@ -29,3 +29,28 @@ make_I_Display_Bombing_Results_Message :: proc(
 	self.cost = total
 	return self
 }
+
+// games.strategy.engine.display.IDisplay$BombingResultsMessage#accept(games.strategy.engine.display.IDisplay)
+i_display_bombing_results_message_accept :: proc(self: ^I_Display_Bombing_Results_Message, display: ^I_Display) {
+	hex_nibble :: proc(c: u8) -> u8 {
+		switch c {
+		case '0'..='9': return c - '0'
+		case 'a'..='f': return c - 'a' + 10
+		case 'A'..='F': return c - 'A' + 10
+		}
+		return 0
+	}
+	bytes := transmute([]u8)self.battle_id
+	uuid: Uuid
+	bi := 0
+	for i := 0; i < len(bytes) && bi < 16; i += 1 {
+		if bytes[i] == '-' { continue }
+		hi := hex_nibble(bytes[i])
+		i += 1
+		lo := hex_nibble(bytes[i])
+		uuid[bi] = (hi << 4) | lo
+		bi += 1
+	}
+	dice := die_roll_data_to_die_list(self.dice_data)
+	i_display_bombing_results(display, uuid, dice, int(self.cost))
+}

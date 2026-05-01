@@ -205,3 +205,17 @@ game_player_get_who_am_i :: proc(self: ^Game_Player) -> string {
 game_player_get_can_be_disabled :: proc(self: ^Game_Player) -> bool {
 	return self.can_be_disabled
 }
+
+// Java: public final boolean isAtWarWithAnyOfThesePlayers(Collection<GamePlayer> others)
+// → getData().getRelationshipTracker().isAtWarWithAnyOfThesePlayers(this, others).
+game_player_is_at_war_with_any_of_these_players :: proc(self: ^Game_Player, others: [dynamic]^Game_Player) -> bool {
+	rt := game_data_get_relationship_tracker(game_player_get_data(self))
+	return relationship_tracker_is_at_war_with_any_of_these_players(rt, self, others)
+}
+
+// Java: public final boolean isAlliedWithAnyOfThesePlayers(Collection<GamePlayer> others)
+// → getData().getRelationshipTracker().isAlliedWithAnyOfThesePlayers(this, others).
+game_player_is_allied_with_any_of_these_players :: proc(self: ^Game_Player, others: [dynamic]^Game_Player) -> bool {
+	rt := game_data_get_relationship_tracker(game_player_get_data(self))
+	return relationship_tracker_is_allied_with_any_of_these_players(rt, self, others)
+}

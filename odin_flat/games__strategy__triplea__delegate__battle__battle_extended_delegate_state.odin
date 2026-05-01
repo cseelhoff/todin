@@ -17,3 +17,9 @@ Battle_Extended_Delegate_State :: struct {
 	current_battle:                          ^I_Battle,
 }
 
+battle_extended_delegate_state_new :: proc() -> ^Battle_Extended_Delegate_State {
+	self := new(Battle_Extended_Delegate_State)
+	self.battle_tracker = battle_tracker_new()
+	return self
+}
+

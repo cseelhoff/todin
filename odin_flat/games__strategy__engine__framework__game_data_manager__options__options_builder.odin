@@ -28,3 +28,13 @@ game_data_manager_options_options_builder_with_history :: proc(self: ^Game_Data_
 	return self
 }
 
+game_data_manager_options_options_builder_build :: proc(self: ^Game_Data_Manager_Options_Options_Builder) -> ^Game_Data_Manager_Options {
+	result := new(Game_Data_Manager_Options)
+	result^ = make_Game_Data_Manager_Options(
+		self.with_delegates,
+		self.with_history,
+		self.with_attachment_xml_data,
+	)
+	return result
+}
+

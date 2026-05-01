@@ -28,4 +28,14 @@ plain_random_source_get_random :: proc(self: ^Plain_Random_Source, max: i32, ann
 	return mersenne_twister_next_int_bounded(self.random, max)
 }
 
+plain_random_source_get_random_array :: proc(self: ^Plain_Random_Source, max: i32, count: i32, annotation: string) -> [dynamic]i32 {
+	assert(max > 0, "max must be > 0")
+	assert(count > 0, "count must be > 0")
+	numbers := make([dynamic]i32, count)
+	for i in 0 ..< count {
+		numbers[i] = plain_random_source_get_random(self, max, annotation)
+	}
+	return numbers
+}
+
 

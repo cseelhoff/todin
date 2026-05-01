@@ -64,3 +64,16 @@ casualty_order_of_losses_parameters_parameters_builder_data :: proc(
 	return self
 }
 
+casualty_order_of_losses__parameters__parameters_builder_build :: proc(
+	self: ^Casualty_Order_Of_Losses_Parameters_Parameters_Builder,
+) -> ^Casualty_Order_Of_Losses_Parameters {
+	return casualty_order_of_losses_parameters_new(
+		self.targets_to_pick_from,
+		self.player,
+		self.combat_value,
+		self.battlesite,
+		self.costs,
+		self.data,
+	)
+}
+

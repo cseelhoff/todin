@@ -17,3 +17,10 @@ pro_move_utils_lambda_calculate_move_routes_0 :: proc(key: ^Unit, value: [dynami
 	return result
 }
 
+// Synthetic lambda `move -> move.getUnitsToSeaTransports().isEmpty()`
+// from `ProMoveUtils.doMove`, used as the `allMatch` predicate that
+// determines whether none of the queued moves carry sea-transport loads.
+pro_move_utils_lambda__do_move__3 :: proc(move: ^Move_Description) -> bool {
+	return len(move_description_get_units_to_sea_transports(move)) == 0
+}
+

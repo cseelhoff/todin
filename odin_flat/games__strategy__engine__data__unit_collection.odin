@@ -181,3 +181,65 @@ unit_collection_get_unit_count_of_type :: proc(self: ^Unit_Collection, type: ^Un
 	}
 	return count
 }
+
+// Java: public UnitCollection(final NamedUnitHolder holder, final GameData data)
+//   super(data); this.holder = holder;
+unit_collection_new :: proc(holder: ^Named_Unit_Holder, data: ^Game_Data) -> ^Unit_Collection {
+	self := new(Unit_Collection)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.holder = holder
+	return self
+}
+
+// Java: public int countMatches(final Predicate<Unit> predicate)
+//   return CollectionUtils.countMatches(units, predicate);
+unit_collection_count_matches :: proc(self: ^Unit_Collection, pred: proc(^Unit) -> bool) -> i32 {
+	count: i32 = 0
+	for u in self.units {
+		if pred(u) {
+			count += 1
+		}
+	}
+	return count
+}
+
+// Java synthetic: lambda$getUnitCount$0(UnitType, Unit) -> boolean
+//   from getUnitCount(UnitType): u -> u.getType().equals(type)
+unit_collection_lambda_get_unit_count_0 :: proc(type: ^Unit_Type, u: ^Unit) -> bool {
+	return unit_type_equals(u.type, type)
+}
+
+// Java synthetic: lambda$getUnitsByType$3(IntegerMap<UnitType>, UnitType)
+//   from getUnitsByType(): type -> { count = getUnitCount(type); if (count > 0) units.put(type, count); }
+// `this` capture is implicit in Java instance synthetics; we pass it explicitly
+// because the lambda body calls the instance method getUnitCount.
+unit_collection_lambda_get_units_by_type_3 :: proc(self: ^Unit_Collection, units: ^Integer_Map_Unit_Type, type: ^Unit_Type) {
+	count := unit_collection_get_unit_count_of_type(self, type)
+	if count > 0 {
+		units.entries[type] = count
+	}
+}
+
+// Java synthetic: lambda$getUnitsByType$4(IntegerMap<UnitType>, Unit)
+//   from getUnitsByType(GamePlayer): unit -> count.add(unit.getType(), 1)
+unit_collection_lambda_get_units_by_type_4 :: proc(count: ^Integer_Map_Unit_Type, unit: ^Unit) {
+	t := unit.type
+	if existing, ok := count.entries[t]; ok {
+		count.entries[t] = existing + 1
+	} else {
+		count.entries[t] = 1
+	}
+}
+
+// Java synthetic: lambda$getPlayerUnitCounts$5(IntegerMap<GamePlayer>, Unit)
+//   from getPlayerUnitCounts(): unit -> count.add(unit.getOwner(), 1)
+// The Odin getPlayerUnitCounts returns a plain map[^Game_Player]i32; the
+// captured "IntegerMap" mirrors that as a pointer to the same map type.
+unit_collection_lambda_get_player_unit_counts_5 :: proc(count: ^map[^Game_Player]i32, unit: ^Unit) {
+	owner := unit.owner
+	if existing, ok := count[owner]; ok {
+		count[owner] = existing + 1
+	} else {
+		count[owner] = 1
+	}
+}

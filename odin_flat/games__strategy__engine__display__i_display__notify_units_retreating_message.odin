@@ -41,3 +41,40 @@ make_I_Display_Notify_Units_Retreating_Message :: proc(
 	return msg
 }
 
+// games.strategy.engine.display.IDisplay$NotifyUnitsRetreatingMessage#accept(games.strategy.engine.display.IDisplay,games.strategy.engine.data.UnitsList)
+i_display_notify_units_retreating_message_accept :: proc(
+	self: ^I_Display_Notify_Units_Retreating_Message,
+	display: ^I_Display,
+	units_list: ^Units_List,
+) {
+	hex_nibble :: proc(c: u8) -> u8 {
+		switch c {
+		case '0'..='9': return c - '0'
+		case 'a'..='f': return c - 'a' + 10
+		case 'A'..='F': return c - 'A' + 10
+		}
+		return 0
+	}
+	parse_uuid :: proc(s: string) -> Uuid {
+		bytes := transmute([]u8)s
+		uuid: Uuid
+		bi := 0
+		for i := 0; i < len(bytes) && bi < 16; i += 1 {
+			if bytes[i] == '-' { continue }
+			hi := hex_nibble(bytes[i])
+			i += 1
+			lo := hex_nibble(bytes[i])
+			uuid[bi] = (hi << 4) | lo
+			bi += 1
+		}
+		return uuid
+	}
+	battle_id := parse_uuid(self.battle_id)
+	retreating := make([dynamic]^Unit, 0, len(self.retreating_unit_ids))
+	for id_str in self.retreating_unit_ids {
+		uid := parse_uuid(id_str)
+		append(&retreating, units_list_get(units_list, uid))
+	}
+	i_display_notify_retreat_units(display, battle_id, retreating)
+}
+

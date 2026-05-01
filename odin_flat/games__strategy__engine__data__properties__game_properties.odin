@@ -22,6 +22,36 @@ Game_Properties :: struct {
 	player_properties: map[string]^Editable_Property,
 }
 
+// GameProperties(GameData)
+game_properties_new :: proc(data: ^Game_Data) -> ^Game_Properties {
+	self := new(Game_Properties)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.constant_properties = make(map[string]Property_Value)
+	self.editable_properties = make(map[string]^Editable_Property)
+	self.ordering = make([dynamic]string)
+	self.player_properties = make(map[string]^Editable_Property)
+	return self
+}
+
+// GameProperties.get(String)
+// Java returns Serializable from (in order) editableProperties.getValue(),
+// playerProperties.getValue(), or constantProperties.get(key). The local
+// Editable_Property shim carries no typed value, so the editable/player
+// branches contribute no observable Property_Value; only constant_properties
+// holds typed values in this port.
+game_properties_get :: proc(self: ^Game_Properties, key: string) -> Property_Value {
+	if _, ok := self.editable_properties[key]; ok {
+		// Editable_Property shim has no value field; fall through.
+	}
+	if _, ok := self.player_properties[key]; ok {
+		// Editable_Property shim has no value field; fall through.
+	}
+	if v, ok := self.constant_properties[key]; ok {
+		return v
+	}
+	return nil
+}
+
 game_properties_add_editable_property :: proc(self: ^Game_Properties, property: ^Editable_Property) {
 	self.editable_properties[property.name] = property
 	append(&self.ordering, property.name)

@@ -34,3 +34,14 @@ abstract_game_set_resource_loader :: proc(self: ^Abstract_Game, resource_loader:
 	self.resource_loader = resource_loader
 }
 
+ABSTRACT_GAME_DISPLAY_CHANNEL :: "games.strategy.engine.framework.AbstractGame.DISPLAY_CHANNEL"
+ABSTRACT_GAME_SOUND_CHANNEL :: "games.strategy.engine.framework.AbstractGame.SOUND_CHANNEL"
+
+abstract_game_get_display_channel :: proc() -> ^Remote_Name {
+	return remote_name_new(ABSTRACT_GAME_DISPLAY_CHANNEL, class_new("games.strategy.engine.display.IDisplay", "IDisplay"))
+}
+
+abstract_game_get_sound_channel :: proc() -> ^Remote_Name {
+	return remote_name_new(ABSTRACT_GAME_SOUND_CHANNEL, class_new("org.triplea.sound.ISound", "ISound"))
+}
+

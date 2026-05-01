@@ -8,6 +8,10 @@ package game
 
 I_Delegate :: struct {
 	name:                                    string,
+	// games.strategy.engine.delegate.AutoSave annotation (Java reflective
+	// metadata). Concrete delegate constructors set this when the Java
+	// class declares `@AutoSave(...)`; nil means the annotation is absent.
+	auto_save_annotation:                    ^Auto_Save,
 	delegate_currently_requires_user_input: proc(self: ^I_Delegate) -> bool,
 	end:                                     proc(self: ^I_Delegate),
 	get_display_name:                        proc(self: ^I_Delegate) -> string,

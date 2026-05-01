@@ -23,3 +23,9 @@ system_properties_get_user_home :: proc() -> string {
 system_properties_get_user_name :: proc() -> string {
         return os.get_env("USER")
 }
+
+// Mirrors SystemProperties.isMac(): true when os.name contains "mac".
+// Odin: check ODIN_OS at compile time; Darwin is the macOS target.
+system_properties_is_mac :: proc() -> bool {
+        return ODIN_OS == .Darwin
+}

@@ -80,3 +80,63 @@ pro_territory_manager_lambda_find_closest_territory_8 :: proc(
 	return true
 }
 
+pro_territory_manager_new :: proc(calc: ^Pro_Odds_Calculator, pro_data: ^Pro_Data) -> ^Pro_Territory_Manager {
+	self := new(Pro_Territory_Manager)
+	self.calc = calc
+	self.pro_data = pro_data
+	self.player = pro_data_get_player(pro_data)
+	self.attack_options = pro_my_move_options_new()
+	self.potential_attack_options = pro_my_move_options_new()
+	self.defend_options = pro_my_move_options_new()
+	self.allied_attack_options = pro_other_move_options_new()
+	self.enemy_defend_options = pro_other_move_options_new()
+	self.enemy_attack_options = pro_other_move_options_new()
+	return self
+}
+
+pro_territory_manager_find_bombing_options :: proc(self: ^Pro_Territory_Manager) {
+	pred, ctx := matches_unit_is_strategic_bomber()
+	unit_move_map := pro_my_move_options_get_unit_move_map(self.attack_options)
+	bomber_move_map := pro_my_move_options_get_bomber_move_map(self.attack_options)
+	for unit, dests in unit_move_map {
+		if pred(ctx, unit) {
+			copy_set := make(map[^Territory]struct {})
+			for t, _ in dests {
+				copy_set[t] = struct {}{}
+			}
+			bomber_move_map[unit] = copy_set
+		}
+	}
+}
+
+pro_territory_manager_get_defend_territories :: proc(self: ^Pro_Territory_Manager) -> [dynamic]^Territory {
+	result: [dynamic]^Territory
+	territory_map := pro_my_move_options_get_territory_map(self.defend_options)
+	for t, _ in territory_map {
+		append(&result, t)
+	}
+	return result
+}
+
+pro_territory_manager_get_strafing_territories :: proc(self: ^Pro_Territory_Manager) -> [dynamic]^Territory {
+	strafing_territories: [dynamic]^Territory
+	territory_map := pro_my_move_options_get_territory_map(self.attack_options)
+	for t, patd in territory_map {
+		if pro_territory_is_strafing(patd) {
+			append(&strafing_territories, t)
+		}
+	}
+	return strafing_territories
+}
+
+pro_territory_manager_get_cant_hold_territories :: proc(self: ^Pro_Territory_Manager) -> [dynamic]^Territory {
+	territories_that_cant_be_held: [dynamic]^Territory
+	territory_map := pro_my_move_options_get_territory_map(self.defend_options)
+	for t, patd in territory_map {
+		if !pro_territory_is_can_hold(patd) {
+			append(&territories_that_cant_be_held, t)
+		}
+	}
+	return territories_that_cant_be_held
+}
+

@@ -20,4 +20,9 @@ make_I_Display_Notify_Retreat_Message :: proc(
 		retreating_player_name = retreating_player_name,
 	}
 }
-
+// Lombok @Builder generated static factory: NotifyRetreatMessage.builder()
+notify_retreat_message_builder :: proc() -> ^I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder {
+	b := new(I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder)
+	b^ = I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder{}
+	return b
+}

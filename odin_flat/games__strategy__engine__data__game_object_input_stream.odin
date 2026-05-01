@@ -14,3 +14,7 @@ make_Game_Object_Input_Stream :: proc(factory: ^Game_Object_Stream_Factory, inpu
 	stream.input = input
 	return stream
 }
+
+game_object_input_stream_get_data :: proc(self: ^Game_Object_Input_Stream) -> ^Game_Data {
+	return game_object_stream_factory_get_data(self.data_source)
+}

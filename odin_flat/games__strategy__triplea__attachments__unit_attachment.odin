@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Port of games.strategy.triplea.attachments.UnitAttachment.
 // Despite the misleading name, this attaches not to individual Units but to
 // UnitTypes. Empty collection fields default to nil/zero in Odin (matching
@@ -588,4 +590,303 @@ unit_attachment_lambda_get_property_or_empty_28 :: proc() -> i32 {
 // case (final ofMapper supplier in getPropertyOrEmpty): `() -> 0`
 unit_attachment_lambda_get_property_or_empty_30 :: proc() -> i32 {
         return 0
+}
+
+// =============================================================================
+// Phase B layer 1 additions: setIsFactory/setIsSub/setMaxAaAttacks setters,
+// canInvadeFrom predicate, AA / bombing target accessors, getListedUnits, and
+// the synthetic javac lambdas referenced from getPropertyOrEmpty,
+// setWhenCapturedChangesInto, and setDestroyedWhenCapturedBy.
+// =============================================================================
+
+// Java: public void setIsSub(final Boolean s) { isSub = s; resetCanNotTarget();
+//                                                resetCanNotBeTargetedBy(); }
+// Boxed Boolean -> ^bool (nil ~ Java null, treated as false to match the
+// nil-default convention applied throughout this file).
+unit_attachment_set_is_sub :: proc(self: ^Unit_Attachment, value: ^bool) {
+	self.is_sub = value != nil && value^
+	unit_attachment_reset_can_not_target(self)
+	unit_attachment_reset_can_not_be_targeted_by(self)
+}
+
+// Java: private void setIsFactory(final Boolean s) -- propagates the boolean to
+// canBeDamaged / isInfrastructure / canProduceUnits / isConstruction, then
+// configures the construction-type triplet. Constants.CONSTRUCTION_TYPE_FACTORY
+// is the literal string "factory".
+unit_attachment_set_is_factory :: proc(self: ^Unit_Attachment, s: ^bool) {
+	unit_attachment_set_can_be_damaged(self, s)
+	unit_attachment_set_is_infrastructure(self, s)
+	unit_attachment_set_can_produce_units(self, s)
+	unit_attachment_set_is_construction(self, s)
+	if s != nil && s^ {
+		unit_attachment_set_construction_type(self, "factory")
+		unit_attachment_set_max_constructions_per_type_per_terr(self, "1")
+		unit_attachment_set_constructions_per_terr_per_type_per_turn(self, "1")
+	} else {
+		unit_attachment_set_construction_type(self, "none")
+		unit_attachment_set_max_constructions_per_type_per_terr(self, "-1")
+		unit_attachment_set_constructions_per_terr_per_type_per_turn(self, "-1")
+	}
+}
+
+// Java: private void setMaxAaAttacks(final String s) throws GameParseException
+// Parses, validates that attacks >= -1, then stores. The Java method calls
+// `getInt(s)` twice (once for the bound check, once for assignment); the port
+// preserves the literal double-parse for fidelity.
+unit_attachment_set_max_aa_attacks :: proc(self: ^Unit_Attachment, s: string) {
+	attacks := default_attachment_get_int(&self.default_attachment, s)
+	if attacks < -1 {
+		suffix := default_attachment_this_error_msg(&self.default_attachment)
+		defer delete(suffix)
+		fmt.panicf(
+			"maxAAattacks must be positive (or -1 for attacking all) %s",
+			suffix,
+		)
+	}
+	self.max_aa_attacks = default_attachment_get_int(&self.default_attachment, s)
+}
+
+// Java: public boolean canInvadeFrom(final Unit transport)
+//   returns true iff canInvadeOnlyFrom is null/empty/blank/"all", or the
+//   transport's unit-type name appears in the list. Odin's [dynamic]string
+//   zero value has len==0, collapsing the null and empty checks.
+unit_attachment_can_invade_from :: proc(self: ^Unit_Attachment, transport: ^Unit) -> bool {
+	if self == nil {
+		return true
+	}
+	if len(self.can_invade_only_from) == 0 {
+		return true
+	}
+	if self.can_invade_only_from[0] == "" {
+		return true
+	}
+	if self.can_invade_only_from[0] == "all" {
+		return true
+	}
+	if transport == nil {
+		return false
+	}
+	type := unit_get_type(transport)
+	if type == nil {
+		return false
+	}
+	target := default_named_get_name(&type.named_attachable.default_named)
+	for n in self.can_invade_only_from {
+		if n == target {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: public int getAttackAaMaxDieSides()
+//   return attackAaMaxDieSides > 0 ? attackAaMaxDieSides : getData().getDiceSides();
+unit_attachment_get_attack_aa_max_die_sides :: proc(self: ^Unit_Attachment) -> i32 {
+	if self.attack_aa_max_die_sides > 0 {
+		return self.attack_aa_max_die_sides
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	return game_data_get_dice_sides(data)
+}
+
+// Java: public int getOffensiveAttackAaMaxDieSides()
+//   return offensiveAttackAaMaxDieSides > 0 ? offensiveAttackAaMaxDieSides
+//                                            : getData().getDiceSides();
+unit_attachment_get_offensive_attack_aa_max_die_sides :: proc(self: ^Unit_Attachment) -> i32 {
+	if self.offensive_attack_aa_max_die_sides > 0 {
+		return self.offensive_attack_aa_max_die_sides
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	return game_data_get_dice_sides(data)
+}
+
+// Java: public Set<UnitType> getBombingTargets(final UnitTypeList unitTypeList)
+//   if (bombingTargets != null) return Collections.unmodifiableSet(bombingTargets);
+//   return unitTypeList.getAllUnitTypes();
+// Odin's value-typed map treats len==0 as the "unset" sentinel that mirrors
+// Java's null check (the Java field is null-by-default and only ever assigned
+// a non-empty Set by the parser, so the equivalence holds in practice).
+unit_attachment_get_bombing_targets :: proc(
+	self: ^Unit_Attachment,
+	unit_type_list: ^Unit_Type_List,
+) -> map[^Unit_Type]struct {} {
+	if len(self.bombing_targets) > 0 {
+		return self.bombing_targets
+	}
+	return unit_type_list_get_all_unit_types(unit_type_list)
+}
+
+// Java: public Set<UnitType> getTargetsAa(final UnitTypeList unitTypeList)
+//   if (targetsAa != null) return Collections.unmodifiableSet(targetsAa);
+//   return unitTypeList.stream()
+//       .filter(ut -> ut.getUnitAttachment().isAir())
+//       .collect(Collectors.toSet());
+// The inline filter lambda is folded into the loop body since it neither
+// captures nor escapes.
+unit_attachment_get_targets_aa :: proc(
+	self: ^Unit_Attachment,
+	unit_type_list: ^Unit_Type_List,
+) -> map[^Unit_Type]struct {} {
+	if len(self.targets_aa) > 0 {
+		return self.targets_aa
+	}
+	out: map[^Unit_Type]struct {}
+	types := unit_type_list_stream(unit_type_list)
+	defer delete(types)
+	for ut in types {
+		ua := unit_type_get_unit_attachment(ut)
+		if ua != nil && unit_attachment_is_air(ua) {
+			out[ut] = struct {}{}
+		}
+	}
+	return out
+}
+
+// Java: public Collection<UnitType> getListedUnits(final String[] list)
+//   resolves each name against the GameData's UnitTypeList. Java throws
+//   IllegalStateException for unknown names; the Odin port panics with the
+//   same message (mirrors `default_attachment_get_unit_type_or_throw`).
+//   Returns a freshly-allocated [dynamic]; the caller owns it.
+unit_attachment_get_listed_units :: proc(
+	self: ^Unit_Attachment,
+	list: []string,
+) -> [dynamic]^Unit_Type {
+	out: [dynamic]^Unit_Type
+	data := game_data_component_get_data_or_throw(&self.default_attachment.game_data_component)
+	utl := game_data_get_unit_type_list(data)
+	for name in list {
+		ut := unit_type_list_get_unit_type(utl, name)
+		if ut == nil {
+			suffix := default_attachment_this_error_msg(&self.default_attachment)
+			defer delete(suffix)
+			fmt.panicf("No unit called: %s%s", name, suffix)
+		}
+		append(&out, ut)
+	}
+	return out
+}
+
+// -- Synthetic javac lambdas ------------------------------------------------
+
+// Java: lambda$setWhenCapturedChangesInto$0(String value, String[] s)
+// Captures: enclosing UnitAttachment (for thisErrorMsg), `value`, `s`. The
+// lambda body builds and returns the GameParseException; the call-site is
+// the orElseThrow guarding the from-player lookup.
+unit_attachment_lambda__set_when_captured_changes_into__0 :: proc(
+	self: ^Unit_Attachment,
+	value: string,
+	s: []string,
+) -> ^Game_Parse_Exception {
+	suffix := default_attachment_this_error_msg(&self.default_attachment)
+	defer delete(suffix)
+	msg := fmt.aprintf(
+		"Invalid whenCapturedChangesInto with value %s \n from-player: %s unknown%s",
+		value,
+		s[0],
+		suffix,
+	)
+	return make_Game_Parse_Exception(msg)
+}
+
+// Java: lambda$setWhenCapturedChangesInto$1(String value, String[] s)
+// Mirrors lambda$0 but for the to-player lookup (uses s[1] and "to-player").
+unit_attachment_lambda__set_when_captured_changes_into__1 :: proc(
+	self: ^Unit_Attachment,
+	value: string,
+	s: []string,
+) -> ^Game_Parse_Exception {
+	suffix := default_attachment_this_error_msg(&self.default_attachment)
+	defer delete(suffix)
+	msg := fmt.aprintf(
+		"Invalid whenCapturedChangesInto with value %s \n to-player: %s unknown%s",
+		value,
+		s[1],
+		suffix,
+	)
+	return make_Game_Parse_Exception(msg)
+}
+
+// Java: lambda$setDestroyedWhenCapturedBy$2(String initialValue, String name)
+// The Java message does not interpolate thisErrorMsg, so the Odin port
+// likewise needs no `self` pointer.
+unit_attachment_lambda__set_destroyed_when_captured_by__2 :: proc(
+	initial_value: string,
+	name: string,
+) -> ^Game_Parse_Exception {
+	msg := fmt.aprintf(
+		"UnitAttachment: Setting destroyedWhenCapturedBy with value %s not possible; No player found for %s",
+		initial_value,
+		name,
+	)
+	return make_Game_Parse_Exception(msg)
+}
+
+// -- Mapper-bridge lambdas inside getPropertyOrEmpty ------------------------
+// javac emits a synthetic lambda for each `DefaultAttachment::getInt` /
+// `DefaultAttachment::getBool` method reference passed as the parser-arg of
+// `MutableProperty.ofMapper(...)`, since the underlying methods have a
+// receiver-bearing signature that needs adapting to a `Function<String, T>`.
+// These bridges occupy the odd lambda indices (the matching even indices
+// already in this file are the `() -> default` suppliers paired with each
+// ofMapper call). Both helpers in DefaultAttachment ignore the receiver, so
+// the Odin bridges pass `nil` through.
+
+// case BOMBARD: `DefaultAttachment::getInt`
+unit_attachment_lambda__get_property_or_empty__7 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// case "canEvade": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__9 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "isFirstStrike": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__11 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "canMoveThroughEnemies": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__13 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "canBeMovedThroughByEnemies": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__15 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "isSuicide": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__17 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "isSuicideOnAttack": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__19 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "isSuicideOnDefense": `DefaultAttachment::getBool`
+unit_attachment_lambda__get_property_or_empty__21 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}
+
+// case "transportCapacity": `DefaultAttachment::getInt`
+unit_attachment_lambda__get_property_or_empty__23 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// case "transportCost": `DefaultAttachment::getInt`
+unit_attachment_lambda__get_property_or_empty__25 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// case "hitPoints": `DefaultAttachment::getInt`
+unit_attachment_lambda__get_property_or_empty__27 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// case "whenCapturedSustainsDamage": `DefaultAttachment::getInt`
+unit_attachment_lambda__get_property_or_empty__29 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
 }

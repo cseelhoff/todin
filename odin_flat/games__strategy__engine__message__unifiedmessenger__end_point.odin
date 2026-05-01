@@ -38,6 +38,14 @@ end_point_wait_till_can_be_run :: proc(self: ^End_Point, num: i64) {
 	// Single-threaded snapshot harness: serial calls always satisfy num == current, no-op.
 }
 
+end_point_invoke_local :: proc(self: ^End_Point, call: ^Remote_Method_Call, number: i64, message_originator: ^I_Node) -> [dynamic]^Remote_Method_Call_Results {
+	defer end_point_release_number(self)
+	if self.single_threaded {
+		end_point_wait_till_can_be_run(self, number)
+	}
+	return end_point_invoke_multiple(self, call, message_originator)
+}
+
 end_point_invoke_multiple :: proc(self: ^End_Point, call: ^Remote_Method_Call, from: ^I_Node) -> [dynamic]^Remote_Method_Call_Results {
 	// Snapshot harness does not exercise this path; no reflective dispatch available.
 	results: [dynamic]^Remote_Method_Call_Results

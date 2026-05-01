@@ -180,3 +180,63 @@ abstract_battle_set_headless :: proc(self: ^Abstract_Battle, headless: bool) {
 	self.headless = headless
 }
 
+// games.strategy.triplea.delegate.battle.AbstractBattle#equals(java.lang.Object)
+//
+//   if (!(o instanceof IBattle)) return false;
+//   final IBattle other = (IBattle) o;
+//   return other.getTerritory().equals(this.battleSite)
+//       && other.getBattleType() == this.getBattleType();
+abstract_battle_equals :: proc(self: ^Abstract_Battle, other: ^Abstract_Battle) -> bool {
+	if other == nil {
+		return false
+	}
+	if other.battle_site != self.battle_site {
+		return false
+	}
+	return other.battle_type == self.battle_type
+}
+
+// games.strategy.triplea.delegate.battle.AbstractBattle#getRemote(IDelegateBridge)
+//
+//   return bridge.getRemotePlayer();
+abstract_battle_get_remote :: proc(bridge: ^I_Delegate_Bridge) -> ^Player {
+	return i_delegate_bridge_get_remote_player(bridge)
+}
+
+// games.strategy.triplea.delegate.battle.AbstractBattle#getTransportDependents(Collection)
+//
+//   if (headless) return List.of();
+//   if (targets.stream().noneMatch(Matches.unitCanTransport())) return List.of();
+//   return targets.stream()
+//       .map(TransportTracker::transportingAndUnloaded)
+//       .flatMap(Collection::stream)
+//       .collect(Collectors.toUnmodifiableList());
+abstract_battle_get_transport_dependents :: proc(
+	self: ^Abstract_Battle,
+	targets: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	if self.headless {
+		return result
+	}
+	pred, pred_ctx := matches_unit_can_transport()
+	any_can := false
+	for u in targets {
+		if pred(pred_ctx, u) {
+			any_can = true
+			break
+		}
+	}
+	if !any_can {
+		return result
+	}
+	for u in targets {
+		transported := transport_tracker_transporting_and_unloaded(u)
+		for t in transported {
+			append(&result, t)
+		}
+		delete(transported)
+	}
+	return result
+}
+

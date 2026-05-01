@@ -7,6 +7,12 @@ Headless_Auto_Save_File_Utils :: struct {
 	using auto_save_file_utils: Auto_Save_File_Utils,
 }
 
+headless_auto_save_file_utils_new :: proc() -> ^Headless_Auto_Save_File_Utils {
+	self := new(Headless_Auto_Save_File_Utils)
+	self.auto_save_file_utils = make_Auto_Save_File_Utils()
+	return self
+}
+
 headless_auto_save_file_utils_lambda_get_auto_save_file_name_0 :: proc(v: string) -> string {
 	return strings.concatenate({v, "_"})
 }

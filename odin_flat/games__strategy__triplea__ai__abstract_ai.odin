@@ -47,3 +47,43 @@ abstract_ai_lambda_select_kamikaze_suicide_attacks_0 :: proc(
 ) -> map[^Unit]^Integer_Map {
 	return make(map[^Unit]^Integer_Map)
 }
+
+// games.strategy.triplea.ai.AbstractAi#<init>(java.lang.String,java.lang.String)
+//   public AbstractAi(final String name, final String playerLabel) {
+//     super(name, playerLabel);
+//   }
+abstract_ai_new :: proc(name: string, player_label: string) -> ^Abstract_Ai {
+	self := new(Abstract_Ai)
+	self.name = name
+	self.player_label = player_label
+	return self
+}
+
+// games.strategy.triplea.ai.AbstractAi#battle(games.strategy.triplea.delegate.remote.IBattleDelegate)
+//   Loop until all battles in the listing are fought. For each battle, call
+//   fightBattle; tolerate dependency-error messages (those mean the battle
+//   must wait for a prerequisite). Other errors are logged.
+abstract_ai_battle :: proc(self: ^Abstract_Ai, battle_delegate: ^I_Battle_Delegate) {
+	// I_Battle_Delegate is a marker interface; the concrete remote delegate
+	// returned by getPlayerBridge().getRemoteDelegate() is a Battle_Delegate.
+	bd := cast(^Battle_Delegate)battle_delegate
+	for {
+		listing := battle_delegate_get_battle_listing(bd)
+		if battle_listing_is_empty(listing) {
+			return
+		}
+		for bt, territories in battle_listing_get_battles_map(listing) {
+			for current in territories {
+				error := battle_delegate_fight_battle(
+					bd,
+					current,
+					i_battle_battle_type_is_bombing_run(bt),
+					bt,
+				)
+				if error != "" && !battle_delegate_is_battle_dependency_error_message(error) {
+					// Java: log.warn(error)
+				}
+			}
+		}
+	}
+}

@@ -12,6 +12,11 @@ auto_save_file_utils_get_auto_save_file_name :: proc(self: ^Auto_Save_File_Utils
 	return base_file_name
 }
 
+auto_save_file_utils_get_auto_save_file :: proc(self: ^Auto_Save_File_Utils, base_file_name: string) -> Path {
+	folder := path_resolve(path_client_setting_get_value_or_throw(client_setting_save_games_folder_path()), "autoSave")
+	return path_resolve(folder, auto_save_file_utils_get_auto_save_file_name(self, base_file_name))
+}
+
 auto_save_file_utils_get_auto_save_step_name :: proc(self: ^Auto_Save_File_Utils, step_name: string) -> string {
 	return step_name
 }

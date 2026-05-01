@@ -119,3 +119,27 @@ player_attachment_lambda_get_property_or_empty_1 :: proc() -> i32 {
 player_attachment_lambda_get_property_or_empty_3 :: proc() -> bool {
 	return false
 }
+
+// Java: public static @Nullable PlayerAttachment get(final GamePlayer p)
+// Convenience accessor; mirrors the Java static one-arg overload (the
+// two-arg variant is a separate proc). Returns nil if the player has no
+// PlayerAttachment, matching Java's `@Nullable` contract.
+player_attachment_get :: proc(p: ^Game_Player) -> ^Player_Attachment {
+	return game_player_get_player_attachment(p)
+}
+
+// Java: lambda$getPropertyOrEmpty$0(String) — synthetic bridge for the
+// `DefaultAttachment::getInt` method reference passed to
+// `MutableProperty.ofMapper` in the "vps" branch of getPropertyOrEmpty.
+// `getInt` is static in Java; the Odin twin keeps an unused `self` receiver,
+// so we pass nil here.
+player_attachment_lambda__get_property_or_empty__0 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// Java: lambda$getPropertyOrEmpty$2(String) — synthetic bridge for the
+// `DefaultAttachment::getBool` method reference in the
+// "giveUnitControlInAllTerritories" branch of getPropertyOrEmpty.
+player_attachment_lambda__get_property_or_empty__2 :: proc(value: string) -> bool {
+	return default_attachment_get_bool(nil, value)
+}

@@ -83,3 +83,44 @@ remote_method_call_string_to_class :: proc(s: string, arg: any) -> ^Class {
 	// and compared.
 	return class_new(s, s)
 }
+
+// Static: stringsToClasses(String[], Object[]) -> Class[]
+// Mirrors Java exactly: walks `strings` in order and translates each
+// entry through `string_to_class`, threading the matching arg so the
+// null-string optimization path can recover `arg.getClass()` when it
+// fires. The Odin string_to_class returns nil for the empty-string
+// sentinel since `any` carries no runtime "getClass"; round-tripping
+// through classes_to_string never emits "" for a non-nil class so the
+// nil result mirrors the Java unreachable branch faithfully.
+remote_method_call_strings_to_classes :: proc(strings: []string, args: []any) -> []^Class {
+	classes := make([]^Class, len(strings))
+	for i in 0 ..< len(strings) {
+		arg: any
+		if args != nil && i < len(args) {
+			arg = args[i]
+		}
+		classes[i] = remote_method_call_string_to_class(strings[i], arg)
+	}
+	return classes
+}
+
+// Instance: resolve(Class<?>) -> void
+// After deserialization, methodName/argTypes carry no class context.
+// Java looks the Method up by methodNumber on the supplied remoteType
+// and rehydrates name + argTypes from it. The Odin
+// `remote_interface_helper_get_method` shim returns nil because the
+// snapshot run never dispatches a remote call through this lookup;
+// when it returns nil we leave the call's fields untouched, matching
+// the dormant nature of the call site. When a future shim populates
+// the Method registry the code below performs the real rehydration.
+remote_method_call_resolve :: proc(self: ^Remote_Method_Call, remote_type: ^Class) {
+	if self.method_name != "" {
+		return
+	}
+	method := remote_interface_helper_get_method(self.method_number, remote_type)
+	if method == nil {
+		return
+	}
+	self.method_name = method_get_name(method)
+	self.arg_types = remote_method_call_classes_to_string(method.parameter_types, self.args)
+}

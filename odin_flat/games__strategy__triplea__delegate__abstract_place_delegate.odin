@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Abstract_Place_Delegate :: struct {
@@ -246,4 +247,118 @@ abstract_place_delegate_unit_which_requires_units_has_required_units :: proc(
 	ctx.to = to
 	ctx.count_neighbors = count_neighbors
 	return abstract_place_delegate_unit_which_requires_units_has_required_units_test, rawptr(ctx)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#delegateCurrentlyRequiresUserInput()
+// Java: return !(player == null || (player.getUnitCollection().isEmpty() && getPlacementsMade() == 0));
+abstract_place_delegate_delegate_currently_requires_user_input :: proc(self: ^Abstract_Place_Delegate) -> bool {
+	if self.player == nil {
+		return false
+	}
+	if unit_collection_is_empty(game_player_get_unit_collection(self.player)) &&
+	   abstract_place_delegate_get_placements_made(self) == 0 {
+		return false
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#loadState(java.io.Serializable)
+// Java casts the state to PlaceExtendedDelegateState, forwards superState to
+// super.loadState, then restores produced + placements.
+abstract_place_delegate_load_state :: proc(self: ^Abstract_Place_Delegate, state: rawptr) {
+	s := cast(^Place_Extended_Delegate_State)state
+	base_triple_a_delegate_load_state(&self.base_triple_a_delegate, cast(^Base_Delegate_State)s.super_state)
+	self.produced = s.produced
+	self.placements = s.placements
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#updateProducedMap(Territory,Collection)
+// Java: get the existing produced list, append everything in
+// additionallyProducedUnits, then put the merged list back.
+abstract_place_delegate_update_produced_map :: proc(
+	self: ^Abstract_Place_Delegate,
+	producer: ^Territory,
+	additionally_produced_units: [dynamic]^Unit,
+) {
+	new_produced_units := abstract_place_delegate_get_already_produced(self, producer)
+	for u in additionally_produced_units {
+		append(&new_produced_units, u)
+	}
+	self.produced[producer] = new_produced_units
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#removeFromProducedMap(Territory,Collection)
+// Java semantics mirror Collection.removeAll: drop every element of the
+// producer's already-produced list that appears in unitsToRemove. If nothing
+// is left, drop the producer's entry; otherwise replace it.
+abstract_place_delegate_remove_from_produced_map :: proc(
+	self: ^Abstract_Place_Delegate,
+	producer: ^Territory,
+	units_to_remove: [dynamic]^Unit,
+) {
+	new_produced_units := abstract_place_delegate_get_already_produced(self, producer)
+	for i := len(new_produced_units) - 1; i >= 0; i -= 1 {
+		for r in units_to_remove {
+			if new_produced_units[i] == r {
+				ordered_remove(&new_produced_units, i)
+				break
+			}
+		}
+	}
+	if len(new_produced_units) == 0 {
+		delete(new_produced_units)
+		delete_key(&self.produced, producer)
+	} else {
+		self.produced[producer] = new_produced_units
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getOriginalFactoryOwner(Territory)
+// Java throws IllegalStateException when there is no factory; mirrored as panic.
+// If `self.player` originally owned any factory, that owner wins; otherwise
+// fall back to the original owner of an arbitrary factory.
+abstract_place_delegate_get_original_factory_owner :: proc(
+	self: ^Abstract_Place_Delegate,
+	territory: ^Territory,
+) -> ^Game_Player {
+	pred, ctx := matches_unit_can_produce_units()
+	factory_units: [dynamic]^Unit
+	defer delete(factory_units)
+	for u in territory.unit_collection.units {
+		if pred(ctx, u) {
+			append(&factory_units, u)
+		}
+	}
+	if len(factory_units) == 0 {
+		panic(fmt.tprintf("No factory in territory: %s", territory_to_string(territory)))
+	}
+	for factory in factory_units {
+		if self.player == unit_get_original_owner(factory) {
+			return unit_get_original_owner(factory)
+		}
+	}
+	return unit_get_original_owner(factory_units[0])
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#isPlacementAllowedInCapturedTerritory(GamePlayer)
+// Java: ra != null && ra.getPlacementCapturedTerritory().
+abstract_place_delegate_is_placement_allowed_in_captured_territory :: proc(player: ^Game_Player) -> bool {
+	ra := game_player_get_rules_attachment(player)
+	return ra != nil && ra.placement_captured_territory
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#isPlacementInCapitalRestricted(GamePlayer)
+// Java: ra != null && ra.getPlacementInCapitalRestricted().
+abstract_place_delegate_is_placement_in_capital_restricted :: proc(player: ^Game_Player) -> bool {
+	ra := game_player_get_rules_attachment(player)
+	return ra != nil && ra.placement_in_capital_restricted
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#lambda$getUnitConstructionComparator$5(Unit,Unit)
+// Body of the (u1, u2) -> ... lambda inside getUnitConstructionComparator.
+// The reusable implementation already lives in
+// abstract_place_delegate_unit_construction_compare; this is the canonically
+// named lambda entry point referenced by the methods table.
+abstract_place_delegate_lambda__get_unit_construction_comparator__5 :: proc(u1: ^Unit, u2: ^Unit) -> i32 {
+	return abstract_place_delegate_unit_construction_compare(u1, u2)
 }

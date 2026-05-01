@@ -106,3 +106,17 @@ game_sequence_set_step_index :: proc(self: ^Game_Sequence, value: i32) {
 	}
 	self.current_index = value
 }
+
+// Mirrors Java GameSequence#<init>(GameData):
+//     super(data);
+//     // field defaults: steps = new ArrayList<>(); currentIndex = 0;
+//     // round = 1; roundOffset = 0;
+game_sequence_new :: proc(data: ^Game_Data) -> ^Game_Sequence {
+	self := new(Game_Sequence)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.steps = make([dynamic]^Game_Step)
+	self.current_index = 0
+	self.round = 1
+	self.round_offset = 0
+	return self
+}

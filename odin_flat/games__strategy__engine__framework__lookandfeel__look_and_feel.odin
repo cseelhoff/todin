@@ -5,6 +5,10 @@ package game
 
 Look_And_Feel :: struct {}
 
+look_and_feel_get_substance_look_and_feel_manager :: proc() -> ^Substance_Look_And_Feel_Manager {
+	return cast(^Substance_Look_And_Feel_Manager)services_try_load_any(Substance_Look_And_Feel_Manager)
+}
+
 look_and_feel_is_color_dark :: proc(color: Color) -> bool {
 	luma := (0.299 * f64(color_get_red(color))
 		+ 0.587 * f64(color_get_green(color))

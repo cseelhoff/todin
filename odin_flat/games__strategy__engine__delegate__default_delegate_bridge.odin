@@ -37,3 +37,7 @@ default_delegate_bridge_get_data :: proc(self: ^Default_Delegate_Bridge) -> ^Gam
 default_delegate_bridge_get_history_writer :: proc(self: ^Default_Delegate_Bridge) -> ^History_Writer {
 	return transmute(^History_Writer)self.history_writer
 }
+
+default_delegate_bridge_leave_delegate_execution :: proc(self: ^Default_Delegate_Bridge) {
+	delegate_execution_manager_leave_delegate_execution(self.delegate_execution_manager)
+}

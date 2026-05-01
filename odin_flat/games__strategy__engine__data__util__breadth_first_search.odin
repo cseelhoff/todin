@@ -29,3 +29,71 @@ breadth_first_search_lambda_new_1 :: proc(t: ^Territory) -> bool {
 	return true
 }
 
+// games.strategy.engine.data.util.BreadthFirstSearch#<init>(Collection<Territory>, BiPredicate<Territory,Territory>)
+// Java:
+//   this.map = CollectionUtils.getAny(startTerritories).getData().getMap();
+//   this.visited = new HashSet<>(startTerritories);
+//   this.territoriesToCheck = new ArrayDeque<>(startTerritories);
+//   this.neighborCondition = neighborCondition;
+breadth_first_search_new :: proc(
+	start_territories: [dynamic]^Territory,
+	neighbor_condition: proc(a: ^Territory, b: ^Territory) -> bool,
+) -> ^Breadth_First_Search {
+	self := new(Breadth_First_Search)
+	any_t := start_territories[0]
+	data := game_data_component_get_data(&any_t.named_attachable.default_named.game_data_component)
+	self.map_ = game_data_get_map(data)
+	self.visited = make(map[^Territory]struct {})
+	self.territories_to_check = make([dynamic]^Territory)
+	for t in start_territories {
+		self.visited[t] = struct {}{}
+		append(&self.territories_to_check, t)
+	}
+	self.neighbor_condition = neighbor_condition
+	return self
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#checkNextTerritory(Visitor, int)
+// Java:
+//   final Territory territory = territoriesToCheck.removeFirst();
+//   for (final Territory neighbor : map.getNeighbors(territory)) {
+//     if (!visited.contains(neighbor) && neighborCondition.test(territory, neighbor)) {
+//       visited.add(neighbor);
+//       final boolean shouldContinueSearch = visitor.visit(neighbor, currentDistance + 1);
+//       if (!shouldContinueSearch) { territoriesToCheck.clear(); break; }
+//       territoriesToCheck.add(neighbor);
+//     }
+//   }
+//   return territory;
+breadth_first_search_check_next_territory :: proc(
+	self: ^Breadth_First_Search,
+	visitor: ^Breadth_First_Search_Visitor,
+	current_distance: i32,
+) -> ^Territory {
+	territory := self.territories_to_check[0]
+	ordered_remove(&self.territories_to_check, 0)
+	neighbors := game_map_get_neighbors(self.map_, territory)
+	for neighbor in neighbors {
+		_, already_visited := self.visited[neighbor]
+		if !already_visited && self.neighbor_condition(territory, neighbor) {
+			self.visited[neighbor] = struct {}{}
+			should_continue_search := visitor.visit(visitor, neighbor, current_distance + 1)
+			if !should_continue_search {
+				clear(&self.territories_to_check)
+				break
+			}
+			append(&self.territories_to_check, neighbor)
+		}
+	}
+	return territory
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#createTerritoryFinder(Territory)
+// Java:
+//   Preconditions.checkNotNull(destination);
+//   return new TerritoryFinder(destination);
+breadth_first_search_create_territory_finder :: proc(destination: ^Territory) -> ^Breadth_First_Search_Territory_Finder {
+	assert(destination != nil)
+	return make_Breadth_First_Search_Territory_Finder(destination)
+}
+

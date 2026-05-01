@@ -14,3 +14,10 @@ make_I_Display_Broadcast_Message_Message :: proc(message: string, title: string)
 	}
 }
 
+// Lombok @Builder generated static: BroadcastMessageMessage.builder()
+i_display_broadcast_message_message_builder :: proc() -> ^I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder {
+	b := new(I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder)
+	b^ = I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder{}
+	return b
+}
+

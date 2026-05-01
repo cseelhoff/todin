@@ -72,7 +72,7 @@ player_types_lambda_get_available_player_labels_0 :: proc(size: i32) -> [dynamic
 	return result
 }
 
-player_types_type_new :: proc(label: string, visible: bool) -> ^Player_Types_Type {
+player_types_type_new_full :: proc(label: string, visible: bool) -> ^Player_Types_Type {
 	t := new(Player_Types_Type)
 	t.label = label
 	t.visible = visible

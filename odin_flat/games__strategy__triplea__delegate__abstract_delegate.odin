@@ -59,3 +59,32 @@ abstract_delegate_save_state :: proc(self: ^Abstract_Delegate) -> rawptr {
 abstract_delegate_load_state :: proc(self: ^Abstract_Delegate, state: rawptr) {
 }
 
+// games.strategy.triplea.delegate.AbstractDelegate#getData()
+// Java body: return bridge.getData();
+abstract_delegate_get_data :: proc(self: ^Abstract_Delegate) -> ^Game_Data {
+	return i_delegate_bridge_get_data(self.bridge)
+}
+
+// games.strategy.triplea.delegate.AbstractDelegate#setDelegateBridgeAndPlayer(IDelegateBridge)
+// Java body: bridge = delegateBridge; player = delegateBridge.getGamePlayer();
+abstract_delegate_set_delegate_bridge_and_player_no_websocket :: proc(
+	self: ^Abstract_Delegate,
+	delegate_bridge: ^I_Delegate_Bridge,
+) {
+	self.bridge = delegate_bridge
+	self.player = i_delegate_bridge_get_game_player(delegate_bridge)
+}
+
+// games.strategy.triplea.delegate.AbstractDelegate#setDelegateBridgeAndPlayer(IDelegateBridge, ClientNetworkBridge)
+// Java body: bridge = delegateBridge; player = delegateBridge.getGamePlayer();
+//            this.clientNetworkBridge = clientNetworkBridge;
+abstract_delegate_set_delegate_bridge_and_player_with_websocket :: proc(
+	self: ^Abstract_Delegate,
+	delegate_bridge: ^I_Delegate_Bridge,
+	client_network_bridge: ^Client_Network_Bridge,
+) {
+	self.bridge = delegate_bridge
+	self.player = i_delegate_bridge_get_game_player(delegate_bridge)
+	self.client_network_bridge = client_network_bridge
+}
+

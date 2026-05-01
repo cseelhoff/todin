@@ -199,3 +199,47 @@ route_iterator :: proc(self: ^Route) -> [dynamic]^Territory {
 route_get_start :: proc(self: ^Route) -> ^Territory {
 	return self.start
 }
+
+// Mirrors Java Route(Territory start, List<Territory> territories): the
+// primary constructor. Heap-allocates a new Route, sets `start`, then
+// appends each territory via route_add (which rejects loops the same way
+// the Java helper does).
+route_new :: proc(start: ^Territory, territories: [dynamic]^Territory) -> ^Route {
+	r := new(Route)
+	r.start = start
+	for t in territories {
+		route_add(r, t)
+	}
+	return r
+}
+
+// Mirrors Java Route#hasLand(): true iff some territory in the route
+// (start + steps) is land. Java implementation:
+//     return !getStart().isWater() || !steps.stream().allMatch(Matches.territoryIsWater());
+// i.e. the start is land, or at least one step is non-water.
+route_has_land :: proc(self: ^Route) -> bool {
+	if !territory_is_water(self.start) {
+		return true
+	}
+	for step in self.steps {
+		if !territory_is_water(step) {
+			return true
+		}
+	}
+	return false
+}
+
+// Mirrors Java Route#hasWater(): true iff some territory in the route
+// (start + steps) is water. Java implementation:
+//     return getStart().isWater() || steps.stream().anyMatch(Matches.territoryIsWater());
+route_has_water :: proc(self: ^Route) -> bool {
+	if territory_is_water(self.start) {
+		return true
+	}
+	for step in self.steps {
+		if territory_is_water(step) {
+			return true
+		}
+	}
+	return false
+}

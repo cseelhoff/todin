@@ -126,3 +126,50 @@ abstract_trigger_attachment_lambda_get_property_or_empty_7 :: proc(
 	panic("Can't set trigger directly")
 }
 
+// ---------------------------------------------------------------------------
+// lambda$getPropertyOrEmpty$5(String) -> int
+//   Synthetic boxing bridge javac emits for the unbound static method
+//   reference `DefaultAttachment::getInt` used as the String->Integer
+//   value mapper in MutableProperty.ofMapper for the "uses" case. In
+//   Odin, default_attachment_get_int treats the receiver as unused for
+//   the static-style call (see player_attachment.odin), so we pass nil.
+// ---------------------------------------------------------------------------
+abstract_trigger_attachment_lambda_get_property_or_empty_5 :: proc(s: string) -> i32 {
+	return default_attachment_get_int(nil, s)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$whenOrDefaultMatch$3(beforeOrAfter, stepName, TriggerAttachment) -> bool
+//
+// Body of the Predicate returned by whenOrDefaultMatch. The captured
+// strings live in Abstract_Trigger_Attachment_Ctx_when_or_default_match;
+// per file convention an empty Odin string represents Java null for
+// these @Nullable args.
+//
+// Java:
+//   if (beforeOrAfter == null && stepName == null && t.getWhen().isEmpty())
+//     return true;
+//   else if (beforeOrAfter != null && stepName != null && !t.getWhen().isEmpty()) {
+//     for (Tuple<String,String> w : t.getWhen())
+//       if (beforeOrAfter.equals(w.getFirst()) && stepName.equals(w.getSecond()))
+//         return true;
+//   }
+//   return false;
+// ---------------------------------------------------------------------------
+abstract_trigger_attachment_lambda_when_or_default_match_3 :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^Abstract_Trigger_Attachment_Ctx_when_or_default_match)ctx_ptr
+	if ctx.before_or_after == "" && ctx.step_name == "" && len(t.when_triggers) == 0 {
+		return true
+	} else if ctx.before_or_after != "" && ctx.step_name != "" && len(t.when_triggers) > 0 {
+		for w in t.when_triggers {
+			if ctx.before_or_after == w.first && ctx.step_name == w.second {
+				return true
+			}
+		}
+	}
+	return false
+}
+

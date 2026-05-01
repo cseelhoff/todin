@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Inner class Transform_Damaged_Units_History_Change_Grouped_Units is
 // defined in transform_damaged_units_history_change__grouped_units.odin
 // (Odin package scope is flat across odin_flat/).
@@ -67,5 +69,85 @@ transform_damaged_units_history_change_lambda_perform_3 :: proc(
 		append(&out, grouped)
 	}
 	return out
+}
+
+// Java synthetic lambda from `perform`:
+//   .computeIfAbsent(newUnit.getType(), k -> new GroupedUnits())
+// Non-capturing; allocates a fresh GroupedUnits when the inner map
+// has no entry for the new-unit type. The `k` parameter (the absent
+// key) is ignored, mirroring the Java lambda body.
+transform_damaged_units_history_change_lambda_perform_1 :: proc(
+	k: ^Unit_Type,
+) -> ^Transform_Damaged_Units_History_Change_Grouped_Units {
+	return transform_damaged_units_history_change_grouped_units_new()
+}
+
+// Java synthetic lambda from `perform` (BiConsumer for
+// `transformingUnits.forEach`):
+//   (oldUnit, newUnit) ->
+//       groupedByOldAndNewUnitTypes
+//           .computeIfAbsent(oldUnit.getType(), k -> new HashMap<>())
+//           .computeIfAbsent(newUnit.getType(), k -> new GroupedUnits())
+//           .addUnits(oldUnit, newUnit)
+// Captures the outer `groupedByOldAndNewUnitTypes` map. Java's
+// `Map.computeIfAbsent` both inserts the freshly created value when
+// the key is missing AND returns it; we replicate that contract
+// directly against Odin's builtin `map` (no helper proc available),
+// chaining the outer and inner maps to land at the GroupedUnits
+// instance and then delegating to its `add_units` proc.
+transform_damaged_units_history_change_lambda_perform_2 :: proc(
+	grouped_by_old_and_new_unit_types: map[^Unit_Type]map[^Unit_Type]^Transform_Damaged_Units_History_Change_Grouped_Units,
+	old_unit: ^Unit,
+	new_unit: ^Unit,
+) {
+	outer := grouped_by_old_and_new_unit_types
+	old_type := unit_get_type(old_unit)
+	inner, has_inner := outer[old_type]
+	if !has_inner {
+		inner = transform_damaged_units_history_change_lambda_perform_0(old_type)
+		outer[old_type] = inner
+	}
+	new_type := unit_get_type(new_unit)
+	grouped, has_grouped := inner[new_type]
+	if !has_grouped {
+		grouped = transform_damaged_units_history_change_lambda_perform_1(new_type)
+		inner[new_type] = grouped
+	}
+	transform_damaged_units_history_change_grouped_units_add_units(grouped, old_unit, new_unit)
+}
+
+// Java synthetic lambda from `perform` (Consumer in the terminal
+// `forEach` over the flat-mapped GroupedUnits stream):
+//   (groupedUnits) -> {
+//       final String transformTranscriptText =
+//           MyFormatter.unitsToText(groupedUnits.getOldUnits())
+//               + " transformed into "
+//               + MyFormatter.unitsToText(groupedUnits.getNewUnits())
+//               + " in "
+//               + location.getName();
+//       bridge.getHistoryWriter()
+//             .addChildToEvent(transformTranscriptText, groupedUnits.getOldUnits());
+//   }
+// In Java this is a non-static synthetic instance method capturing
+// `bridge` (a final local of `perform`) plus the implicit `this`
+// (for `location`); the bytecode signature lists only
+// `(IDelegateBridge, GroupedUnits)`. In Odin we surface `this` as
+// an explicit `self` receiver so the proc body can read
+// `self.location`, matching the Java semantics one-to-one.
+transform_damaged_units_history_change_lambda_perform_4 :: proc(
+	self: ^Transform_Damaged_Units_History_Change,
+	bridge: ^I_Delegate_Bridge,
+	grouped_units: ^Transform_Damaged_Units_History_Change_Grouped_Units,
+) {
+	old_units := transform_damaged_units_history_change_grouped_units_get_old_units(grouped_units)
+	new_units := transform_damaged_units_history_change_grouped_units_get_new_units(grouped_units)
+	transform_transcript_text := fmt.aprintf(
+		"%s transformed into %s in %s",
+		my_formatter_units_to_text(old_units),
+		my_formatter_units_to_text(new_units),
+		default_named_get_name(&self.location.named_attachable.default_named),
+	)
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	history_writer_add_child_to_event(writer, transform_transcript_text, old_units)
 }
 

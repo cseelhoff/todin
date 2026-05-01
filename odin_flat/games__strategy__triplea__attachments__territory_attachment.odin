@@ -332,3 +332,247 @@ territory_attachment_lambda_get_property_or_empty_17 :: proc() -> i32 {
 territory_attachment_lambda_get_property_or_empty_19 :: proc() -> i32 {
 	return 0
 }
+
+// =====================================================================
+// Static accessors / extra setters and the remaining synthetic lambdas
+// (method_layer 1).
+// =====================================================================
+
+// Java: static Optional<TerritoryAttachment> get(Territory t, String nameOfAttachment)
+//   final TerritoryAttachment territoryAttachment =
+//       (TerritoryAttachment) t.getAttachment(nameOfAttachment);
+//   if (territoryAttachment == null && !t.isWater()) {
+//       throw new IllegalStateException(
+//           "No territory attachment for: " + t.getName()
+//             + "(non-water) with name: " + nameOfAttachment);
+//   }
+//   return Optional.ofNullable(territoryAttachment);
+// Odin: nil mirrors Optional.empty(); the IllegalStateException is
+// surfaced via fmt.panicf in keeping with the project convention.
+territory_attachment_get :: proc(
+	t: ^Territory,
+	name_of_attachment: string,
+) -> ^Territory_Attachment {
+	raw := named_attachable_get_attachment(&t.named_attachable, name_of_attachment)
+	territory_attachment := cast(^Territory_Attachment)raw
+	if territory_attachment == nil && !territory_is_water(t) {
+		fmt.panicf(
+			"No territory attachment for: %s(non-water) with name: %s",
+			default_named_get_name(&t.named_attachable.default_named),
+			name_of_attachment,
+		)
+	}
+	return territory_attachment
+}
+
+// Java: public String getCapitalOrThrow()
+//   return getCapital().orElseThrow(() -> new IllegalStateException(
+//       String.format("No expected capital found for TerritoryAttachment %s", this)));
+// Empty Odin string mirrors Java's null/absent capital.
+territory_attachment_get_capital_or_throw :: proc(self: ^Territory_Attachment) -> string {
+	if self.capital == "" {
+		msg := territory_attachment_lambda_get_capital_or_throw_7(self)
+		defer delete(msg)
+		fmt.panicf("%s", msg)
+	}
+	return self.capital
+}
+
+// Java: private GamePlayer getOriginalOwnerOrNull()
+//   return getOriginalOwner().orElse(null);
+territory_attachment_get_original_owner_or_null :: proc(
+	self: ^Territory_Attachment,
+) -> ^Game_Player {
+	return self.original_owner
+}
+
+// Java: public Collection<CaptureOwnershipChange> getCaptureOwnershipChanges()
+//   return getWhenCapturedByGoesTo().stream()
+//       .map(this::parseCaptureOwnershipChange)
+//       .collect(Collectors.toList());
+//
+// `parseCaptureOwnershipChange` has no row in `port.sqlite` (it is not on
+// the AI-test reachable surface), so its body is inlined here. The Java
+// method splits each encoded string on ":", asserts two tokens, looks up
+// both players, and wraps any GameParseException as IllegalStateException;
+// both error paths are surfaced through fmt.panicf.
+territory_attachment_get_capture_ownership_changes :: proc(
+	self: ^Territory_Attachment,
+) -> [dynamic]^Territory_Attachment_Capture_Ownership_Change {
+	source := territory_attachment_get_when_captured_by_goes_to(self)
+	result := make([dynamic]^Territory_Attachment_Capture_Ownership_Change)
+	game_data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	players := game_data_get_player_list(game_data)
+	for encoded in source {
+		tokens := default_attachment_split_on_colon(encoded)
+		defer delete(tokens)
+		assert(len(tokens) == 2)
+		from_player := player_list_get_player_id(players, tokens[0])
+		if from_player == nil {
+			msg := territory_attachment_lambda_parse_capture_ownership_change_11(
+				self,
+				encoded,
+				tokens[:],
+			)
+			defer delete(msg)
+			fmt.panicf("%s", msg)
+		}
+		to_player := player_list_get_player_id(players, tokens[1])
+		if to_player == nil {
+			msg := territory_attachment_lambda_parse_capture_ownership_change_12(
+				self,
+				encoded,
+				tokens[:],
+			)
+			defer delete(msg)
+			fmt.panicf("%s", msg)
+		}
+		change := new(Territory_Attachment_Capture_Ownership_Change)
+		change.capturing_player = from_player
+		change.receiving_player = to_player
+		append(&result, change)
+	}
+	return result
+}
+
+// Java: private void setIsImpassable(final String value)
+//   setIsImpassable(getBool(value));
+// The boolean overload is `territory_attachment_set_is_impassable` (above);
+// this Odin proc disambiguates the String overload via a `_str` suffix.
+territory_attachment_set_is_impassable_str :: proc(self: ^Territory_Attachment, value: string) {
+	territory_attachment_set_is_impassable(
+		self,
+		default_attachment_get_bool(&self.default_attachment, value),
+	)
+}
+
+// Java: lambda$getAllCurrentlyOwnedCapitals$2(GamePlayer player,
+//                                             Territory current,
+//                                             List capitals,
+//                                             String capital)
+// Source site (inside getAllCurrentlyOwnedCapitals' ifPresent): capital ->
+//   { if (player.getName().equals(capital) && player.equals(current.getOwner()))
+//       capitals.add(current); }
+// Captures `player`, `current`, `capitals`; lambda parameter is `capital`.
+territory_attachment_lambda_get_all_currently_owned_capitals_2 :: proc(
+	player: ^Game_Player,
+	current: ^Territory,
+	capitals: ^[dynamic]^Territory,
+	capital: string,
+) {
+	if player == nil || current == nil || capitals == nil {
+		return
+	}
+	if default_named_get_name(&player.named_attachable.default_named) == capital &&
+	   player == territory_get_owner(current) {
+		append(capitals, current)
+	}
+}
+
+// Java: lambda$getPropertyOrEmpty$16(String) — javac-synthesized bridge for
+// `DefaultAttachment::getInt` used by MutableProperty.ofMapper(...) on the
+// `victoryCity` branch. Returns the parsed int (Java boxes to Integer to
+// satisfy Function<String,Integer>).
+territory_attachment_lambda_get_property_or_empty_16 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// Java: lambda$getPropertyOrEmpty$18(String) — same bridge for the
+// `unitProduction` branch.
+territory_attachment_lambda_get_property_or_empty_18 :: proc(value: string) -> i32 {
+	return default_attachment_get_int(nil, value)
+}
+
+// Java: lambda$parseCaptureOwnershipChange$11(String encoded, String[] tokens)
+//   () -> new GameParseException(MessageFormat.format(
+//     "Invalid captureOwnershipChange with value {0} \n from-player: {1} unknown{2}",
+//     encodedCaptureOwnershipChange, tokens[0], thisErrorMsg()))
+// Captures `encoded`, `tokens`, and `this` (for thisErrorMsg). Returned
+// string is heap-allocated; caller deletes.
+territory_attachment_lambda_parse_capture_ownership_change_11 :: proc(
+	self: ^Territory_Attachment,
+	encoded: string,
+	tokens: []string,
+) -> string {
+	suffix := default_attachment_this_error_msg(&self.default_attachment)
+	defer delete(suffix)
+	return fmt.aprintf(
+		"Invalid captureOwnershipChange with value %s \n from-player: %s unknown%s",
+		encoded,
+		tokens[0],
+		suffix,
+	)
+}
+
+// Java: lambda$parseCaptureOwnershipChange$12(String encoded, String[] tokens)
+//   () -> new GameParseException(MessageFormat.format(
+//     "Invalid captureOwnershipChange with value {0} \n to-player: {1} unknown{2}",
+//     encodedCaptureOwnershipChange, tokens[1], thisErrorMsg()))
+territory_attachment_lambda_parse_capture_ownership_change_12 :: proc(
+	self: ^Territory_Attachment,
+	encoded: string,
+	tokens: []string,
+) -> string {
+	suffix := default_attachment_this_error_msg(&self.default_attachment)
+	defer delete(suffix)
+	return fmt.aprintf(
+		"Invalid captureOwnershipChange with value %s \n to-player: %s unknown%s",
+		encoded,
+		tokens[1],
+		suffix,
+	)
+}
+
+// Java: lambda$setCapital$6(String value)
+//   () -> new GameParseException(MessageFormat.format(
+//     "TerritoryAttachment: Setting capital with value {0} not possible; No such player found",
+//     value))
+territory_attachment_lambda_set_capital_6 :: proc(value: string) -> string {
+	return fmt.aprintf(
+		"TerritoryAttachment: Setting capital with value %s not possible; No such player found",
+		value,
+	)
+}
+
+// Java: lambda$setOriginalOwner$8(String player)
+//   () -> new GameParseException(MessageFormat.format(
+//     "TerritoryAttachment: Setting originalOwner with value {0} not possible; No such player found",
+//     player))
+territory_attachment_lambda_set_original_owner_8 :: proc(player: string) -> string {
+	return fmt.aprintf(
+		"TerritoryAttachment: Setting originalOwner with value %s not possible; No such player found",
+		player,
+	)
+}
+
+// Java: lambda$setWhenCapturedByGoesTo$10(String value, String name)
+//   () -> new GameParseException(MessageFormat.format(
+//     "TerritoryAttachment: Setting whenCapturedByGoesTo with value {0} not possible; No player found for {1}",
+//     value, name))
+// Captures `value` and the loop's `name`.
+territory_attachment_lambda_set_when_captured_by_goes_to_10 :: proc(
+	value: string,
+	name: string,
+) -> string {
+	return fmt.aprintf(
+		"TerritoryAttachment: Setting whenCapturedByGoesTo with value %s not possible; No player found for %s",
+		value,
+		name,
+	)
+}
+
+// Java: lambda$setConvoyAttached$13(String value, String subString)
+//   () -> new GameParseException(MessageFormat.format(
+//     "TerritoryAttachment: No territory found for {0}; Setting convoyAttached not possible with value {1}",
+//     subString, value))
+// Captures `value` and the loop's `subString`.
+territory_attachment_lambda_set_convoy_attached_13 :: proc(
+	value: string,
+	sub_string: string,
+) -> string {
+	return fmt.aprintf(
+		"TerritoryAttachment: No territory found for %s; Setting convoyAttached not possible with value %s",
+		sub_string,
+		value,
+	)
+}

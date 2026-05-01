@@ -30,3 +30,9 @@ game_data_manager_options_default_with_history :: proc() -> bool {
 	return false
 }
 
+game_data_manager_options_builder :: proc() -> ^Game_Data_Manager_Options_Options_Builder {
+	b := new(Game_Data_Manager_Options_Options_Builder)
+	b^ = make_Game_Data_Manager_Options_Options_Builder()
+	return b
+}
+

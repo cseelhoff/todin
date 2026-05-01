@@ -2,6 +2,10 @@ package game
 
 Tech_Advance :: struct {
 	using named_attachable: Named_Attachable,
+	// Discriminator for Java `instanceof GenericTechAdvance` checks. Default
+	// false; Generic_Tech_Advance constructors must set this to true. Mirrors
+	// the JVM type tag without introducing reflection.
+	is_generic: bool,
 }
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.TechAdvance

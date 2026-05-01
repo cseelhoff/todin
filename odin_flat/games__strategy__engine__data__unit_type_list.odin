@@ -76,3 +76,26 @@ unit_type_list_lambda_get_unit_type_or_throw_0 :: proc(name: string) -> ^Throwab
 	err.message = fmt.aprintf("UnitTypeList has no unit type for %s", name)
 	return err
 }
+
+// games.strategy.engine.data.UnitTypeList#<init>(games.strategy.engine.data.GameData)
+// Java: super(data);
+unit_type_list_new :: proc(data: ^Game_Data) -> ^Unit_Type_List {
+	self := new(Unit_Type_List)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.unit_types = make(map[string]^Unit_Type)
+	self.support_rules = make(map[^Unit_Support_Attachment]struct{})
+	self.support_aa_rules = make(map[^Unit_Support_Attachment]struct{})
+	return self
+}
+
+// games.strategy.engine.data.UnitTypeList#lambda$getSupportRules$1(games.strategy.triplea.attachments.UnitSupportAttachment)
+// Java: usa -> (usa.getRoll() || usa.getStrength())
+unit_type_list_lambda_get_support_rules_1 :: proc(usa: ^Unit_Support_Attachment) -> bool {
+	return unit_support_attachment_get_roll(usa) || unit_support_attachment_get_strength(usa)
+}
+
+// games.strategy.engine.data.UnitTypeList#lambda$getSupportAaRules$2(games.strategy.triplea.attachments.UnitSupportAttachment)
+// Java: usa -> (usa.getAaRoll() || usa.getAaStrength())
+unit_type_list_lambda_get_support_aa_rules_2 :: proc(usa: ^Unit_Support_Attachment) -> bool {
+	return unit_support_attachment_get_aa_roll(usa) || unit_support_attachment_get_aa_strength(usa)
+}

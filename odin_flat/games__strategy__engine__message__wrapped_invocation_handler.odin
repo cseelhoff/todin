@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Wrapped_Invocation_Handler :: struct {
 	delegate: rawptr,
 }
@@ -44,4 +46,32 @@ wrapped_invocation_handler_wrapped_equals :: proc(self: ^Wrapped_Invocation_Hand
 	}
 	other_wrapped := cast(^Wrapped_Invocation_Handler)other
 	return other_wrapped.delegate == self.delegate
+}
+
+// Java: handle(Method, Object[]) routes the three Object methods to
+// the delegate. Java returns Object (a boxed Boolean / Integer /
+// String); the Odin port returns a rawptr to a freshly heap-allocated
+// box, matching how Java would auto-box the primitive results. The
+// caller (invoke) is responsible for interpreting the box according
+// to the method name. delegate.hashCode()/toString() have no generic
+// dispatch in Odin, so we use the delegate pointer itself — faithful
+// to the wrapped_equals deviation already documented above. The
+// proc panics on the impossible else branch, mirroring Java's
+// IllegalStateException("how did we get here").
+wrapped_invocation_handler_handle :: proc(self: ^Wrapped_Invocation_Handler, method: ^Method, args: []rawptr) -> rawptr {
+	name := method_get_name(method)
+	if name == "equals" && args != nil && len(args) == 1 {
+		boxed := new(bool)
+		boxed^ = wrapped_invocation_handler_wrapped_equals(self, args[0])
+		return rawptr(boxed)
+	} else if name == "hashCode" && args == nil {
+		boxed := new(i32)
+		boxed^ = i32(uintptr(self.delegate))
+		return rawptr(boxed)
+	} else if name == "toString" && args == nil {
+		boxed := new(string)
+		boxed^ = fmt.tprintf("%p", self.delegate)
+		return rawptr(boxed)
+	}
+	panic("how did we get here")
 }

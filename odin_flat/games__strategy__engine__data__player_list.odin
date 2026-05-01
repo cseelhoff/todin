@@ -111,3 +111,10 @@ player_list_stream :: proc(self: ^Player_List) -> [dynamic]^Game_Player {
 player_list_get_null_player :: proc(self: ^Player_List) -> ^Game_Player {
 	return self.null_player
 }
+
+// Java: PlayerList.getPlayersThatMayBeDisabled lambda `p -> !p.getIsDisabled()`
+// Second `.filter` predicate in the stream pipeline; keeps players whose
+// `isDisabled` flag is false.
+player_list_lambda_get_players_that_may_be_disabled_0 :: proc(p: ^Game_Player) -> bool {
+	return !p.is_disabled
+}

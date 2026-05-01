@@ -22,3 +22,12 @@ i_display_broadcast_message_message_broadcast_message_message_builder_title :: p
 	return self
 }
 
+i_display_broadcast_message_message_broadcast_message_message_builder_build :: proc(self: ^I_Display_Broadcast_Message_Message_Broadcast_Message_Message_Builder) -> ^Broadcast_Message_Message {
+	msg := new(Broadcast_Message_Message)
+	msg^ = Broadcast_Message_Message{
+		message = self.message,
+		title   = self.title,
+	}
+	return msg
+}
+

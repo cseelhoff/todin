@@ -207,3 +207,61 @@ abstract_end_turn_delegate_single_neighbor_blockades_then_highest_to_lowest_prod
 	}
 	return 0
 }
+
+// Synthetic Java lambda body emitted by javac for the inner
+// Comparator<Territory> of getSingleBlockadeThenHighestToLowestBlockadeDamage.
+// The captured `damage_per_blockade_zone` map is passed explicitly here
+// so this proc reproduces the lambda signature exactly. Wraps the
+// already-implemented comparator body via a stack-allocated record.
+abstract_end_turn_delegate_lambda__get_single_blockade_then_highest_to_lowest_blockade_damage__2 :: proc(
+	damage_per_blockade_zone: map[^Territory]^Tuple(i32, [dynamic]^Territory),
+	t1: ^Territory,
+	t2: ^Territory,
+) -> i32 {
+	cmp := Single_Blockade_Then_Highest_To_Lowest_Blockade_Damage_Comparator{
+		damage_per_blockade_zone = damage_per_blockade_zone,
+	}
+	return abstract_end_turn_delegate_single_blockade_then_highest_to_lowest_blockade_damage_compare(
+		&cmp,
+		t1,
+		t2,
+	)
+}
+
+// Synthetic Java lambda body emitted by javac for the inner
+// Comparator<Territory> of getSingleNeighborBlockadesThenHighestToLowestProduction.
+// Mirrors the captured-arg signature (map, blockade_zones, t1, t2)
+// and delegates to the implemented comparator body.
+abstract_end_turn_delegate_lambda__get_single_neighbor_blockades_then_highest_to_lowest_production__1 :: proc(
+	game_map: ^Game_Map,
+	blockade_zones: [dynamic]^Territory,
+	t1: ^Territory,
+	t2: ^Territory,
+) -> i32 {
+	cmp := Single_Neighbor_Blockades_Then_Highest_To_Lowest_Production_Comparator{
+		blockade_zones = blockade_zones,
+		game_map       = game_map,
+	}
+	return abstract_end_turn_delegate_single_neighbor_blockades_then_highest_to_lowest_production_compare(
+		&cmp,
+		t1,
+		t2,
+	)
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#loadState(java.io.Serializable)
+// Restores delegate state from an EndTurnExtendedDelegateState. Mirrors
+// the Java cast-and-assign, then forwards `superState` to the parent
+// delegate's loadState (BaseTripleADelegate has no override, so this
+// resolves to AbstractDelegate's via Base_Triple_A_Delegate.load_state).
+abstract_end_turn_delegate_load_state :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	state: ^End_Turn_Extended_Delegate_State,
+) {
+	base_triple_a_delegate_load_state(
+		&self.base_triple_a_delegate,
+		cast(^Base_Delegate_State)state.super_state,
+	)
+	self.need_to_initialize = state.need_to_initialize
+	self.has_posted_turn_summary = state.has_posted_turn_summary
+}

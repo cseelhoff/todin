@@ -128,3 +128,202 @@ pro_sort_move_options_utils_sort_unit_needed_options :: proc(
 	}
 	return sorted
 }
+
+// Sort key bundle for sortUnitNeededOptionsThenAttack. Java's lambda
+// captures `proData`, `attackMap`, the per-entry filtered territory list,
+// and a HashMap-based attack-efficiency cache. Odin `proc` literals are
+// non-capturing, so we precompute every comparison key (move count,
+// attack efficiency, type name, total air-distance from the unit's home
+// territory across the filtered targets) per entry up front and sort the
+// resulting slice lexicographically. The Java tiebreak order — move-count
+// asc, attack-efficiency desc, then (only when both units share a type
+// and that type is air) total-distance asc, then unit-type name asc —
+// collapses to the lex order
+// (move_count, -attack_efficiency, type_name, total_distance) because
+// the air-distance branch only fires when the type names compare equal,
+// at which point distance is the next tiebreak.
+@(private = "file")
+Pro_Sort_Move_Options_Then_Attack_Entry :: struct {
+	unit:              ^Unit,
+	territories:       map[^Territory]struct {},
+	move_count:        int,
+	attack_efficiency: f64,
+	type_name:         string,
+	total_distance:    i32,
+}
+
+@(private = "file")
+pro_sort_move_options_then_attack_entry_less :: proc(
+	a, b: Pro_Sort_Move_Options_Then_Attack_Entry,
+) -> bool {
+	if a.move_count != b.move_count {
+		return a.move_count < b.move_count
+	}
+	if a.move_count == 0 {
+		return false
+	}
+	if a.attack_efficiency != b.attack_efficiency {
+		return a.attack_efficiency > b.attack_efficiency
+	}
+	if a.type_name != b.type_name {
+		return a.type_name < b.type_name
+	}
+	return a.total_distance < b.total_distance
+}
+
+// Java: public static Map<Unit, Set<Territory>> sortUnitNeededOptionsThenAttack(
+//           ProData proData, GamePlayer player,
+//           Map<Unit, Set<Territory>> unitAttackOptions,
+//           Map<Territory, ProTerritory> attackMap, ProOddsCalculator calc)
+// Sort by number of territories that still need additional units (asc),
+// then by attack efficiency (desc), then — if both candidate units share
+// an air unit type — by total movement distance from the unit's home
+// territory across the filtered targets (asc), then by unit type name
+// (asc). Attack efficiency is the unit's marginal offensive power divided
+// by its proData value, with a ×10 multiplier for air units (mirroring
+// the Java method's bonus for air mobility).
+pro_sort_move_options_utils_sort_unit_needed_options_then_attack :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	unit_attack_options: map[^Unit]map[^Territory]struct {},
+	attack_map: map[^Territory]^Pro_Territory,
+	calc: ^Pro_Odds_Calculator,
+) -> map[^Unit]map[^Territory]struct {} {
+	data := pro_data_get_data(pro_data)
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
+	air_pred, air_ctx := pro_matches_territory_can_move_air_units_and_no_aa(data, player, true)
+
+	list: [dynamic]Pro_Sort_Move_Options_Then_Attack_Entry
+	for u, ts in unit_attack_options {
+		filtered := pro_sort_move_options_utils_remove_winning_territories(
+			ts,
+			player,
+			attack_map,
+			calc,
+		)
+		ut := unit_get_type(u)
+		entry := Pro_Sort_Move_Options_Then_Attack_Entry {
+			unit        = u,
+			territories = ts,
+			move_count  = len(filtered),
+			type_name   = default_named_get_name(&ut.named_attachable.default_named),
+		}
+		if entry.move_count > 0 {
+			entry.attack_efficiency = pro_sort_move_options_utils_calculate_attack_efficiency(
+				pro_data,
+				player,
+				attack_map,
+				filtered,
+				u,
+			)
+			if unit_attachment_is_air(unit_get_unit_attachment(u)) {
+				home := unit_territory_map[u]
+				total: i32 = 0
+				for t in filtered {
+					total += game_map_get_distance_predicate(
+						game_data_get_map(data),
+						home,
+						t,
+						air_pred,
+						air_ctx,
+					)
+				}
+				entry.total_distance = total
+			}
+		}
+		append(&list, entry)
+	}
+	slice.sort_by(list[:], pro_sort_move_options_then_attack_entry_less)
+	sorted: map[^Unit]map[^Territory]struct {}
+	for e in list {
+		sorted[e.unit] = e.territories
+	}
+	return sorted
+}
+
+// Java: private static double calculateAttackEfficiency(
+//           ProData proData, GamePlayer player,
+//           Map<Territory, ProTerritory> attackMap,
+//           Collection<Territory> territories, Unit unit)
+// For each candidate target, build the offensive PowerStrengthAndRolls
+// twice — once with `unit` excluded, once included — and accumulate the
+// difference. The minimum per-target power difference (×10 when the unit
+// is air) divided by the unit's proData value yields the attack
+// efficiency. Returns 0.0 when the unit value is 0 to avoid the
+// Preconditions.checkState(Double.isFinite(...)) divide-by-zero.
+@(private = "file")
+pro_sort_move_options_utils_calculate_attack_efficiency :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	territories: [dynamic]^Territory,
+	unit: ^Unit,
+) -> f64 {
+	data := pro_data_get_data(pro_data)
+	min_power: i32 = max(i32)
+	enemy_pred, enemy_ctx := matches_enemy_unit(player)
+	for t in territories {
+		defending_units: [dynamic]^Unit
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if enemy_pred(enemy_ctx, u) {
+				append(&defending_units, u)
+			}
+		}
+		attacking_units: [dynamic]^Unit
+		for u in pro_territory_get_units(attack_map[t]) {
+			append(&attacking_units, u)
+		}
+		power_difference: i32 = 0
+		for include_unit in [2]bool{false, true} {
+			if include_unit {
+				append(&attacking_units, unit)
+			}
+			cv := combat_value_builder_main_builder_build(
+				combat_value_builder_main_builder_territory_effects(
+					combat_value_builder_main_builder_game_dice_sides(
+						combat_value_builder_main_builder_lhtr_heavy_bombers(
+							combat_value_builder_main_builder_support_attachments(
+								combat_value_builder_main_builder_game_sequence(
+									combat_value_builder_main_builder_side(
+										combat_value_builder_main_builder_friendly_units(
+											combat_value_builder_main_builder_enemy_units(
+												combat_value_builder_main_combat_value(),
+												defending_units,
+											),
+											attacking_units,
+										),
+										Battle_State_Side.OFFENSE,
+									),
+									game_data_get_sequence(data),
+								),
+								unit_type_list_get_support_rules(
+									game_data_get_unit_type_list(data),
+								),
+							),
+							properties_get_lhtr_heavy_bombers(game_data_get_properties(data)),
+						),
+						int(game_data_get_dice_sides(data)),
+					),
+					territory_effect_helper_get_effects(t),
+				),
+			)
+			psar := power_strength_and_rolls_build(attacking_units, cv)
+			sign: i32 = -1
+			if include_unit {
+				sign = 1
+			}
+			power_difference += sign * power_strength_and_rolls_calculate_total_power(psar)
+		}
+		if power_difference < min_power {
+			min_power = power_difference
+		}
+	}
+	if unit_attachment_is_air(unit_get_unit_attachment(unit)) {
+		min_power *= 10
+	}
+	unit_value := f64(pro_data_get_unit_value(pro_data, unit_get_type(unit)))
+	if unit_value == 0.0 {
+		return 0.0
+	}
+	return f64(min_power) / unit_value
+}

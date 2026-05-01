@@ -15,6 +15,23 @@ installed_maps_listing_new :: proc(
 	return self
 }
 
+installed_maps_listing_find_content_root_for_map_name :: proc(
+	self: ^Installed_Maps_Listing,
+	map_name: string,
+) -> (Path, bool) {
+	name_to_find := installed_maps_listing_normalize_name(map_name)
+	defer delete(name_to_find)
+	for d in self.installed_maps {
+		candidate := installed_maps_listing_normalize_name(installed_map_get_map_name(d))
+		matched := candidate == name_to_find
+		delete(candidate)
+		if matched {
+			return installed_map_find_content_root(d)
+		}
+	}
+	return Path{}, false
+}
+
 installed_maps_listing_find_game_xml_path_by_game_name :: proc(
 	self: ^Installed_Maps_Listing,
 	game_name: string,
@@ -69,6 +86,35 @@ installed_maps_listing_lambda_read_map_yamls_and_generate_missing_map_yamls_0 ::
 	p: Path,
 ) -> bool {
 	return files_is_directory(p)
+}
+
+// Java: private static Collection<InstalledMap>
+//   readMapYamlsAndGenerateMissingMapYamls(Path folder).
+// Mirrors the stream pipeline: list folder children, keep only
+// directories, parse each as a MapDescriptionYaml, drop empties,
+// wrap remaining yamls in an InstalledMap. The Java name implies
+// generation of missing yamls, but the body never writes — it only
+// reads via fromMap. file_utils_list_files / files_is_directory /
+// map_description_yaml_from_map are JDK/library shims.
+installed_maps_listing_read_map_yamls_and_generate_missing_map_yamls :: proc(
+	folder: Path,
+) -> [dynamic]^Installed_Map {
+	result: [dynamic]^Installed_Map
+	files := file_utils_list_files(folder)
+	defer delete(files)
+	for f in files {
+		if !installed_maps_listing_lambda_read_map_yamls_and_generate_missing_map_yamls_0(f) {
+			continue
+		}
+		yaml, ok := map_description_yaml_from_map(f)
+		if !ok {
+			continue
+		}
+		im := new(Installed_Map)
+		im^ = make_Installed_Map(yaml)
+		append(&result, im)
+	}
+	return result
 }
 
 installed_maps_listing_normalize_name :: proc(map_name: string) -> string {

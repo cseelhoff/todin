@@ -864,3 +864,35 @@ game_map_lambda_get_territory_or_throw_0 :: proc(name: string) -> ^Throwable {
 	t.message = fmt.aprintf("Territory with name %s could not be found", name)
 	return t
 }
+
+// Mirrors Java GameMap(GameData data) — package-private constructor that
+// chains to GameDataComponent(data). The Java field declarations
+// initialize `territories`, `connections`, and `territoryLookup` to empty
+// collections; `gridDimensions` is `null` (left as a zero-length slice
+// here to match `[]i32`'s zero value).
+game_map_new :: proc(data: ^Game_Data) -> ^Game_Map {
+	self := new(Game_Map)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.territories = make([dynamic]^Territory)
+	self.connections = make(map[^Territory]map[^Territory]struct{})
+	self.territory_lookup = make(map[string]^Territory)
+	return self
+}
+
+// Mirrors GameMap.getTerritoriesOwnedBy(GamePlayer):
+//     return territories.stream()
+//         .filter(Matches.isTerritoryOwnedBy(player))
+//         .collect(Collectors.toList());
+game_map_get_territories_owned_by :: proc(
+	self: ^Game_Map,
+	player: ^Game_Player,
+) -> [dynamic]^Territory {
+	pred, pred_ctx := matches_is_territory_owned_by(player)
+	result := make([dynamic]^Territory)
+	for t in self.territories {
+		if pred(pred_ctx, t) {
+			append(&result, t)
+		}
+	}
+	return result
+}

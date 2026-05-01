@@ -9,6 +9,14 @@ Resource_List :: struct {
 	resources: map[string]^Resource,
 }
 
+// Java: public ResourceList(final GameData data)
+resource_list_new :: proc(data: ^Game_Data) -> ^Resource_List {
+	self := new(Resource_List)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.resources = make(map[string]^Resource)
+	return self
+}
+
 // Java: public void addResource(final Resource resource)
 resource_list_add_resource :: proc(self: ^Resource_List, resource: ^Resource) {
 	self.resources[default_named_get_name(&resource.named_attachable.default_named)] = resource
