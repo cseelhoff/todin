@@ -6,3 +6,23 @@ package game
 // is a placeholder type with no fields.
 
 Annotated_Fields :: struct {}
+
+annotated_fields_get_attribute_fields :: proc(self: ^Annotated_Fields) -> [dynamic]^Field {
+	_ = self
+	return make([dynamic]^Field, 0)
+}
+
+annotated_fields_get_body_text_fields :: proc(self: ^Annotated_Fields) -> [dynamic]^Field {
+	_ = self
+	return make([dynamic]^Field, 0)
+}
+
+annotated_fields_get_tag_fields :: proc(self: ^Annotated_Fields) -> [dynamic]^Field {
+	_ = self
+	return make([dynamic]^Field, 0)
+}
+
+annotated_fields_get_tag_list_fields :: proc(self: ^Annotated_Fields) -> [dynamic]^Field {
+	_ = self
+	return make([dynamic]^Field, 0)
+}

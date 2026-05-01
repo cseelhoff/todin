@@ -45,3 +45,24 @@ thread_get_name :: proc(self: ^Thread) -> string {
 thread_set_name :: proc(self: ^Thread, name: string) {
 	self.name = name
 }
+
+// Synchronous shim: a single shared "current thread" sentinel suffices
+// since the snapshot harness runs single-threaded.
+@(private="file")
+_current_thread: ^Thread
+
+thread_current_thread :: proc() -> ^Thread {
+	if _current_thread == nil {
+		_current_thread = new(Thread)
+		_current_thread.name = "main"
+		_current_thread.alive = true
+	}
+	return _current_thread
+}
+
+thread_get_context_class_loader :: proc(self: ^Thread) -> ^Class_Loader {
+	@(static) loader: ^Class_Loader
+	if loader == nil { loader = new(Class_Loader) }
+	_ = self
+	return loader
+}
