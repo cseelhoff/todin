@@ -22,3 +22,17 @@ tuv_costs_calculator_lambda_get_costs_for_tuv_for_all_players_merged_and_average
 	return make([dynamic]i32)
 }
 
+// Java: getCostsForTuv(GamePlayer player)
+//   return costsPerPlayer.computeIfAbsent(player, this::computeCostsForTuv);
+tuv_costs_calculator_get_costs_for_tuv :: proc(
+	self: ^Tuv_Costs_Calculator,
+	player: ^Game_Player,
+) -> map[^Unit_Type]i32 {
+	if cached, ok := self.costs_per_player[player]; ok {
+		return cached
+	}
+	computed := tuv_costs_calculator_compute_costs_for_tuv(self, player)
+	self.costs_per_player[player] = computed
+	return computed
+}
+

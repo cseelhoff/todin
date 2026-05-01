@@ -13,3 +13,11 @@ Map_Data_Connection :: struct {
 	t2: string,
 }
 
+map_connection_get_t1 :: proc(self: ^Map_Connection) -> string {
+	return self.t1
+}
+
+map_connection_get_t2 :: proc(self: ^Map_Connection) -> string {
+	return self.t2
+}
+

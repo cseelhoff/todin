@@ -53,3 +53,45 @@ add_units_build_units_with_owner :: proc(self: ^Add_Units, state: ^Game_State) -
 	}
 	return result
 }
+
+// Java: AddUnits#<init>(String, String, Collection<Unit>, Map<UUID,String>)
+//   this.name = name; this.type = type;
+//   this.units = List.copyOf(units); this.unitOwnerMap = unitOwnerMap;
+add_units_new :: proc(
+	name: string,
+	type: string,
+	units: [dynamic]^Unit,
+	unit_owner_map: map[Uuid]string,
+) -> ^Add_Units {
+	au := new(Add_Units)
+	au.kind = .Add_Units
+	au.name = name
+	au.type = type
+	copied: [dynamic]^Unit
+	for u in units {
+		append(&copied, u)
+	}
+	au.units = copied
+	au.unit_owner_map = unit_owner_map
+	return au
+}
+
+// Java: AddUnits#perform(GameState)
+//   final UnitHolder holder = data.getUnitHolder(name, type);
+//   final Collection<Unit> unitsWithCorrectOwner =
+//       unitOwnerMap == null ? units : buildUnitsWithOwner(data);
+//   holder.getUnitCollection().addAll(unitsWithCorrectOwner);
+//
+// In the Odin port, `unit_owner_map` is always populated by the
+// constructors (we don't load legacy saves that omitted it), so
+// emptiness stands in for Java's null check.
+add_units_perform :: proc(self: ^Add_Units, data: ^Game_State) {
+	holder := game_state_get_unit_holder(data, self.name, self.type)
+	units_with_correct_owner: [dynamic]^Unit
+	if len(self.unit_owner_map) == 0 {
+		units_with_correct_owner = self.units
+	} else {
+		units_with_correct_owner = add_units_build_units_with_owner(self, data)
+	}
+	unit_collection_add_all(unit_holder_get_unit_collection(holder), units_with_correct_owner)
+}

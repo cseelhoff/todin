@@ -153,3 +153,13 @@ alliance_tracker_new :: proc(alliances: ^Multimap(^Game_Player, string)) -> ^All
 	}
 	return self
 }
+
+// AllianceTracker(): no-arg constructor delegating to
+// `this(HashMultimap.create())`. The Odin tracker stores the inverted
+// alliance-name → players map, so an empty HashMultimap maps to an empty
+// alliances map here.
+alliance_tracker_new_empty :: proc() -> ^Alliance_Tracker {
+	self := new(Alliance_Tracker)
+	self.alliances = make(map[string][dynamic]^Game_Player)
+	return self
+}

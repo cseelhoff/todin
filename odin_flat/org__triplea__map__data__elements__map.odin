@@ -8,3 +8,11 @@ Map :: struct {
 	connections: [dynamic]^Map_Connection,
 }
 
+map_get_territories :: proc(self: ^Map) -> [dynamic]^Map_Territory {
+	return self.territories
+}
+
+map_get_connections :: proc(self: ^Map) -> [dynamic]^Map_Connection {
+	return self.connections
+}
+

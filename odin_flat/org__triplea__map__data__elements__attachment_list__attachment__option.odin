@@ -9,3 +9,15 @@ Attachment_List_Attachment_Option :: struct {
 	count: string,
 }
 
+attachment_list_attachment_option_get_name :: proc(self: ^Attachment_List_Attachment_Option) -> string {
+	return self.name
+}
+
+attachment_list_attachment_option_get_value :: proc(self: ^Attachment_List_Attachment_Option) -> string {
+	return self.value
+}
+
+attachment_list_attachment_option_get_count :: proc(self: ^Attachment_List_Attachment_Option) -> string {
+	return self.count
+}
+

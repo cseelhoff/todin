@@ -22,3 +22,7 @@ url_to_string :: proc(self: ^Url) -> string {
 url_to_uri :: proc(self: ^Url) -> ^Uri {
 	return uri_new(self.value)
 }
+url_open_connection :: proc(self: ^Url) -> ^Url_Connection {
+	if self == nil { return nil }
+	return url_connection_new(self)
+}

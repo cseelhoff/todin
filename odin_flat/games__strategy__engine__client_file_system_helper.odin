@@ -24,6 +24,8 @@ client_file_system_helper_get_user_root_folder :: proc() -> Path {
                 return root_dir
         }
         return path_resolve(user_home, USER_ROOT_FOLDER_NAME)
+}
+
 // No captures; returns the exception message that getRootFolder propagates.
 lambda_client_file_system_helper_0 :: proc() -> string {
 	return "Unable to locate root folder"
