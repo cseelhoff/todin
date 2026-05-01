@@ -6,3 +6,8 @@ Purchase_Extended_Delegate_State :: struct {
 	pending_production_rules: ^Integer_Map,
 }
 
+purchase_extended_delegate_state_new :: proc() -> ^Purchase_Extended_Delegate_State {
+	s := new(Purchase_Extended_Delegate_State)
+	return s
+}
+

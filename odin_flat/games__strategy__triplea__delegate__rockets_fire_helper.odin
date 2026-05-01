@@ -7,3 +7,12 @@ Rockets_Fire_Helper :: struct {
 	need_to_find_rocket_targets: bool,
 }
 
+rockets_fire_helper_new :: proc() -> ^Rockets_Fire_Helper {
+	helper := new(Rockets_Fire_Helper)
+	helper.attacking_from_territories = make(map[^Territory]struct{})
+	helper.attacked_territories = make(map[^Territory]^Territory)
+	helper.attacked_units = make(map[^Territory]^Unit)
+	helper.need_to_find_rocket_targets = false
+	return helper
+}
+
