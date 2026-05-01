@@ -15,3 +15,13 @@ suicide_remove_units_new :: proc(battle_state: ^Battle_State, battle_actions: ^B
 	return self
 }
 
+suicide_remove_units_get_dependents :: proc(self: ^Suicide_Remove_Units, units: [dynamic]^Unit) -> map[^Unit][dynamic]^Unit {
+	dependents := make(map[^Unit][dynamic]^Unit)
+	for unit in units {
+		single := make([dynamic]^Unit)
+		append(&single, unit)
+		dependents[unit] = battle_state_get_dependent_units(self.battle_state, single)
+	}
+	return dependents
+}
+

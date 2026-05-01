@@ -38,3 +38,13 @@ evader_retreat_parameters_parameters_builder_units :: proc(self: ^Evader_Retreat
 	return self
 }
 
+evader_retreat_parameters_parameters_builder_build :: proc(self: ^Evader_Retreat_Parameters_Parameters_Builder) -> ^Evader_Retreat_Parameters {
+	return evader_retreat_parameters_new(
+		self.battle_state,
+		self.battle_actions,
+		self.side,
+		self.bridge,
+		self.units,
+	)
+}
+

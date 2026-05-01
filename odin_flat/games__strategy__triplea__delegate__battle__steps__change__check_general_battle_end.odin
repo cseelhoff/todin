@@ -80,3 +80,22 @@ check_general_battle_end_lambda_in_any_firing_group_1 :: proc(
 	return false
 }
 
+// Mirrors javac-synthetic `lambda$inAnyFiringGroup$0`: the outer
+// `Predicate<Unit>` body `u -> stream(firingGroups).anyMatch(fg -> fg.getFiringUnits().contains(u))`.
+// The captured `firingGroups` arrives as a `rawptr` to a heap-allocated
+// `[dynamic]^Firing_Group` (see `check_general_battle_end_in_any_firing_group`).
+check_general_battle_end_lambda__in_any_firing_group__0 :: proc(
+	ctx: rawptr,
+	u: ^Unit,
+) -> bool {
+	firing_groups := (^[dynamic]^Firing_Group)(ctx)^
+	for fg in firing_groups {
+		for unit in fg.firing_units {
+			if unit == u {
+				return true
+			}
+		}
+	}
+	return false
+}
+

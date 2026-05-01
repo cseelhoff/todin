@@ -17,3 +17,20 @@ move_performer_lambda_mark_transports_movement_0 :: proc(u: ^Unit) -> [dynamic]^
 	return make([dynamic]^Unit)
 }
 
+// games.strategy.triplea.delegate.MovePerformer#<init>()
+//
+//   MovePerformer() {}
+//   private final ExecutionStack executionStack = new ExecutionStack();
+move_performer_new :: proc() -> ^Move_Performer {
+	self := new(Move_Performer)
+	self.execution_stack = execution_stack_new()
+	return self
+}
+
+// games.strategy.triplea.delegate.MovePerformer#getRemotePlayer(games.strategy.engine.data.GamePlayer)
+//
+//   return bridge.getRemotePlayer(gamePlayer);
+move_performer_get_remote_player :: proc(self: ^Move_Performer, game_player: ^Game_Player) -> ^Player {
+	return i_delegate_bridge_get_remote_player(self.bridge, game_player)
+}
+

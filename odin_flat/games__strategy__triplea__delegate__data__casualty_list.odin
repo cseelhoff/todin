@@ -36,3 +36,10 @@ casualty_list_size :: proc(self: ^Casualty_List) -> int {
 	return len(self.killed) + len(self.damaged)
 }
 
+casualty_list_new :: proc() -> ^Casualty_List {
+	self := new(Casualty_List)
+	self.killed = make([dynamic]^Unit, 0, 0)
+	self.damaged = make([dynamic]^Unit, 0, 0)
+	return self
+}
+

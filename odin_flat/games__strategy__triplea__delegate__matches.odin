@@ -3999,3 +3999,954 @@ matches_unit_which_requires_units_has_required_units_in_list :: proc(
 	ctx.units_in_territory = units_in_territory
 	return matches_pred_unit_which_requires_units_has_required_units_in_list, rawptr(ctx)
 }
+
+// =====================================================================
+// Phase B layer 1 batch (74 entries).
+// Pure-lambda procs (matches_lambda_<name>_<N>) translate javac
+// synthetics directly; new factories below them combine layer-0
+// helpers via the rawptr-ctx convention.
+// =====================================================================
+
+// lambda$abstractUserActionAttachmentCanBeAttempted$220
+//   uaa -> uaa.hasAttemptsLeft() && uaa.canPerform(testedConditions)
+matches_lambda_abstract_user_action_attachment_can_be_attempted_220 :: proc(
+	tested_conditions: map[^I_Condition]bool,
+	uaa: ^Abstract_User_Action_Attachment,
+) -> bool {
+	return abstract_user_action_attachment_has_attempts_left(uaa) &&
+		abstract_user_action_attachment_can_perform(uaa, tested_conditions)
+}
+
+// lambda$battleIsAmphibiousWithUnitsAttackingFrom$122
+//   b -> (b instanceof DependentBattle) && ((DependentBattle) b).getAmphibiousAttackTerritories().contains(from)
+// In the Odin port the DependentBattle hierarchy (MustFightBattle,
+// NonFightingBattle) embeds Dependent_Battle as the first field of
+// Abstract_Battle's family. The outer battleIsAmphibious filter
+// guarantees the battle is a MustFightBattle (the only TripleA
+// concrete subclass that sets isAmphibious on dependent battles), so
+// the cast is structurally safe.
+matches_lambda_battle_is_amphibious_with_units_attacking_from_122 :: proc(
+	from: ^Territory,
+	b: ^I_Battle,
+) -> bool {
+	db := cast(^Dependent_Battle)b
+	for tt in dependent_battle_get_amphibious_attack_territories(db) {
+		if tt == from {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$isTerritoryNeutral$134 — t -> t.getOwner().isNull()
+matches_lambda_is_territory_neutral_134 :: proc(t: ^Territory) -> bool {
+	return game_player_is_null(t.owner)
+}
+
+// lambda$isTerritoryOwnedByAnyOf$135 — t -> players.contains(t.getOwner())
+matches_lambda_is_territory_owned_by_any_of_135 :: proc(
+	players: [dynamic]^Game_Player,
+	t: ^Territory,
+) -> bool {
+	owner := t.owner
+	for p in players {
+		if p == owner {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$isValidRelationshipName$206 —
+//   relationshipName -> relationshipTypeList.getRelationshipType(relationshipName) != null
+matches_lambda_is_valid_relationship_name_206 :: proc(
+	relationship_type_list: ^Relationship_Type_List,
+	relationship_name: string,
+) -> bool {
+	return relationship_type_list_get_relationship_type(relationship_type_list, relationship_name) != nil
+}
+
+// lambda$seaCanMoveOver$116 —
+//   t -> t.isWater() && territoryIsPassableAndNotRestricted(player).test(t)
+matches_lambda_sea_can_move_over_116 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	if !territory_is_water(t) {
+		return false
+	}
+	p, c := matches_territory_is_passable_and_not_restricted(player)
+	return p(c, t)
+}
+
+// lambda$territoryHasAlliedIsFactoryOrCanProduceUnits$111 —
+//   t -> isTerritoryAllied(player).test(t) && t.anyUnitsMatch(unitCanProduceUnits())
+matches_lambda_territory_has_allied_is_factory_or_can_produce_units_111 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	ap, ac := matches_is_territory_allied(player)
+	if !ap(ac, t) {
+		return false
+	}
+	cp, cc := matches_unit_can_produce_units()
+	for u in t.unit_collection.units {
+		if cp(cc, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasAlliedUnits$156 — t -> t.anyUnitsMatch(alliedUnit(player))
+matches_lambda_territory_has_allied_units_156 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	ap, ac := matches_allied_unit(player)
+	for u in t.unit_collection.units {
+		if ap(ac, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasEnemySeaUnits$159 —
+//   t -> t.anyUnitsMatch(enemyUnit(player).and(unitIsSea()))
+matches_lambda_territory_has_enemy_sea_units_159 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	ep, ec := matches_enemy_unit(player)
+	sp, sc := matches_unit_is_sea()
+	for u in t.unit_collection.units {
+		if ep(ec, u) && sp(sc, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasEnemyUnits$160 — t -> t.anyUnitsMatch(enemyUnit(player))
+matches_lambda_territory_has_enemy_units_160 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	ep, ec := matches_enemy_unit(player)
+	for u in t.unit_collection.units {
+		if ep(ec, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasNoEnemyUnits$155 — t -> !t.anyUnitsMatch(enemyUnit(player))
+matches_lambda_territory_has_no_enemy_units_155 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	ep, ec := matches_enemy_unit(player)
+	for u in t.unit_collection.units {
+		if ep(ec, u) {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryHasNonSubmergedEnemyUnits$157 —
+//   t -> t.anyUnitsMatch(enemyUnit(player).and(not(unitIsSubmerged())))
+matches_lambda_territory_has_non_submerged_enemy_units_157 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	ep, ec := matches_enemy_unit(player)
+	sp, sc := matches_unit_is_submerged()
+	for u in t.unit_collection.units {
+		if ep(ec, u) && !sp(sc, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasOwnedCarrier$65 —
+//   t -> t.anyUnitsMatch(unitIsOwnedBy(player).and(unitIsCarrier()))
+matches_lambda_territory_has_owned_carrier_65 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	cp, cc := matches_unit_is_carrier()
+	for u in t.unit_collection.units {
+		if unit_is_owned_by(u, player) && cp(cc, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryHasRequiredUnitsToMove$187 —
+//   t -> units.stream().allMatch(unitHasRequiredUnitsToMove(t))
+matches_lambda_territory_has_required_units_to_move_187 :: proc(
+	units: [dynamic]^Unit,
+	t: ^Territory,
+) -> bool {
+	rp, rc := matches_unit_has_required_units_to_move(t)
+	for u in units {
+		if !rp(rc, u) {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryHasUnitsOwnedBy$152 —
+//   t -> t.anyUnitsMatch(unitIsOwnedBy(player))
+matches_lambda_territory_has_units_owned_by_152 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	for u in t.unit_collection.units {
+		if unit_is_owned_by(u, player) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$territoryIsEmpty$103 — t -> t.getUnitCollection().isEmpty()
+matches_lambda_territory_is_empty_103 :: proc(t: ^Territory) -> bool {
+	return unit_collection_is_empty(t.unit_collection)
+}
+
+// lambda$territoryIsEmptyOfCombatUnits$113 —
+//   t -> t.getUnitCollection().allMatch(unitIsInfrastructure().or(enemyUnit(player).negate()))
+matches_lambda_territory_is_empty_of_combat_units_113 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	ip, ic := matches_unit_is_infrastructure()
+	ep, ec := matches_enemy_unit(player)
+	for u in t.unit_collection.units {
+		if !(ip(ic, u) || !ep(ec, u)) {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryIsImpassableToLandUnits$119 —
+//   t -> t.isWater() || territoryIsPassableAndNotRestricted(player).negate().test(t)
+matches_lambda_territory_is_impassable_to_land_units_119 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_water(t) {
+		return true
+	}
+	pp, pc := matches_territory_is_passable_and_not_restricted(player)
+	return !pp(pc, t)
+}
+
+// lambda$territoryIsIsland$101 —
+//   t -> { neighbors = t.getData().getMap().getNeighbors(t);
+//          return neighbors.size() == 1 && CollectionUtils.getAny(neighbors).isWater(); }
+matches_lambda_territory_is_island_101 :: proc(t: ^Territory) -> bool {
+	gm := game_data_get_map(territory_get_data(t))
+	neighbors := game_map_get_neighbors(gm, t)
+	if len(neighbors) != 1 {
+		return false
+	}
+	for n, _ in neighbors {
+		return territory_is_water(n)
+	}
+	return false
+}
+
+// lambda$territoryIsNotImpassableToLandUnits$120 —
+//   t -> territoryIsImpassableToLandUnits(player).negate().test(t)
+matches_lambda_territory_is_not_impassable_to_land_units_120 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	return !matches_lambda_territory_is_impassable_to_land_units_119(player, t)
+}
+
+// lambda$territoryWasFoughtOver$169 —
+//   t -> tracker.wasBattleFought(t) || tracker.wasBlitzed(t)
+matches_lambda_territory_was_fought_over_169 :: proc(
+	tracker: ^Battle_Tracker,
+	t: ^Territory,
+) -> bool {
+	return battle_tracker_was_battle_fought(tracker, t) || battle_tracker_was_blitzed(tracker, t)
+}
+
+// lambda$unitCanBeDamaged$37 — unit -> unitTypeCanBeDamaged().test(unit.getType())
+matches_lambda_unit_can_be_damaged_37 :: proc(unit: ^Unit) -> bool {
+	p, c := matches_unit_type_can_be_damaged()
+	return p(c, unit_get_type(unit))
+}
+
+// lambda$unitCanMove$125 — u -> unitTypeCanMove(u.getOwner()).test(u.getType())
+matches_lambda_unit_can_move_125 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_can_move(unit_get_owner(u))
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitCanNotMoveDuringCombatMove$76 —
+//   u -> unitTypeCanNotMoveDuringCombatMove().test(u.getType())
+matches_lambda_unit_can_not_move_during_combat_move_76 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_can_not_move_during_combat_move()
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitCanProduceUnits$71 — u -> unitTypeCanProduceUnits().test(u.getType())
+matches_lambda_unit_can_produce_units_71 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_can_produce_units()
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitHasMoreThanOneHitPointTotal$1 —
+//   unit -> unitTypeHasMoreThanOneHitPointTotal().test(unit.getType())
+matches_lambda_unit_has_more_than_one_hit_point_total_1 :: proc(unit: ^Unit) -> bool {
+	p, c := matches_unit_type_has_more_than_one_hit_point_total()
+	return p(c, unit_get_type(unit))
+}
+
+// lambda$unitHasNotBeenChargedFlatFuelCost$18 — unit -> !unit.getChargedFlatFuelCost()
+matches_lambda_unit_has_not_been_charged_flat_fuel_cost_18 :: proc(unit: ^Unit) -> bool {
+	return !unit_get_charged_flat_fuel_cost(unit)
+}
+
+// lambda$unitHasTakenSomeBombingUnitDamage$40 — unit -> unit.getUnitDamage() > 0
+matches_lambda_unit_has_taken_some_bombing_unit_damage_40 :: proc(unit: ^Unit) -> bool {
+	return unit_get_unit_damage(unit) > 0
+}
+
+// lambda$unitHasTakenSomeDamage$2 — unit -> unit.getHits() > 0
+matches_lambda_unit_has_taken_some_damage_2 :: proc(unit: ^Unit) -> bool {
+	return unit_get_hits(unit) > 0
+}
+
+// lambda$unitIsAaForAnything$91 — u -> unitTypeIsAaForAnything().test(u.getType())
+matches_lambda_unit_is_aa_for_anything_91 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_is_aa_for_anything()
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitIsAaForBombingThisUnitOnly$88 —
+//   u -> unitTypeIsAaForBombingThisUnitOnly().test(u.getType())
+matches_lambda_unit_is_aa_for_bombing_this_unit_only_88 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_is_aa_for_bombing_this_unit_only()
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitIsAaForCombatOnly$86 —
+//   ut -> unitTypeIsAaForCombatOnly().test(ut.getType())
+matches_lambda_unit_is_aa_for_combat_only_86 :: proc(ut: ^Unit) -> bool {
+	p, c := matches_unit_type_is_aa_for_combat_only()
+	return p(c, unit_get_type(ut))
+}
+
+// lambda$unitIsAaThatCanFireOnRound$84 —
+//   u -> unitTypeIsAaThatCanFireOnRound(battleRoundNumber).test(u.getType())
+matches_lambda_unit_is_aa_that_can_fire_on_round_84 :: proc(
+	battle_round_number: i32,
+	u: ^Unit,
+) -> bool {
+	p, c := matches_unit_type_is_aa_that_can_fire_on_round(battle_round_number)
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitIsBeingTransported$164 — dependent -> dependent.getTransportedBy() != null
+matches_lambda_unit_is_being_transported_164 :: proc(dependent: ^Unit) -> bool {
+	return unit_get_transported_by(dependent) != nil
+}
+
+// lambda$unitIsConstruction$190 — obj -> unitTypeIsConstruction().test(obj.getType())
+matches_lambda_unit_is_construction_190 :: proc(obj: ^Unit) -> bool {
+	p, c := matches_unit_type_is_construction()
+	return p(c, unit_get_type(obj))
+}
+
+// lambda$unitIsInfrastructure$44 — unit -> unitTypeIsInfrastructure().test(unit.getType())
+matches_lambda_unit_is_infrastructure_44 :: proc(unit: ^Unit) -> bool {
+	p, c := matches_unit_type_is_infrastructure()
+	return p(c, unit_get_type(unit))
+}
+
+// lambda$unitIsLandTransportWithCapacity$52 —
+//   unit -> unitIsLandTransport().and(unitCanTransport()).test(unit)
+matches_lambda_unit_is_land_transport_with_capacity_52 :: proc(unit: ^Unit) -> bool {
+	lp, lc := matches_unit_is_land_transport()
+	cp, cc := matches_unit_can_transport()
+	return lp(lc, unit) && cp(cc, unit)
+}
+
+// lambda$unitIsLandTransportWithoutCapacity$53 —
+//   unit -> unitIsLandTransport().and(unitCanTransport().negate()).test(unit)
+matches_lambda_unit_is_land_transport_without_capacity_53 :: proc(unit: ^Unit) -> bool {
+	lp, lc := matches_unit_is_land_transport()
+	cp, cc := matches_unit_can_transport()
+	return lp(lc, unit) && !cp(cc, unit)
+}
+
+// lambda$unitIsOfType$167 — unit -> unit.getType().equals(type)
+matches_lambda_unit_is_of_type_167 :: proc(type: ^Unit_Type, unit: ^Unit) -> bool {
+	return unit_get_type(unit) == type
+}
+
+// lambda$unitIsOfTypes$168 —
+//   unit -> types != null && !types.isEmpty() && types.contains(unit.getType())
+matches_lambda_unit_is_of_types_168 :: proc(
+	types: map[^Unit_Type]struct {},
+	unit: ^Unit,
+) -> bool {
+	if len(types) == 0 {
+		return false
+	}
+	_, ok := types[unit_get_type(unit)]
+	return ok
+}
+
+// lambda$unitIsOwnedAndIsFactoryOrCanProduceUnits$209 —
+//   unit -> unitCanProduceUnits().test(unit) && unitIsOwnedBy(player).test(unit)
+matches_lambda_unit_is_owned_and_is_factory_or_can_produce_units_209 :: proc(
+	player: ^Game_Player,
+	unit: ^Unit,
+) -> bool {
+	cp, cc := matches_unit_can_produce_units()
+	if !cp(cc, unit) {
+		return false
+	}
+	return unit_is_owned_by(unit, player)
+}
+
+// lambda$unitIsOwnedByAnyOf$130 — unit -> players.contains(unit.getOwner())
+matches_lambda_unit_is_owned_by_any_of_130 :: proc(
+	players: [dynamic]^Game_Player,
+	unit: ^Unit,
+) -> bool {
+	owner := unit_get_owner(unit)
+	for p in players {
+		if p == owner {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$unitIsRocket$74 — obj -> unitTypeIsRocket().test(obj.getType())
+matches_lambda_unit_is_rocket_74 :: proc(obj: ^Unit) -> bool {
+	p, c := matches_unit_type_is_rocket()
+	return p(c, unit_get_type(obj))
+}
+
+// lambda$unitIsStrategicBomber$17 — u -> unitTypeIsStrategicBomber().test(u.getType())
+matches_lambda_unit_is_strategic_bomber_17 :: proc(u: ^Unit) -> bool {
+	p, c := matches_unit_type_is_strategic_bomber()
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitIsSupporterOrHasCombatAbility$45 —
+//   u -> unitTypeIsSupporterOrHasCombatAbility(attack, u.getOwner()).test(u.getType())
+matches_lambda_unit_is_supporter_or_has_combat_ability_45 :: proc(
+	attack: bool,
+	u: ^Unit,
+) -> bool {
+	p, c := matches_unit_type_is_supporter_or_has_combat_ability(attack, unit_get_owner(u))
+	return p(c, unit_get_type(u))
+}
+
+// lambda$unitSupportAttachmentCanBeUsedByPlayer$47 —
+//   usa -> usa.getPlayers().contains(player)
+matches_lambda_unit_support_attachment_can_be_used_by_player_47 :: proc(
+	player: ^Game_Player,
+	usa: ^Unit_Support_Attachment,
+) -> bool {
+	for p in unit_support_attachment_get_players(usa) {
+		if p == player {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$unitTypeIsStatic$127 —
+//   unitType -> !unitTypeCanMove(gamePlayer).test(unitType)
+matches_lambda_unit_type_is_static_127 :: proc(
+	game_player: ^Game_Player,
+	unit_type: ^Unit_Type,
+) -> bool {
+	p, c := matches_unit_type_can_move(game_player)
+	return !p(c, unit_type)
+}
+
+// lambda$unitWasUnloadedThisTurn$68 — u -> u.getUnloadedTo() != null
+matches_lambda_unit_was_unloaded_this_turn_68 :: proc(u: ^Unit) -> bool {
+	return unit_get_unloaded_to(u) != nil
+}
+
+// =====================================================================
+// Static factories at method_layer 1.
+// =====================================================================
+
+// battleIsAmphibiousWithUnitsAttackingFrom(Territory)
+//   battleIsAmphibious().and(b -> instanceof DependentBattle && contains(from))
+Matches_Ctx_battle_is_amphibious_with_units_attacking_from :: struct {
+	from: ^Territory,
+}
+
+matches_pred_battle_is_amphibious_with_units_attacking_from :: proc(
+	ctx_ptr: rawptr,
+	b: ^I_Battle,
+) -> bool {
+	c := cast(^Matches_Ctx_battle_is_amphibious_with_units_attacking_from)ctx_ptr
+	if !i_battle_is_amphibious(b) {
+		return false
+	}
+	return matches_lambda_battle_is_amphibious_with_units_attacking_from_122(c.from, b)
+}
+
+matches_battle_is_amphibious_with_units_attacking_from :: proc(
+	from: ^Territory,
+) -> (proc(rawptr, ^I_Battle) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_battle_is_amphibious_with_units_attacking_from)
+	ctx.from = from
+	return matches_pred_battle_is_amphibious_with_units_attacking_from, rawptr(ctx)
+}
+
+// territoryIsLand() — territoryIsWater().negate()
+matches_pred_territory_is_land :: proc(_: rawptr, t: ^Territory) -> bool {
+	return !territory_is_water(t)
+}
+
+matches_territory_is_land :: proc() -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	return matches_pred_territory_is_land, nil
+}
+
+// territoryIsNeutralButNotWater() —
+//   isTerritoryNeutral().and(territoryIsWater().negate())
+matches_pred_territory_is_neutral_but_not_water :: proc(_: rawptr, t: ^Territory) -> bool {
+	if territory_is_water(t) {
+		return false
+	}
+	return matches_lambda_is_territory_neutral_134(t)
+}
+
+matches_territory_is_neutral_but_not_water :: proc() -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	return matches_pred_territory_is_neutral_but_not_water, nil
+}
+
+// territoryIsNotImpassable() — territoryIsImpassable().negate()
+matches_pred_territory_is_not_impassable :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	p, c := matches_territory_is_impassable()
+	return !p(c, t)
+}
+
+matches_territory_is_not_impassable :: proc() -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	return matches_pred_territory_is_not_impassable, nil
+}
+
+// territoryIsUnownedWater() — isTerritoryNeutral().and(territoryIsWater())
+matches_pred_territory_is_unowned_water :: proc(_: rawptr, t: ^Territory) -> bool {
+	if !territory_is_water(t) {
+		return false
+	}
+	return matches_lambda_is_territory_neutral_134(t)
+}
+
+matches_territory_is_unowned_water :: proc() -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	return matches_pred_territory_is_unowned_water, nil
+}
+
+// unitIsLand() — unitIsNotSea().and(unitIsNotAir())
+matches_pred_unit_is_land :: proc(_: rawptr, u: ^Unit) -> bool {
+	ua := unit_get_unit_attachment(u)
+	return !unit_attachment_is_sea(ua) && !unit_attachment_is_air(ua)
+}
+
+matches_unit_is_land :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_land, nil
+}
+
+// unitTypeIsLand() — unitTypeIsNotSea().and(unitTypeIsNotAir())
+matches_pred_unit_type_is_land :: proc(_: rawptr, ut: ^Unit_Type) -> bool {
+	ua := unit_type_get_unit_attachment(ut)
+	return !unit_attachment_is_sea(ua) && !unit_attachment_is_air(ua)
+}
+
+matches_unit_type_is_land :: proc() -> (proc(rawptr, ^Unit_Type) -> bool, rawptr) {
+	return matches_pred_unit_type_is_land, nil
+}
+
+// unitIsNotCombatSeaTransport() — unitIsCombatSeaTransport().negate()
+matches_pred_unit_is_not_combat_sea_transport :: proc(_: rawptr, u: ^Unit) -> bool {
+	p, c := matches_unit_is_combat_sea_transport()
+	return !p(c, u)
+}
+
+matches_unit_is_not_combat_sea_transport :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_not_combat_sea_transport, nil
+}
+
+// unitIsNotConstruction() — unitIsConstruction().negate()
+matches_pred_unit_is_not_construction :: proc(_: rawptr, u: ^Unit) -> bool {
+	p, c := matches_unit_is_construction()
+	return !p(c, u)
+}
+
+matches_unit_is_not_construction :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_not_construction, nil
+}
+
+// unitIsNotDisabled() — unitIsDisabled().negate()
+matches_pred_unit_is_not_disabled :: proc(_: rawptr, u: ^Unit) -> bool {
+	p, c := matches_unit_is_disabled()
+	return !p(c, u)
+}
+
+matches_unit_is_not_disabled :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_not_disabled, nil
+}
+
+// unitIsNotInfrastructure() — unitIsInfrastructure().negate()
+matches_pred_unit_is_not_infrastructure :: proc(_: rawptr, u: ^Unit) -> bool {
+	p, c := matches_unit_is_infrastructure()
+	return !p(c, u)
+}
+
+matches_unit_is_not_infrastructure :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_not_infrastructure, nil
+}
+
+// unitIsNotSeaTransport() — unitIsSeaTransport().negate()
+matches_pred_unit_is_not_sea_transport :: proc(_: rawptr, u: ^Unit) -> bool {
+	p, c := matches_unit_is_sea_transport()
+	return !p(c, u)
+}
+
+matches_unit_is_not_sea_transport :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_not_sea_transport, nil
+}
+
+// unitHasNotMoved() — unitHasMoved().negate()
+matches_pred_unit_has_not_moved :: proc(_: rawptr, u: ^Unit) -> bool {
+	return !unit_has_moved(u)
+}
+
+matches_unit_has_not_moved :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_has_not_moved, nil
+}
+
+// unitHasNotTakenAnyBombingUnitDamage() — unitHasTakenSomeBombingUnitDamage().negate()
+matches_pred_unit_has_not_taken_any_bombing_unit_damage :: proc(_: rawptr, u: ^Unit) -> bool {
+	return unit_get_unit_damage(u) <= 0
+}
+
+matches_unit_has_not_taken_any_bombing_unit_damage :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_has_not_taken_any_bombing_unit_damage, nil
+}
+
+// unitHasNotTakenAnyDamage() — unitHasTakenSomeDamage().negate()
+matches_pred_unit_has_not_taken_any_damage :: proc(_: rawptr, u: ^Unit) -> bool {
+	return unit_get_hits(u) <= 0
+}
+
+matches_unit_has_not_taken_any_damage :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_has_not_taken_any_damage, nil
+}
+
+// unitWasNotAmphibious() — unitWasAmphibious().negate()
+matches_pred_unit_was_not_amphibious :: proc(_: rawptr, u: ^Unit) -> bool {
+	return !unit_get_was_amphibious(u)
+}
+
+matches_unit_was_not_amphibious :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_was_not_amphibious, nil
+}
+
+// unitHasSubBattleAbilities() —
+//   unitCanEvade().or(unitIsFirstStrike()).or(unitCanNotBeTargetedByAll())
+matches_pred_unit_has_sub_battle_abilities :: proc(_: rawptr, u: ^Unit) -> bool {
+	ep, ec := matches_unit_can_evade()
+	if ep(ec, u) {
+		return true
+	}
+	fp, fc := matches_unit_is_first_strike()
+	if fp(fc, u) {
+		return true
+	}
+	tp, tc := matches_unit_can_not_be_targeted_by_all()
+	return tp(tc, u)
+}
+
+matches_unit_has_sub_battle_abilities :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_has_sub_battle_abilities, nil
+}
+
+// unitCanProduceUnitsAndCanBeDamaged() — unitCanProduceUnits().and(unitCanBeDamaged())
+matches_pred_unit_can_produce_units_and_can_be_damaged :: proc(_: rawptr, u: ^Unit) -> bool {
+	cp, cc := matches_unit_can_produce_units()
+	if !cp(cc, u) {
+		return false
+	}
+	dp, dc := matches_unit_can_be_damaged()
+	return dp(dc, u)
+}
+
+matches_unit_can_produce_units_and_can_be_damaged :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_can_produce_units_and_can_be_damaged, nil
+}
+
+// unitCanProduceUnitsAndIsInfrastructure() — unitCanProduceUnits().and(unitIsInfrastructure())
+matches_pred_unit_can_produce_units_and_is_infrastructure :: proc(_: rawptr, u: ^Unit) -> bool {
+	cp, cc := matches_unit_can_produce_units()
+	if !cp(cc, u) {
+		return false
+	}
+	ip, ic := matches_unit_is_infrastructure()
+	return ip(ic, u)
+}
+
+matches_unit_can_produce_units_and_is_infrastructure :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_can_produce_units_and_is_infrastructure, nil
+}
+
+// unitDestroyedWhenCapturedByOrFrom(GamePlayer) —
+//   unitDestroyedWhenCapturedBy(playerBy).or(unitDestroyedWhenCapturedFrom())
+Matches_Ctx_unit_destroyed_when_captured_by_or_from :: struct {
+	player_by: ^Game_Player,
+}
+
+matches_pred_unit_destroyed_when_captured_by_or_from :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_destroyed_when_captured_by_or_from)ctx_ptr
+	bp, bc := matches_unit_destroyed_when_captured_by(c.player_by)
+	if bp(bc, u) {
+		return true
+	}
+	fp, fc := matches_unit_destroyed_when_captured_from()
+	return fp(fc, u)
+}
+
+matches_unit_destroyed_when_captured_by_or_from :: proc(
+	player_by: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_destroyed_when_captured_by_or_from)
+	ctx.player_by = player_by
+	return matches_pred_unit_destroyed_when_captured_by_or_from, rawptr(ctx)
+}
+
+// unitIsEnemyAaForFlyOver(GamePlayer)  [package-private] —
+//   unitIsAaForFlyOverOnly().and(enemyUnit(player))
+Matches_Ctx_unit_is_enemy_aa_for_fly_over :: struct {
+	player: ^Game_Player,
+}
+
+matches_pred_unit_is_enemy_aa_for_fly_over :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_is_enemy_aa_for_fly_over)ctx_ptr
+	fp, fc := matches_unit_is_aa_for_fly_over_only()
+	if !fp(fc, u) {
+		return false
+	}
+	ep, ec := matches_enemy_unit(c.player)
+	return ep(ec, u)
+}
+
+matches_unit_is_enemy_aa_for_fly_over :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_is_enemy_aa_for_fly_over)
+	ctx.player = player
+	return matches_pred_unit_is_enemy_aa_for_fly_over, rawptr(ctx)
+}
+
+// unitHasWhenCombatDamagedEffect(String filterForEffect) —
+//   unitHasWhenCombatDamagedEffect().and(unit -> { for whenCombatDamaged matching effect/range: true; else false })
+Matches_Ctx_unit_has_when_combat_damaged_effect_filter :: struct {
+	filter_for_effect: string,
+}
+
+matches_pred_unit_has_when_combat_damaged_effect_filter :: proc(
+	ctx_ptr: rawptr,
+	unit: ^Unit,
+) -> bool {
+	c := cast(^Matches_Ctx_unit_has_when_combat_damaged_effect_filter)ctx_ptr
+	hp, hc := matches_unit_has_when_combat_damaged_effect()
+	if !hp(hc, unit) {
+		return false
+	}
+	current_damage := unit_get_hits(unit)
+	for key in unit_attachment_get_when_combat_damaged(unit_get_unit_attachment(unit)) {
+		if unit_attachment_when_combat_damaged_get_effect(key) != c.filter_for_effect {
+			continue
+		}
+		dmin := unit_attachment_when_combat_damaged_get_damage_min(key)
+		dmax := unit_attachment_when_combat_damaged_get_damage_max(key)
+		if current_damage >= dmin && current_damage <= dmax {
+			return true
+		}
+	}
+	return false
+}
+
+matches_unit_has_when_combat_damaged_effect_filter :: proc(
+	filter_for_effect: string,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_has_when_combat_damaged_effect_filter)
+	ctx.filter_for_effect = filter_for_effect
+	return matches_pred_unit_has_when_combat_damaged_effect_filter, rawptr(ctx)
+}
+
+// unitIsAaThatCanFire(Collection<Unit>, Map<String, Set<UnitType>>, GamePlayer,
+//                     Predicate<Unit>, int, boolean)
+Matches_Ctx_unit_is_aa_that_can_fire :: struct {
+	units_moving_or_attacking:        [dynamic]^Unit,
+	airborne_tech_targets_allowed:    map[string]map[^Unit_Type]struct {},
+	player_moving_or_attacking:       ^Game_Player,
+	type_of_aa:                       proc(rawptr, ^Unit) -> bool,
+	type_of_aa_ctx:                   rawptr,
+	battle_round_number:              i32,
+	defending:                        bool,
+}
+
+matches_pred_unit_is_aa_that_can_fire :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_is_aa_that_can_fire)ctx_ptr
+	ep, ec := matches_enemy_unit(c.player_moving_or_attacking)
+	if !ep(ec, u) {
+		return false
+	}
+	bp, bc := matches_unit_is_being_transported()
+	if bp(bc, u) {
+		return false
+	}
+	hp, hc := matches_unit_is_aa_that_can_hit_these_units(
+		c.units_moving_or_attacking,
+		c.type_of_aa,
+		c.type_of_aa_ctx,
+		c.airborne_tech_targets_allowed,
+	)
+	if !hp(hc, u) {
+		return false
+	}
+	wp, wc := matches_unit_is_aa_that_will_not_fire_if_present_enemy_units(c.units_moving_or_attacking)
+	if wp(wc, u) {
+		return false
+	}
+	rp, rc := matches_unit_is_aa_that_can_fire_on_round(c.battle_round_number)
+	if !rp(rc, u) {
+		return false
+	}
+	if c.defending {
+		ap, ac := matches_unit_attack_aa_is_greater_than_zero_and_max_aa_attacks_is_not_zero()
+		return ap(ac, u)
+	}
+	op, oc := matches_unit_offensive_attack_aa_is_greater_than_zero_and_max_aa_attacks_is_not_zero()
+	return op(oc, u)
+}
+
+matches_unit_is_aa_that_can_fire :: proc(
+	units_moving_or_attacking: [dynamic]^Unit,
+	airborne_tech_targets_allowed: map[string]map[^Unit_Type]struct {},
+	player_moving_or_attacking: ^Game_Player,
+	type_of_aa: proc(rawptr, ^Unit) -> bool,
+	type_of_aa_ctx: rawptr,
+	battle_round_number: i32,
+	defending: bool,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_is_aa_that_can_fire)
+	ctx.units_moving_or_attacking = units_moving_or_attacking
+	ctx.airborne_tech_targets_allowed = airborne_tech_targets_allowed
+	ctx.player_moving_or_attacking = player_moving_or_attacking
+	ctx.type_of_aa = type_of_aa
+	ctx.type_of_aa_ctx = type_of_aa_ctx
+	ctx.battle_round_number = battle_round_number
+	ctx.defending = defending
+	return matches_pred_unit_is_aa_that_can_fire, rawptr(ctx)
+}
+
+// unitCanBeInBattle(boolean attack, boolean isLandBattle, int battleRound,
+//                   boolean doNotIncludeBombardingSeaUnits,
+//                   Collection<UnitType> firingUnits)
+//   = unitCanBeInBattle(attack, isLandBattle, battleRound, true,
+//                       doNotIncludeBombardingSeaUnits, firingUnits)
+matches_unit_can_be_in_battle_with_firing_units :: proc(
+	attack: bool,
+	is_land_battle: bool,
+	battle_round: i32,
+	do_not_include_bombarding_sea_units: bool,
+	firing_units: [dynamic]^Unit_Type,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_unit_can_be_in_battle(
+		attack,
+		is_land_battle,
+		battle_round,
+		true,
+		do_not_include_bombarding_sea_units,
+		firing_units,
+	)
+}
+
+// unitCanParticipateInCombat(boolean attack, GamePlayer attacker,
+//                            Territory battleSite, int battleRound,
+//                            Collection<Unit> enemyUnits)
+Matches_Ctx_unit_can_participate_in_combat :: struct {
+	attack:           bool,
+	attacker:         ^Game_Player,
+	battle_site:      ^Territory,
+	battle_round:     i32,
+	enemy_unit_types: [dynamic]^Unit_Type,
+}
+
+matches_pred_unit_can_participate_in_combat :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_can_participate_in_combat)ctx_ptr
+	land_battle := !territory_is_water(c.battle_site)
+	if !land_battle {
+		lp, lc := matches_unit_is_land()
+		if lp(lc, u) {
+			return false
+		}
+	}
+	bp, bc := matches_unit_can_be_in_battle_with_firing_units(
+		c.attack,
+		land_battle,
+		c.battle_round,
+		false,
+		c.enemy_unit_types,
+	)
+	if !bp(bc, u) {
+		return false
+	}
+	cp, cc := matches_unit_can_be_captured_on_entering_this_territory(c.attacker, c.battle_site)
+	if cp(cc, u) {
+		return false
+	}
+	tp, tc := matches_unit_is_being_transported()
+	ap, ac := matches_unit_is_air()
+	clp, clc := matches_unit_can_land_on_carrier()
+	if tp(tc, u) && ap(ac, u) && clp(clc, u) {
+		return false
+	}
+	wp, wc := matches_unit_was_in_air_battle()
+	return !wp(wc, u)
+}
+
+matches_unit_can_participate_in_combat :: proc(
+	attack: bool,
+	attacker: ^Game_Player,
+	battle_site: ^Territory,
+	battle_round: i32,
+	enemy_units: [dynamic]^Unit,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_can_participate_in_combat)
+	ctx.attack = attack
+	ctx.attacker = attacker
+	ctx.battle_site = battle_site
+	ctx.battle_round = battle_round
+	// UnitUtils.getUnitTypesFromUnitList(enemyUnits) — distinct unit types
+	seen: map[^Unit_Type]struct {}
+	defer delete(seen)
+	for u in enemy_units {
+		ut := unit_get_type(u)
+		if _, ok := seen[ut]; ok {
+			continue
+		}
+		seen[ut] = struct {}{}
+		append(&ctx.enemy_unit_types, ut)
+	}
+	return matches_pred_unit_can_participate_in_combat, rawptr(ctx)
+}
+

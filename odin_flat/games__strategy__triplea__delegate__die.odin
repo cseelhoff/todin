@@ -10,6 +10,10 @@ die_new :: proc(value: i32, rolled_at: i32, type: Die_Die_Type) -> Die {
 	return Die{value = value, rolled_at = rolled_at, type = type}
 }
 
+die_new_from_value :: proc(value: i32) -> Die {
+	return die_new(value, -1, .MISS)
+}
+
 die_get_compressed_value :: proc(self: ^Die) -> i32 {
 	assert(self.value <= 255 && self.rolled_at <= 255, "too big to serialize")
 	return (self.rolled_at << 8) + (self.value << 16) + i32(self.type)

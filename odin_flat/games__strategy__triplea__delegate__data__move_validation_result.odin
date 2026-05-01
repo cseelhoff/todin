@@ -128,3 +128,9 @@ move_validation_result_get_total_warning_count :: proc(self: ^Move_Validation_Re
 	return len(self.unresolved_unit_warnings) + len(self.disallowed_unit_warnings)
 }
 
+move_validation_result_is_move_valid :: proc(self: ^Move_Validation_Result) -> bool {
+	return !move_validation_result_has_error(self) &&
+		!move_validation_result_has_disallowed_units(self) &&
+		!move_validation_result_has_unresolved_units(self)
+}
+

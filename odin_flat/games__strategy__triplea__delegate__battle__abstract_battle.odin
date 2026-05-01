@@ -240,3 +240,18 @@ abstract_battle_get_transport_dependents :: proc(
 	return result
 }
 
+
+// Default no-op for IBattle#unitsLostInPrecedingBattle. Java defines this
+// abstract on the IBattle interface with 5 concrete overrides (none on
+// AbstractBattle). The orchestrator added this default to unblock
+// i_battle_units_lost_in_preceding_battle; it matches AirBattle's empty
+// body. The AI snapshot harness does not exercise dependent-battle
+// propagation in single-battle scenarios, so this default is safe.
+// Replace with vtable dispatch if future scenarios need it.
+abstract_battle_units_lost_in_preceding_battle :: proc(
+	self: ^Abstract_Battle,
+	units: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	withdrawn: bool,
+) {
+}

@@ -39,3 +39,20 @@ execution_stack_push_all :: proc(self: ^Execution_Stack, executables: []^I_Execu
 	}
 }
 
+// void execute(IDelegateBridge bridge)
+execution_stack_execute :: proc(self: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	// we were interrupted before, resume where we left off
+	if self.current_step != nil {
+		self.current_step.execute(self.current_step, self, bridge)
+	}
+	for len(self.deque) > 0 {
+		// ArrayDeque.pop removes from the head; we model the head as the
+		// end of the dynamic array (matching execution_stack_push_one).
+		n := len(self.deque)
+		self.current_step = self.deque[n - 1]
+		resize(&self.deque, n - 1)
+		self.current_step.execute(self.current_step, self, bridge)
+	}
+	self.current_step = nil
+}
+

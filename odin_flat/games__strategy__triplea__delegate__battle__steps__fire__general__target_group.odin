@@ -71,3 +71,32 @@ target_group_sort_target_groups :: proc(
 	})
 	return result
 }
+
+// lambda$findTargetsInTargetGroups$1(Set<UnitType> targets, TargetGroup targetGroup):
+// the .filter(targetGroup -> targetGroup.getTargetUnitTypes().equals(targets))
+// predicate from findTargetsInTargetGroups. Returns true iff the target_group's
+// target_unit_types set equals the captured `targets` set (Java Set.equals →
+// same size + same elements).
+target_group_lambda__find_targets_in_target_groups__1 :: proc(
+	targets: map[^Unit_Type]struct{},
+	target_group: ^Target_Group,
+) -> bool {
+	other := target_group_get_target_unit_types(target_group)
+	if len(other) != len(targets) {
+		return false
+	}
+	for k, _ in targets {
+		if _, ok := other[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$sortTargetGroups$2(TargetGroup targetGroup):
+// the Comparator.comparingInt(targetGroup -> targetGroup.getTargetUnitTypes().size())
+// key extractor from sortTargetGroups. Returns the size of the group's
+// target_unit_types set as i32 (Java int).
+target_group_lambda__sort_target_groups__2 :: proc(target_group: ^Target_Group) -> i32 {
+	return i32(len(target_group_get_target_unit_types(target_group)))
+}

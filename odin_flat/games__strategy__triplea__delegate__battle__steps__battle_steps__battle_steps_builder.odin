@@ -22,3 +22,7 @@ battle_steps_battle_steps_builder_battle_state :: proc(self: ^Battle_Steps_Battl
 	return self
 }
 
+battle_steps_battle_steps_builder_build :: proc(self: ^Battle_Steps_Battle_Steps_Builder) -> ^Battle_Steps {
+	return battle_steps_new(self.battle_state, self.battle_actions)
+}
+

@@ -16,3 +16,27 @@ clear_general_casualties_new :: proc(battle_state: ^Battle_State, battle_actions
 clear_general_casualties_get_order :: proc(self: ^Clear_General_Casualties) -> Battle_Step_Order {
 	return .GENERAL_REMOVE_CASUALTIES
 }
+
+// Java: return List.of(new StepDetails(REMOVE_CASUALTIES, this));
+clear_general_casualties_get_all_step_details :: proc(
+	self: ^Clear_General_Casualties,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	append(&out, battle_step_step_details_new(BATTLE_STEP_REMOVE_CASUALTIES, &self.battle_step))
+	return out
+}
+
+// Java: battleActions.clearWaitingToDieAndDamagedChangesInto(
+//           bridge, BattleState.Side.OFFENSE, BattleState.Side.DEFENSE);
+clear_general_casualties_execute :: proc(
+	self: ^Clear_General_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	battle_actions_clear_waiting_to_die_and_damaged_changes_into(
+		self.battle_actions,
+		bridge,
+		.OFFENSE,
+		.DEFENSE,
+	)
+}

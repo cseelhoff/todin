@@ -43,3 +43,22 @@ aa_defense_combat_value_builder_strength_support_from_friends :: proc(self: ^Aa_
 	return self
 }
 
+aa_defense_combat_value_builder_build :: proc(self: ^Aa_Defense_Combat_Value_Aa_Defense_Combat_Value_Builder) -> ^Aa_Defense_Combat_Value {
+	friend_units := self.friend_units
+	if friend_units == nil {
+		friend_units = aa_defense_combat_value_default_friend_units()
+	}
+	enemy_units := self.enemy_units
+	if enemy_units == nil {
+		enemy_units = aa_defense_combat_value_default_enemy_units()
+	}
+	return aa_defense_combat_value_new(
+		self.strength_support_from_friends,
+		self.strength_support_from_enemies,
+		self.roll_support_from_friends,
+		self.roll_support_from_enemies,
+		friend_units,
+		enemy_units,
+	)
+}
+

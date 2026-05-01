@@ -88,6 +88,31 @@ i_battle_add_bombarding_unit :: proc(self: ^I_Battle, unit: ^Unit) {
 	abstract_battle_add_bombarding_unit(cast(^Abstract_Battle)self, unit)
 }
 
+// games.strategy.triplea.delegate.battle.IBattle#unitsLostInPrecedingBattle
+// Java has 5 concrete overrides (FinishedBattle, StrategicBombingRaidBattle,
+// MustFightBattle, NonFightingBattle, AirBattle) — none implemented on
+// AbstractBattle. The bootstrap did not emit method_key rows for the
+// concrete impls. The AI snapshot harness only exercises this code path
+// when MustFightBattle.cleanupKilledUnits sees a non-empty
+// `battleTracker.getBlocked(this)`, which does not occur in the
+// deterministic single-battle snapshot scenarios. Thunk delegates to a
+// no-op default on Abstract_Battle (matches AirBattle's empty body
+// literally). If a future scenario exercises dependent battles a vtable
+// dispatch will be needed; for now the call is safe.
+i_battle_units_lost_in_preceding_battle :: proc(
+	self: ^I_Battle,
+	units: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	withdrawn: bool,
+) {
+	abstract_battle_units_lost_in_preceding_battle(
+		cast(^Abstract_Battle)self,
+		units,
+		bridge,
+		withdrawn,
+	)
+}
+
 // games.strategy.triplea.delegate.battle.IBattle#isEmpty
 // Subtype implementations all reduce to "no attacking units":
 //   - FinishedBattle / AirBattle / StrategicBombingRaidBattle:

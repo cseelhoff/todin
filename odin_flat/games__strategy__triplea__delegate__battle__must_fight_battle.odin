@@ -217,3 +217,124 @@ must_fight_battle_set_units :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#resetDefendingUnits(GamePlayer)
+//
+//   defendingUnits.clear();
+//   defendingUnits.addAll(battleSite.getMatches(Matches.enemyUnit(attacker)));
+must_fight_battle_reset_defending_units :: proc(self: ^Must_Fight_Battle, attacker: ^Game_Player) {
+	clear(&self.defending_units)
+	en_p, en_c := matches_enemy_unit(attacker)
+	uc := territory_get_unit_collection(self.battle_site)
+	if uc == nil {
+		return
+	}
+	for u in uc.units {
+		if en_p(en_c, u) {
+			append(&self.defending_units, u)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getDependentBattles
+//
+//   return battleTracker.getBlocked(this);
+must_fight_battle_get_dependent_battles :: proc(self: ^Must_Fight_Battle) -> map[^I_Battle]struct{} {
+	return battle_tracker_get_blocked(self.battle_tracker, cast(^I_Battle)self)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getUnits(UnitBattleStatus, Side...)
+//
+//   switch (status) {
+//     case ALIVE:            return Collections.unmodifiableCollection(getUnits(sides));
+//     case CASUALTY:         return Collections.unmodifiableCollection(getWaitingToDie(sides));
+//     case REMOVED_CASUALTY: return Collections.unmodifiableCollection(killed);
+//     default:               return List.of();
+//   }
+must_fight_battle_get_units_by_status :: proc(
+	self: ^Must_Fight_Battle,
+	status: Battle_State_Unit_Battle_Status,
+	sides: ..Battle_State_Side,
+) -> [dynamic]^Unit {
+	switch status {
+	case .Alive:
+		return must_fight_battle_get_units(self, ..sides)
+	case .Casualty:
+		return must_fight_battle_get_waiting_to_die(self, ..sides)
+	case .Removed_Casualty:
+		result: [dynamic]^Unit
+		for u in self.killed {
+			append(&result, u)
+		}
+		return result
+	}
+	return [dynamic]^Unit{}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#filterUnits(UnitBattleFilter, Side...)
+//
+//   return filter.getFilter().stream()
+//       .flatMap(status -> getUnits(status, sides).stream())
+//       .collect(Collectors.toList());
+must_fight_battle_filter_units :: proc(
+	self: ^Must_Fight_Battle,
+	filter: ^Battle_State_Unit_Battle_Filter,
+	sides: ..Battle_State_Side,
+) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	for status, _ in battle_state_unit_battle_filter_get_filter(filter) {
+		bucket := must_fight_battle_get_units_by_status(self, status, ..sides)
+		for u in bucket {
+			append(&result, u)
+		}
+		delete(bucket)
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#lambda$getAttackerRetreatTerritories$2(Territory)
+//
+// The Predicate<Territory> argument to CollectionUtils.getMatches in the
+// WW2V2/WW2V3 branch of getAttackerRetreatTerritories:
+//   t -> {
+//     final Collection<Unit> units = attackingFromMap.get(t);
+//     return units.isEmpty() || !units.stream().allMatch(Matches.unitIsAir());
+//   }
+// Captures `attackingFromMap` from the enclosing MustFightBattle instance,
+// so we use the rawptr+ctx convention with `self` as the context.
+must_fight_battle_lambda_get_attacker_retreat_territories_2 :: proc(ctx: rawptr, t: ^Territory) -> bool {
+	self := cast(^Must_Fight_Battle)ctx
+	units, ok := self.attacking_from_map[t]
+	if !ok || len(units) == 0 {
+		return true
+	}
+	air_p, air_c := matches_unit_is_air()
+	all_air := true
+	for u in units {
+		if !air_p(air_c, u) {
+			all_air = false
+			break
+		}
+	}
+	return !all_air
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeFromDependentBattles(Collection<Unit>, IDelegateBridge, Collection<IBattle>)
+must_fight_battle_remove_from_dependent_battles :: proc(
+	units: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	dependents: [dynamic]^I_Battle,
+) {
+	for dependent in dependents {
+		i_battle_units_lost_in_preceding_battle(dependent, units, bridge, false)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#addRoundResetStep(List<IExecutable>)
+//
+// Pushes an IExecutable that bumps `round`, validates against MAX_ROUNDS,
+// re-runs determineStepStrings, and re-pushes the inner fight-loop
+// IExecutable on the stack.
+//
+// blocked: missing must_fight_battle_push_fight_loop_on_stack
+
+

@@ -17,6 +17,10 @@ aa_offense_combat_value_default_enemy_units :: proc() -> [dynamic]^Unit {
 	return make([dynamic]^Unit)
 }
 
+aa_offense_combat_value_builder :: proc() -> ^Aa_Offense_Combat_Value_Aa_Offense_Combat_Value_Builder {
+	return aa_offense_combat_value_aa_offense_combat_value_builder_new()
+}
+
 aa_offense_combat_value_new :: proc(
 	strength_support_from_friends: ^Available_Supports,
 	strength_support_from_enemies: ^Available_Supports,

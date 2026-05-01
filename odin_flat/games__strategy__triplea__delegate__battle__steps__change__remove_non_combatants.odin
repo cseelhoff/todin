@@ -28,3 +28,30 @@ remove_non_combatants_get_order :: proc(
 	return .REMOVE_NON_COMBATANTS
 }
 
+// Java: private void removeNonCombatants(BattleState.Side side, IDelegateBridge bridge) {
+//   final Collection<Unit> nonCombatants = battleState.removeNonCombatants(side);
+//   if (nonCombatants.isEmpty()) return;
+//   bridge.getDisplayChannelBroadcaster()
+//         .changedUnitsNotification(
+//             battleState.getBattleId(), battleState.getPlayer(side), nonCombatants, null, null);
+// }
+remove_non_combatants_remove_non_combatants :: proc(
+	self: ^Remove_Non_Combatants,
+	side: Battle_State_Side,
+	bridge: ^I_Delegate_Bridge,
+) {
+	non_combatants := battle_state_remove_non_combatants(self.battle_state, side)
+	if len(non_combatants) == 0 {
+		return
+	}
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_changed_units_notification(
+		display,
+		battle_state_get_battle_id(self.battle_state),
+		battle_state_get_player(self.battle_state, side),
+		non_combatants,
+		nil,
+		nil,
+	)
+}
+

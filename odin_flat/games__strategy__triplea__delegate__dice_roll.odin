@@ -68,3 +68,29 @@ dice_roll_get_player_name :: proc(self: ^Dice_Roll) -> string {
 	return self.player_name
 }
 
+dice_roll_lambda__get_rolls__1 :: proc(roll_at: i32, d: ^Die) -> bool {
+	return die_get_rolled_at(d) == roll_at
+}
+
+dice_roll_lambda__new__0 :: proc(hit_only_if_equals: bool, roll_at: i32, element: i32) -> ^Die {
+	hit := (roll_at == element) if hit_only_if_equals else (element <= roll_at)
+	d := new(Die)
+	dt: Die_Die_Type = .HIT if hit else .MISS
+	d^ = die_new(element, roll_at, dt)
+	return d
+}
+
+dice_roll_write_external :: proc(self: ^Dice_Roll, out: ^Object_Output) {
+	object_output_write_int(out, 1)
+	dice := make([dynamic]i32, 0, len(self.rolls))
+	defer delete(dice)
+	for r in self.rolls {
+		append(&dice, die_get_compressed_value(r))
+	}
+	object_output_write_object(out, raw_data(dice[:]))
+	object_output_write_int(out, self.hits)
+	object_output_write_double(out, self.expected_hits)
+	player_name := self.player_name
+	object_output_write_object(out, &player_name)
+}
+

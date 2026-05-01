@@ -25,3 +25,21 @@ clear_bombardment_casualties_get_order :: proc(
 	return .NAVAL_BOMBARDMENT_REMOVE_CASUALTIES
 }
 
+// Java: return battleState.getStatus().isFirstRound()
+//          && !battleState.getBombardingUnits().isEmpty()
+//          && !battleState.getBattleSite().isWater();
+clear_bombardment_casualties_can_bombardment_occur :: proc(
+	self: ^Clear_Bombardment_Casualties,
+) -> bool {
+	if !battle_status_is_first_round(battle_state_get_status(self.battle_state)) {
+		return false
+	}
+	if len(battle_state_get_bombarding_units(self.battle_state)) == 0 {
+		return false
+	}
+	if territory_is_water(battle_state_get_battle_site(self.battle_state)) {
+		return false
+	}
+	return true
+}
+

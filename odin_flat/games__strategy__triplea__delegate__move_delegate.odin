@@ -21,3 +21,11 @@ move_delegate_lambda_delegate_currently_requires_user_input_0 :: proc(ctx: rawpt
 	c := cast(^Move_Delegate_Delegate_Currently_Requires_User_Input_0_Ctx)ctx
 	return territory_any_units_match(t, c.moveable_unit_owned_by_me, c.moveable_unit_owned_by_me_ctx)
 }
+
+// games.strategy.triplea.delegate.MoveDelegate#pusLost(games.strategy.engine.data.Territory,int)
+// Java: pusLost.add(t, amt);
+// `pus_lost` is `map[^Territory]i32`; Java IntegerMap.add adds amt to the
+// existing value (defaulting to 0 when absent).
+move_delegate_pus_lost :: proc(self: ^Move_Delegate, t: ^Territory, amt: i32) {
+	self.pus_lost[t] = self.pus_lost[t] + amt
+}

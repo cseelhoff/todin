@@ -58,3 +58,78 @@ rolled_dice_get_dice_hits :: proc(
 	return result
 }
 
+rolled_dice_calculate :: proc(
+	total_power_and_total_rolls: ^Total_Power_And_Total_Rolls,
+	player: ^Game_Player,
+	dice_generator: ^Random_Dice_Generator,
+	annotation: string,
+) -> ^Dice_Roll {
+	roll_count := total_power_and_total_rolls.calculate_total_rolls(total_power_and_total_rolls)
+	if roll_count == 0 {
+		empty := make([dynamic]^Die, 0)
+		return dice_roll_new(empty, 0, 0, default_named_get_name(&player.named_attachable.default_named))
+	}
+
+	dice_sides := total_power_and_total_rolls.get_dice_sides(total_power_and_total_rolls)
+	random := dice_generator.apply(dice_sides, roll_count, player, .COMBAT, annotation)
+	active_units := total_power_and_total_rolls.get_active_units(total_power_and_total_rolls)
+	dice_values := rolled_dice_get_dice_hits(random[:], active_units)
+	defer delete(dice_values)
+
+	dice := make([dynamic]^Die, 0, len(dice_values))
+	hit_count: i32 = 0
+	for d in dice_values {
+		p := new(Die)
+		p^ = d
+		append(&dice, p)
+		if rolled_dice_lambda__calculate__0(p) {
+			hit_count += 1
+		}
+	}
+
+	total_power := total_power_and_total_rolls.calculate_total_power(total_power_and_total_rolls)
+	expected_hits := f64(total_power) / f64(dice_sides)
+
+	return dice_roll_new(dice, hit_count, expected_hits, default_named_get_name(&player.named_attachable.default_named))
+}
+
+// Lambda: die -> die.getType() == Die.DieType.HIT
+rolled_dice_lambda__calculate__0 :: proc(die: ^Die) -> bool {
+	return die_get_type(die) == .HIT
+}
+
+// Lambda body of getDiceForAllRolls: rollNumber -> new Die(diceQueue.removeFirst(), strength, ...)
+rolled_dice_lambda__get_dice_for_all_rolls__3 :: proc(
+	dice_queue: ^[dynamic]i32,
+	strength: i32,
+	roll_number: i32,
+) -> Die {
+	dice_value := dice_queue[0]
+	ordered_remove(dice_queue, 0)
+	t: Die_Die_Type = .MISS
+	if dice_value < strength {
+		t = .HIT
+	}
+	return die_new(dice_value, strength, t)
+}
+
+// Lambda body of getDiceForChooseBestRoll: rollNumber -> new Die(diceRolls.get(rollNumber), strength, ...)
+rolled_dice_lambda__get_dice_for_choose_best_roll__2 :: proc(
+	dice_rolls: ^[dynamic]i32,
+	strength: i32,
+	dice_hit_index: i32,
+	roll_number: i32,
+) -> Die {
+	t: Die_Die_Type
+	if roll_number == dice_hit_index {
+		if dice_rolls[roll_number] < strength {
+			t = .HIT
+		} else {
+			t = .MISS
+		}
+	} else {
+		t = .IGNORED
+	}
+	return die_new(dice_rolls[roll_number], strength, t)
+}
+

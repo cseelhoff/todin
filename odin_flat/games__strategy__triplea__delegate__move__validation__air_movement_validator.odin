@@ -151,3 +151,27 @@ air_movement_validator_unit_can_find_land :: proc(
 	ctx.current = current
 	return air_movement_validator_unit_can_find_land_predicate, rawptr(ctx)
 }
+
+// Java: public static Collection<Unit> getFriendly(
+//     final Territory territory, final GamePlayer player, final GameState data) {
+//   return territory.getMatches(Matches.alliedUnit(player));
+// }
+//
+// `data` is unused in Java; mirror the signature. Territory.getMatches
+// is a UnitHolder default that delegates to UnitCollection.getMatches,
+// which in turn filters territory.unit_collection.units by the predicate.
+air_movement_validator_get_friendly :: proc(
+	territory: ^Territory,
+	player:    ^Game_Player,
+	data:      ^Game_Data,
+) -> [dynamic]^Unit {
+	_ = data
+	pred, pred_ctx := matches_allied_unit(player)
+	result: [dynamic]^Unit
+	for u in territory.unit_collection.units {
+		if pred(pred_ctx, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}

@@ -10,3 +10,8 @@ firing_group_splitter_aa_new :: proc(side: Battle_State_Side) -> ^Firing_Group_S
 	return self
 }
 
+// Static constructor: @Value(staticConstructor = "of") on FiringGroupSplitterAa.
+firing_group_splitter_aa_of :: proc(side: Battle_State_Side) -> ^Firing_Group_Splitter_Aa {
+	return firing_group_splitter_aa_new(side)
+}
+

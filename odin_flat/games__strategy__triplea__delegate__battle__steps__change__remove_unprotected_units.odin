@@ -22,3 +22,30 @@ remove_unprotected_units_get_order :: proc(self: ^Remove_Unprotected_Units) -> B
 	return .REMOVE_UNPROTECTED_UNITS
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits#attackerHasRetreat
+// Java:
+//   return side == OFFENSE
+//       && (!battleState.getAttackerRetreatTerritories().isEmpty()
+//           || battleState.filterUnits(ALIVE, OFFENSE).stream().anyMatch(Matches.unitIsAir()));
+remove_unprotected_units_attacker_has_retreat :: proc(
+	self: ^Remove_Unprotected_Units,
+	side: Battle_State_Side,
+) -> bool {
+	if side != .OFFENSE {
+		return false
+	}
+	retreats := battle_state_get_attacker_retreat_territories(self.battle_state)
+	if len(retreats) > 0 {
+		return true
+	}
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	air_p, air_c := matches_unit_is_air()
+	for u in units {
+		if air_p(air_c, u) {
+			return true
+		}
+	}
+	return false
+}
+

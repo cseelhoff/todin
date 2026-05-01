@@ -21,6 +21,10 @@ aa_defense_combat_value_choose_best_roll :: proc(self: ^Aa_Defense_Combat_Value,
 	return false
 }
 
+aa_defense_combat_value_builder :: proc() -> ^Aa_Defense_Combat_Value_Aa_Defense_Combat_Value_Builder {
+	return aa_defense_combat_value_builder_new()
+}
+
 aa_defense_combat_value_new :: proc(
 	strength_support_from_friends: ^Available_Supports,
 	strength_support_from_enemies: ^Available_Supports,

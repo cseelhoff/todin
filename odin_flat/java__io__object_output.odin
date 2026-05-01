@@ -20,6 +20,9 @@ object_output_write_int :: proc(self: ^Object_Output, v: i32) {
 object_output_write_long :: proc(self: ^Object_Output, v: i64) {
 }
 
+object_output_write_double :: proc(self: ^Object_Output, v: f64) {
+}
+
 object_output_write_boolean :: proc(self: ^Object_Output, v: bool) {
 }
 

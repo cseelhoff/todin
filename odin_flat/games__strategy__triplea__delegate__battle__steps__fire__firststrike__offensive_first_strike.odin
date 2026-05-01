@@ -14,3 +14,7 @@ offensive_first_strike_get_order :: proc(self: ^Offensive_First_Strike) -> Battl
 	}
 	return .FIRST_STRIKE_OFFENSIVE
 }
+
+offensive_first_strike_lambda__get_all_step_details__0 :: proc(step: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return battle_step_get_all_step_details(step)
+}

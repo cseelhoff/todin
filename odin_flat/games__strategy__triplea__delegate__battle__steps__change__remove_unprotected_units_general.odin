@@ -4,6 +4,16 @@ Remove_Unprotected_Units_General :: struct {
 	using remove_unprotected_units: Remove_Unprotected_Units,
 }
 
+remove_unprotected_units_general_new :: proc(
+	battle_state: ^Battle_State,
+	battle_actions: ^Battle_Actions,
+) -> ^Remove_Unprotected_Units_General {
+	self := new(Remove_Unprotected_Units_General)
+	self.battle_state = battle_state
+	self.battle_actions = battle_actions
+	return self
+}
+
 remove_unprotected_units_general_get_all_step_details :: proc(self: ^Remove_Unprotected_Units_General) -> [dynamic]^Battle_Step_Step_Details {
 	return make([dynamic]^Battle_Step_Step_Details)
 }

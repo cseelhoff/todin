@@ -200,3 +200,94 @@ strategic_bombing_raid_battle_add_attack_change :: proc(
 	}
 	return &empty.change
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#getBattleType
+//
+//   inherited from AbstractBattle: returns the battle_type field set by the
+//   constructor (BOMBING_RAID).
+strategic_bombing_raid_battle_get_battle_type :: proc(
+	self: ^Strategic_Bombing_Raid_Battle,
+) -> I_Battle_Battle_Type {
+	return self.battle_type
+}
+
+// Java: lambda$getTarget$2(Unit attacker)
+//   () -> new IllegalStateException(MessageFormat.format(
+//       "Unit {0} has no target", attacker.getType().getName()))
+// Captured `attacker` becomes the parameter. Odin lacks exceptions, so this
+// returns the formatted message string the caller can use to panic.
+strategic_bombing_raid_battle_lambda__get_target__2 :: proc(attacker: ^Unit) -> string {
+	type_name := ""
+	t := unit_get_type(attacker)
+	if t != nil {
+		type_name = default_named_get_name(&t.named_attachable.default_named)
+	}
+	return fmt.aprintf("Unit %s has no target", type_name)
+}
+
+// Java: lambda$fight$6(Collection<Unit> attackers)
+//   FireAa::new — constructor reference desugared to a static helper that
+//   takes the Set<Unit> entry value and constructs a FireAa for it.
+//   Captures the enclosing StrategicBombingRaidBattle (`this_0`).
+strategic_bombing_raid_battle_lambda__fight__6 :: proc(
+	this_0: ^Strategic_Bombing_Raid_Battle,
+	attackers: [dynamic]^Unit,
+) -> ^Fire_Aa {
+	return fire_aa_new_with_attackers(this_0, attackers)
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#postBombing
+//
+//   @Nonnull
+//   private IExecutable postBombing() {
+//     return new IExecutable() { ... };  // anonymous class StrategicBombingRaidBattle$1
+//   }
+// The anonymous class is `Strategic_Bombing_Raid_Battle_1`. The execute body
+// is a separate method_key and lives on the inner struct; this proc only
+// performs the construction Java does at the postBombing call site.
+strategic_bombing_raid_battle_post_bombing :: proc(
+	self: ^Strategic_Bombing_Raid_Battle,
+) -> ^I_Executable {
+	inner := strategic_bombing_raid_battle_1_new(self)
+	return &inner.i_executable
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#end
+//
+//   private IExecutable end() {
+//     return new IExecutable() { ... };  // anonymous class StrategicBombingRaidBattle$2
+//   }
+// Mirrors `postBombing`: constructs the anonymous IExecutable subtype
+// (`Strategic_Bombing_Raid_Battle_2`) and returns its embedded I_Executable.
+strategic_bombing_raid_battle_end :: proc(
+	self: ^Strategic_Bombing_Raid_Battle,
+) -> ^I_Executable {
+	inner := strategic_bombing_raid_battle_2_new(self)
+	return &inner.i_executable
+}
+
+// Java: lambda$notifyAaHits$7(IDelegateBridge)
+//
+//   () -> {
+//     try {
+//       final Player defender = bridge.getRemotePlayer(this.defender);
+//       defender.confirmEnemyCasualties(battleId, "Press space to continue", attacker);
+//     } catch (final Exception e) { /* ignore */ }
+//   }
+//
+// Captured: this (Strategic_Bombing_Raid_Battle) and bridge (passed as arg).
+strategic_bombing_raid_battle_lambda__notify_aa_hits__7 :: proc(
+	self:   ^Strategic_Bombing_Raid_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	defender := i_delegate_bridge_get_remote_player(bridge, self.defender)
+	if defender == nil {
+		return
+	}
+	player_confirm_enemy_casualties(
+		defender,
+		self.battle_id,
+		"Press space to continue",
+		self.attacker,
+	)
+}

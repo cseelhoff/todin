@@ -44,3 +44,27 @@ i_battle_battle_type_values :: proc() -> [dynamic]I_Battle_Battle_Type {
 	return result
 }
 
+i_battle_battle_type_non_bombing_battle_types :: proc() -> [dynamic]I_Battle_Battle_Type {
+	all := i_battle_battle_type_values()
+	defer delete(all)
+	result := make([dynamic]I_Battle_Battle_Type, 0, len(all))
+	for bt in all {
+		if !i_battle_battle_type_is_bombing_run(bt) {
+			append(&result, bt)
+		}
+	}
+	return result
+}
+
+i_battle_battle_type_bombing_battle_types :: proc() -> [dynamic]I_Battle_Battle_Type {
+	all := i_battle_battle_type_values()
+	defer delete(all)
+	result := make([dynamic]I_Battle_Battle_Type, 0, len(all))
+	for bt in all {
+		if i_battle_battle_type_is_bombing_run(bt) {
+			append(&result, bt)
+		}
+	}
+	return result
+}
+

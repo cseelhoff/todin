@@ -20,3 +20,7 @@ retreat_history_child_get_units :: proc(self: ^Retreater_Retreat_History_Child) 
 	return self.units
 }
 
+retreat_history_child_of :: proc(text: string, units: [dynamic]^Unit) -> ^Retreater_Retreat_History_Child {
+	return retreat_history_child_new(text, units)
+}
+

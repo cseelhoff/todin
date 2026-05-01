@@ -23,3 +23,7 @@ evader_retreat_parameters_new :: proc(
 	p.units = units
 	return p
 }
+
+evader_retreat_parameters_builder :: proc() -> ^Evader_Retreat_Parameters_Parameters_Builder {
+	return evader_retreat_parameters_parameters_builder_new()
+}

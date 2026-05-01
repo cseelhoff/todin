@@ -56,3 +56,47 @@ battle_listing_get_battles_with :: proc(self: ^Battle_Listing, predicate: proc(I
 battle_listing_is_empty :: proc(self: ^Battle_Listing) -> bool {
 	return len(self.battles_map) == 0
 }
+
+// games.strategy.triplea.delegate.data.BattleListing#lambda$new$0(IBattle)
+//   Java: b -> !b.isEmpty()
+battle_listing_lambda__new__0 :: proc(b: ^I_Battle) -> bool {
+	return !i_battle_is_empty(b)
+}
+
+// games.strategy.triplea.delegate.data.BattleListing#lambda$new$1(IBattle)
+//   Java forEach body capturing this.battlesMap.
+battle_listing_lambda__new__1 :: proc(self: ^Battle_Listing, b: ^I_Battle) {
+	bt := i_battle_get_battle_type(b)
+	terr := i_battle_get_territory(b)
+	territories, ok := self.battles_map[bt]
+	if !ok {
+		territories = make([dynamic]^Territory)
+	}
+	already := false
+	for t in territories {
+		if t == terr {
+			already = true
+			break
+		}
+	}
+	if !already {
+		append(&territories, terr)
+	}
+	self.battles_map[bt] = territories
+}
+
+// games.strategy.triplea.delegate.data.BattleListing#lambda$getNormalBattlesIncludingAirBattles$2(BattleType)
+//   Java: b -> !b.isBombingRun()
+battle_listing_lambda__get_normal_battles_including_air_battles__2 :: proc(b: I_Battle_Battle_Type) -> bool {
+	return !i_battle_battle_type_is_bombing_run(b)
+}
+
+// games.strategy.triplea.delegate.data.BattleListing#getNormalBattlesIncludingAirBattles()
+battle_listing_get_normal_battles_including_air_battles :: proc(self: ^Battle_Listing) -> map[^Territory]struct {} {
+	return battle_listing_get_battles_with(self, battle_listing_lambda__get_normal_battles_including_air_battles__2)
+}
+
+// games.strategy.triplea.delegate.data.BattleListing#getStrategicBombingRaidsIncludingAirBattles()
+battle_listing_get_strategic_bombing_raids_including_air_battles :: proc(self: ^Battle_Listing) -> map[^Territory]struct {} {
+	return battle_listing_get_battles_with(self, i_battle_battle_type_is_bombing_run)
+}

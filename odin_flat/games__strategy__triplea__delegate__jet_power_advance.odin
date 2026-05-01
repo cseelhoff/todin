@@ -8,3 +8,7 @@ jet_power_advance_get_property :: proc(self: ^Jet_Power_Advance) -> string {
 	return "jetPower"
 }
 
+jet_power_advance_has_tech :: proc(self: ^Jet_Power_Advance, ta: ^Tech_Attachment) -> bool {
+	return tech_attachment_get_jet_power(ta)
+}
+

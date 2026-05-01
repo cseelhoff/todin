@@ -20,3 +20,57 @@ clear_first_strike_casualties_defense_has_sneak_attack :: proc(self: ^Clear_Firs
 	return self.defense_state == .SNEAK_ATTACK
 }
 
+// Java: ClearFirstStrikeCasualties#calculateOffenseState
+//   if (battleState.filterUnits(ALIVE, OFFENSE).stream().anyMatch(Matches.unitIsFirstStrike())) {
+//     final boolean canSneakAttack =
+//         battleState.filterUnits(ALIVE, DEFENSE).stream().noneMatch(Matches.unitIsDestroyer());
+//     if (canSneakAttack) return State.SNEAK_ATTACK;
+//   }
+//   return State.NO_SNEAK_ATTACK;
+clear_first_strike_casualties_calculate_offense_state :: proc(
+	self: ^Clear_First_Strike_Casualties,
+) -> Clear_First_Strike_Casualties_State {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	offense_units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	fs_p, fs_c := matches_unit_is_first_strike()
+	any_first_strike := false
+	for u in offense_units {
+		if fs_p(fs_c, u) {
+			any_first_strike = true
+			break
+		}
+	}
+	if any_first_strike {
+		alive_filter2 := battle_state_unit_battle_filter_new(.Alive)
+		defense_units := battle_state_filter_units(self.battle_state, alive_filter2, .DEFENSE)
+		destroyer_p, destroyer_c := matches_unit_is_destroyer()
+		can_sneak_attack := true
+		for u in defense_units {
+			if destroyer_p(destroyer_c, u) {
+				can_sneak_attack = false
+				break
+			}
+		}
+		if can_sneak_attack {
+			return .SNEAK_ATTACK
+		}
+	}
+	return .NO_SNEAK_ATTACK
+}
+
+// Java: ClearFirstStrikeCasualties#getAllStepDetails
+//   if (offenseHasSneakAttack() || defenseHasSneakAttack()) {
+//     return List.of(new StepDetails(REMOVE_SNEAK_ATTACK_CASUALTIES, this));
+//   }
+//   return List.of();
+clear_first_strike_casualties_get_all_step_details :: proc(
+	self: ^Clear_First_Strike_Casualties,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	if clear_first_strike_casualties_offense_has_sneak_attack(self) ||
+	   clear_first_strike_casualties_defense_has_sneak_attack(self) {
+		append(&out, battle_step_step_details_new(BATTLE_STEP_REMOVE_SNEAK_ATTACK_CASUALTIES, &self.battle_step))
+	}
+	return out
+}
+

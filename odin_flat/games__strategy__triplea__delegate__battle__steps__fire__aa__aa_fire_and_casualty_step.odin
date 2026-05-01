@@ -12,3 +12,7 @@ aa_fire_and_casualty_step_new :: proc(battle_state: ^Battle_State, battle_action
 	self.battle_actions = battle_actions
 	return self
 }
+
+aa_fire_and_casualty_step_lambda__get_all_step_details__0 :: proc(step: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return battle_step_get_all_step_details(step)
+}

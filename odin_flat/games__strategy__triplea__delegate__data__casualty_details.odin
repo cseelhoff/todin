@@ -104,3 +104,127 @@ casualty_details_ensure_units_are_killed_first_private :: proc(
 	return result
 }
 
+// Java: public CasualtyDetails(Collection<Unit> killed, Collection<Unit> damaged, boolean autoCalculated)
+casualty_details_new_from_collections :: proc(
+	killed: []^Unit,
+	damaged: []^Unit,
+	auto_calculated: bool,
+) -> ^Casualty_Details {
+	self := new(Casualty_Details)
+	casualty_list_init(&self.casualty_list, killed, damaged)
+	self.auto_calculated = auto_calculated
+	return self
+}
+
+// Java: public CasualtyDetails(CasualtyList casualties, boolean autoCalculated)
+//   super(casualties == null ? null : casualties.getKilled(),
+//         casualties == null ? null : casualties.getDamaged());
+casualty_details_new_from_list_auto_calculated :: proc(
+	casualties: ^Casualty_List,
+	auto_calculated: bool,
+) -> ^Casualty_Details {
+	self := new(Casualty_Details)
+	if casualties != nil {
+		casualty_list_init(
+			&self.casualty_list,
+			casualties.killed[:],
+			casualties.damaged[:],
+		)
+	} else {
+		self.casualty_list.killed = make([dynamic]^Unit)
+		self.casualty_list.damaged = make([dynamic]^Unit)
+	}
+	self.auto_calculated = auto_calculated
+	return self
+}
+
+// Java: public void ensureUnitsAreKilledFirst(
+//           Collection<Unit> targets,
+//           Predicate<Unit> matcher,
+//           Comparator<Unit> shouldBeKilledFirst)
+//
+// Replaces the units in `killed` that match `matcher` by the same number of
+// units in `targets` that match `matcher` and are first according to
+// `shouldBeKilledFirst`.
+casualty_details_ensure_units_are_killed_first :: proc(
+	self: ^Casualty_Details,
+	targets: []^Unit,
+	matcher: proc(^Unit) -> bool,
+	should_be_killed_first: proc(^Unit, ^Unit) -> bool,
+) {
+	// targets.stream().collect(Collectors.groupingBy(UnitOwner::new, Collectors.toList()))
+	targets_grouped_by_owner_and_type := make(map[Unit_Owner][dynamic]^Unit)
+	defer {
+		for _, v in &targets_grouped_by_owner_and_type do delete(v)
+		delete(targets_grouped_by_owner_and_type)
+	}
+	for u in targets {
+		key := Unit_Owner{type = unit_get_type(u), owner = unit_get_owner(u)}
+		if _, ok := targets_grouped_by_owner_and_type[key]; !ok {
+			targets_grouped_by_owner_and_type[key] = make([dynamic]^Unit)
+		}
+		bucket := &targets_grouped_by_owner_and_type[key]
+		append(bucket, u)
+	}
+
+	// getKilled().stream().filter(matcher)
+	//   .collect(Collectors.groupingBy(UnitOwner::new, Collectors.toList()))
+	old_units_grouped_by_owner_and_type := make(map[Unit_Owner][dynamic]^Unit)
+	defer {
+		for _, v in &old_units_grouped_by_owner_and_type do delete(v)
+		delete(old_units_grouped_by_owner_and_type)
+	}
+	for u in self.killed {
+		if !matcher(u) do continue
+		key := Unit_Owner{type = unit_get_type(u), owner = unit_get_owner(u)}
+		if _, ok := old_units_grouped_by_owner_and_type[key]; !ok {
+			old_units_grouped_by_owner_and_type[key] = make([dynamic]^Unit)
+		}
+		bucket := &old_units_grouped_by_owner_and_type[key]
+		append(bucket, u)
+	}
+
+	killed_with_correct_order := casualty_details_ensure_units_are_killed_first_private(
+		self,
+		should_be_killed_first,
+		&targets_grouped_by_owner_and_type,
+		&old_units_grouped_by_owner_and_type,
+	)
+	defer delete(killed_with_correct_order)
+
+	// killed.addAll(killedWithCorrectOrder.stream()
+	//                  .filter(unit -> !killed.contains(unit))
+	//                  .collect(Collectors.toList()));
+	for u in killed_with_correct_order {
+		already := false
+		for k in self.killed {
+			if k == u {
+				already = true
+				break
+			}
+		}
+		if !already {
+			append(&self.killed, u)
+		}
+	}
+
+	// killed.removeIf(matcher.and(not(killedWithCorrectOrder::contains)));
+	write_idx := 0
+	for i := 0; i < len(self.killed); i += 1 {
+		u := self.killed[i]
+		in_correct := false
+		for c in killed_with_correct_order {
+			if c == u {
+				in_correct = true
+				break
+			}
+		}
+		remove := matcher(u) && !in_correct
+		if !remove {
+			self.killed[write_idx] = u
+			write_idx += 1
+		}
+	}
+	resize(&self.killed, write_idx)
+}
+

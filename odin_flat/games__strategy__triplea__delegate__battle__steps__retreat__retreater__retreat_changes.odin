@@ -25,3 +25,10 @@ retreat_changes_get_history_text :: proc(
 	return self.history_text
 }
 
+retreat_changes_of :: proc(
+	change: ^Change,
+	history_text: [dynamic]^Retreater_Retreat_History_Child,
+) -> ^Retreater_Retreat_Changes {
+	return retreat_changes_new(change, history_text)
+}
+
