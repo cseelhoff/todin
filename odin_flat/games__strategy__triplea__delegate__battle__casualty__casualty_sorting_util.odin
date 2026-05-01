@@ -1,5 +1,7 @@
 package game
 
+import "core:slice"
+
 Casualty_Sorting_Util :: struct {}
 
 @(private="file")
@@ -32,5 +34,51 @@ casualty_sorting_util_marines_cmp :: proc(u1: ^Unit, u2: ^Unit) -> int {
 
 casualty_sorting_util_compare_marines :: proc() -> proc(a: ^Unit, b: ^Unit) -> int {
 	return casualty_sorting_util_marines_cmp
+}
+
+// games.strategy.triplea.delegate.battle.casualty.CasualtySortingUtil#sortPreBattle(List)
+// Java:
+//   units.sort(
+//       Comparator.comparing(Unit::getType, Comparator.comparing(UnitType::getName))
+//           .thenComparing(compareMarines())
+//           .thenComparing(UnitComparator.getLowestToHighestMovementComparator()));
+// Composite ordering: unit type name, then amphibious/marine flags, then
+// movement-left ascending. The movement comparator caches Unit#getMovementLeft
+// per Unit; we recreate that cache here via the rawptr-ctx factory and consult
+// it inside the sort_by predicate.
+@(private="file")
+casualty_sorting_util_sort_pre_battle_ctx: struct {
+	movement_cmp:     proc(rawptr, ^Unit, ^Unit) -> i32,
+	movement_cmp_ctx: rawptr,
+}
+
+@(private="file")
+casualty_sorting_util_sort_pre_battle_less :: proc(a: ^Unit, b: ^Unit) -> bool {
+	ta := unit_get_type(a)
+	tb := unit_get_type(b)
+	na := ta.name if ta != nil else ""
+	nb := tb.name if tb != nil else ""
+	if na != nb {
+		return na < nb
+	}
+	mc := casualty_sorting_util_marines_cmp(a, b)
+	if mc != 0 {
+		return mc < 0
+	}
+	ctx := casualty_sorting_util_sort_pre_battle_ctx
+	mv := ctx.movement_cmp(ctx.movement_cmp_ctx, a, b)
+	return mv < 0
+}
+
+casualty_sorting_util_sort_pre_battle :: proc(units: ^[dynamic]^Unit) {
+	if units == nil || len(units^) < 2 {
+		return
+	}
+	cmp, cmp_ctx := unit_comparator_get_lowest_to_highest_movement_comparator()
+	casualty_sorting_util_sort_pre_battle_ctx = {
+		movement_cmp     = cmp,
+		movement_cmp_ctx = cmp_ctx,
+	}
+	slice.sort_by(units[:], casualty_sorting_util_sort_pre_battle_less)
 }
 
