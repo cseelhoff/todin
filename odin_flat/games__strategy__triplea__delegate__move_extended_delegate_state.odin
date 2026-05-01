@@ -7,3 +7,8 @@ Move_Extended_Delegate_State :: struct {
 	pus_lost:           ^Integer_Map,
 }
 
+move_extended_delegate_state_new :: proc() -> ^Move_Extended_Delegate_State {
+	s := new(Move_Extended_Delegate_State)
+	return s
+}
+

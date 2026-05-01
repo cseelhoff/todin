@@ -13,3 +13,7 @@ Move_Performer :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.MovePerformer
 
+move_performer_lambda_mark_transports_movement_0 :: proc(u: ^Unit) -> [dynamic]^Unit {
+	return make([dynamic]^Unit)
+}
+

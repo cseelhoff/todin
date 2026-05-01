@@ -11,3 +11,11 @@ Move_Performer_2 :: struct {
 	units:              [dynamic]^Unit,
 }
 
+move_performer_2_new :: proc(this0: ^Move_Performer, route: ^Route, collection: [dynamic]^Unit) -> ^Move_Performer_2 {
+	self := new(Move_Performer_2)
+	self.outer = this0
+	self.route = route
+	self.units = collection
+	return self
+}
+

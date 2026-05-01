@@ -418,3 +418,34 @@ trigger_attachment_lambda_trigger_territory_property_change_3 :: proc(territory:
 	return fmt.aprintf("Triggers: No territory attachment for: %s", default_named_get_name(&territory.named_attachable.default_named))
 }
 
+// ---------------------------------------------------------------------------
+// appendChangeWriteEvent(IDelegateBridge, CompositeChange)
+//   -> Consumer<Tuple<Change, String>>
+//
+//   return propertyChangeEvent -> {
+//       compositeChange.add(propertyChangeEvent.getFirst());
+//       bridge.getHistoryWriter().startEvent(propertyChangeEvent.getSecond());
+//   };
+//
+// Capturing factory — pairs a top-level lambda body proc with a
+// heap-allocated ctx struct holding the captured (bridge, compositeChange),
+// per the rawptr-context convention used by the other capturing factories
+// in this package (see `abstract_trigger_attachment_is_satisfied_match`).
+// The lambda body itself is its own method_key and is ported separately.
+// ---------------------------------------------------------------------------
+Trigger_Attachment_Ctx_append_change_write_event :: struct {
+	bridge:           ^I_Delegate_Bridge,
+	composite_change: ^Composite_Change,
+}
+
+trigger_attachment_append_change_write_event :: proc(
+	bridge: ^I_Delegate_Bridge,
+	composite_change: ^Composite_Change,
+) -> (proc(rawptr, ^Tuple(^Change, string)), rawptr) {
+	ctx := new(Trigger_Attachment_Ctx_append_change_write_event)
+	ctx.bridge = bridge
+	ctx.composite_change = composite_change
+	return trigger_attachment_lambda_append_change_write_event_0, rawptr(ctx)
+}
+
+

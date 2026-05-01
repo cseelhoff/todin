@@ -9,3 +9,10 @@ End_Round_Delegate :: struct {
 	winners:      [dynamic]^Game_Player,
 }
 
+// games.strategy.triplea.delegate.EndRoundDelegate#getRemoteType()
+// Java returns `null` (no remote interface). Odin mirrors that with the
+// zero `typeid` value.
+end_round_delegate_get_remote_type :: proc(self: ^End_Round_Delegate) -> typeid {
+	return nil
+}
+
