@@ -162,3 +162,45 @@ change_factory_units_hit :: proc(hits: ^Integer_Map_Unit, territories: [dynamic]
 change_factory_unit_property_change :: proc(unit: ^Unit, new_value: rawptr, property_name: string) -> ^Change {
 	return object_property_change_new(unit, property_name, new_value)
 }
+
+// Java: ChangeFactory#addAvailableTech(TechnologyFrontier, TechAdvance, GamePlayer)
+//   return new AddAvailableTech(tf, ta, player);
+change_factory_add_available_tech :: proc(tf: ^Technology_Frontier, ta: ^Tech_Advance, player: ^Game_Player) -> ^Change {
+	return add_available_tech_new(tf, ta, player)
+}
+
+// Java: ChangeFactory#removeAvailableTech(TechnologyFrontier, TechAdvance, GamePlayer)
+//   return new RemoveAvailableTech(tf, ta, player);
+change_factory_remove_available_tech :: proc(tf: ^Technology_Frontier, ta: ^Tech_Advance, player: ^Game_Player) -> ^Change {
+	return remove_available_tech_new(tf, ta, player)
+}
+
+// Java: ChangeFactory#attachmentPropertyReset(IAttachment, String)
+//   return new AttachmentPropertyReset(attachment, property);
+change_factory_attachment_property_reset :: proc(attachment: ^I_Attachment, property: string) -> ^Change {
+	return attachment_property_reset_new(attachment, property)
+}
+
+// Java: ChangeFactory#changeProductionFrontier(GamePlayer, ProductionFrontier)
+//   return new ProductionFrontierChange(frontier, player);
+change_factory_change_production_frontier :: proc(player: ^Game_Player, frontier: ^Production_Frontier) -> ^Change {
+	return production_frontier_change_new(frontier, player)
+}
+
+// Java: ChangeFactory#genericTechChange(TechAttachment, boolean, String)
+//   return new GenericTechChange(attachment, value, property);
+change_factory_generic_tech_change :: proc(attachment: ^Tech_Attachment, value: bool, property: string) -> ^Change {
+	return generic_tech_change_new(attachment, value, property)
+}
+
+// Java: ChangeFactory#relationshipChange(GamePlayer, GamePlayer, RelationshipType, RelationshipType)
+//   return new RelationshipChange(player, player2, currentRelation, newRelation);
+change_factory_relationship_change :: proc(player: ^Game_Player, player2: ^Game_Player, current_relation: ^Relationship_Type, new_relation: ^Relationship_Type) -> ^Change {
+	return relationship_change_new(player, player2, current_relation, new_relation)
+}
+
+// Java: ChangeFactory#removeProductionRule(ProductionRule, ProductionFrontier)
+//   return new RemoveProductionRule(rule, frontier);
+change_factory_remove_production_rule :: proc(rule: ^Production_Rule, frontier: ^Production_Frontier) -> ^Change {
+	return remove_production_rule_new(rule, frontier)
+}

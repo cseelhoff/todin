@@ -20,3 +20,7 @@ tuple_get_second :: proc(self: ^Tuple($A, $B)) -> B {
 	return self.second
 }
 
+tuple_of :: proc(first: rawptr, second: rawptr) -> ^Tuple(rawptr, rawptr) {
+	return tuple_new(rawptr, rawptr, first, second)
+}
+

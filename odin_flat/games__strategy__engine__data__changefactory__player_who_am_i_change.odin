@@ -15,3 +15,8 @@ player_who_am_i_change_new :: proc(new_who_am_i: string, player: ^Game_Player) -
 	return self
 }
 
+player_who_am_i_change_perform :: proc(self: ^Player_Who_Am_I_Change, data: ^Game_State) {
+	player := player_list_get_player_id(game_state_get_player_list(data), self.player_name)
+	game_player_set_who_am_i(player, self.end_who_am_i)
+}
+

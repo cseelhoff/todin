@@ -54,6 +54,40 @@ add_units_build_units_with_owner :: proc(self: ^Add_Units, state: ^Game_State) -
 	return result
 }
 
+// Java: AddUnits#<init>(String, String, Collection<Unit>)
+//   this(name, type, units, AddUnits.buildUnitOwnerMap(units));
+add_units_new_3 :: proc(
+	name: string,
+	type: string,
+	units: [dynamic]^Unit,
+) -> ^Add_Units {
+	return add_units_new(name, type, units, add_units_build_unit_owner_map(units))
+}
+
+// Java: AddUnits#lambda$buildUnitsWithOwner$2(GameState, Map<UUID,Unit>, Map.Entry<UUID,String>)
+// The `entry -> { ... }` mapper inside `buildUnitsWithOwner`. Resolves the
+// unit referenced by `entry.getKey()` against the live game state, falling
+// back to the locally-attached units when the game state has no record of
+// the UUID, then reapplies the original owner recorded in `entry.getValue()`.
+// Java's Map.Entry is decomposed into (key, value) parameters in Odin.
+add_units_lambda_build_units_with_owner_2 :: proc(
+	data: ^Game_State,
+	uuid_to_units: map[Uuid]^Unit,
+	key: Uuid,
+	value: string,
+) -> ^Unit {
+	gd := cast(^Game_Data)data
+	unit := units_list_get(game_data_get_units(gd), key)
+	if unit == nil {
+		unit = uuid_to_units[key]
+	}
+	if value != "" {
+		player := player_list_get_player_id(game_data_get_player_list(gd), value)
+		unit.owner = player
+	}
+	return unit
+}
+
 // Java: AddUnits#<init>(String, String, Collection<Unit>, Map<UUID,String>)
 //   this.name = name; this.type = type;
 //   this.units = List.copyOf(units); this.unitOwnerMap = unitOwnerMap;

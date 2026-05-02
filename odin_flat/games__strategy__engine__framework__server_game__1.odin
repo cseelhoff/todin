@@ -16,3 +16,10 @@ make_Server_Game_1 :: proc(this_0: ^Server_Game, history_writer: ^History_Writer
 	return self
 }
 
+// games.strategy.engine.framework.ServerGame$1#assertCorrectCaller()
+server_game_1_assert_correct_caller :: proc(self: ^Server_Game_1) {
+	if message_context_get_sender() != messengers_get_server_node(abstract_game_get_messengers(&self.outer.abstract_game)) {
+		panic("Only server can change game data")
+	}
+}
+

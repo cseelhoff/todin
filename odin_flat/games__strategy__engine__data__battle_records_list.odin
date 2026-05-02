@@ -16,3 +16,13 @@ battle_records_list_new :: proc(data: ^Game_Data) -> ^Battle_Records_List {
 	return self
 }
 
+battle_records_list_add_records :: proc(record_list: ^map[i32]^Battle_Records, current_round: i32, other: ^Battle_Records) {
+	current, ok := record_list[current_round]
+	if !ok || current == nil {
+		record_list[current_round] = other
+		return
+	}
+	battle_records_add_record(current, other)
+	record_list[current_round] = current
+}
+

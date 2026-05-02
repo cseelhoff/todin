@@ -56,3 +56,43 @@ game_object_stream_data_read_external :: proc(self: ^Game_Object_Stream_Data, in
     self.type = Game_Object_Stream_Data_Game_Type(i32(object_input_read_byte(in_stream)))
 }
 
+game_object_stream_data_get_reference :: proc(self: ^Game_Object_Stream_Data, data: ^Game_Data) -> ^Named {
+    if data == nil {
+        panic("data must not be null")
+    }
+    game_data_acquire_read_lock(data)
+    switch self.type {
+    case .PLAYERID:
+        p := player_list_get_player_id(game_data_get_player_list(data), self.name)
+        if p == nil {
+            return nil
+        }
+        return &p.named_attachable.default_named.named
+    case .TERRITORY:
+        t := game_map_get_territory_or_null(game_data_get_map(data), self.name)
+        if t == nil {
+            return nil
+        }
+        return &t.named_attachable.default_named.named
+    case .UNITTYPE:
+        ut := unit_type_list_get_unit_type_or_throw(game_data_get_unit_type_list(data), self.name)
+        if ut == nil {
+            return nil
+        }
+        return &ut.named_attachable.default_named.named
+    case .PRODUCTIONRULE:
+        pr := production_rule_list_get_production_rule(game_data_get_production_rule_list(data), self.name)
+        if pr == nil {
+            return nil
+        }
+        return &pr.default_named.named
+    case .PRODUCTIONFRONTIER:
+        pf := production_frontier_list_get_production_frontier(game_data_get_production_frontier_list(data), self.name)
+        if pf == nil {
+            return nil
+        }
+        return &pf.default_named.named
+    }
+    panic("Unknown type")
+}
+

@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:time"
 
 Concurrent_Battle_Calculator :: struct {
 	using i_battle_calculator: I_Battle_Calculator,
@@ -88,5 +89,69 @@ concurrent_battle_calculator_wait_for_game_data_ready :: proc(self: ^Concurrent_
 	// resolved synchronously at creation; the InterruptedException /
 	// ExecutionException branches in Java are unreachable here.
 	_ = completable_future_get(self.latch_worker_threads_creation)
+}
+
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#calculate(GamePlayer, GamePlayer, Territory, Collection<Unit>, Collection<Unit>, Collection<Unit>, Collection<TerritoryEffect>, boolean, int)
+// Java wraps each worker call in a parallel stream, distributing run counts
+// across `workers.size()` BattleCalculators and flat-mapping the resulting
+// BattleResults lists. Under the single-threaded JDK shim, this collapses to
+// a sequential loop over `self.workers`; the result aggregation, run-count
+// distribution, and timing are preserved verbatim.
+concurrent_battle_calculator_calculate :: proc(
+	self: ^Concurrent_Battle_Calculator,
+	attacker: ^Game_Player,
+	defender: ^Game_Player,
+	location: ^Territory,
+	attacking: [dynamic]^Unit,
+	defending: [dynamic]^Unit,
+	bombarding: [dynamic]^Unit,
+	territory_effects: [dynamic]^Territory_Effect,
+	retreat_when_only_air_left: bool,
+	run_count: i32,
+) -> ^Aggregate_Results {
+	concurrent_battle_calculator_wait_for_game_data_ready(self)
+	// `synchronized (mutexCalcIsRunning)` is a no-op in the single-threaded shim.
+	start := time.tick_now()
+	if !self.is_data_set {
+		// We could have attempted to set a new game data while the old one was
+		// still being set, causing it to abort with null data. Mirror Java's
+		// `new AggregateResults(0)` early-return.
+		return aggregate_results_new_int(0)
+	}
+	run_count_distributor := run_count_distributor_new(run_count, i32(len(self.workers)))
+	combined := make([dynamic]^Battle_Results)
+	for worker in self.workers {
+		worker_result := battle_calculator_calculate(
+			worker,
+			attacker,
+			defender,
+			location,
+			attacking,
+			defending,
+			bombarding,
+			territory_effects,
+			retreat_when_only_air_left,
+			run_count_distributor_next_run_count(run_count_distributor),
+		)
+		for r in worker_result.results {
+			append(&combined, r)
+		}
+	}
+	results := aggregate_results_new_list(combined)
+	delete(combined)
+	elapsed := time.tick_since(start)
+	aggregate_results_set_time(results, i64(time.duration_milliseconds(elapsed)))
+	return results
+}
+
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#cancel()
+// Java: forwards `cancel()` to every worker so an in-flight calculation can
+// abort early. Faithfully translated under the single-threaded shim — there
+// is no in-flight calculation to interrupt, but each worker still records
+// the cancellation flag, matching the visible state changes Java performs.
+concurrent_battle_calculator_cancel :: proc(self: ^Concurrent_Battle_Calculator) {
+	for worker in self.workers {
+		battle_calculator_cancel(worker)
+	}
 }
 

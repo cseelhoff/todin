@@ -22,3 +22,21 @@ game_data_manager_write_delegates :: proc(data: ^Game_Data, out: ^Object_Output_
 		_ = i_delegate_save_state(delegate)
 	}
 }
+
+// games.strategy.engine.framework.GameDataManager#loadDelegates(ObjectInputStream, GameData)
+// Java reads a stream of marker / name / displayName / className /
+// nextMarker / payload tuples terminated by DELEGATE_LIST_END,
+// reflectively constructs each IDelegate subclass, calls
+// initialize(name, displayName), registers it via data.addDelegate, and
+// — when the next marker is DELEGATE_DATA_NEXT — feeds the deserialized
+// payload into instance.loadState. The Odin port treats
+// Object_Input_Stream as an opaque JDK shim with no readObject
+// semantics, so there is no stream to drain and the loop cannot run.
+// The AI snapshot harness never enters this code path (saves are not
+// loaded); preserving the proc as a deliberate no-op mirrors the
+// fidelity decision made for write_delegates / read_object on the
+// other side of the serializer.
+game_data_manager_load_delegates :: proc(input: ^Object_Input_Stream, data: ^Game_Data) {
+	_ = input
+	_ = data
+}

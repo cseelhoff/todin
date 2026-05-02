@@ -24,10 +24,10 @@ bombing_unit_damage_change_lambda_new_0 :: proc(self: ^Bombing_Unit_Damage_Chang
 	integer_map_put(self.old_damage, rawptr(key), unit_get_unit_damage(key))
 }
 
-// Java: BombingUnitDamageChange#lambda$perform$1(GameState, String)
+// Java: BombingUnitDamageChange#lambda$perform$2(GameState, String)
 //   territory -> data.getMap().getTerritoryOrNull(territory).notifyChanged()
 // Captured: `data` (the GameState passed to perform).
-bombing_unit_damage_change_lambda_perform_1 :: proc(data: ^Game_State, territory: string) {
+bombing_unit_damage_change_lambda_perform_2 :: proc(data: ^Game_State, territory: string) {
 	territory_notify_changed(game_map_get_territory_or_null(game_state_get_map(data), territory))
 }
 
@@ -70,7 +70,7 @@ bombing_unit_damage_change_perform :: proc(self: ^Bombing_Unit_Damage_Change, st
 		unit_set_unit_damage(unit, integer_map_get_int(self.new_damage, k))
 	}
 	for territory in self.territories_to_notify {
-		bombing_unit_damage_change_lambda_perform_1(state, territory)
+		bombing_unit_damage_change_lambda_perform_2(state, territory)
 	}
 }
 

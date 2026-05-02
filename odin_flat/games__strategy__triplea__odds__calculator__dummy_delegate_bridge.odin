@@ -44,3 +44,10 @@ dummy_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^Dummy_Delegat
 dummy_delegate_bridge_set_battle :: proc(self: ^Dummy_Delegate_Bridge, battle: ^Must_Fight_Battle) {
 	self.battle = battle
 }
+
+dummy_delegate_bridge_get_costs_for_tuv :: proc(
+	self: ^Dummy_Delegate_Bridge,
+	player: ^Game_Player,
+) -> map[^Unit_Type]i32 {
+	return tuv_costs_calculator_get_costs_for_tuv(self.tuv_calculator, player)
+}

@@ -33,6 +33,10 @@ unit_separator_separator_categories_default_transport_movement :: proc() -> bool
 	return false
 }
 
+unit_separator_separator_categories_builder :: proc() -> ^Unit_Separator_Separator_Categories_Separator_Categories_Builder {
+	return unit_separator_separator_categories_separator_categories_builder_new()
+}
+
 unit_separator_separator_categories_new :: proc(
 	dependents: map[^Unit][dynamic]^Unit,
 	movement: bool,

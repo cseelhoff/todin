@@ -9,6 +9,21 @@ Repair_Frontier :: struct {
 	cached_rules: [dynamic]^Repair_Rule,
 }
 
+// Mirrors Java `RepairFrontier(String name, GameData data, List<RepairRule> rules)`.
+// Initializes the embedded DefaultNamed and copies `rules` into a fresh backing
+// list (Java uses `new ArrayList<>(rules)`); `cachedRules` stays nil.
+repair_frontier_new_with_rules :: proc(name: string, data: ^Game_Data, rules: [dynamic]^Repair_Rule) -> ^Repair_Frontier {
+	self := new(Repair_Frontier)
+	base := default_named_new(name, data)
+	self.default_named = base^
+	free(base)
+	self.rules = make([dynamic]^Repair_Rule, 0, len(rules))
+	for r in rules {
+		append(&self.rules, r)
+	}
+	return self
+}
+
 // Mirrors Java RepairFrontier#addRule(RepairRule). Throws if the rule is
 // already present, otherwise appends and invalidates the cached unmodifiable
 // view. cached_rules is cleared (length 0) to signal "rebuild on next get".

@@ -5,6 +5,15 @@ Named_Attachable :: struct {
 	attachments: map[string]^I_Attachment,
 }
 
+named_attachable_new :: proc(name: string, data: ^Game_Data) -> ^Named_Attachable {
+	self := new(Named_Attachable)
+	base := default_named_new(name, data)
+	self.default_named = base^
+	free(base)
+	self.attachments = make(map[string]^I_Attachment)
+	return self
+}
+
 named_attachable_get_attachment :: proc(self: ^Named_Attachable, key: string) -> ^I_Attachment {
 	return self.attachments[key]
 }

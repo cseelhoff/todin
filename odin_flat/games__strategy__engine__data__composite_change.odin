@@ -58,6 +58,37 @@ composite_change_new_from_list :: proc(changes: [dynamic]^Change) -> ^Composite_
 	return self
 }
 
+// Java: public CompositeChange(final Change... changes)
+// Varargs overload: chains to the no-arg constructor and then funnels
+// the variadic arguments through `add`, matching Java's behavior of
+// filtering out empty children.
+composite_change_new_from_varargs :: proc(changes: ..^Change) -> ^Composite_Change {
+	self := composite_change_new()
+	composite_change_add(self, ..changes)
+	return self
+}
+
+// Java: public CompositeChange flatten()
+// Recursively unwraps nested CompositeChange children: a non-composite
+// child is kept as-is, while a composite child is flattened first and
+// its children spliced in. The result is a fresh CompositeChange with
+// no CompositeChange descendants.
+composite_change_flatten :: proc(self: ^Composite_Change) -> ^Composite_Change {
+	flat := make([dynamic]^Change)
+	for child in self.changes {
+		if child != nil && child.kind == .Composite_Change {
+			inner := cast(^Composite_Change)child
+			flattened := composite_change_flatten(inner)
+			for c in flattened.changes {
+				append(&flat, c)
+			}
+		} else {
+			append(&flat, child)
+		}
+	}
+	return composite_change_new_from_list(flat)
+}
+
 // Java: public void add(final Change... changes)
 composite_change_add :: proc(self: ^Composite_Change, changes: ..^Change) {
 	for change in changes {

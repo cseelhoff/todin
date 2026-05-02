@@ -63,3 +63,16 @@ aa_power_strength_and_rolls_is_same_strength :: proc(
 	}
 	return len(seen) == 1
 }
+
+// Java synthetic lambda from calculateActiveStrengthAndRolls (filter for the
+// best-infinite search): `unit -> calculator.getDiceSides(unit) == diceSides`.
+// Each unit's dice sides were cached into `total_strength_and_total_rolls_by_unit`
+// at construction (via `addUnits`, using `calculator.getDiceSides(unit)`), so the
+// per-unit cached value equals what the lambda would compute on the calculator.
+aa_power_strength_and_rolls_lambda_calculate_active_strength_and_rolls_0 :: proc(
+	self: ^Aa_Power_Strength_And_Rolls,
+	unit: ^Unit,
+) -> bool {
+	entry := self.total_strength_and_total_rolls_by_unit[unit]
+	return int(entry.dice_sides) == self.dice_sides
+}

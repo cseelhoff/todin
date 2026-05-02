@@ -26,3 +26,13 @@ notify_retreat_message_builder :: proc() -> ^I_Display_Notify_Retreat_Message_No
 	b^ = I_Display_Notify_Retreat_Message_Notify_Retreat_Message_Builder{}
 	return b
 }
+
+i_display_notify_retreat_message_accept :: proc(self: ^Notify_Retreat_Message, display: ^I_Display, playerlist: ^Player_List) {
+	i_display_notify_retreat(
+		display,
+		self.short_message,
+		self.message,
+		self.step,
+		player_list_get_player_id(playerlist, self.retreating_player_name),
+	)
+}

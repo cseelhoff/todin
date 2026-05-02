@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strconv"
 import "core:strings"
 import "core:unicode"
 import "core:unicode/utf8"
@@ -487,4 +488,289 @@ game_parser_lambda_parse_1 :: proc(xml_file: Path, data: ^Game_Data) {
 		map_description_yaml_find_game_name_from_xml_file_name(yaml, xml_file),
 	)
 	game_data_set_map_name(data, map_description_yaml_get_map_name(yaml))
+}
+
+// Java: private Optional<GamePlayer> getPlayerIdOptional(final String name)
+//   return Optional.ofNullable(data.getPlayerList().getPlayerId(name));
+// Per port convention, Optional<X> -> ^X (nil = absent).
+game_parser_get_player_id_optional :: proc(self: ^Game_Parser, name: string) -> ^Game_Player {
+	return player_list_get_player_id(game_data_get_player_list(self.data), name)
+}
+
+// Java: private Resource getResourceOrThrow(final String name)
+//   try { return data.getResourceList().getResourceOrThrow(name); }
+//   catch (IllegalArgumentException e) { throw new GameParseException(e.getMessage(), e); }
+// resource_list_get_resource_or_throw already panics on miss; the
+// Java rewrap is a no-op for behavior beyond message text.
+game_parser_get_resource_or_throw :: proc(self: ^Game_Parser, name: string) -> ^Resource {
+	return resource_list_get_resource_or_throw(game_data_get_resource_list(self.data), name)
+}
+
+// Java: private UnitType getUnitType(final String name)
+//   try { return data.getUnitTypeList().getUnitTypeOrThrow(name); }
+//   catch (IllegalArgumentException e) { throw new GameParseException(e.getMessage(), e); }
+game_parser_get_unit_type :: proc(self: ^Game_Parser, name: string) -> ^Unit_Type {
+	return unit_type_list_get_unit_type_or_throw(game_data_get_unit_type_list(self.data), name)
+}
+
+// Java: private boolean isEngineCompatibleWithMap(final Triplea tripleA)
+//   return tripleA == null
+//       || tripleA.getMinimumVersion().isBlank()
+//       || engineVersion.isCompatibleWithMapMinimumEngineVersion(
+//           new Version(tripleA.getMinimumVersion()));
+game_parser_is_engine_compatible_with_map :: proc(self: ^Game_Parser, triplea: ^Triplea) -> bool {
+	if triplea == nil {
+		return true
+	}
+	min_v := triplea_get_minimum_version(triplea)
+	if len(strings.trim_space(min_v)) == 0 {
+		return true
+	}
+	return version_is_compatible_with_map_minimum_engine_version(
+		self.engine_version,
+		version_new(min_v),
+	)
+}
+
+// Synthetic inner lambda from GameParser.parse(Path, boolean):
+//   mapDescriptionYaml -> {
+//       data.setGameName(mapDescriptionYaml.findGameNameFromXmlFileName(xmlFile));
+//       data.setMapName(mapDescriptionYaml.getMapName());
+//   }
+// Captures `data` and `xmlFile` from the outer ifPresent.
+game_parser_lambda_parse_0 :: proc(
+	data: ^Game_Data,
+	xml_file: Path,
+	map_description_yaml: ^Map_Description_Yaml,
+) {
+	game_data_set_game_name(
+		data,
+		map_description_yaml_find_game_name_from_xml_file_name(map_description_yaml, xml_file),
+	)
+	game_data_set_map_name(data, map_description_yaml_get_map_name(map_description_yaml))
+}
+
+// Synthetic forEach lambda from parseProperties (#20):
+//   playerId -> data.getProperties().addPlayerProperty(
+//       new NumberProperty(Constants.getPropertyNameIncomePercentageFor(playerId),
+//           null, 999, 0, 100));
+// Captures `data` (via self.data). The Editable_Property shim only
+// stores the property name; max=999/min=0/value=100 from the Java
+// NumberProperty constructor are not observable through the shim.
+game_parser_lambda_parse_properties_20 :: proc(self: ^Game_Parser, player_id: ^Game_Player) {
+	prop := new(Editable_Property)
+	prop.name = constants_get_property_name_income_percentage_for(player_id)
+	game_properties_add_player_property(game_data_get_properties(self.data), prop)
+}
+
+// Synthetic forEach lambda from parseProperties (#21):
+//   playerId -> data.getProperties().addPlayerProperty(
+//       new NumberProperty(Constants.getPropertyNamePuIncomeBonusFor(playerId),
+//           null, 999, 0, 0));
+game_parser_lambda_parse_properties_21 :: proc(self: ^Game_Parser, player_id: ^Game_Player) {
+	prop := new(Editable_Property)
+	prop.name = constants_get_property_name_pu_income_bonus_for(player_id)
+	game_properties_add_player_property(game_data_get_properties(self.data), prop)
+}
+
+// Java: private void parseDelegates(final List<GamePlay.Delegate> delegateList)
+//   for each: load class via xmlGameElementMapper.newDelegate(className),
+//   throw GameParseException("Class <%s> is not a delegate.") on miss,
+//   then delegate.initialize(name, displayName ?? name) and
+//   data.addDelegate(delegate).
+game_parser_parse_delegates :: proc(
+	self: ^Game_Parser,
+	delegate_list: [dynamic]^Game_Play_Delegate,
+) {
+	for current in delegate_list {
+		class_name := current.java_class
+		delegate := xml_game_element_mapper_new_delegate(self.xml_game_element_mapper, class_name)
+		if delegate == nil {
+			fmt.panicf("Class <%s> is not a delegate.", class_name)
+		}
+		name := current.name
+		display_name := current.display
+		if display_name == "" {
+			display_name = name
+		}
+		i_delegate_initialize(delegate, name, display_name)
+		game_data_add_delegate(self.data, delegate)
+	}
+}
+
+// Java: private void parseFrontierRules(
+//     final List<Production.ProductionFrontier.FrontierRules> elements,
+//     final ProductionFrontier frontier) throws GameParseException
+//   for each: frontier.addRule(getProductionRule(element.getName()));
+game_parser_parse_frontier_rules :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Production_Frontier_Frontier_Rules,
+	frontier: ^Production_Frontier,
+) {
+	for element in elements {
+		production_frontier_add_rule(frontier, game_parser_get_production_rule(self, element.name))
+	}
+}
+
+// Java: List<GamePlayer> parsePlayersFromIsDisplayedFor(final String encodedPlayerNames)
+//   for each `:`-split name: lookup in data.getPlayerList(); throw
+//   GameParseException("Parse resources could not find player: %s") on miss.
+game_parser_parse_players_from_is_displayed_for :: proc(
+	self: ^Game_Parser,
+	encoded_player_names: string,
+) -> [dynamic]^Game_Player {
+	players: [dynamic]^Game_Player
+	parts := strings.split(encoded_player_names, ":")
+	defer delete(parts)
+	for player_name in parts {
+		player := player_list_get_player_id(game_data_get_player_list(self.data), player_name)
+		if player == nil {
+			fmt.panicf("Parse resources could not find player: %s", player_name)
+		}
+		append(&players, player)
+	}
+	return players
+}
+
+// Java: private void parseProperties(final PropertyList propertyList)
+//
+// For each property element:
+//   - Skip when name is null.
+//   - Map the legacy property name via LegacyPropertyMapper.
+//   - Pull the value either from the <value> child (valueProperty.data)
+//     or the `value` attribute.
+//   - If editable is null/false, infer the type and store the casted
+//     value as a constant property via properties.set(...).
+//   - Otherwise, build the typed editable property (Boolean / Number /
+//     String) and add it; for Number, min/max come from current.getMin()
+//     / .getMax() with fallback to the embedded number_property tag
+//     (mirroring the Java Optional.or(...) chain).
+//
+// Modeling pragmas:
+//   - Property_List_Property models Java's `Boolean editable` /
+//     `Integer min` / `Integer max` as plain `bool` / `i32` (zero-default,
+//     so we cannot distinguish unset from zero). The min/max fallback
+//     therefore consults the embedded number_property whenever it is
+//     present, instead of strictly only when current.min/max is null.
+//   - The Editable_Property shim only carries `name`; the typed Boolean
+//     / Number / String property values are not stored through the shim
+//     in this port, but the property_name registration matches Java.
+//
+// After processing properties, add an Income_Percentage and a
+// Pu_Income_Bonus per-player NumberProperty, mirroring the Java
+// `data.getPlayerList().forEach(...)` pair.
+game_parser_parse_properties :: proc(self: ^Game_Parser, property_list: ^Property_List) {
+	properties := game_data_get_properties(self.data)
+
+	for current in property_list_get_properties(property_list) {
+		if current.name == "" {
+			continue
+		}
+		property_name := legacy_property_mapper_map_property_name(current.name)
+
+		// Optional.ofNullable(current.getValueProperty()).map(Value::getData)
+		//     .orElseGet(current::getValue)
+		value: string
+		if current.value_property != nil {
+			value = current.value_property.data
+		} else {
+			value = current.value
+		}
+
+		if !current.editable {
+			casted_value := property_value_type_inference_cast_to_inferred_type(value)
+			boxed := new(Property_Value)
+			boxed^ = casted_value
+			game_properties_set(properties, property_name, rawptr(boxed))
+		} else {
+			data_type := property_value_type_inference_infer_type(value)
+			ep := new(Editable_Property)
+			ep.name = property_name
+
+			if data_type == typeid_of(bool) {
+				_ = strings.equal_fold(value, "true") // matches BooleanProperty default
+			} else if data_type == typeid_of(i32) {
+				min_val := current.min
+				if current.number_property != nil {
+					if v, ok := game_parser_lambda_parse_properties_18(current); ok {
+						min_val = v
+					}
+				}
+				max_val := current.max
+				if current.number_property != nil {
+					if v, ok := game_parser_lambda_parse_properties_19(current); ok {
+						max_val = v
+					}
+				}
+				int_val: i32 = 0
+				if value != "" {
+					parsed, _ := strconv.parse_int(value, 10)
+					int_val = i32(parsed)
+				}
+				_, _, _ = min_val, max_val, int_val // NumberProperty fields not stored through Editable_Property shim
+			}
+
+			game_properties_add_editable_property(properties, ep)
+		}
+	}
+
+	for player_id in player_list_get_players(game_data_get_player_list(self.data)) {
+		game_parser_lambda_parse_properties_20(self, player_id)
+	}
+	for player_id in player_list_get_players(game_data_get_player_list(self.data)) {
+		game_parser_lambda_parse_properties_21(self, player_id)
+	}
+}
+
+// Java: private void parseRepairFrontierRules(
+//     final List<Production.RepairFrontier.RepairRules> elements,
+//     final RepairFrontier frontier) throws GameParseException
+//   for each: frontier.addRule(getRepairRule(element.getName()));
+game_parser_parse_repair_frontier_rules :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Repair_Frontier_Repair_Rules,
+	frontier: ^Repair_Frontier,
+) {
+	for element in elements {
+		repair_frontier_add_rule(frontier, game_parser_get_repair_rule(self, element.name))
+	}
+}
+
+// Java: private void parseResults(final Rule dataRule, final Production.Rule mapRule)
+//   List<Production.Rule.Result> ruleResults = mapRule.getRuleResults();
+//   if empty: throw GameParseException("No results for rule: %s")
+//   for each: locate either Resource or UnitType by name (Optional.or chain),
+//   throw GameParseException("Could not find resource or unit: %s") on miss,
+//   then dataRule.addResult(result.get(), quantity).
+//
+// Modeling pragma: Java's `Production.Rule` parent is modeled as the
+// empty placeholder `Map_Data_Production_Rule`; its only useful payload
+// (`getRuleResults()`) is type-specific to the concrete subclass
+// (Production_Production_Rule vs Production_Repair_Rule). Callers
+// extract the results list themselves and pass it directly here.
+game_parser_parse_results :: proc(
+	self: ^Game_Parser,
+	data_rule: ^Rule,
+	rule_results: [dynamic]^Production_Rule_Result,
+) {
+	if len(rule_results) == 0 {
+		fmt.panicf("No results for rule: %s", rule_get_name(data_rule))
+	}
+	for current in rule_results {
+		resource_or_unit := current.resource_or_unit
+		result_resource := game_parser_get_resource_optional(self, resource_or_unit)
+		result_unit_type: ^Unit_Type
+		if result_resource == nil {
+			result_unit_type = game_parser_get_unit_type_optional(self, resource_or_unit)
+		}
+		if result_resource == nil && result_unit_type == nil {
+			fmt.panicf("Could not find resource or unit: %s", resource_or_unit)
+		}
+		quantity := current.quantity
+		if result_resource != nil {
+			rule_add_result(data_rule, &result_resource.named_attachable, quantity)
+		} else {
+			rule_add_result(data_rule, &result_unit_type.named_attachable, quantity)
+		}
+	}
 }

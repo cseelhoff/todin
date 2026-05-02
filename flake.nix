@@ -34,6 +34,9 @@
             jq
             ripgrep
             unzip
+
+            # Required by VS Code Copilot agent terminal sandboxing
+            socat
           ];
 
           shellHook = ''

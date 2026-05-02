@@ -12,6 +12,10 @@ strength_value_new :: proc(dice_sides: i32, value: i32) -> ^Strength_Value {
 	return sv
 }
 
+strength_value_of :: proc(dice_sides: i32, value: i32) -> ^Strength_Value {
+	return strength_value_new(dice_sides, value)
+}
+
 strength_value_get_value :: proc(self: ^Strength_Value) -> i32 {
 	v := self.value
 	if v < 0 {

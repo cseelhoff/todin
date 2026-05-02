@@ -112,3 +112,50 @@ client_setting_set_preferences :: proc(preferences: ^Preferences) {
 	_client_setting_preferences_ref = preferences
 }
 
+// Java: protected ClientSetting(final Class<T> type, final String name) { this(type, name, null); }
+// Two-arg form delegates to the three-arg constructor with a nil default.
+client_setting_new_no_default :: proc(type: typeid, name: string) -> ^Client_Setting {
+	return client_setting_new(type, name, nil)
+}
+
+// Java: private Optional<String> getEncodedCurrentValue() {
+//   return Optional.ofNullable(getPreferences().get(name, null));
+// }
+// Optional<String> → (string, bool) where the bool models isPresent().
+client_setting_get_encoded_current_value :: proc(self: ^Client_Setting) -> (string, bool) {
+	prefs := client_setting_get_preferences()
+	if prefs == nil {
+		return "", false
+	}
+	if v, ok := prefs.values[self.name]; ok {
+		return v, true
+	}
+	return "", false
+}
+
+// Java: ThreadRunner.runInNewThread(() -> flush(preferences))
+// Synthetic lambda body for setValueAndFlush; just calls the static flush helper.
+client_setting_lambda_set_value_and_flush_3 :: proc(preferences: ^Preferences) {
+	client_setting_flush(preferences)
+}
+
+// Java: private void setEncodedValue(@Nullable String encodedValue) { ... }
+// Nullable String → (encoded_value, has_value). When has_value is false,
+// the preference is removed; otherwise it's written and listeners notified.
+// IllegalArgumentException from Preferences.put is impossible against the
+// in-memory shim, so the Java try/catch collapses to a direct call.
+client_setting_set_encoded_value :: proc(self: ^Client_Setting, encoded_value: string, has_value: bool) {
+	prefs := client_setting_get_preferences()
+	if !has_value {
+		preferences_remove(prefs, self.name)
+		for listener in self.listeners {
+			client_setting_lambda_set_encoded_value_1(self, listener)
+		}
+	} else {
+		preferences_put(prefs, self.name, encoded_value)
+		for listener in self.listeners {
+			client_setting_lambda_set_encoded_value_2(self, listener)
+		}
+	}
+}
+

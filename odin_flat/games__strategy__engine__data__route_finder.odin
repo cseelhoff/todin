@@ -191,3 +191,27 @@ route_finder_new_with_units_player :: proc(
 	)
 	return route_finder_new(move_validator, game_map, condition, condition_ctx, units, player)
 }
+
+// Mirrors the public 2-arg Java constructor
+// RouteFinder(GameMap, Predicate<Territory>): chains to the 4-arg
+// constructor with `Set.of()` (an empty unit collection) and a null
+// GamePlayer. The Predicate is paired with a `rawptr` userdata per
+// llm-instructions.md's closure-capture rule. An empty `[dynamic]^Unit`
+// is the zero value (nil dynamic array, which has len 0). The bare
+// `route_finder_new` name is taken by the Lombok-synthesized all-args
+// private constructor, so this 2-arg overload uses a `_map_condition`
+// suffix to disambiguate.
+route_finder_new_map_condition :: proc(
+	game_map: ^Game_Map,
+	condition: proc(rawptr, ^Territory) -> bool,
+	condition_ctx: rawptr,
+) -> ^Route_Finder {
+	empty_units: [dynamic]^Unit
+	return route_finder_new_with_units_player(
+		game_map,
+		condition,
+		condition_ctx,
+		empty_units,
+		nil,
+	)
+}

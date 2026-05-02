@@ -30,3 +30,19 @@ initialization_delegate_load_state :: proc(
 	self.need_to_initialize = state.need_to_initialize
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#initAiStartingBonusIncome(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. Iterates every player on the bridge's data and gives
+// each their AI starting bonus income via BonusIncomeUtils.
+initialization_delegate_init_ai_starting_bonus_income :: proc(bridge: ^I_Delegate_Bridge) {
+	players := player_list_get_players(
+		game_data_get_player_list(i_delegate_bridge_get_data(bridge)),
+	)
+	for player in players {
+		bonus_income_utils_add_bonus_income(
+			resource_collection_get_resources_copy(game_player_get_resources(player)),
+			bridge,
+			player,
+		)
+	}
+}
+

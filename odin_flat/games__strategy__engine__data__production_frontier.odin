@@ -9,6 +9,27 @@ Production_Frontier :: struct {
 	cached_rules:        [dynamic]^Production_Rule,
 }
 
+// Mirrors Java ProductionFrontier(String, GameData, List<ProductionRule>).
+// Copies the supplied rules into a fresh backing list, matching the Java
+// `new ArrayList<>(rules)` semantics. The Java `checkNotNull(rules)` is
+// satisfied implicitly: an Odin slice cannot be "null" — passing nil yields
+// an empty copy, which matches the no-arg overload behavior.
+production_frontier_new_with_rules :: proc(
+	name: string,
+	data: ^Game_Data,
+	rules: []^Production_Rule,
+) -> ^Production_Frontier {
+	base := default_named_new(name, data)
+	self := new(Production_Frontier)
+	self.default_named = base^
+	free(base)
+	self.rules = make([dynamic]^Production_Rule, 0, len(rules))
+	for r in rules {
+		append(&self.rules, r)
+	}
+	return self
+}
+
 // Mirrors Java ProductionFrontier#addRule(ProductionRule). Throws if the rule
 // is already present, otherwise appends and invalidates the cached unmodifiable
 // view. cached_rules is cleared (length 0) to signal "rebuild on next get".

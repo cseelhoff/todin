@@ -95,17 +95,35 @@ aggregate_results_get_battle_results_closest_to_average :: proc(self: ^Aggregate
 	if len(self.results) == 0 {
 		return nil
 	}
-	avg_attack := aggregate_results_get_average_attacking_units_left(self)
-	avg_defend := aggregate_results_get_average_defending_units_left(self)
 	best: ^Battle_Results = nil
 	best_score: f64 = 0
 	for r in self.results {
-		score := abs(f64(len(r.remaining_attacking_units)) - avg_attack) +
-			abs(f64(len(r.remaining_defending_units)) - avg_defend)
+		score := aggregate_results_lambda_get_battle_results_closest_to_average_0(self, r)
 		if best == nil || score < best_score {
 			best = r
 			best_score = score
 		}
 	}
 	return best
+}
+
+aggregate_results_lambda_get_battle_results_closest_to_average_0 :: proc(self: ^Aggregate_Results, result: ^Battle_Results) -> f64 {
+	return abs(f64(len(battle_results_get_remaining_attacking_units(result))) - aggregate_results_get_average_attacking_units_left(self)) +
+		abs(f64(len(battle_results_get_remaining_defending_units(result))) - aggregate_results_get_average_defending_units_left(self))
+}
+
+aggregate_results_get_average_attacking_units_remaining :: proc(self: ^Aggregate_Results) -> [dynamic]^Unit {
+	closest := aggregate_results_get_battle_results_closest_to_average(self)
+	if closest == nil {
+		return make([dynamic]^Unit, 0)
+	}
+	return battle_results_get_remaining_attacking_units(closest)
+}
+
+aggregate_results_get_average_defending_units_remaining :: proc(self: ^Aggregate_Results) -> [dynamic]^Unit {
+	closest := aggregate_results_get_battle_results_closest_to_average(self)
+	if closest == nil {
+		return make([dynamic]^Unit, 0)
+	}
+	return battle_results_get_remaining_defending_units(closest)
 }

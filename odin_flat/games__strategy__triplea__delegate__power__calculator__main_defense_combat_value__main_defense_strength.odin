@@ -23,3 +23,22 @@ main_defense_combat_value_main_defense_strength_new :: proc(
 	self.support_from_enemies = support_from_enemies
 	return self
 }
+
+main_defense_combat_value_main_defense_strength_is_negate_dominating_first_round_attack :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Strength,
+	player: ^Game_Player,
+) -> bool {
+	ra := game_player_get_rules_attachment(player)
+	return ra != nil && ra.negate_dominating_first_round_attack
+}
+
+main_defense_combat_value_main_defense_strength_is_dominating_first_round_attack :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Strength,
+	player: ^Game_Player,
+) -> bool {
+	if player == nil {
+		return false
+	}
+	ra := game_player_get_rules_attachment(player)
+	return ra != nil && ra.dominating_first_round_attack
+}

@@ -23,3 +23,31 @@ power_calculator_new :: proc(
 	return self
 }
 
+power_calculator_get_value :: proc(
+	choose_best_roll: bool,
+	dice_sides: i32,
+	unit_strength: ^Strength_Value,
+	unit_rolls: ^Roll_Value,
+) -> i32 {
+	if strength_value_is_zero(unit_strength) || roll_value_is_zero(unit_rolls) {
+		return 0
+	}
+	extra_roll_bonus := max(i32(1), dice_sides / 6)
+
+	total_power: i32 = 0
+	if roll_value_get_value(unit_rolls) == 1 {
+		total_power += strength_value_get_value(unit_strength)
+	} else {
+		if choose_best_roll {
+			total_power += min(
+				strength_value_get_value(unit_strength) +
+				extra_roll_bonus * (roll_value_get_value(unit_rolls) - 1),
+				dice_sides,
+			)
+		} else {
+			total_power += roll_value_get_value(unit_rolls) * strength_value_get_value(unit_strength)
+		}
+	}
+	return total_power
+}
+

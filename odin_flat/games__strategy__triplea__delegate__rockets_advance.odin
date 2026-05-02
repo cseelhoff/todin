@@ -10,3 +10,7 @@ rockets_advance_get_property :: proc(self: ^Rockets_Advance) -> string {
 	return TECH_PROPERTY_ROCKETS
 }
 
+rockets_advance_has_tech :: proc(self: ^Rockets_Advance, ta: ^Tech_Attachment) -> bool {
+	return tech_attachment_get_rocket(ta)
+}
+

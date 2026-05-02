@@ -40,3 +40,18 @@ tech_activation_delegate_delegate_currently_requires_user_input :: proc(self: ^T
 tech_activation_delegate_get_remote_type :: proc(self: ^Tech_Activation_Delegate) -> typeid {
 	return nil
 }
+
+// games.strategy.triplea.delegate.TechActivationDelegate#loadState(java.io.Serializable)
+// Java casts the Serializable to TechActivationExtendedDelegateState,
+// chains super.loadState with its superState, then restores
+// needToInitialize.
+tech_activation_delegate_load_state :: proc(
+	self: ^Tech_Activation_Delegate,
+	state: ^Tech_Activation_Extended_Delegate_State,
+) {
+	base_triple_a_delegate_load_state(
+		&self.base_triple_a_delegate,
+		cast(^Base_Delegate_State)state.super_state,
+	)
+	self.need_to_initialize = state.need_to_initialize
+}

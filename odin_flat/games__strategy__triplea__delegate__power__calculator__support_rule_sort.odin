@@ -10,6 +10,10 @@ Support_Rule_Sort :: struct {
 	strength: proc(u: ^Unit_Support_Attachment) -> bool,
 }
 
+support_rule_sort_builder :: proc() -> ^Support_Rule_Sort_Support_Rule_Sort_Builder {
+	return support_rule_sort_support_rule_sort_builder_new()
+}
+
 support_rule_sort_new :: proc(
 	side: Battle_State_Side,
 	friendly: bool,

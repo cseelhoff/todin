@@ -19,9 +19,21 @@ Path_Client_Setting :: struct {
 	has_current:   bool,
 }
 
+// Java: PathClientSetting(final String name, final Path defaultValue) {
+//   super(Path.class, name, defaultValue);
+// }
+// Delegates to the parent ClientSetting<Path> constructor for type/name
+// bookkeeping, then layers the Path-specialized current/default storage
+// the harness reads through path_client_setting_get_value().
 path_client_setting_new :: proc(name: string, default_value: Path) -> ^Path_Client_Setting {
+	// super(Path.class, name, defaultValue): Path is a value-typed Odin
+	// struct so we can't pass it through Client_Setting's rawptr default
+	// slot directly; the parent ctor is invoked for its name/type
+	// bookkeeping (listener slice init, etc.) and the typed default is
+	// retained on the subclass below.
+	parent := client_setting_new(Path, name, nil)
 	s := new(Path_Client_Setting)
-	s.name = name
+	s.name = parent.name
 	s.default_value = default_value
 	s.current_value = default_value
 	s.has_current = false

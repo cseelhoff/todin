@@ -384,3 +384,38 @@ default_attachment_lambda_parse_player_list_2 :: proc(
 	)
 	return make_Game_Parse_Exception(message)
 }
+
+// Java: protected static <T> IntegerMap<T> getIntegerMapProperty(@Nullable IntegerMap<T> value)
+//   if (value == null) return IntegerMap.of();
+//   return IntegerMap.unmodifiableViewOf(value);
+// Odin lacks an immutable-view wrapper for `Integer_Map`, so the non-nil
+// branch returns the input pointer directly (matching the pattern used by
+// `default_attachment_get_list_property` / `_get_map_property` /
+// `_get_set_property`). The nil branch allocates a fresh empty
+// `Integer_Map` to mirror Java's `IntegerMap.of()` empty-instance return.
+default_attachment_get_integer_map_property :: proc(value: ^Integer_Map) -> ^Integer_Map {
+	if value == nil {
+		return integer_map_new()
+	}
+	return value
+}
+
+// Java: protected Optional<GamePlayer> getPlayerByName(String name)
+//   return Optional.ofNullable(getData().getPlayerList().getPlayerId(name));
+// Odin uses `nil` as the empty-Optional sentinel; Java's `Optional.ofNullable`
+// collapses to a direct nil pass-through. Mirrors the chain
+// `getData() -> getPlayerList() -> getPlayerId(name)`.
+default_attachment_get_player_by_name :: proc(self: ^Default_Attachment, name: string) -> ^Game_Player {
+	if self == nil {
+		return nil
+	}
+	data := game_data_component_get_data(&self.game_data_component)
+	if data == nil {
+		return nil
+	}
+	pl := game_data_get_player_list(data)
+	if pl == nil {
+		return nil
+	}
+	return player_list_get_player_id(pl, name)
+}

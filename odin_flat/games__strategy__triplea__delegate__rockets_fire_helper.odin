@@ -16,3 +16,28 @@ rockets_fire_helper_new :: proc() -> ^Rockets_Fire_Helper {
 	return helper
 }
 
+// games.strategy.triplea.delegate.RocketsFireHelper#getRemote(IDelegateBridge)
+//
+//   private static Player getRemote(final IDelegateBridge bridge) {
+//     return bridge.getRemotePlayer();
+//   }
+rockets_fire_helper_get_remote :: proc(bridge: ^I_Delegate_Bridge) -> ^Player {
+	return i_delegate_bridge_get_remote_player(bridge)
+}
+
+// games.strategy.triplea.delegate.RocketsFireHelper#getTarget(Collection,IDelegateBridge,Territory)
+//
+//   private static Territory getTarget(
+//       final Collection<Territory> targets,
+//       final IDelegateBridge bridge,
+//       final Territory from) {
+//     return bridge.getRemotePlayer().whereShouldRocketsAttack(targets, from);
+//   }
+rockets_fire_helper_get_target :: proc(
+	targets: [dynamic]^Territory,
+	bridge:  ^I_Delegate_Bridge,
+	from:    ^Territory,
+) -> ^Territory {
+	remote := i_delegate_bridge_get_remote_player(bridge)
+	return player_where_should_rockets_attack(remote, targets, from)
+}

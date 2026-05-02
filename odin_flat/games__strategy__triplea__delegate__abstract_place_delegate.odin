@@ -362,3 +362,23 @@ abstract_place_delegate_is_placement_in_capital_restricted :: proc(player: ^Game
 abstract_place_delegate_lambda__get_unit_construction_comparator__5 :: proc(u1: ^Unit, u2: ^Unit) -> i32 {
 	return abstract_place_delegate_unit_construction_compare(u1, u2)
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#undoMove(int)
+// Java:
+//   if (moveIndex < placements.size() && moveIndex >= 0) {
+//     UndoablePlacement undoPlace = placements.get(moveIndex);
+//     undoPlace.undo(bridge);
+//     placements.remove(moveIndex);
+//     updateUndoablePlacementIndexes();
+//   }
+//   return null;
+abstract_place_delegate_undo_move :: proc(self: ^Abstract_Place_Delegate, move_index: i32) -> Maybe(string) {
+        n := i32(len(self.placements))
+        if move_index < n && move_index >= 0 {
+                undo_place := self.placements[move_index]
+                abstract_undoable_move_undo(&undo_place.abstract_undoable_move, self.bridge)
+                ordered_remove(&self.placements, int(move_index))
+                abstract_place_delegate_update_undoable_placement_indexes(self)
+        }
+        return nil
+}

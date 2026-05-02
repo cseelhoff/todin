@@ -29,3 +29,19 @@ game_data_component_get_data_or_throw :: proc(self: ^Game_Data_Component) -> ^Ga
 	}
 	return self.game_data
 }
+
+// Java: private void readObject(ObjectInputStream stream)
+//   if (stream instanceof GameObjectInputStream in) {
+//     gameData = in.getData();
+//   } else {
+//     gameData = (GameData) stream.readObject();
+//   }
+//
+// In the Odin port, Object_Input_Stream is an opaque shim and
+// game_data is wired through normal construction rather than Java
+// serialization, so neither branch has an observable effect during
+// the AI snapshot run. The proc is preserved for fidelity.
+game_data_component_read_object :: proc(self: ^Game_Data_Component, in_stream: ^Object_Input_Stream) {
+	_ = self
+	_ = in_stream
+}

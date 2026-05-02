@@ -12,6 +12,10 @@ roll_value_new :: proc(value: i32, is_infinite: bool) -> ^Roll_Value {
 	return r
 }
 
+roll_value_of :: proc(value: i32, choose_best_roll: bool) -> ^Roll_Value {
+	return roll_value_new(value, choose_best_roll)
+}
+
 roll_value_get_value :: proc(self: ^Roll_Value) -> i32 {
 	if self.is_infinite {
 		return -1

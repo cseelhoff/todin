@@ -151,3 +151,104 @@ tech_tracker_sum_numbers :: proc(
 	return total
 }
 
+// Java: lambda$sumIntegerMap$19(UnitType, IntegerMap)
+//   `m -> m.getInt(ut)` — IntStream mapper inside sumIntegerMap(...). The
+//   captured Java local `ut` becomes the first Odin parameter; the stream
+//   element (an IntegerMap<UnitType>) becomes the second. IntegerMap stores
+//   values keyed by rawptr, so the UnitType pointer is widened directly.
+tech_tracker_lambda_sum_integer_map_19 :: proc(ut: ^Unit_Type, m: ^Integer_Map) -> i32 {
+	return integer_map_get_int(m, rawptr(ut))
+}
+
+// Java: private int getCached(GamePlayer, UnitType, String, Supplier<Integer>)
+//   return (Integer) cache.computeIfAbsent(new Key(player, type, property),
+//                                          key -> getter.get());
+// Per llm-instructions.md the Java boxed Object return is represented as
+// rawptr in Odin (Supplier<T> generic; integer callers box to ^i32 at the
+// call site). Cache keys are heap-allocated Tech_Tracker_Key values whose
+// `equals` collapses to component-wise comparison; we scan the map for a
+// matching key (Java's @Value Key uses by-value equality, but the Odin
+// cache map is keyed by ^Tech_Tracker_Key so we cannot rely on builtin
+// hashing). On a miss, allocate a new key, invoke the getter, store, and
+// return the produced value.
+tech_tracker_get_cached :: proc(
+	self: ^Tech_Tracker,
+	player: ^Game_Player,
+	type: ^Unit_Type,
+	property: string,
+	getter: proc() -> rawptr,
+) -> rawptr {
+	for k, v in self.cache {
+		if k.player == player && k.unit_type == type && k.property == property {
+			return v.(rawptr)
+		}
+	}
+	key := new(Tech_Tracker_Key)
+	tech_tracker_key_init(key, player, type, property)
+	value := tech_tracker_lambda_get_cached_17_rawptr(getter, key)
+	self.cache[key] = value
+	return value
+}
+
+// Helper mirroring Java's `key -> getter.get()` for the rawptr Supplier
+// flavor of getCached. The corresponding `proc() -> i32` flavor is the
+// pre-existing tech_tracker_lambda_get_cached_17.
+@(private = "file")
+tech_tracker_lambda_get_cached_17_rawptr :: proc(
+	getter: proc() -> rawptr,
+	key: ^Tech_Tracker_Key,
+) -> rawptr {
+	_ = key
+	return getter()
+}
+
+// Java: private boolean getCached(GamePlayer, UnitType, String, BooleanSupplier)
+//   return (Boolean) cache.computeIfAbsent(new Key(player, type, property),
+//                                          key -> getter.getAsBoolean());
+// Same key-scan strategy as the Supplier overload; the cached value is a
+// bool and the getter is a `proc() -> bool` literal (BooleanSupplier).
+tech_tracker_get_cached_bool :: proc(
+	self: ^Tech_Tracker,
+	player: ^Game_Player,
+	type: ^Unit_Type,
+	property: string,
+	getter: proc() -> bool,
+) -> bool {
+	for k, v in self.cache {
+		if k.player == player && k.unit_type == type && k.property == property {
+			return v.(bool)
+		}
+	}
+	key := new(Tech_Tracker_Key)
+	tech_tracker_key_init(key, player, type, property)
+	value := tech_tracker_lambda_get_cached_18(getter, key)
+	self.cache[key] = value
+	return value
+}
+
+// Java: lambda$getCurrentTechAdvances$23(TechAttachment, TechAdvance)
+//   `ta -> ta.hasTech(attachment)` — predicate inside
+//   getCurrentTechAdvances(GamePlayer, TechnologyFrontier) selecting tech
+//   advances the player has researched. The captured TechAttachment is
+//   the first parameter; the stream element TechAdvance is second. The
+//   polymorphic `hasTech` dispatch is provided by the orchestrator's
+//   tech_advance_has_tech helper, which calls the per-subtype proc field
+//   wired at Tech_Advance construction time.
+tech_tracker_lambda_get_current_tech_advances_23 :: proc(
+	attachment: ^Tech_Attachment,
+	ta: ^Tech_Advance,
+) -> bool {
+	return tech_advance_has_tech(ta, attachment)
+}
+
+// Java: lambda$getFullyResearchedPlayerTechCategories$24(TechAttachment, TechAdvance)
+//   `t -> t.hasTech(attachment)` — predicate passed to `allMatch` on each
+//   TechnologyFrontier's techs inside getFullyResearchedPlayerTechCategories.
+//   Identical shape to lambda 23; the distinct javac index is preserved.
+tech_tracker_lambda_get_fully_researched_player_tech_categories_24 :: proc(
+	attachment: ^Tech_Attachment,
+	t: ^Tech_Advance,
+) -> bool {
+	return tech_advance_has_tech(t, attachment)
+}
+

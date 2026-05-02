@@ -54,3 +54,8 @@ main_defense_combat_value_get_battle_side :: proc(self: ^Main_Defense_Combat_Val
 main_defense_combat_value_get_dice_sides :: proc(self: ^Main_Defense_Combat_Value, unit: ^Unit) -> i32 {
 	return self.game_dice_sides
 }
+
+main_defense_combat_value_builder :: proc(
+) -> ^Main_Defense_Combat_Value_Main_Defense_Combat_Value_Builder {
+	return main_defense_combat_value_main_defense_combat_value_builder_new()
+}

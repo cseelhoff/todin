@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Game_Data_Variables :: struct {
@@ -132,4 +133,88 @@ game_data_variables_lambda_find_nested_variables_1 :: proc(
 	s: string,
 ) -> [dynamic]string {
 	return game_data_variables_find_nested_variables(s, variables)
+}
+
+// Java: public List<Map<String, String>> expandVariableCombinations(final String foreach)
+//       throws GameParseException
+game_data_variables_expand_variable_combinations :: proc(
+	self: ^Game_Data_Variables,
+	foreach: string,
+) -> (
+	[dynamic]map[string]string,
+	^Game_Parse_Exception,
+) {
+	combinations: [dynamic]map[string]string
+	nested_foreach_slice := strings.split(foreach, "^")
+	defer delete(nested_foreach_slice)
+	nested_foreach: [dynamic]string
+	defer delete(nested_foreach)
+	for s in nested_foreach_slice {
+		append(&nested_foreach, s)
+	}
+	if len(nested_foreach) == 0 || len(nested_foreach) > 2 {
+		return combinations, make_Game_Parse_Exception(
+			fmt.aprintf(
+				"Invalid foreach expression, can only use variables, ':', and at most 1 '^': %s",
+				foreach,
+			),
+		)
+	}
+	foreach_variables_1_slice := strings.split(nested_foreach[0], ":")
+	defer delete(foreach_variables_1_slice)
+	foreach_variables_1: [dynamic]string
+	defer delete(foreach_variables_1)
+	for s in foreach_variables_1_slice {
+		append(&foreach_variables_1, s)
+	}
+	foreach_variables_2: [dynamic]string
+	defer delete(foreach_variables_2)
+	foreach_variables_2_slice: []string
+	if len(nested_foreach) == 2 {
+		foreach_variables_2_slice = strings.split(nested_foreach[1], ":")
+		defer delete(foreach_variables_2_slice)
+		for s in foreach_variables_2_slice {
+			append(&foreach_variables_2, s)
+		}
+	}
+	if err := game_parsing_validation_validate_foreach_variables(
+		foreach_variables_1,
+		self.variables,
+		foreach,
+	); err != nil {
+		return combinations, err
+	}
+	if err := game_parsing_validation_validate_foreach_variables(
+		foreach_variables_2,
+		self.variables,
+		foreach,
+	); err != nil {
+		return combinations, err
+	}
+	length_1 := len(self.variables[foreach_variables_1[0]])
+	for i in 0 ..< length_1 {
+		foreach_map_1 := game_data_variables_create_foreach_variables_map(
+			foreach_variables_1[:],
+			i,
+			&self.variables,
+		)
+		if len(foreach_variables_2) == 0 {
+			append(&combinations, foreach_map_1)
+		} else {
+			length_2 := len(self.variables[foreach_variables_2[0]])
+			for j in 0 ..< length_2 {
+				foreach_map_2 := game_data_variables_create_foreach_variables_map(
+					foreach_variables_2[:],
+					j,
+					&self.variables,
+				)
+				for k, v in foreach_map_1 {
+					foreach_map_2[k] = v
+				}
+				append(&combinations, foreach_map_2)
+			}
+			delete(foreach_map_1)
+		}
+	}
+	return combinations, nil
 }

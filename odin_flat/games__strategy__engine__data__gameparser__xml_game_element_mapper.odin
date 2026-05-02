@@ -348,3 +348,19 @@ xml_game_element_mapper_new_attachment :: proc(self: ^Xml_Game_Element_Mapper, t
 	return nil
 }
 
+
+// games.strategy.engine.data.gameparser.XmlGameElementMapper#<init>(java.util.Map,java.util.Map)
+//
+// Java's @VisibleForTesting 2-arg constructor: validates non-null inputs (Odin
+// has no equivalent, maps are passed by value/reference and may be empty), then
+// builds the two factory tables via the helpers, allowing the auxiliary maps to
+// override or extend the builtin entries.
+xml_game_element_mapper_new :: proc(
+	auxiliary_delegate_factories_by_type_name: map[string]proc() -> ^I_Delegate,
+	auxiliary_attachment_factories_by_type_name: map[string]^Xml_Game_Element_Mapper_Attachment_Factory,
+) -> ^Xml_Game_Element_Mapper {
+	self := new(Xml_Game_Element_Mapper)
+	self.delegate_factories_by_type_name = xml_game_element_mapper_new_delegate_factories(auxiliary_delegate_factories_by_type_name)
+	self.attachment_factories_by_type_name = xml_game_element_mapper_new_attachment_factories(auxiliary_attachment_factories_by_type_name)
+	return self
+}

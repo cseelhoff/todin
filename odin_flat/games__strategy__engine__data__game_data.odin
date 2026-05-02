@@ -612,3 +612,139 @@ game_data_lambda_pre_game_disable_players_7 :: proc(players_who_should_be_remove
 game_data_lambda_perform_change_8 :: proc(change: ^Change, listener: ^Game_Data_Change_Listener) {
 	game_data_change_listener_game_data_changed(listener, change)
 }
+
+// games.strategy.engine.data.GameData#fixUpNullPlayers()
+//
+// Java:
+//   private void fixUpNullPlayers() {
+//     GamePlayer nullPlayer = playerList.getNullPlayer();
+//     for (Territory t : getMap().getTerritories()) {
+//       if (t.getOwner().isNull() && !ObjectUtils.referenceEquals(t.getOwner(), nullPlayer)) {
+//         t.setOwner(nullPlayer);
+//       }
+//     }
+//     for (Unit u : getUnits()) {
+//       if (u.getOwner().isNull() && !ObjectUtils.referenceEquals(u.getOwner(), nullPlayer)) {
+//         u.setOwner(nullPlayer);
+//       }
+//     }
+//   }
+// ObjectUtils.referenceEquals is identity comparison; in Odin pointer
+// equality (`!=`) is the direct equivalent.
+game_data_fix_up_null_players :: proc(self: ^Game_Data) {
+	null_player := player_list_get_null_player(self.player_list)
+	for t in game_map_get_territories(game_data_get_map(self)) {
+		owner := territory_get_owner(t)
+		if game_player_is_null(owner) && owner != null_player {
+			territory_set_owner(t, null_player)
+		}
+	}
+	for u in units_list_iterator(game_data_get_units(self)) {
+		owner := unit_get_owner(u)
+		if game_player_is_null(owner) && owner != null_player {
+			unit_set_owner(u, null_player)
+		}
+	}
+}
+
+// games.strategy.engine.data.GameData#getCurrentRound()
+//
+// Java:
+//   public int getCurrentRound() {
+//     try (GameData.Unlocker ignored = acquireReadLock()) {
+//       return getSequence().getRound();
+//     }
+//   }
+// The single-threaded port's acquire_read_lock is a no-op; mirror the
+// try-with-resources call for fidelity then return the sequence round.
+game_data_get_current_round :: proc(self: ^Game_Data) -> i32 {
+	game_data_acquire_read_lock(self)
+	return game_sequence_get_round(game_data_get_sequence(self))
+}
+
+// games.strategy.engine.data.GameData#getEndRoundDelegate()
+//
+// Java: return (EndRoundDelegate) getDelegate("endRound");
+// Look up the "endRound" delegate and reinterpret the I_Delegate pointer
+// as an End_Round_Delegate pointer, mirroring Java's downcast.
+game_data_get_end_round_delegate :: proc(self: ^Game_Data) -> ^End_Round_Delegate {
+	return cast(^End_Round_Delegate)game_data_get_delegate(self, "endRound")
+}
+
+// games.strategy.engine.data.GameData#getPoliticsDelegate()
+//
+// Java: return (PoliticsDelegate) getDelegate("politics");
+// Look up the "politics" delegate and reinterpret the I_Delegate pointer
+// as a Politics_Delegate pointer, mirroring Java's downcast.
+game_data_get_politics_delegate :: proc(self: ^Game_Data) -> ^Politics_Delegate {
+	return cast(^Politics_Delegate)game_data_get_delegate(self, "politics")
+}
+
+// games.strategy.engine.data.GameData#getMapName()
+//
+// Java:
+//   public String getMapName() {
+//     return String.valueOf(properties.get(Constants.MAP_NAME));
+//   }
+// Constants.MAP_NAME is the literal "mapName". String.valueOf(null) is
+// "null", String.valueOf(s) is s.toString(); Property_Value carries
+// typed primitives so we render the string variant directly and fall
+// back to fmt.aprint for the rare non-string case (matches Java's
+// Object.toString()), and emit "null" when the property is unset.
+game_data_get_map_name :: proc(self: ^Game_Data) -> string {
+	value := game_properties_get(self.properties, "mapName")
+	if value == nil {
+		return "null"
+	}
+	switch v in value {
+	case string:
+		return v
+	case bool, i32, f64:
+		return fmt.aprint(v)
+	}
+	return "null"
+}
+
+// games.strategy.engine.data.GameData#getUnitHolder(java.lang.String, java.lang.String)
+//
+// Java:
+//   public UnitHolder getUnitHolder(final String name, final String type) {
+//     switch (type) {
+//       case UnitHolder.PLAYER:    return playerList.getPlayerId(name);
+//       case UnitHolder.TERRITORY: return map.getTerritoryOrNull(name);
+//       default: throw new IllegalStateException("Invalid type: " + type);
+//     }
+//   }
+// UnitHolder.PLAYER = "P", UnitHolder.TERRITORY = "T". Unit_Holder is the
+// empty interface stub; both Game_Player and Territory are returned to
+// Java callers as UnitHolder, so we type-pun the concrete pointers to
+// ^Unit_Holder (size-zero base, layout-safe).
+game_data_get_unit_holder :: proc(self: ^Game_Data, name: string, type: string) -> ^Unit_Holder {
+	switch type {
+	case "P":
+		return cast(^Unit_Holder)player_list_get_player_id(self.player_list, name)
+	case "T":
+		return cast(^Unit_Holder)game_map_get_territory_or_null(game_data_get_map(self), name)
+	case:
+		fmt.panicf("Invalid type: %s", type)
+	}
+	return nil
+}
+
+// games.strategy.engine.data.GameData#lambda$fixUpNullPlayersInDelegates$5(IDelegate)
+//
+// Java synthetic backing the lambda inside fixUpNullPlayersInDelegates:
+//   delegate ->
+//     ((BattleDelegate) delegate)
+//         .getBattleTracker()
+//         .fixUpNullPlayers(playerList.getNullPlayer())
+// `self` (the enclosing GameData) is the captured outer reference for
+// `playerList`. The body downcasts the I_Delegate to Battle_Delegate and
+// applies the null-player fixup.
+game_data_lambda_fix_up_null_players_in_delegates_5 :: proc(self: ^Game_Data, delegate: ^I_Delegate) {
+	battle_delegate := cast(^Battle_Delegate)delegate
+	battle_tracker_fix_up_null_players(
+		battle_delegate_get_battle_tracker(battle_delegate),
+		player_list_get_null_player(self.player_list),
+	)
+}

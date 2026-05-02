@@ -128,3 +128,30 @@ bombardment_combat_value_bombardment_combat_value_builder_new :: proc(
 ) -> ^Bombardment_Combat_Value_Bombardment_Combat_Value_Builder {
 	return new(Bombardment_Combat_Value_Bombardment_Combat_Value_Builder)
 }
+
+// Ported from BombardmentCombatValue$BombardmentCombatValueBuilder#build().
+// Lombok @Builder with @Builder.Default on friendUnits/enemyUnits → List.of()
+// when the caller did not invoke the corresponding setter.
+bombardment_combat_value_bombardment_combat_value_builder_build :: proc(
+	self: ^Bombardment_Combat_Value_Bombardment_Combat_Value_Builder,
+) -> ^Bombardment_Combat_Value {
+	friend_units := self.friend_units
+	if !self.friend_units_set {
+		friend_units = bombardment_combat_value_default_friend_units()
+	}
+	enemy_units := self.enemy_units
+	if !self.enemy_units_set {
+		enemy_units = bombardment_combat_value_default_enemy_units()
+	}
+	return bombardment_combat_value_new(
+		i32(self.game_dice_sides),
+		self.lhtr_heavy_bombers,
+		self.strength_support_from_friends,
+		self.strength_support_from_enemies,
+		self.roll_support_from_friends,
+		self.roll_support_from_enemies,
+		self.territory_effects,
+		friend_units,
+		enemy_units,
+	)
+}

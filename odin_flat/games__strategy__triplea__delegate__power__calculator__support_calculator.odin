@@ -48,3 +48,105 @@ support_calculator_lambda_new_1 :: proc(self: ^Support_Calculator, bonus_type: ^
 	result: [dynamic]^Unit_Support_Attachment
 	return result
 }
+
+// Java constructor:
+//   public SupportCalculator(
+//       Collection<Unit> unitsGivingTheSupport,
+//       Collection<UnitSupportAttachment> rules,
+//       BattleState.Side side,
+//       boolean allies)
+support_calculator_new :: proc(
+	units_giving_the_support: [dynamic]^Unit,
+	rules: [dynamic]^Unit_Support_Attachment,
+	side: Battle_State_Side,
+	allies: bool,
+) -> ^Support_Calculator {
+	self := new(Support_Calculator)
+	self.side = side
+	self.allies = allies
+	self.support_rules = make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment)
+	self.support_units = make(map[^Unit_Support_Attachment]^Integer_Map_Unit)
+
+	if len(units_giving_the_support) == 0 {
+		return self
+	}
+
+	for rule in rules {
+		types := unit_support_attachment_get_unit_type(rule)
+		if len(unit_support_attachment_get_players(rule)) == 0 || types == nil || len(types) == 0 {
+			continue
+		}
+		if !((side == .DEFENSE && unit_support_attachment_get_defence(rule)) ||
+			(side == .OFFENSE && unit_support_attachment_get_offence(rule))) {
+			continue
+		}
+		if !((allies && unit_support_attachment_get_allied(rule)) ||
+			(!allies && unit_support_attachment_get_enemy(rule))) {
+			continue
+		}
+
+		// canSupport = unitIsOfType((UnitType) rule.getAttachedTo())
+		//                .and(unitIsOwnedByAnyOf(rule.getPlayers()))
+		attached_ut := cast(^Unit_Type)rule.attached_to
+		is_of_type_p, is_of_type_c := matches_unit_is_of_type(attached_ut)
+		owned_p, owned_c := matches_unit_is_owned_by_any_of(unit_support_attachment_get_players(rule))
+
+		// impArtTech = rule.getImpArtTech()
+		//                ? Matches.unitOwnerHasImprovedArtillerySupportTech()
+		//                : u -> false;
+		has_imp_art := unit_support_attachment_get_imp_art_tech(rule)
+		imp_art_p: proc(rawptr, ^Unit) -> bool
+		imp_art_c: rawptr
+		if has_imp_art {
+			imp_art_p, imp_art_c = matches_unit_owner_has_improved_artillery_support_tech()
+		}
+
+		units_for_rule := new(Integer_Map_Unit)
+		units_for_rule.entries = make(map[^Unit]i32)
+		number := unit_support_attachment_get_number(rule)
+		for unit in units_giving_the_support {
+			if !is_of_type_p(is_of_type_c, unit) {
+				continue
+			}
+			if !owned_p(owned_c, unit) {
+				continue
+			}
+			units_for_rule.entries[unit] = number
+
+			imp_art_hit: bool
+			if has_imp_art {
+				imp_art_hit = imp_art_p(imp_art_c, unit)
+			} else {
+				imp_art_hit = support_calculator_lambda_new_0(self, unit)
+			}
+			if imp_art_hit {
+				units_for_rule.entries[unit] += number
+			}
+		}
+		if len(units_for_rule.entries) > 0 {
+			self.support_units[rule] = units_for_rule
+			bt := unit_support_attachment_get_bonus_type(rule)
+			list, ok := self.support_rules[bt]
+			if !ok {
+				list = support_calculator_lambda_new_1(self, bt)
+			}
+			append(&list, rule)
+			self.support_rules[bt] = list
+		}
+	}
+	return self
+}
+
+// Java synthetic lambda: `u -> new IntegerMap<>()` passed to
+// support.computeIfAbsent inside getCombinedSupportGiven (first call,
+// supportFromFriends branch).
+support_calculator_lambda_get_combined_support_given_2 :: proc(u: ^Unit) -> ^Integer_Map {
+	return integer_map_new()
+}
+
+// Java synthetic lambda: `u -> new IntegerMap<>()` passed to
+// support.computeIfAbsent inside getCombinedSupportGiven (second call,
+// supportFromEnemies branch).
+support_calculator_lambda_get_combined_support_given_3 :: proc(u: ^Unit) -> ^Integer_Map {
+	return integer_map_new()
+}

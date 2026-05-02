@@ -110,3 +110,29 @@ main_defense_combat_value_main_defense_combat_value_builder_enemy_units :: proc(
 	return self
 }
 
+// Ported from MainDefenseCombatValue$MainDefenseCombatValueBuilder#build().
+main_defense_combat_value_main_defense_combat_value_builder_build :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Combat_Value_Builder,
+) -> ^Main_Defense_Combat_Value {
+	friend_units := self.friend_units
+	if friend_units == nil {
+		friend_units = main_defense_combat_value_default_friend_units()
+	}
+	enemy_units := self.enemy_units
+	if enemy_units == nil {
+		enemy_units = main_defense_combat_value_default_enemy_units()
+	}
+	return main_defense_combat_value_new(
+		self.game_sequence,
+		self.game_dice_sides,
+		self.lhtr_heavy_bombers,
+		self.strength_support_from_friends,
+		self.strength_support_from_enemies,
+		self.roll_support_from_friends,
+		self.roll_support_from_enemies,
+		self.territory_effects,
+		friend_units,
+		enemy_units,
+	)
+}
+

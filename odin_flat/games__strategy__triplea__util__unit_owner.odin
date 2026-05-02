@@ -5,6 +5,21 @@ Unit_Owner :: struct {
 	owner: ^Game_Player,
 }
 
+// games.strategy.triplea.util.UnitOwner#<init>(games.strategy.engine.data.Unit)
+//
+//   public UnitOwner(final Unit unit) {
+//     checkNotNull(unit);
+//     type = unit.getType();
+//     owner = unit.getOwner();
+//   }
+unit_owner_new :: proc(unit: ^Unit) -> ^Unit_Owner {
+	assert(unit != nil)
+	self := new(Unit_Owner)
+	self.type = unit_get_type(unit)
+	self.owner = unit_get_owner(unit)
+	return self
+}
+
 // games.strategy.triplea.util.UnitOwner#getType
 //
 //   @Getter UnitType type;

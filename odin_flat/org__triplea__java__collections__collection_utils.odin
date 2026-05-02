@@ -84,3 +84,102 @@ collection_utils_to_array_list :: proc() -> [dynamic]rawptr {
 	result: [dynamic]rawptr
 	return result
 }
+
+// Returns all elements in the collection that match the predicate. Always a fresh list.
+collection_utils_get_matches :: proc(collection: [dynamic]rawptr, predicate: proc(rawptr) -> bool) -> [dynamic]rawptr {
+	result: [dynamic]rawptr
+	for elem in collection {
+		if predicate(elem) {
+			append(&result, elem)
+		}
+	}
+	return result
+}
+
+// Returns up to `max` elements that match the predicate. Always a fresh list.
+collection_utils_get_n_matches :: proc(collection: [dynamic]rawptr, max: i32, predicate: proc(rawptr) -> bool) -> [dynamic]rawptr {
+	assert(max >= 0, "max must not be negative")
+	result: [dynamic]rawptr
+	count: i32 = 0
+	for elem in collection {
+		if count >= max {
+			break
+		}
+		if predicate(elem) {
+			append(&result, elem)
+			count += 1
+		}
+	}
+	return result
+}
+
+// Returns elements present in both collections (distinct). Always a fresh list.
+collection_utils_intersection :: proc(collection1: [dynamic]rawptr, collection2: [dynamic]rawptr) -> [dynamic]rawptr {
+	result: [dynamic]rawptr
+	if len(collection1) == 0 || len(collection2) == 0 {
+		return result
+	}
+	for a in collection1 {
+		// distinct: skip if already added
+		already := false
+		for r in result {
+			if r == a {
+				already = true
+				break
+			}
+		}
+		if already {
+			continue
+		}
+		// must exist in collection2
+		in_c2 := false
+		for b in collection2 {
+			if a == b {
+				in_c2 = true
+				break
+			}
+		}
+		if in_c2 {
+			append(&result, a)
+		}
+	}
+	return result
+}
+
+// Returns elements in collection1 not in collection2 (distinct). Always a fresh list.
+collection_utils_difference :: proc(collection1: [dynamic]rawptr, collection2: [dynamic]rawptr) -> [dynamic]rawptr {
+	result: [dynamic]rawptr
+	if len(collection1) == 0 {
+		return result
+	}
+	if len(collection2) == 0 {
+		// copy of collection1
+		for a in collection1 {
+			append(&result, a)
+		}
+		return result
+	}
+	for a in collection1 {
+		already := false
+		for r in result {
+			if r == a {
+				already = true
+				break
+			}
+		}
+		if already {
+			continue
+		}
+		in_c2 := false
+		for b in collection2 {
+			if a == b {
+				in_c2 = true
+				break
+			}
+		}
+		if !in_c2 {
+			append(&result, a)
+		}
+	}
+	return result
+}

@@ -72,3 +72,21 @@ _predicate_builder_eval :: proc(ctx: rawptr, o: rawptr) -> bool {
 predicate_builder_build :: proc(self: ^Predicate_Builder) -> (proc(ctx: rawptr, o: rawptr) -> bool, rawptr) {
 	return _predicate_builder_eval, rawptr(self)
 }
+
+predicate_builder_of :: proc(predicate: proc(o: rawptr) -> bool) -> ^Predicate_Builder {
+	return predicate_builder_new(predicate)
+}
+
+predicate_builder_and_if :: proc(self: ^Predicate_Builder, condition: bool, predicate: proc(o: rawptr) -> bool) -> ^Predicate_Builder {
+	if condition {
+		return predicate_builder_and(self, predicate)
+	}
+	return self
+}
+
+predicate_builder_or_if :: proc(self: ^Predicate_Builder, condition: bool, predicate: proc(o: rawptr) -> bool) -> ^Predicate_Builder {
+	if condition {
+		return predicate_builder_or(self, predicate)
+	}
+	return self
+}

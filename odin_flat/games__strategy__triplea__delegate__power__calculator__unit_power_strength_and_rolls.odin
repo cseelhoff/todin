@@ -41,4 +41,29 @@ unit_power_strength_and_rolls_get_dice_sides :: proc(self: ^Unit_Power_Strength_
 	return self.dice_sides
 }
 
+unit_power_strength_and_rolls_get_strength :: proc(self: ^Unit_Power_Strength_And_Rolls) -> i32 {
+	return self.strength_and_rolls.strength
+}
+
+unit_power_strength_and_rolls_get_rolls :: proc(self: ^Unit_Power_Strength_And_Rolls) -> i32 {
+	return self.strength_and_rolls.rolls
+}
+
+unit_power_strength_and_rolls_builder :: proc() -> ^Unit_Power_Strength_And_Rolls_Unit_Power_Strength_And_Rolls_Builder {
+	return unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_new()
+}
+
+unit_power_strength_and_rolls_to_builder :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+) -> ^Unit_Power_Strength_And_Rolls_Unit_Power_Strength_And_Rolls_Builder {
+	b := unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_new()
+	b.power = self.power
+	b.strength_and_rolls = self.strength_and_rolls
+	b.unit = self.unit
+	b.power_calculator = self.power_calculator
+	b.choose_best_roll = self.choose_best_roll
+	b.dice_sides = self.dice_sides
+	return b
+}
+
 

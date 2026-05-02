@@ -896,3 +896,23 @@ game_map_get_territories_owned_by :: proc(
 	}
 	return result
 }
+
+// Mirrors GameMap.isValidRoute(Route): indicates whether each territory in
+// the route is connected to the preceding territory. Iterates the route's
+// territories (Route's iterator returns getAllTerritories()) and verifies
+// each consecutive pair is in the connections map.
+game_map_is_valid_route :: proc(self: ^Game_Map, route: ^Route) -> bool {
+	all := route_get_all_territories(route)
+	defer delete(all)
+	previous: ^Territory = nil
+	for t in all {
+		if previous != nil {
+			neighbors := game_map_get_neighbors(self, previous)
+			if _, ok := neighbors[t]; !ok {
+				return false
+			}
+		}
+		previous = t
+	}
+	return true
+}

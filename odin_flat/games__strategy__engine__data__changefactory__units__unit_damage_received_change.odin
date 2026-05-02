@@ -108,3 +108,20 @@ unit_damage_received_change_invert :: proc(self: ^Unit_Damage_Received_Change) -
 	result.territories_to_notify = self.territories_to_notify
 	return &result.change
 }
+
+// Java: UnitDamageReceivedChange#perform(GameState data)
+//   newTotalDamage.forEach((unitId, damage) -> {
+//     final Unit unit = data.getUnits().get(UUID.fromString(unitId));
+//     if (unit != null) { unit.setHits(damage); }
+//   });
+//   for (final String territory : territoriesToNotify) {
+//     data.getMap().getTerritoryOrNull(territory).notifyChanged();
+//   }
+unit_damage_received_change_perform :: proc(self: ^Unit_Damage_Received_Change, data: ^Game_State) {
+	for unit_id, damage in self.new_total_damage {
+		unit_damage_received_change_lambda_perform_0(data, unit_id, damage)
+	}
+	for territory in self.territories_to_notify {
+		territory_notify_changed(game_map_get_territory_or_null(game_state_get_map(data), territory))
+	}
+}

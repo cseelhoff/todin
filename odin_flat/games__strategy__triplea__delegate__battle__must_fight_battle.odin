@@ -331,10 +331,22 @@ must_fight_battle_remove_from_dependent_battles :: proc(
 
 // games.strategy.triplea.delegate.battle.MustFightBattle#addRoundResetStep(List<IExecutable>)
 //
-// Pushes an IExecutable that bumps `round`, validates against MAX_ROUNDS,
-// re-runs determineStepStrings, and re-pushes the inner fight-loop
-// IExecutable on the stack.
-//
-// blocked: missing must_fight_battle_push_fight_loop_on_stack
+// Java constructs two anonymous IExecutables: an inner `loop` (which calls
+// `pushFightLoopOnStack()`) and an outer step (which bumps `round`, validates
+// against MAX_ROUNDS, refreshes step strings, broadcasts them, and pushes the
+// loop back onto the stack). The Odin port mirrors Java by constructing the
+// already-defined inner-class structs (`Must_Fight_Battle_28` is the loop,
+// `Must_Fight_Battle_29` is the outer step) and appending the outer step's
+// embedded I_Executable to the supplied list. The execute method bodies for
+// the two inner classes live on the inner structs themselves and are tracked
+// as separate method_keys.
+must_fight_battle_add_round_reset_step :: proc(
+	self: ^Must_Fight_Battle,
+	steps: ^[dynamic]^I_Executable,
+) {
+	loop := must_fight_battle_28_new(self)
+	outer := must_fight_battle_29_new(self, &loop.i_executable)
+	append(steps, &outer.i_executable)
+}
 
 

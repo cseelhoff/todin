@@ -206,3 +206,59 @@ integer_map_to_string :: proc(self: ^Integer_Map) -> string {
 	}
 	return strings.to_string(b)
 }
+
+// public IntegerMap(final Map<T, Integer> map) — copy constructor that delegates
+// to the private (map, copy=true) constructor.
+integer_map_new_map :: proc(source: map[rawptr]i32) -> ^Integer_Map {
+	return integer_map_new_from_map(source, true)
+}
+
+// public static <X> IntegerMap<X> of() — immutable empty integer map.
+// Java passes Map.of() with copy=false; Odin's empty map literal is equivalent.
+integer_map_of :: proc() -> ^Integer_Map {
+	return integer_map_new_from_map(make(map[rawptr]i32), false)
+}
+
+// public static <X> IntegerMap<X> unmodifiableViewOf(IntegerMap<X> other)
+// Java wraps with Collections.unmodifiableMap; Odin has no immutability wrapper,
+// so we alias the backing map (copy=false) to preserve the "view" semantics.
+integer_map_unmodifiable_view_of :: proc(other: ^Integer_Map) -> ^Integer_Map {
+	return integer_map_new_from_map(other.map_values, false)
+}
+
+// public void add(final IntegerMap<T> map)
+integer_map_add_map :: proc(self: ^Integer_Map, other: ^Integer_Map) {
+	for k, v in other.map_values {
+		integer_map_add(self, k, v)
+	}
+}
+
+// public void subtract(final IntegerMap<T> map)
+integer_map_subtract :: proc(self: ^Integer_Map, other: ^Integer_Map) {
+	for k, v in other.map_values {
+		integer_map_add(self, k, -v)
+	}
+}
+
+// Lambda for greaterThanOrEqualTo: entry -> getInt(entry.getKey()) >= entry.getValue()
+integer_map_lambda_greater_than_or_equal_to_5 :: proc(self: ^Integer_Map, key: rawptr, value: i32) -> bool {
+	return integer_map_get_int(self, key) >= value
+}
+
+// public boolean greaterThanOrEqualTo(final IntegerMap<T> map) — Java allMatch
+// returns true on empty.
+integer_map_greater_than_or_equal_to :: proc(self: ^Integer_Map, other: ^Integer_Map) -> bool {
+	for k, v in other.map_values {
+		if !integer_map_lambda_greater_than_or_equal_to_5(self, k, v) {
+			return false
+		}
+	}
+	return true
+}
+
+// public void addMultiple(final IntegerMap<T> map, final int multiple)
+integer_map_add_multiple :: proc(self: ^Integer_Map, other: ^Integer_Map, multiple: i32) {
+	for k, v in other.map_values {
+		integer_map_add(self, k, v * multiple)
+	}
+}

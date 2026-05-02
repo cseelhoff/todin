@@ -56,3 +56,9 @@ battle_calculator_merge_unit_collections :: proc(
 	return combined
 }
 
+// Java: `attackingUnits.forEach(unit -> unit.setWasAmphibious(true))`
+// inside `BattleCalculator.calculate`. Captures nothing.
+battle_calculator_calculate_lambda_0 :: proc(unit: ^Unit) {
+	unit_set_was_amphibious(unit, true)
+}
+

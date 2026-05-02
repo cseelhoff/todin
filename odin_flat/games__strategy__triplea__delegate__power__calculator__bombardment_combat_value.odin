@@ -61,3 +61,9 @@ bombardment_combat_value_new :: proc(
 	return self
 }
 
+// Java: public static BombardmentCombatValueBuilder builder() (Lombok-generated).
+bombardment_combat_value_builder :: proc(
+) -> ^Bombardment_Combat_Value_Bombardment_Combat_Value_Builder {
+	return make_Bombardment_Combat_Value_Bombardment_Combat_Value_Builder()
+}
+

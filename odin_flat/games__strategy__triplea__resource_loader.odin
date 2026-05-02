@@ -27,6 +27,20 @@ resource_loader_find_resource :: proc(self: ^Resource_Loader, search_path_string
 	return nil
 }
 
+// Java: public @Nullable URL getResource(final String inputPathString)
+//   return findResource(inputPathString).orElse(null);
+resource_loader_get_resource :: proc(self: ^Resource_Loader, input_path_string: string) -> ^Url {
+	return resource_loader_find_resource(self, input_path_string)
+}
+
+// Synthetic lambda for the two-arg `getResource(s1, s2)` overload's
+// `.or(() -> findResource(inputPathString2))`: a Supplier<Optional<URL>>
+// that defers the second findResource call. With the shim's empty
+// classloader this always yields nil, mirroring an empty Optional.
+resource_loader_lambda_get_resource_1 :: proc(self: ^Resource_Loader, input_path_string2: string) -> ^Url {
+	return resource_loader_find_resource(self, input_path_string2)
+}
+
 // Synthetic lambda for `URL[]::new` used in the constructor's
 // `searchUrls.toArray(URL[]::new)` call: an IntFunction<URL[]> that
 // allocates a fresh URL array of the requested length.

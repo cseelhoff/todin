@@ -46,3 +46,14 @@ unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_dice_sides :
 	return self
 }
 
+unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build :: proc(self: ^Unit_Power_Strength_And_Rolls_Unit_Power_Strength_And_Rolls_Builder) -> ^Unit_Power_Strength_And_Rolls {
+	return unit_power_strength_and_rolls_new(
+		self.power,
+		self.strength_and_rolls,
+		self.unit,
+		self.power_calculator,
+		self.choose_best_roll,
+		self.dice_sides,
+	)
+}
+

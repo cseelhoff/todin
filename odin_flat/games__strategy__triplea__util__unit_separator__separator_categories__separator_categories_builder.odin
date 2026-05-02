@@ -32,3 +32,14 @@ unit_separator_separator_categories_separator_categories_builder_transport_cost 
 	return self
 }
 
+unit_separator_separator_categories_separator_categories_builder_build :: proc(self: ^Unit_Separator_Separator_Categories_Separator_Categories_Builder) -> ^Unit_Separator_Separator_Categories {
+	out := new(Unit_Separator_Separator_Categories)
+	out.dependents = self.dependents
+	out.movement = self.movement
+	out.movement_for_air_units_only = self.movement_for_air_units_only
+	out.transport_cost = self.transport_cost
+	out.transport_movement = self.transport_movement
+	out.retreat_possibility = self.retreat_possibility
+	return out
+}
+

@@ -111,3 +111,15 @@ lambda_transport_utils_choose_equivalent_units_to_unload_4 :: proc(
 	updated_units^[unit_index] = u
 }
 
+// Java: TransportUtils.canUnload(Unit unit, Territory territory) -> boolean (private static)
+// Body: transport = unit.getTransportedBy(); return transport != null
+//                && !Matches.transportCannotUnload(territory).test(transport);
+transport_utils_can_unload :: proc(unit: ^Unit, territory: ^Territory) -> bool {
+	transport := unit_get_transported_by(unit)
+	if transport == nil {
+		return false
+	}
+	pred, ctx := matches_transport_cannot_unload(territory)
+	return !pred(ctx, transport)
+}
+

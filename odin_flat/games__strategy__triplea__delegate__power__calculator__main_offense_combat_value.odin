@@ -63,3 +63,9 @@ main_offense_combat_value_get_battle_side :: proc(self: ^Main_Offense_Combat_Val
 main_offense_combat_value_get_dice_sides :: proc(self: ^Main_Offense_Combat_Value, unit: ^Unit) -> i32 {
 	return self.game_dice_sides
 }
+
+// Java: Lombok @Builder static MainOffenseCombatValueBuilder builder() { ... }
+main_offense_combat_value_builder :: proc(
+) -> ^Main_Offense_Combat_Value_Main_Offense_Combat_Value_Builder {
+	return main_offense_combat_value_main_offense_combat_value_builder_new()
+}

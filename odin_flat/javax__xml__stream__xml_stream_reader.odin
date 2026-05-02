@@ -53,6 +53,21 @@ xml_stream_reader_next :: proc(self: ^Xml_Stream_Reader) -> i32 {
 	return 0
 }
 
+xml_stream_reader_has_text :: proc(self: ^Xml_Stream_Reader) -> bool {
+	_ = self
+	return false
+}
+
+xml_stream_reader_get_text :: proc(self: ^Xml_Stream_Reader) -> string {
+	_ = self
+	return ""
+}
+
 xml_stream_reader_close :: proc(self: ^Xml_Stream_Reader) {
 	_ = self
 }
+
+// XMLStreamConstants event-type values, mirroring javax.xml.stream.XMLStreamConstants.
+XML_STREAM_START_ELEMENT :: 1
+XML_STREAM_END_ELEMENT   :: 2
+XML_STREAM_CHARACTERS    :: 4

@@ -14,3 +14,7 @@ Dummy_Player :: struct {
 	order_of_losses:          [dynamic]^Unit,
 }
 
+dummy_player_get_battle :: proc(self: ^Dummy_Player) -> ^Must_Fight_Battle {
+	return dummy_delegate_bridge_get_battle(self.bridge)
+}
+

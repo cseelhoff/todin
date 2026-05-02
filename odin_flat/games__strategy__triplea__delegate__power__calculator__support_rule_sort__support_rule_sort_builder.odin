@@ -31,3 +31,7 @@ support_rule_sort_support_rule_sort_builder_strength :: proc(self: ^Support_Rule
 	self.strength = strength
 	return self
 }
+
+support_rule_sort_support_rule_sort_builder_build :: proc(self: ^Support_Rule_Sort_Support_Rule_Sort_Builder) -> ^Support_Rule_Sort {
+	return support_rule_sort_new(self.side, self.friendly, self.roll, self.strength)
+}

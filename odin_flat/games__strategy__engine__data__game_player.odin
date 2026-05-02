@@ -219,3 +219,43 @@ game_player_is_allied_with_any_of_these_players :: proc(self: ^Game_Player, othe
 	rt := game_data_get_relationship_tracker(game_player_get_data(self))
 	return relationship_tracker_is_allied_with_any_of_these_players(rt, self, others)
 }
+
+// Java: public boolean amNotDeadYet()
+// "If I have no units with movement and I own zero factories or have no
+// owned land, then I am basically dead, and therefore should not
+// participate in things like politics."
+//
+// Java composes Predicate<Unit> via .and(...) and feeds it to
+// territory.anyUnitsMatch(...). The Odin matchers return a
+// (proc(rawptr, ^Unit) -> bool, rawptr) pair, so we evaluate the
+// composed conjunction inline by walking each territory's unit
+// collection and short-circuiting per the Java semantics.
+game_player_am_not_dead_yet :: proc(self: ^Game_Player) -> bool {
+	territories := game_map_get_territories(game_data_get_map(game_player_get_data(self)))
+	defer delete(territories)
+
+	owned_p, owned_c := matches_unit_is_owned_by(self)
+	atk_p, atk_c := matches_unit_has_attack_value_of_at_least(1)
+	mov_p, mov_c := matches_unit_can_move()
+	land_p, land_c := matches_unit_is_land()
+	prod_p, prod_c := matches_unit_can_produce_units()
+
+	for t in territories {
+		uc := territory_get_unit_collection(t)
+		if uc != nil {
+			for u in uc.units {
+				if owned_p(owned_c, u) && atk_p(atk_c, u) && mov_p(mov_c, u) && land_p(land_c, u) {
+					return true
+				}
+			}
+			if territory_is_owned_by(t, self) {
+				for u in uc.units {
+					if owned_p(owned_c, u) && prod_p(prod_c, u) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
+}

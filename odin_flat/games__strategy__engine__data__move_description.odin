@@ -42,6 +42,46 @@ move_description_new :: proc(
 	return self
 }
 
+// Mirrors the public 3-arg Java constructor
+// MoveDescription(Collection<Unit>, Route, Map<Unit, Unit>): chains to
+// the 4-arg constructor with `Map.of()` (an empty
+// airTransportsDependents map). The bare `move_description_new` name is
+// taken by the all-args constructor, so this 3-arg overload uses a
+// `_with_sea_transports` suffix to disambiguate.
+move_description_new_with_sea_transports :: proc(
+	units: []^Unit,
+	route: ^Route,
+	units_to_sea_transports: map[^Unit]^Unit,
+) -> ^Move_Description {
+	empty_air_transports_dependents: map[^Unit][dynamic]^Unit
+	return move_description_new(
+		units,
+		route,
+		units_to_sea_transports,
+		empty_air_transports_dependents,
+	)
+}
+
+// Mirrors the public 2-arg Java constructor
+// MoveDescription(Collection<Unit>, Route): chains to the 4-arg
+// constructor with `Map.of()` for both unitsToSeaTransports and
+// airTransportsDependents. The bare `move_description_new` name is
+// taken by the all-args constructor, so this 2-arg overload uses a
+// `_units_route` suffix to disambiguate.
+move_description_new_units_route :: proc(
+	units: []^Unit,
+	route: ^Route,
+) -> ^Move_Description {
+	empty_units_to_sea_transports: map[^Unit]^Unit
+	empty_air_transports_dependents: map[^Unit][dynamic]^Unit
+	return move_description_new(
+		units,
+		route,
+		empty_units_to_sea_transports,
+		empty_air_transports_dependents,
+	)
+}
+
 move_description_get_units_to_sea_transports :: proc(self: ^Move_Description) -> map[^Unit]^Unit {
 	return self.units_to_sea_transports
 }

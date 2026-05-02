@@ -56,3 +56,22 @@ power_strength_and_rolls_get_unit_support_rolls_map :: proc(
 ) -> map[^Unit]Integer_Map {
 	return self.unit_support_rolls_map
 }
+
+power_strength_and_rolls_has_strength_or_rolls :: proc(
+	self: ^Power_Strength_And_Rolls,
+) -> bool {
+	return power_strength_and_rolls_calculate_total_rolls(self) != 0 &&
+		power_strength_and_rolls_calculate_total_power(self) != 0
+}
+
+// Lambda from addUnits: (newSupport) -> new IntegerMap<>() used by
+// unitSupportPowerMap.computeIfAbsent.
+power_strength_and_rolls_lambda_add_units_0 :: proc(new_support: ^Unit) -> Integer_Map {
+	return Integer_Map{map_values = make(map[rawptr]i32)}
+}
+
+// Lambda from addUnits: (newSupport) -> new IntegerMap<>() used by
+// unitSupportRollsMap.computeIfAbsent.
+power_strength_and_rolls_lambda_add_units_2 :: proc(new_support: ^Unit) -> Integer_Map {
+	return Integer_Map{map_values = make(map[rawptr]i32)}
+}

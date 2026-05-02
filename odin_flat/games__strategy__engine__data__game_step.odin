@@ -141,3 +141,8 @@ game_step_get_delegate_optional :: proc(self: ^Game_Step) -> ^I_Delegate {
 	data := game_data_component_get_data(&self.game_data_component)
 	return game_data_get_delegate_optional(data, self.delegate_name)
 }
+
+game_step_get_delegate :: proc(self: ^Game_Step) -> ^I_Delegate {
+	data := game_data_component_get_data(&self.game_data_component)
+	return game_data_get_delegate(data, self.delegate_name)
+}

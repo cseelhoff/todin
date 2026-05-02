@@ -7,12 +7,24 @@ Installed_Maps_Listing :: struct {
 	installed_maps: [dynamic]^Installed_Map,
 }
 
-installed_maps_listing_new :: proc(
+installed_maps_listing_new_from_maps :: proc(
 	installed_maps: [dynamic]^Installed_Map,
 ) -> ^Installed_Maps_Listing {
 	self := new(Installed_Maps_Listing)
 	self.installed_maps = installed_maps
 	return self
+}
+
+// Java: private InstalledMapsListing(Path folder) {
+//   this(readMapYamlsAndGenerateMissingMapYamls(folder));
+// }
+// Path → string per port convention; wrap via path_of for the
+// helper that still takes a Path.
+installed_maps_listing_new :: proc(folder: string) -> ^Installed_Maps_Listing {
+	maps := installed_maps_listing_read_map_yamls_and_generate_missing_map_yamls(
+		path_of(folder),
+	)
+	return installed_maps_listing_new_from_maps(maps)
 }
 
 installed_maps_listing_find_content_root_for_map_name :: proc(

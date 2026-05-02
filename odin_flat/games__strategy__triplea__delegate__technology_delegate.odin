@@ -47,3 +47,19 @@ technology_delegate_get_remote_type :: proc(self: ^Technology_Delegate) -> typei
 	return I_Tech_Delegate
 }
 
+// games.strategy.triplea.delegate.TechnologyDelegate#loadState(java.io.Serializable)
+// Java casts the Serializable to TechnologyExtendedDelegateState, chains
+// super.loadState with its superState, then restores needToInitialize and
+// the techs map.
+technology_delegate_load_state :: proc(
+	self: ^Technology_Delegate,
+	state: ^Technology_Extended_Delegate_State,
+) {
+	base_triple_a_delegate_load_state(
+		&self.base_triple_a_delegate,
+		cast(^Base_Delegate_State)state.super_state,
+	)
+	self.need_to_initialize = state.need_to_initialize
+	self.techs = state.techs
+}
+

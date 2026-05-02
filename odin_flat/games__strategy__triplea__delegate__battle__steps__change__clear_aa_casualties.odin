@@ -30,3 +30,16 @@ clear_aa_casualties_get_order :: proc(
 ) -> Battle_Step_Order {
 	return .AA_REMOVE_CASUALTIES
 }
+
+clear_aa_casualties_execute :: proc(
+	self: ^Clear_Aa_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	battle_actions_clear_waiting_to_die_and_damaged_changes_into(
+		self.battle_actions,
+		bridge,
+		.OFFENSE,
+		.DEFENSE,
+	)
+}

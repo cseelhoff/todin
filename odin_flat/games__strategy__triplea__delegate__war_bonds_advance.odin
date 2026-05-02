@@ -10,3 +10,7 @@ war_bonds_advance_get_property :: proc(self: ^War_Bonds_Advance) -> string {
 	return "warBonds"
 }
 
+war_bonds_advance_has_tech :: proc(self: ^War_Bonds_Advance, ta: ^Tech_Attachment) -> bool {
+	return tech_attachment_get_war_bonds(ta)
+}
+
