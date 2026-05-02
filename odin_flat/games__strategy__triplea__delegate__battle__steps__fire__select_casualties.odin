@@ -61,3 +61,13 @@ select_casualties_get_name :: proc(self: ^Select_Casualties) -> string {
 	return fmt.aprintf("%s%s%s", player.named.base.name, BATTLE_STEP_SELECT_PREFIX, suffix)
 }
 
+// Java: SelectCasualties#getAllStepDetails
+//   return List.of(new StepDetails(getName(), this));
+// Note: Select_Casualties does not embed Battle_Step in this port; the step
+// pointer field is passed as nil (consumers identify the step via name).
+select_casualties_get_all_step_details :: proc(self: ^Select_Casualties) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	append(&out, battle_step_step_details_new(select_casualties_get_name(self), nil))
+	return out
+}
+

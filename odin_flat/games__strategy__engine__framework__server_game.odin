@@ -121,3 +121,67 @@ server_game_should_auto_save_after_end :: proc(self: ^Server_Game, delegate: ^I_
 		delegate.auto_save_annotation != nil &&
 		delegate.auto_save_annotation.after_step_end
 }
+
+// games.strategy.engine.framework.ServerGame#getCurrentStep()
+// Java: return gameData.getSequence().getStep();
+server_game_get_current_step :: proc(self: ^Server_Game) -> ^Game_Step {
+	return game_sequence_get_step(game_data_get_sequence(self.game_data))
+}
+
+// games.strategy.engine.framework.ServerGame#getGameModifiedBroadcaster()
+// Java: return (IGameModifiedChannel)
+//   messengers.getChannelBroadcaster(IGame.GAME_MODIFICATION_CHANNEL);
+// IGame.GAME_MODIFICATION_CHANNEL is the RemoteName
+//   ("games.strategy.engine.framework.IGame.GAME_MODIFICATION_CHANNEL",
+//    IGameModifiedChannel.class).
+SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME :: "games.strategy.engine.framework.IGame.GAME_MODIFICATION_CHANNEL"
+
+server_game_get_game_modified_broadcaster :: proc(self: ^Server_Game) -> ^I_Game_Modified_Channel {
+	rn := remote_name_new(
+		SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME,
+		class_new(
+			"games.strategy.engine.framework.IGameModifiedChannel",
+			"IGameModifiedChannel",
+		),
+	)
+	return cast(^I_Game_Modified_Channel)messengers_get_channel_broadcaster(self.messengers, rn)
+}
+
+// games.strategy.engine.framework.ServerGame#importDiceStats(games.strategy.engine.history.HistoryNode)
+// Java walks the history tree; for every EventChild whose rendering data
+// is a DiceRoll it forwards the dice values to RandomStats keyed on the
+// roller's GamePlayer (resolved via the player_name on the DiceRoll, or
+// — when null — via DiceRoll.getPlayerNameFromAnnotation(node.getTitle())).
+// Then it recurses into every child node.
+server_game_import_dice_stats :: proc(self: ^Server_Game, node: ^History_Node) {
+	if node == nil {
+		return
+	}
+	if node.kind == .Event_Child {
+		child_node := cast(^Event_Child)node
+		if dice_roll, ok := child_node.rendering_data.(^Dice_Roll); ok {
+			player_name := dice_roll_get_player_name(dice_roll)
+			if player_name == "" {
+				title, _ := default_mutable_tree_node_get_user_object(
+					&child_node.history_node.default_mutable_tree_node,
+				).(string)
+				player_name = dice_roll_get_player_name_from_annotation(title)
+			}
+			game_player := player_list_get_player_id(
+				game_data_get_player_list(self.game_data),
+				player_name,
+			)
+			n := dice_roll_size(dice_roll)
+			rolls := make([]i32, n)
+			for i in 0 ..< n {
+				rolls[i] = die_get_value(dice_roll_get_die(dice_roll, i))
+			}
+			random_stats_add_random(self.random_stats, rolls, game_player, .COMBAT)
+		}
+	}
+	count := default_mutable_tree_node_get_child_count(&node.default_mutable_tree_node)
+	for i in 0 ..< count {
+		child := default_mutable_tree_node_get_child_at(&node.default_mutable_tree_node, i)
+		server_game_import_dice_stats(self, cast(^History_Node)child)
+	}
+}

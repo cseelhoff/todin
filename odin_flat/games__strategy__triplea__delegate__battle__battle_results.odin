@@ -48,3 +48,13 @@ battle_results_draw :: proc(self: ^Battle_Results) -> bool {
 			len(battle_results_get_remaining_defending_units(self)) == 0)
 }
 
+// Java: boolean attackerWon()
+battle_results_attacker_won :: proc(self: ^Battle_Results) -> bool {
+	return !battle_results_draw(self) && self.who_won == .ATTACKER
+}
+
+// Java: boolean defenderWon()
+battle_results_defender_won :: proc(self: ^Battle_Results) -> bool {
+	return !battle_results_draw(self) && self.who_won == .DEFENDER
+}
+

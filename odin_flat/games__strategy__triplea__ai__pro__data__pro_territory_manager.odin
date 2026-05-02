@@ -140,3 +140,23 @@ pro_territory_manager_get_cant_hold_territories :: proc(self: ^Pro_Territory_Man
 	return territories_that_cant_be_held
 }
 
+pro_territory_manager_have_used_all_attack_transports :: proc(self: ^Pro_Territory_Manager) -> bool {
+	moved_transports: map[^Unit]struct {}
+	territory_map := pro_my_move_options_get_territory_map(self.attack_options)
+	is_sea_transport, is_sea_transport_ctx := matches_unit_is_sea_transport()
+	for _, patd in territory_map {
+		amphib := pro_territory_get_amphib_attack_map(patd)
+		for u in amphib {
+			moved_transports[u] = {}
+		}
+		units := pro_territory_get_units(patd)
+		for u in units {
+			if is_sea_transport(is_sea_transport_ctx, u) {
+				moved_transports[u] = {}
+			}
+		}
+	}
+	transport_list := pro_my_move_options_get_transport_list(self.attack_options)
+	return len(moved_transports) >= len(transport_list)
+}
+

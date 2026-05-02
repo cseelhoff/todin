@@ -424,3 +424,144 @@ tech_ability_attachment_set_unit_abilities_gained :: proc(
 		abilities[ability] = struct {}{}
 	}
 }
+
+// --- constructor ---------------------------------------------------------
+
+// Java: public TechAbilityAttachment(String name, Attachable attachable, GameData gameData)
+// Mirrors `super(name, attachable, gameData)` — the same setter chain that
+// `default_attachment_new` performs, but allocating the concrete subtype so
+// the embedded `Default_Attachment` lives inside the
+// `Tech_Ability_Attachment` value (no separate heap allocation for the
+// parent). All other fields keep their Odin zero defaults except those the
+// Java declarations initialize to non-zero values: the three -1 sentinels
+// and `rocket_number_per_territory = 1`.
+tech_ability_attachment_new :: proc(
+	name: string,
+	attachable: ^Attachable,
+	game_data: ^Game_Data,
+) -> ^Tech_Ability_Attachment {
+	self := new(Tech_Ability_Attachment)
+	self.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.minimum_territory_value_for_production_bonus = -1
+	self.repair_discount = -1
+	self.war_bond_dice_sides = -1
+	self.rocket_number_per_territory = 1
+	return self
+}
+
+// --- applyCheckedValue ---------------------------------------------------
+
+// Java: @VisibleForTesting void applyCheckedValue(name, value, BiConsumer<UnitType, Integer> putter)
+// Splits/validates `value` via splitAndValidate, then forwards the resolved
+// (UnitType, Integer) pair to `putter`. The Java `BiConsumer` becomes a
+// bare Odin `proc` per the porting brief; current call sites use it for
+// non-capturing forwarding (e.g. `attackBonus::put` style method refs that
+// the orchestrator will port with the matching capture convention when
+// those setters are scheduled).
+tech_ability_attachment_apply_checked_value :: proc(
+	self: ^Tech_Ability_Attachment,
+	name: string,
+	value: string,
+	putter: proc(unit_type: ^Unit_Type, v: i32),
+) {
+	s := tech_ability_attachment_split_and_validate(self, name, value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	putter(ut, v)
+}
+
+// --- simple int-range setters -------------------------------------------
+
+// Java: private void setMinimumTerritoryValueForProductionBonus(String value)
+// Range [-1, 10000] (allowUndefined=true).
+tech_ability_attachment_set_minimum_territory_value_for_production_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.minimum_territory_value_for_production_bonus = tech_ability_attachment_get_int_in_range(
+		self,
+		"minimumTerritoryValueForProductionBonus",
+		value,
+		10000,
+		true,
+	)
+}
+
+// Java: private void setRepairDiscount(String value)
+// Range [-1, 100] (allowUndefined=true). Stored as percent; the static
+// getRepairDiscount(Collection) divides by 100.0 at use time.
+tech_ability_attachment_set_repair_discount :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.repair_discount = tech_ability_attachment_get_int_in_range(
+		self,
+		"repairDiscount",
+		value,
+		100,
+		true,
+	)
+}
+
+// Java: private void setRocketDistance(String value)
+// Range [0, 100] (allowUndefined=false).
+tech_ability_attachment_set_rocket_distance :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.rocket_distance = tech_ability_attachment_get_int_in_range(
+		self,
+		"rocketDistance",
+		value,
+		100,
+		false,
+	)
+}
+
+// Java: private void setRocketNumberPerTerritory(String value)
+// Range [-1, 200] (allowUndefined=true).
+tech_ability_attachment_set_rocket_number_per_territory :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.rocket_number_per_territory = tech_ability_attachment_get_int_in_range(
+		self,
+		"rocketNumberPerTerritory",
+		value,
+		200,
+		true,
+	)
+}
+
+// Java: private void setWarBondDiceNumber(String value)
+// Range [0, 100] (allowUndefined=false).
+tech_ability_attachment_set_war_bond_dice_number :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.war_bond_dice_number = tech_ability_attachment_get_int_in_range(
+		self,
+		"warBondDiceNumber",
+		value,
+		100,
+		false,
+	)
+}
+
+// Java: private void setWarBondDiceSides(String value)
+// Range [-1, 200] (allowUndefined=true).
+tech_ability_attachment_set_war_bond_dice_sides :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	self.war_bond_dice_sides = tech_ability_attachment_get_int_in_range(
+		self,
+		"warBondDiceSides",
+		value,
+		200,
+		true,
+	)
+}

@@ -265,3 +265,28 @@ abstract_end_turn_delegate_load_state :: proc(
 	self.need_to_initialize = state.need_to_initialize
 	self.has_posted_turn_summary = state.has_posted_turn_summary
 }
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#<init>()
+// Java has no explicit constructor; the implicit one applies the field
+// initializers `needToInitialize = true` and `hasPostedTurnSummary = false`.
+abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
+	self := new(Abstract_End_Turn_Delegate)
+	self.need_to_initialize = true
+	self.has_posted_turn_summary = false
+	return self
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#saveState()
+// Builds an EndTurnExtendedDelegateState, fills in superState from the
+// parent BaseTripleADelegate.saveState(), and copies the two delegate
+// flags. Java returns Serializable; the Odin port returns the concrete
+// state pointer (callers downcast in loadState).
+abstract_end_turn_delegate_save_state :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+) -> ^End_Turn_Extended_Delegate_State {
+	state := end_turn_extended_delegate_state_new()
+	state.super_state = base_triple_a_delegate_save_state(&self.base_triple_a_delegate)
+	state.need_to_initialize = self.need_to_initialize
+	state.has_posted_turn_summary = self.has_posted_turn_summary
+	return state
+}

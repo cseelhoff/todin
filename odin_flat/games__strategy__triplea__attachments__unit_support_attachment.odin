@@ -304,3 +304,52 @@ unit_support_attachment_set_side :: proc(self: ^Unit_Support_Attachment, side: s
 	return self
 }
 
+// Java: public UnitSupportAttachment(
+//           final String name, final Attachable attachable, final GameData gameData) {
+//   super(name, attachable, gameData);
+// }
+// Mirrors the `DefaultAttachment` super-constructor inline on the embedded
+// `default_attachment` field (per its doc-comment, subclass constructors
+// allocate their own concrete struct and initialize the base by hand).
+unit_support_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Unit_Support_Attachment {
+	self := new(Unit_Support_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	return self
+}
+
+// Java: private static Set<UnitType> getTargets(final UnitTypeList unitTypeList)
+//   Set<UnitType> types = Set.of();
+//   for (final UnitSupportAttachment rule : get(unitTypeList)) {
+//     if (rule.getBonusType().isOldArtilleryRule()) {
+//       types = rule.getUnitType();
+//       if (rule.getName().startsWith(Constants.SUPPORT_RULE_NAME_OLD_TEMP_FIRST)) {
+//         final UnitType attachedTo = (UnitType) rule.getAttachedTo();
+//         attachedTo.removeAttachment(rule.getName());
+//         rule.setAttachedTo(null);
+//       }
+//     }
+//   }
+//   return types;
+// `Constants.SUPPORT_RULE_NAME_OLD_TEMP_FIRST = "supportAttachment" + "ArtyOld" + "TempFirst"`.
+unit_support_attachment_get_targets :: proc(unit_type_list: ^Unit_Type_List) -> map[^Unit_Type]struct {} {
+	types: map[^Unit_Type]struct {}
+	rules := unit_support_attachment_get_for_unit_type_list(unit_type_list)
+	defer delete(rules)
+	for rule, _ in rules {
+		bt := unit_support_attachment_get_bonus_type(rule)
+		if bt != nil && unit_support_attachment_bonus_type_is_old_artillery_rule(bt) {
+			types = unit_support_attachment_get_unit_type(rule)
+			if strings.has_prefix(rule.default_attachment.name, "supportAttachmentArtyOldTempFirst") {
+				attached_to := cast(^Unit_Type)rule.default_attachment.attached_to
+				if attached_to != nil {
+					named_attachable_remove_attachment(&attached_to.named_attachable, rule.default_attachment.name)
+				}
+				default_attachment_set_attached_to(&rule.default_attachment, nil)
+			}
+		}
+	}
+	return types
+}
+

@@ -137,3 +137,107 @@ battle_delegate_lambda_do_scrambling_5 :: proc(player: ^Game_Player) -> bool {
 	return !game_player_is_null(player)
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#<init>()
+// Java has no explicit constructor; the implicit one applies the field
+// initializers: `battleTracker = new BattleTracker()`, every `needTo*`
+// flag = true, and `rocketHelper`/`currentBattle` default to null. The
+// embedded BaseTripleADelegate has no overridden constructor so its
+// fields are zero-initialized here.
+battle_delegate_new :: proc() -> ^Battle_Delegate {
+	self := new(Battle_Delegate)
+	self.battle_tracker = battle_tracker_new()
+	self.need_to_initialize = true
+	self.need_to_scramble = true
+	self.need_to_kamikaze_suicide_attacks = true
+	self.need_to_clear_empty_air_battle_attacks = true
+	self.need_to_add_bombardment_sources = true
+	self.need_to_record_battle_statistics = true
+	self.need_to_check_defending_planes_can_land = true
+	self.need_to_cleanup = true
+	self.need_to_create_rockets = true
+	self.need_to_fire_rockets = true
+	return self
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#getBattleListing()
+// Java: return battleTracker.getBattleListingFromPendingBattles();
+battle_delegate_get_battle_listing :: proc(self: ^Battle_Delegate) -> ^Battle_Listing {
+	return battle_tracker_get_battle_listing_from_pending_battles(self.battle_tracker)
+}
+
+// Captured-closure record for
+//   lambda$setupTerritoriesAbandonedToTheEnemy$2(GamePlayer)
+// which mirrors `p -> Matches.unitIsEnemyOf(p)
+//                       .and(Matches.unitIsNotAir())
+//                       .and(Matches.unitIsNotInfrastructure())`.
+// The three composed predicates are constructed once at lambda-creation
+// time (matching Java's `.and()` semantics, which builds the chain once
+// rather than per-test) and stored here so the body is allocation-free.
+Battle_Delegate_Setup_Abandoned_Predicate_2_Ctx :: struct {
+	enemy_of_p:         proc(rawptr, ^Unit) -> bool,
+	enemy_of_c:         rawptr,
+	not_air_p:          proc(rawptr, ^Unit) -> bool,
+	not_air_c:          rawptr,
+	not_infrastructure_p: proc(rawptr, ^Unit) -> bool,
+	not_infrastructure_c: rawptr,
+}
+
+battle_delegate_pred_setup_territories_abandoned_to_the_enemy_2 :: proc(
+	ctx_ptr: rawptr,
+	u: ^Unit,
+) -> bool {
+	c := cast(^Battle_Delegate_Setup_Abandoned_Predicate_2_Ctx)ctx_ptr
+	if !c.enemy_of_p(c.enemy_of_c, u) {
+		return false
+	}
+	if !c.not_air_p(c.not_air_c, u) {
+		return false
+	}
+	if !c.not_infrastructure_p(c.not_infrastructure_c, u) {
+		return false
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#lambda$setupTerritoriesAbandonedToTheEnemy$2(GamePlayer)
+// Body of `p -> Matches.unitIsEnemyOf(p).and(Matches.unitIsNotAir())
+//                .and(Matches.unitIsNotInfrastructure())` from
+// setupTerritoriesAbandonedToTheEnemy. The captured `p` is the only
+// argument; we build the three component predicates eagerly and pack
+// them into a heap ctx so the returned (pred, ctx) pair behaves like
+// Java's composed Predicate<Unit>.
+battle_delegate_lambda_setup_territories_abandoned_to_the_enemy_2 :: proc(
+	p: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Battle_Delegate_Setup_Abandoned_Predicate_2_Ctx)
+	ctx.enemy_of_p, ctx.enemy_of_c = matches_unit_is_enemy_of(p)
+	ctx.not_air_p, ctx.not_air_c = matches_unit_is_not_air()
+	ctx.not_infrastructure_p, ctx.not_infrastructure_c = matches_unit_is_not_infrastructure()
+	return battle_delegate_pred_setup_territories_abandoned_to_the_enemy_2, rawptr(ctx)
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#saveState()
+// Builds a Battle_Extended_Delegate_State, fills superState from the
+// parent BaseTripleADelegate.saveState(), and copies every per-flag
+// plus battle_tracker / current_battle. Java returns Serializable; the
+// Odin port returns the concrete state pointer (loadState downcasts).
+// Note: Java's saveState does not persist `rocketHelper`, so the field
+// is left at its zero value here.
+battle_delegate_save_state :: proc(self: ^Battle_Delegate) -> ^Battle_Extended_Delegate_State {
+	state := battle_extended_delegate_state_new()
+	state.super_state = base_triple_a_delegate_save_state(&self.base_triple_a_delegate)
+	state.battle_tracker = self.battle_tracker
+	state.need_to_initialize = self.need_to_initialize
+	state.need_to_scramble = self.need_to_scramble
+	state.need_to_create_rockets = self.need_to_create_rockets
+	state.need_to_kamikaze_suicide_attacks = self.need_to_kamikaze_suicide_attacks
+	state.need_to_clear_empty_air_battle_attacks = self.need_to_clear_empty_air_battle_attacks
+	state.need_to_add_bombardment_sources = self.need_to_add_bombardment_sources
+	state.need_to_fire_rockets = self.need_to_fire_rockets
+	state.need_to_record_battle_statistics = self.need_to_record_battle_statistics
+	state.need_to_check_defending_planes_can_land = self.need_to_check_defending_planes_can_land
+	state.need_to_cleanup = self.need_to_cleanup
+	state.current_battle = self.current_battle
+	return state
+}
+

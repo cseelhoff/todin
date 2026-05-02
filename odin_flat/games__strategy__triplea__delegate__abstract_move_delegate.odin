@@ -13,6 +13,38 @@ Abstract_Move_Delegate_Move_Type :: enum {
 	SPECIAL,
 }
 
+// games.strategy.triplea.delegate.AbstractMoveDelegate#<init>()
+// Java's implicit no-arg constructor. Mirrors the field initializer
+// `movesToUndo = new ArrayList<>()`; tempMovePerformer defaults to
+// nil. The embedded Base_Triple_A_Delegate / Abstract_Delegate slots
+// zero-initialize, matching Java's superclass implicit init.
+abstract_move_delegate_new :: proc() -> ^Abstract_Move_Delegate {
+	self := new(Abstract_Move_Delegate)
+	self.moves_to_undo = make([dynamic]^Undoable_Move)
+	return self
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#getRouteUsedToMoveInto(games.strategy.engine.data.Unit,games.strategy.engine.data.Territory)
+// Instance form of the static three-arg sibling above. Suffix `_1`
+// disambiguates the overload (project convention; see
+// territory_effect_attachment_get_1).
+abstract_move_delegate_get_route_used_to_move_into_1 :: proc(self: ^Abstract_Move_Delegate, unit: ^Unit, end: ^Territory) -> ^Route {
+	return abstract_move_delegate_get_route_used_to_move_into(self.moves_to_undo, unit, end)
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#saveState()
+// Java returns `Serializable`; the concrete type is always
+// AbstractMoveExtendedDelegateState. The Odin port returns the
+// concrete pointer. `super_state` is stored as rawptr so a
+// Base_Delegate_State pointer can be packed in.
+abstract_move_delegate_save_state :: proc(self: ^Abstract_Move_Delegate) -> ^Abstract_Move_Extended_Delegate_State {
+	state := abstract_move_extended_delegate_state_new()
+	state.super_state = rawptr(base_triple_a_delegate_save_state(&self.base_triple_a_delegate))
+	state.moves_to_undo = self.moves_to_undo
+	state.temp_move_performer = self.temp_move_performer
+	return state
+}
+
 // games.strategy.triplea.delegate.AbstractMoveDelegate#getRemoteType()
 // Java returns `Class<IMoveDelegate>`; Odin mirrors IDelegate#getRemoteType
 // and returns the corresponding `typeid`.

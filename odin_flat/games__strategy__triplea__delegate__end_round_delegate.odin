@@ -62,3 +62,38 @@ end_round_delegate_load_state :: proc(self: ^End_Round_Delegate, state: rawptr) 
 	self.winners = s.winners
 }
 
+// games.strategy.triplea.delegate.EndRoundDelegate#<init>()
+// Java body is empty (`public EndRoundDelegate() {}`); the implicit
+// constructor only runs the field initializers `gameOver = false`
+// and `winners = new ArrayList<>()`. The parent
+// `BaseTripleADelegate` has no field initializers worth replaying
+// here (its own state is set up by the engine after construction),
+// matching the convention used by `abstract_end_turn_delegate_new`.
+end_round_delegate_new :: proc() -> ^End_Round_Delegate {
+	self := new(End_Round_Delegate)
+	self.game_over = false
+	self.winners = make([dynamic]^Game_Player)
+	return self
+}
+
+// games.strategy.triplea.delegate.EndRoundDelegate#saveState()
+// Java body:
+//   final EndRoundExtendedDelegateState state = new EndRoundExtendedDelegateState();
+//   state.superState = super.saveState();
+//   state.gameOver = gameOver;
+//   state.winners = winners;
+//   return state;
+// Java returns `Serializable`; the Odin port returns the concrete
+// state pointer (callers downcast in `loadState`, mirroring the
+// pattern used elsewhere in this package, e.g.
+// `abstract_end_turn_delegate_save_state`).
+end_round_delegate_save_state :: proc(
+	self: ^End_Round_Delegate,
+) -> ^End_Round_Extended_Delegate_State {
+	state := end_round_extended_delegate_state_new()
+	state.super_state = base_triple_a_delegate_save_state(&self.base_triple_a_delegate)
+	state.game_over = self.game_over
+	state.winners = self.winners
+	return state
+}
+

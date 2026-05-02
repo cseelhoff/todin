@@ -243,3 +243,61 @@ route_has_water :: proc(self: ^Route) -> bool {
 	}
 	return false
 }
+
+// Mirrors Java Route(Territory start, Territory... territories): the
+// varargs constructor that delegates to `this(start, List.of(territories))`.
+// In Odin we accept a slice of step territories and append each via
+// route_add (which rejects loops with the same panic the private add does).
+route_new_from_start_and_steps :: proc(start: ^Territory, territories: ..^Territory) -> ^Route {
+	r := new(Route)
+	r.start = start
+	for t in territories {
+		route_add(r, t)
+	}
+	return r
+}
+
+// Mirrors Java Route(List<Territory> territories): delegating constructor
+// equivalent to `this(territories.get(0), territories.subList(1, size))`.
+// First element becomes the start; remaining elements are added as steps.
+route_new_from_list :: proc(territories: [dynamic]^Territory) -> ^Route {
+	r := new(Route)
+	r.start = territories[0]
+	for i in 1 ..< len(territories) {
+		route_add(r, territories[i])
+	}
+	return r
+}
+
+// Mirrors Java Route#getMatches(Predicate<Territory>):
+//     return CollectionUtils.getMatches(steps, match);
+// Returns a freshly allocated [dynamic] containing every step territory
+// (excluding the start) for which `predicate` returns true, preserving
+// order.
+route_get_matches :: proc(self: ^Route, predicate: proc(t: ^Territory) -> bool) -> [dynamic]^Territory {
+	result: [dynamic]^Territory
+	for t in self.steps {
+		if predicate(t) {
+			append(&result, t)
+		}
+	}
+	return result
+}
+
+// Mirrors Java Route#hasNeutralBeforeEnd(): true iff some middle step
+// (every step except the last) is non-water and owned by the null player.
+// Java:
+//     for (Territory current : getMiddleSteps()) {
+//       if (!current.isWater() && current.getOwner().isNull()) return true;
+//     }
+//     return false;
+route_has_neutral_before_end :: proc(self: ^Route) -> bool {
+	middle := route_get_middle_steps(self)
+	defer delete(middle)
+	for current in middle {
+		if !territory_is_water(current) && game_player_is_null(territory_get_owner(current)) {
+			return true
+		}
+	}
+	return false
+}

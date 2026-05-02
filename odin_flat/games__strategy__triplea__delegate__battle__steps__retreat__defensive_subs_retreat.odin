@@ -51,3 +51,69 @@ defensive_subs_retreat_is_destroyer_present :: proc(self: ^Defensive_Subs_Retrea
 	return false
 }
 
+// Java: DefensiveSubsRetreat#getEmptyOrFriendlySeaNeighbors
+//   Collection<Territory> possible =
+//       battleState.getGameData().getMap().getNeighbors(battleState.getBattleSite());
+//   if (battleState.getStatus().isHeadless()) return possible;
+//   Collection<Unit> unitsToRetreat = CollectionUtils.getMatches(
+//       battleState.filterUnits(ALIVE, DEFENSE), Matches.unitCanEvade());
+//   Predicate<Territory> canalMatch = t -> {
+//       Route r = new Route(battleState.getBattleSite(), t);
+//       return new MoveValidator(battleState.getGameData(), false)
+//                  .validateCanal(r, unitsToRetreat, battleState.getPlayer(DEFENSE)) == null;
+//   };
+//   Predicate<Territory> match = Matches.territoryIsWater()
+//       .and(Matches.territoryHasNoEnemyUnits(battleState.getPlayer(DEFENSE)))
+//       .and(canalMatch);
+//   return CollectionUtils.getMatches(possible, match);
+defensive_subs_retreat_get_empty_or_friendly_sea_neighbors :: proc(
+	self: ^Defensive_Subs_Retreat,
+) -> [dynamic]^Territory {
+	game_data := battle_state_get_game_data(self.battle_state)
+	game_map := game_data_get_map(game_data)
+	battle_site := battle_state_get_battle_site(self.battle_state)
+	possible := game_map_get_neighbors(game_map, battle_site)
+
+	result := make([dynamic]^Territory)
+
+	if battle_status_is_headless(battle_state_get_status(self.battle_state)) {
+		for t in possible {
+			append(&result, t)
+		}
+		return result
+	}
+
+	defense_player := battle_state_get_player(self.battle_state, .DEFENSE)
+
+	// unitsToRetreat = filter ALIVE/DEFENSE through Matches.unitCanEvade()
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	defense_alive := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	evade_p, evade_c := matches_unit_can_evade()
+	units_to_retreat := make([dynamic]^Unit)
+	for u in defense_alive {
+		if evade_p(evade_c, u) {
+			append(&units_to_retreat, u)
+		}
+	}
+
+	water_p, water_c := matches_territory_is_water()
+	noenemy_p, noenemy_c := matches_territory_has_no_enemy_units(defense_player)
+
+	for t in possible {
+		if !water_p(water_c, t) {
+			continue
+		}
+		if !noenemy_p(noenemy_c, t) {
+			continue
+		}
+		// canalMatch: new MoveValidator(data,false).validateCanal(new Route(site,t), unitsToRetreat, defensePlayer) == null
+		r := route_new_from_start_and_steps(battle_site, t)
+		validator := move_validator_new(game_data, false)
+		if move_validator_validate_canal(validator, r, units_to_retreat, defense_player) != nil {
+			continue
+		}
+		append(&result, t)
+	}
+	return result
+}
+

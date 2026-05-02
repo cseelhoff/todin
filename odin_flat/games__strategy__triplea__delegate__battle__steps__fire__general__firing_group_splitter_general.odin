@@ -98,3 +98,35 @@ firing_group_splitter_general_filter_air_vs_sub_target_groups :: proc(
 	return firing_group_splitter_general_pred_filter_air_vs_sub, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// getCombatParticipants(BattleState, Side, Collection<Unit> units,
+//                       Collection<Unit> enemyUnits) -> Collection<Unit>
+//
+// Mirrors MustFightBattle.removeNonCombatants() filtering: keep only units
+// for which Matches.unitCanParticipateInCombat(...) holds, with battleRound
+// hard-coded to 1 (matches the Java source).
+// ---------------------------------------------------------------------------
+
+firing_group_splitter_general_get_combat_participants :: proc(
+	self: ^Firing_Group_Splitter_General,
+	battle_state: ^Battle_State,
+	side: Battle_State_Side,
+	units: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	pred, pred_ctx := matches_unit_can_participate_in_combat(
+		side == .OFFENSE,
+		battle_state_get_player(battle_state, side),
+		battle_state_get_battle_site(battle_state),
+		1,
+		enemy_units,
+	)
+	result: [dynamic]^Unit
+	for u in units {
+		if pred(pred_ctx, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+

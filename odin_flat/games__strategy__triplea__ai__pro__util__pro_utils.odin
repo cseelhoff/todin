@@ -137,3 +137,182 @@ pro_utils_lambda_summarize_units_7 :: proc(key: string, value: i32) -> string {
 	return fmt.aprintf("%s %s", count_str, key)
 }
 
+// Port of ProUtils.getAlliedPlayers (private static) — returns every
+// player in `data.getPlayerList()` that is allied to `player`.
+pro_utils_get_allied_players :: proc(player: ^Game_Player) -> [dynamic]^Game_Player {
+	data := game_player_get_data(player)
+	pred, ctx := matches_is_allied(player)
+	return pro_utils_get_filtered_players(&data.game_state, pred, ctx)
+}
+
+// Port of ProUtils.getEnemyPlayers — returns every player in
+// `data.getPlayerList()` that is NOT allied to `player`
+// (Java: Matches.isAllied(player).negate()).
+pro_utils_get_enemy_players :: proc(player: ^Game_Player) -> [dynamic]^Game_Player {
+	data := game_player_get_data(player)
+	pred, ctx := matches_is_allied(player)
+	result := make([dynamic]^Game_Player)
+	players := player_list_get_players(game_state_get_player_list(&data.game_state))
+	defer delete(players)
+	for p in players {
+		if !pred(ctx, p) {
+			append(&result, p)
+		}
+	}
+	return result
+}
+
+// Port of ProUtils.getAlliedPlayersInTurnOrder — others-in-turn-order,
+// keeping only those allied to `player` per
+// `relationshipTracker.isAllied(player, currentPlayer)`.
+pro_utils_get_allied_players_in_turn_order :: proc(
+	player: ^Game_Player,
+) -> [dynamic]^Game_Player {
+	rt := game_data_get_relationship_tracker(game_player_get_data(player))
+	others := pro_utils_get_other_players_in_turn_order(player)
+	defer delete(others)
+	pred, pred_ctx := matches_relationship_type_is_allied()
+	result := make([dynamic]^Game_Player)
+	for current_player in others {
+		rtype := relationship_tracker_get_relationship_type(rt, player, current_player)
+		if pred(pred_ctx, rtype) {
+			append(&result, current_player)
+		}
+	}
+	return result
+}
+
+// Port of ProUtils.getEnemyPlayersInTurnOrder — others-in-turn-order,
+// keeping only those NOT allied to `player`.
+pro_utils_get_enemy_players_in_turn_order :: proc(
+	player: ^Game_Player,
+) -> [dynamic]^Game_Player {
+	rt := game_data_get_relationship_tracker(game_player_get_data(player))
+	others := pro_utils_get_other_players_in_turn_order(player)
+	defer delete(others)
+	pred, pred_ctx := matches_relationship_type_is_allied()
+	result := make([dynamic]^Game_Player)
+	for current_player in others {
+		rtype := relationship_tracker_get_relationship_type(rt, player, current_player)
+		if !pred(pred_ctx, rtype) {
+			append(&result, current_player)
+		}
+	}
+	return result
+}
+
+// Port of ProUtils.getPotentialEnemyPlayers — players that are neither
+// allied to `player` nor passive-neutral.
+// Java: not(Matches.isAllied(player)).and(not(ProUtils::isPassiveNeutralPlayer)).
+pro_utils_get_potential_enemy_players :: proc(player: ^Game_Player) -> [dynamic]^Game_Player {
+	data := game_player_get_data(player)
+	allied_pred, allied_ctx := matches_is_allied(player)
+	result := make([dynamic]^Game_Player)
+	players := player_list_get_players(game_state_get_player_list(&data.game_state))
+	defer delete(players)
+	for p in players {
+		if !allied_pred(allied_ctx, p) && !pro_utils_is_passive_neutral_player(p) {
+			append(&result, p)
+		}
+	}
+	return result
+}
+
+// Port of ProUtils#lambda$isNeutralPlayer$4 — captured nothing; tests
+// `isPassiveNeutralPlayer(a) || (a.isHidden() && (a.isDefaultTypeAi() || a.isDefaultTypeDoesNothing()))`.
+pro_utils_lambda__is_neutral_player__4 :: proc(a: ^Game_Player) -> bool {
+	return pro_utils_is_passive_neutral_player(a) ||
+	       (game_player_is_hidden(a) &&
+			       (game_player_is_default_type_ai(a) ||
+					       game_player_is_default_type_does_nothing(a)))
+}
+
+// Port of ProUtils.isNeutralPlayer — true when every ally of `player`
+// (including `player` itself) is "neutral" per lambda 4 above. Null
+// players are short-circuited to neutral.
+pro_utils_is_neutral_player :: proc(player: ^Game_Player) -> bool {
+	if game_player_is_null(player) {
+		return true
+	}
+	rt := game_data_get_relationship_tracker(game_player_get_data(player))
+	allies := relationship_tracker_get_allies(rt, player, true)
+	defer delete(allies)
+	for a in allies {
+		if !pro_utils_lambda__is_neutral_player__4(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// Port of ProUtils#lambda$isPassiveNeutralPlayer$6 — body
+// `GameStep.isCombatMoveStepName(s.getName())`. No captured state.
+pro_utils_lambda__is_passive_neutral_player__6 :: proc(s: ^Game_Step) -> bool {
+	return game_step_is_combat_move_step_name(game_step_get_name(s))
+}
+
+// Port of ProUtils.isFfa — true if the game is a free-for-all, i.e.
+// any of `player`'s non-neutral enemies is at war with another of
+// `player`'s non-neutral enemies.
+pro_utils_is_ffa :: proc(data: ^Game_State, player: ^Game_Player) -> bool {
+	relationship_tracker := game_state_get_relationship_tracker(data)
+	enemies := relationship_tracker_get_enemies(relationship_tracker, player)
+	defer delete(enemies)
+	enemies_without_neutrals := make(map[^Game_Player]struct{})
+	defer delete(enemies_without_neutrals)
+	for p in enemies {
+		if !pro_utils_is_neutral_player(p) {
+			enemies_without_neutrals[p] = {}
+		}
+	}
+	for e in enemies_without_neutrals {
+		if pro_utils_lambda__is_ffa__3(
+			   relationship_tracker,
+			   enemies_without_neutrals,
+			   e,
+		   ) {
+			return true
+		}
+	}
+	return false
+}
+
+// Port of ProUtils.summarizeUnits — histograms units by their
+// toString() representation, sorts ascending by key, and joins
+// "<key>" or "<count> <key>" with ", " inside "[...]".
+pro_utils_summarize_units :: proc(units: [dynamic]^Unit) -> string {
+	counts := make(map[string]i32)
+	defer delete(counts)
+	for u in units {
+		k := unit_to_string(u)
+		if existing, ok := counts[k]; ok {
+			counts[k] = existing + 1
+		} else {
+			counts[k] = 1
+		}
+	}
+	keys := make([dynamic]string, 0, len(counts))
+	defer delete(keys)
+	for k in counts {
+		append(&keys, k)
+	}
+	// Insertion sort ascending — Map.Entry.comparingByKey() on String.
+	for i in 1 ..< len(keys) {
+		j := i
+		for j > 0 && keys[j] < keys[j - 1] {
+			keys[j], keys[j - 1] = keys[j - 1], keys[j]
+			j -= 1
+		}
+	}
+	b := strings.builder_make()
+	strings.write_byte(&b, '[')
+	for k, idx in keys {
+		if idx > 0 {
+			strings.write_string(&b, ", ")
+		}
+		strings.write_string(&b, pro_utils_lambda_summarize_units_7(k, counts[k]))
+	}
+	strings.write_byte(&b, ']')
+	return strings.to_string(b)
+}
+

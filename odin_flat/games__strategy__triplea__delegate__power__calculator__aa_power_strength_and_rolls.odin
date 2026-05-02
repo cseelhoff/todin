@@ -76,3 +76,31 @@ aa_power_strength_and_rolls_lambda_calculate_active_strength_and_rolls_0 :: proc
 	entry := self.total_strength_and_total_rolls_by_unit[unit]
 	return int(entry.dice_sides) == self.dice_sides
 }
+
+// Java synthetic lambda from calculateActiveStrengthAndRolls
+// (key extractor for `Comparator.comparingInt`):
+// `unit -> totalStrengthAndTotalRollsByUnit.get(unit).getStrength()`.
+aa_power_strength_and_rolls_lambda_calculate_active_strength_and_rolls_1 :: proc(
+	self: ^Aa_Power_Strength_And_Rolls,
+	unit: ^Unit,
+) -> i32 {
+	entry := self.total_strength_and_total_rolls_by_unit[unit]
+	if entry.strength_and_rolls != nil {
+		return entry.strength_and_rolls.strength
+	}
+	return 0
+}
+
+// Java synthetic lambda from calculateActiveStrengthAndRolls
+// (mapper for `Optional.map` extracting the best infinite unit's strength):
+// `unit -> totalStrengthAndTotalRollsByUnit.get(unit).getStrength()`.
+aa_power_strength_and_rolls_lambda_calculate_active_strength_and_rolls_2 :: proc(
+	self: ^Aa_Power_Strength_And_Rolls,
+	unit: ^Unit,
+) -> i32 {
+	entry := self.total_strength_and_total_rolls_by_unit[unit]
+	if entry.strength_and_rolls != nil {
+		return entry.strength_and_rolls.strength
+	}
+	return 0
+}

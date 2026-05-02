@@ -239,3 +239,113 @@ move_validator_validate_first_units :: proc(
 	return result
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#enemyDestroyerOnPath
+// Java:
+//   private boolean enemyDestroyerOnPath(final Route route, final GamePlayer player) {
+//     final Predicate<Unit> enemyDestroyer =
+//         Matches.unitIsDestroyer().and(Matches.enemyUnit(player));
+//     return route.getMiddleSteps().stream()
+//         .anyMatch(current -> current.anyUnitsMatch(enemyDestroyer));
+//   }
+Move_Validator_Enemy_Destroyer_Match_Ctx :: struct {
+	player: ^Game_Player,
+}
+
+move_validator_enemy_destroyer_match :: proc(ctx: rawptr, u: ^Unit) -> bool {
+	c := cast(^Move_Validator_Enemy_Destroyer_Match_Ctx)ctx
+	d_p, d_c := matches_unit_is_destroyer()
+	if !d_p(d_c, u) {
+		return false
+	}
+	e_p, e_c := matches_enemy_unit(c.player)
+	return e_p(e_c, u)
+}
+
+move_validator_enemy_destroyer_on_path :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	player: ^Game_Player,
+) -> bool {
+	_ = self
+	match_ctx := new(Move_Validator_Enemy_Destroyer_Match_Ctx)
+	match_ctx.player = player
+	lambda_ctx := Move_Validator_Enemy_Destroyer_On_Path_9_Ctx{
+		destroyer_match     = move_validator_enemy_destroyer_match,
+		destroyer_match_ctx = rawptr(match_ctx),
+	}
+	for current in route_get_middle_steps(route) {
+		if move_validator_lambda_enemy_destroyer_on_path_9(rawptr(&lambda_ctx), current) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#getNonLand
+// Java:
+//   private static Collection<Unit> getNonLand(final Collection<Unit> units) {
+//     return CollectionUtils.getMatches(units, Matches.unitIsAir().or(Matches.unitIsSea()));
+//   }
+move_validator_get_non_land :: proc(units: [dynamic]^Unit) -> [dynamic]^Unit {
+	result := make([dynamic]^Unit)
+	air_p, air_c := matches_unit_is_air()
+	sea_p, sea_c := matches_unit_is_sea()
+	for u in units {
+		if air_p(air_c, u) || sea_p(sea_c, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#noEnemyUnitsOnPathMiddleSteps
+// Java:
+//   private boolean noEnemyUnitsOnPathMiddleSteps(final Route route, final GamePlayer player) {
+//     final Predicate<Unit> alliedOrNonCombat =
+//         Matches.unitIsInfrastructure()
+//             .or(Matches.enemyUnit(player).negate())
+//             .or(Matches.unitIsSubmerged());
+//     return route.getMiddleSteps().stream()
+//         .allMatch(current -> current.getUnitCollection().allMatch(alliedOrNonCombat));
+//   }
+Move_Validator_Allied_Or_Non_Combat_Ctx :: struct {
+	player: ^Game_Player,
+}
+
+move_validator_allied_or_non_combat :: proc(ctx: rawptr, u: ^Unit) -> bool {
+	c := cast(^Move_Validator_Allied_Or_Non_Combat_Ctx)ctx
+	inf_p, inf_c := matches_unit_is_infrastructure()
+	if inf_p(inf_c, u) {
+		return true
+	}
+	e_p, e_c := matches_enemy_unit(c.player)
+	if !e_p(e_c, u) {
+		return true
+	}
+	sub_p, sub_c := matches_unit_is_submerged()
+	return sub_p(sub_c, u)
+}
+
+move_validator_no_enemy_units_on_path_middle_steps :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	player: ^Game_Player,
+) -> bool {
+	_ = self
+	pred_ctx := new(Move_Validator_Allied_Or_Non_Combat_Ctx)
+	pred_ctx.player = player
+	lambda_ctx := Move_Validator_No_Enemy_Units_On_Path_Middle_Steps_8_Ctx{
+		allied_or_non_combat     = move_validator_allied_or_non_combat,
+		allied_or_non_combat_ctx = rawptr(pred_ctx),
+	}
+	for current in route_get_middle_steps(route) {
+		if !move_validator_lambda_no_enemy_units_on_path_middle_steps_8(
+			rawptr(&lambda_ctx),
+			current,
+		) {
+			return false
+		}
+	}
+	return true
+}
+

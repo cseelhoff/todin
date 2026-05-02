@@ -3,20 +3,25 @@ package game
 import "core:slice"
 
 Fire_Round_Steps_Factory :: struct {
-	battle_state:          ^Battle_State,
-	battle_actions:        ^Battle_Actions,
-	firing_group_splitter: proc(state: ^Battle_State) -> [dynamic]^Firing_Group,
-	side:                  Battle_State_Side,
-	return_fire:           Must_Fight_Battle_Return_Fire,
-	dice_roller:           proc(bridge: ^I_Delegate_Bridge, step: ^Roll_Dice_Step) -> ^Dice_Roll,
-	casualty_selector:     proc(bridge: ^I_Delegate_Bridge, step: ^Select_Casualties) -> ^Casualty_Details,
+	battle_state:              ^Battle_State,
+	battle_actions:            ^Battle_Actions,
+	// Java's FiringGroupSplitter* instances are Function<BattleState, List<FiringGroup>>
+	// closures capturing (side, type, group_name); the ctx pointer carries the Java
+	// receiver so the layer-6 *_apply procs can read self state.
+	firing_group_splitter:     proc(self_raw: rawptr, state: ^Battle_State) -> [dynamic]^Firing_Group,
+	firing_group_splitter_ctx: rawptr,
+	side:                      Battle_State_Side,
+	return_fire:               Must_Fight_Battle_Return_Fire,
+	dice_roller:               proc(bridge: ^I_Delegate_Bridge, step: ^Roll_Dice_Step) -> ^Dice_Roll,
+	casualty_selector:         proc(bridge: ^I_Delegate_Bridge, step: ^Select_Casualties) -> ^Casualty_Details,
 }
 
 // Lombok @Builder all-args constructor for FireRoundStepsFactory.
 fire_round_steps_factory_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
-	firing_group_splitter: proc(state: ^Battle_State) -> [dynamic]^Firing_Group,
+	firing_group_splitter: proc(self_raw: rawptr, state: ^Battle_State) -> [dynamic]^Firing_Group,
+	firing_group_splitter_ctx: rawptr,
 	side: Battle_State_Side,
 	return_fire: Must_Fight_Battle_Return_Fire,
 	dice_roller: proc(bridge: ^I_Delegate_Bridge, step: ^Roll_Dice_Step) -> ^Dice_Roll,
@@ -24,13 +29,14 @@ fire_round_steps_factory_new :: proc(
 ) -> ^Fire_Round_Steps_Factory {
 	self := new(Fire_Round_Steps_Factory)
 	self^ = Fire_Round_Steps_Factory{
-		battle_state          = battle_state,
-		battle_actions        = battle_actions,
-		firing_group_splitter = firing_group_splitter,
-		side                  = side,
-		return_fire           = return_fire,
-		dice_roller           = dice_roller,
-		casualty_selector     = casualty_selector,
+		battle_state              = battle_state,
+		battle_actions            = battle_actions,
+		firing_group_splitter     = firing_group_splitter,
+		firing_group_splitter_ctx = firing_group_splitter_ctx,
+		side                      = side,
+		return_fire               = return_fire,
+		dice_roller               = dice_roller,
+		casualty_selector         = casualty_selector,
 	}
 	return self
 }
@@ -45,7 +51,7 @@ fire_round_steps_factory_new :: proc(
 // concrete sub-type instances are owned by the wrapper's lifetime via
 // the returned dynamic array's append order (rds, sc, mc per group).
 fire_round_steps_factory_create_steps :: proc(self: ^Fire_Round_Steps_Factory) -> [dynamic]^Battle_Step {
-	groups := self.firing_group_splitter(self.battle_state)
+	groups := self.firing_group_splitter(self.firing_group_splitter_ctx, self.battle_state)
 
 	slice.sort_by(groups[:], proc(a, b: ^Firing_Group) -> bool {
 		if a.display_name != b.display_name {

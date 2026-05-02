@@ -14,3 +14,7 @@ node_new :: proc(name: string, address: ^Inet_Address, port: i32) -> ^Node {
 	self.port = port
 	return self
 }
+
+node_get_local_host :: proc() -> ^Inet_Address {
+	return inet_address_get_local_host()
+}

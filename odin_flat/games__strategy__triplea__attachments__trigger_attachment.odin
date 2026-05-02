@@ -445,7 +445,7 @@ trigger_attachment_append_change_write_event :: proc(
 	ctx := new(Trigger_Attachment_Ctx_append_change_write_event)
 	ctx.bridge = bridge
 	ctx.composite_change = composite_change
-	return trigger_attachment_lambda_append_change_write_event_0, rawptr(ctx)
+	return trigger_attachment_lambda_append_change_write_event_1, rawptr(ctx)
 }
 
 // ===========================================================================
@@ -775,6 +775,195 @@ trigger_attachment_trigger_victory :: proc(
 	}
 	_ = bridge
 	_ = fire_trigger_params
+}
+
+// ---------------------------------------------------------------------------
+// lambda$appendChangeWriteEvent$1(CompositeChange, IDelegateBridge,
+//                                 Tuple<Change, String>)
+//   propertyChangeEvent -> {
+//     compositeChange.add(propertyChangeEvent.getFirst());
+//     bridge.getHistoryWriter().startEvent(propertyChangeEvent.getSecond());
+//   }
+// Captures (compositeChange, bridge); ctx stored in
+// Trigger_Attachment_Ctx_append_change_write_event (defined above).
+// ---------------------------------------------------------------------------
+trigger_attachment_lambda_append_change_write_event_1 :: proc(
+	ctx_ptr: rawptr,
+	property_change_event: ^Tuple(^Change, string),
+) {
+	ctx := cast(^Trigger_Attachment_Ctx_append_change_write_event)ctx_ptr
+	composite_change_add(ctx.composite_change, property_change_event.first)
+	writer := i_delegate_bridge_get_history_writer(ctx.bridge)
+	i_delegate_history_writer_start_event(writer, property_change_event.second)
+}
+
+// ---------------------------------------------------------------------------
+// collectTestsForAllTriggers(Set<TriggerAttachment>, IDelegateBridge,
+//                            Set<ICondition>, Map<ICondition, Boolean>)
+//
+// Java:
+//   final Set<ICondition> allConditionsNeeded =
+//       AbstractConditionsAttachment.getAllConditionsRecursive(
+//           Set.copyOf(toFirePossible), allConditionsNeededSoFar);
+//   return AbstractConditionsAttachment.testAllConditionsRecursive(
+//       allConditionsNeeded, allConditionsTestedSoFar, bridge);
+//
+// TriggerAttachment ⟶ AbstractTriggerAttachment ⟶ AbstractConditionsAttachment
+// implements ICondition; the Odin port performs the upcast via rawptr in
+// keeping with the convention used by `abstract_conditions_attachment_*`.
+// ---------------------------------------------------------------------------
+trigger_attachment_collect_tests_for_all_triggers :: proc(
+	to_fire_possible: map[^Trigger_Attachment]struct{},
+	bridge: ^I_Delegate_Bridge,
+	all_conditions_needed_so_far: map[^I_Condition]struct{},
+	all_conditions_tested_so_far: map[^I_Condition]bool,
+) -> map[^I_Condition]bool {
+	starting := make(map[^I_Condition]struct{})
+	defer delete(starting)
+	for t in to_fire_possible {
+		starting[cast(^I_Condition)rawptr(t)] = {}
+	}
+	all_conditions_needed := abstract_conditions_attachment_get_all_conditions_recursive(
+		starting,
+		all_conditions_needed_so_far,
+	)
+	return abstract_conditions_attachment_test_all_conditions_recursive(
+		all_conditions_needed,
+		all_conditions_tested_so_far,
+		bridge,
+	)
+}
+
+// ---------------------------------------------------------------------------
+// filterSatisfiedTriggers(Set<TriggerAttachment>, Predicate<TriggerAttachment>,
+//                         FireTriggerParams)
+//
+// Java composes its Predicate via PredicateBuilder; the Odin
+// `Predicate_Builder` only accepts `proc(rawptr) -> bool`, while one of
+// the chained predicates (`whenOrDefaultMatch`) carries a captured ctx
+// in our (proc, rawptr) form. We therefore inline the AND chain here,
+// faithful to Java's evaluation order:
+//   customPredicate
+//     AND (testWhen ? whenOrDefaultMatch(beforeOrAfter, stepName) : true)
+//     AND (testUses ? availableUses                                : true)
+// ---------------------------------------------------------------------------
+trigger_attachment_filter_satisfied_triggers :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct{},
+	custom_predicate: proc(^Trigger_Attachment) -> bool,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) -> [dynamic]^Trigger_Attachment {
+	result: [dynamic]^Trigger_Attachment
+	when_pred, when_ctx := abstract_trigger_attachment_when_or_default_match(
+		fire_trigger_params.before_or_after,
+		fire_trigger_params.step_name,
+	)
+	for t in satisfied_triggers {
+		if !custom_predicate(t) {
+			continue
+		}
+		if fire_trigger_params.test_when && !when_pred(when_ctx, t) {
+			continue
+		}
+		if fire_trigger_params.test_uses && !abstract_trigger_attachment_lambda_static_0(t) {
+			continue
+		}
+		append(&result, t)
+	}
+	return result
+}
+
+// ---------------------------------------------------------------------------
+// getClearFirstNewValue(String preNewValue) -> Tuple<Boolean, String>
+//
+// Java pattern: ^-(:?clear|reset)-
+//   The literal `:?` makes the colon optional only inside the first
+//   alternative, so the matched prefixes are exactly "-clear-",
+//   "-:clear-", and "-reset-". `Matcher.lookingAt()` checks the prefix;
+//   `Matcher.replaceFirst("")` then strips it. We mirror this without a
+//   regex dependency.
+// ---------------------------------------------------------------------------
+trigger_attachment_get_clear_first_new_value :: proc(
+	pre_new_value: string,
+) -> ^Tuple(bool, string) {
+	clear_first := false
+	new_value := pre_new_value
+	prefixes := [?]string{"-clear-", "-:clear-", "-reset-"}
+	for p in prefixes {
+		if strings.has_prefix(pre_new_value, p) {
+			clear_first = true
+			new_value = pre_new_value[len(p):]
+			break
+		}
+	}
+	return tuple_new(bool, string, clear_first, new_value)
+}
+
+// ---------------------------------------------------------------------------
+// Instance attachment-name accessors. Each returns a 2-tuple
+// (attachment-class-name, attachment-name); when the underlying field
+// is unset, fall back to a fixed default pair sourced from
+// `Constants` (literal values verified against
+// games/strategy/triplea/Constants.java).
+// ---------------------------------------------------------------------------
+
+// Java: private Tuple<String, String> getUnitAttachmentName()
+trigger_attachment_get_unit_attachment_name :: proc(
+	self: ^Trigger_Attachment,
+) -> ^Tuple(string, string) {
+	if self.unit_attachment_name == nil {
+		return tuple_new(string, string, "UnitAttachment", "unitAttachment")
+	}
+	return self.unit_attachment_name
+}
+
+// Java: private Tuple<String, String> getTerritoryAttachmentName()
+trigger_attachment_get_territory_attachment_name :: proc(
+	self: ^Trigger_Attachment,
+) -> ^Tuple(string, string) {
+	if self.territory_attachment_name == nil {
+		return tuple_new(string, string, "TerritoryAttachment", "territoryAttachment")
+	}
+	return self.territory_attachment_name
+}
+
+// Java: private Tuple<String, String> getPlayerAttachmentName()
+trigger_attachment_get_player_attachment_name :: proc(
+	self: ^Trigger_Attachment,
+) -> ^Tuple(string, string) {
+	if self.player_attachment_name == nil {
+		return tuple_new(string, string, "PlayerAttachment", "playerAttachment")
+	}
+	return self.player_attachment_name
+}
+
+// Java: private Tuple<String, String> getRelationshipTypeAttachmentName()
+trigger_attachment_get_relationship_type_attachment_name :: proc(
+	self: ^Trigger_Attachment,
+) -> ^Tuple(string, string) {
+	if self.relationship_type_attachment_name == nil {
+		return tuple_new(
+			string,
+			string,
+			"RelationshipTypeAttachment",
+			"relationshipTypeAttachment",
+		)
+	}
+	return self.relationship_type_attachment_name
+}
+
+// Java: private Tuple<String, String> getTerritoryEffectAttachmentName()
+trigger_attachment_get_territory_effect_attachment_name :: proc(
+	self: ^Trigger_Attachment,
+) -> ^Tuple(string, string) {
+	if self.territory_effect_attachment_name == nil {
+		return tuple_new(
+			string,
+			string,
+			"TerritoryEffectAttachment",
+			"territoryEffectAttachment",
+		)
+	}
+	return self.territory_effect_attachment_name
 }
 
 

@@ -576,3 +576,82 @@ territory_attachment_lambda_set_convoy_attached_13 :: proc(
 		value,
 	)
 }
+
+// Java: public TerritoryAttachment(
+//         final String name, final Attachable attachable, final GameData gameData) {
+//   super(name, attachable, gameData);
+// }
+// Per the `default_attachment_new` comment ("Subclass constructors should
+// allocate their own concrete struct and embed/initialize via field
+// assignment instead of calling this proc directly"), the
+// `DefaultAttachment` super-constructor body is replicated inline on the
+// embedded `default_attachment` field. The Java field initializers (all
+// `false`/`0`/`null`) match Odin's zero values, so no extra assignments
+// are needed.
+territory_attachment_new :: proc(
+	name: string,
+	attachable: ^Attachable,
+	game_data: ^Game_Data,
+) -> ^Territory_Attachment {
+	self := new(Territory_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	return self
+}
+
+// Java: public static Optional<TerritoryAttachment> get(final Territory t) {
+//   return get(t, Constants.TERRITORY_ATTACHMENT_NAME);
+// }
+// The 2-arg package-private overload is not separately exposed in the port;
+// its body is inlined here. `Optional<TerritoryAttachment>` maps to
+// `^Territory_Attachment` (nil denotes the empty Optional).
+//
+//   static Optional<TerritoryAttachment> get(final Territory t, final String nameOfAttachment) {
+//     final TerritoryAttachment territoryAttachment =
+//         (TerritoryAttachment) t.getAttachment(nameOfAttachment);
+//     if (territoryAttachment == null && !t.isWater()) {
+//       throw new IllegalStateException(
+//           "No territory attachment for: " + t.getName()
+//               + "(non-water) with name: " + nameOfAttachment);
+//     }
+//     return Optional.ofNullable(territoryAttachment);
+//   }
+//
+// `Constants.TERRITORY_ATTACHMENT_NAME` is the literal "territoryAttachment"
+// (see Constants.java line 27); inlined since the Odin Constants file has
+// not yet exported this token.
+territory_attachment_get :: proc(t: ^Territory) -> ^Territory_Attachment {
+	if t == nil {
+		return nil
+	}
+	name_of_attachment := "territoryAttachment"
+	att := named_attachable_get_attachment(&t.named_attachable, name_of_attachment)
+	territory_attachment := cast(^Territory_Attachment)att
+	if territory_attachment == nil && !territory_is_water(t) {
+		fmt.panicf(
+			"No territory attachment for: %s(non-water) with name: %s",
+			default_named_get_name(&t.named_attachable.default_named),
+			name_of_attachment,
+		)
+	}
+	return territory_attachment
+}
+
+// Java: public static TerritoryAttachment getOrThrow(final @Nonnull Territory t) {
+//   return get(t, Constants.TERRITORY_ATTACHMENT_NAME)
+//       .orElseThrow(
+//           () -> new IllegalStateException(
+//               String.format(
+//                   "No territory attachment for %s, but expected here", t.getName())));
+// }
+territory_attachment_get_or_throw :: proc(t: ^Territory) -> ^Territory_Attachment {
+	result := territory_attachment_get(t)
+	if result == nil {
+		fmt.panicf(
+			"No territory attachment for %s, but expected here",
+			default_named_get_name(&t.named_attachable.default_named),
+		)
+	}
+	return result
+}

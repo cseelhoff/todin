@@ -88,3 +88,16 @@ abstract_delegate_set_delegate_bridge_and_player_with_websocket :: proc(
 	self.client_network_bridge = client_network_bridge
 }
 
+// games.strategy.triplea.delegate.AbstractDelegate#start()
+// Java body: CasualtySelector.clearOolCache();
+// Subclasses override but must call super.start().
+abstract_delegate_start :: proc(self: ^Abstract_Delegate) {
+	casualty_selector_clear_ool_cache()
+}
+
+// games.strategy.triplea.delegate.AbstractDelegate#getProperties()
+// Java body: return getData().getProperties();
+abstract_delegate_get_properties :: proc(self: ^Abstract_Delegate) -> ^Game_Properties {
+	return game_data_get_properties(abstract_delegate_get_data(self))
+}
+

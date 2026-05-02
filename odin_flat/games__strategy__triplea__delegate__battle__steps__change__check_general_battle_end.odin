@@ -99,3 +99,19 @@ check_general_battle_end_lambda__in_any_firing_group__0 :: proc(
 	return false
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#hasSideLost
+check_general_battle_end_has_side_lost :: proc(
+	self: ^Check_General_Battle_End,
+	side: Battle_State_Side,
+) -> bool {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	units := battle_state_filter_units(self.battle_state, alive_filter, side)
+	pred, ctx := matches_unit_is_not_infrastructure()
+	for u in units {
+		if pred(ctx, u) {
+			return false
+		}
+	}
+	return true
+}
+

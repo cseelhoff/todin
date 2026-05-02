@@ -60,6 +60,22 @@ pro_purchase_ai_find_upgrade_unit_efficiency :: proc(
 	return ppo.attack_efficiency * multiplier * f64(ppo.cost) / f64(ppo.quantity)
 }
 
+// Mark every `Pro_Place_Territory` in `purchase_territories` whose
+// canPlaceTerritories list equals `place_territory` as no longer holdable.
+pro_purchase_ai_set_cant_hold_place_territory :: proc(
+	self: ^Pro_Purchase_Ai,
+	place_territory: ^Pro_Place_Territory,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) {
+	for _, t in purchase_territories {
+		for ppt in t.can_place_territories {
+			if pro_place_territory_equals(place_territory, ppt) {
+				pro_place_territory_set_can_hold(ppt, false)
+			}
+		}
+	}
+}
+
 // Returns every `Pro_Purchase_Territory` whose `can_place_territories` list
 // contains `place_territory`.
 pro_purchase_ai_get_purchase_territories :: proc(

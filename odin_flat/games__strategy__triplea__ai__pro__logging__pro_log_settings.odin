@@ -45,3 +45,14 @@ pro_log_settings_lambda_save_settings_1 :: proc(settings: ^Pro_Log_Settings, str
 	_ = settings
 	output_stream_flush(stream)
 }
+
+// Static ProLogSettings.loadSettingsImpl: Java reads a serialized
+// ProLogSettings out of java.util.prefs.Preferences (user node for
+// ProAi) under the "Program Settings" key, deserializing via
+// ObjectInputStream. If the byte array is absent or any error
+// occurs, it falls back to `new ProLogSettings()`. The snapshot
+// harness has no preference store, so the synchronous equivalent is
+// to take the fallback path: return a freshly defaulted instance.
+pro_log_settings_load_settings_impl :: proc() -> ^Pro_Log_Settings {
+	return pro_log_settings_new()
+}

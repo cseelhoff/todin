@@ -113,3 +113,23 @@ technology_frontier_get_advance_by_property :: proc(self: ^Technology_Frontier, 
 	}
 	return nil
 }
+
+// Java: TechnologyFrontier#addAdvance(TechAdvance) — append, reorder, clear cache.
+technology_frontier_add_advance :: proc(self: ^Technology_Frontier, t: ^Tech_Advance) {
+	append(&self.techs, t)
+	technology_frontier_reorder_techs_to_match_game_techs_order(self)
+	tech_tracker_clear_cache(
+		game_data_get_tech_tracker(game_data_component_get_data(&self.game_data_component)),
+	)
+}
+
+// Java: TechnologyFrontier#addAdvance(List<TechAdvance>) — append all, reorder, clear cache.
+technology_frontier_add_advance_list :: proc(self: ^Technology_Frontier, list: [dynamic]^Tech_Advance) {
+	for t in list {
+		append(&self.techs, t)
+	}
+	technology_frontier_reorder_techs_to_match_game_techs_order(self)
+	tech_tracker_clear_cache(
+		game_data_get_tech_tracker(game_data_component_get_data(&self.game_data_component)),
+	)
+}

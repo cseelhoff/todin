@@ -8,6 +8,7 @@ offensive_aa_fire_new :: proc(battle_state: ^Battle_State, battle_actions: ^Batt
 	self := new(Offensive_Aa_Fire)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.side = .OFFENSE
 	return self
 }
 

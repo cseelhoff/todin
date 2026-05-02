@@ -529,9 +529,16 @@ game_data_get_territory_effect_list :: proc(self: ^Game_Data) -> map[string]^Ter
 //   public void addGameDataEventListener(final GameDataEvent event, final Runnable listener) {
 //     gameDataEventListeners.addListener(event, listener);
 //   }
-// Runnable maps to Odin's `proc()` per the JDK shim convention.
-game_data_add_game_data_event_listener :: proc(self: ^Game_Data, event: Game_Data_Event, listener: proc()) {
-	game_data_event_listeners_add_listener(self.game_data_event_listeners, event, listener)
+// Java Runnable lambdas often capture `this` and other locals; in Odin
+// we model that by passing a context pointer alongside the callback.
+// Callers that don't need any captured state pass `nil` for `ctx`.
+game_data_add_game_data_event_listener :: proc(
+	self: ^Game_Data,
+	event: Game_Data_Event,
+	callback: proc(ctx: rawptr),
+	ctx: rawptr = nil,
+) {
+	game_data_event_listeners_add_listener(self.game_data_event_listeners, event, callback, ctx)
 }
 
 // games.strategy.engine.data.GameData#fireGameDataEvent(GameDataEvent)

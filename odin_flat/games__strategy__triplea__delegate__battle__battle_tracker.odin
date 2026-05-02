@@ -369,3 +369,142 @@ battle_tracker_lambda_get_pending_non_bombing_battle_8 :: proc(self: ^Battle_Tra
 	return battle_tracker_get_pending_battle(self, t, type)
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#addRelationshipChangesThisTurn(GamePlayer, GamePlayer, RelationshipType, RelationshipType)
+// Java: relationshipChangesThisTurn.add(Tuple.of(Tuple.of(p1, p2), Tuple.of(oldRelation, newRelation)));
+// Stored as ^Tuple(rawptr, rawptr); inner tuples are typed Tuples cast through rawptr.
+battle_tracker_add_relationship_changes_this_turn :: proc(
+	self: ^Battle_Tracker,
+	p1: ^Game_Player,
+	p2: ^Game_Player,
+	old_relation: ^Relationship_Type,
+	new_relation: ^Relationship_Type,
+) {
+	players := tuple_new(^Game_Player, ^Game_Player, p1, p2)
+	relations := tuple_new(^Relationship_Type, ^Relationship_Type, old_relation, new_relation)
+	append(&self.relationship_changes_this_turn, tuple_of(rawptr(players), rawptr(relations)))
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#didAllThesePlayersJustGoToWarThisTurn(GamePlayer, Collection)
+// Java: collect distinct owners of enemy_units that are enemies of p1, then check each
+// went to war this turn against p1.
+battle_tracker_did_all_these_players_just_go_to_war_this_turn :: proc(
+	self: ^Battle_Tracker,
+	p1: ^Game_Player,
+	enemy_units: [dynamic]^Unit,
+) -> bool {
+	enemies := make(map[^Game_Player]struct{})
+	defer delete(enemies)
+	pred, ctx := matches_unit_is_enemy_of(p1)
+	for u in enemy_units {
+		if pred(ctx, u) {
+			enemies[unit_get_owner(u)] = {}
+		}
+	}
+	for e, _ in enemies {
+		if !battle_tracker_did_these_players_just_go_to_war_this_turn(self, p1, e) {
+			return false
+		}
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#fightAirRaidsAndStrategicBombing(IDelegateBridge)
+// One-arg version: delegates to the (Supplier, BiFunction) form using
+// this::getPendingBattleSitesWithBombing and this::getPendingBattle. Inlined here
+// rather than wiring rawptr ctx adapters.
+battle_tracker_fight_air_raids_and_strategic_bombing_simple :: proc(self: ^Battle_Tracker, delegate_bridge: ^I_Delegate_Bridge) {
+	sites_air := battle_tracker_get_pending_battle_sites_with_bombing(self)
+	for t, _ in sites_air {
+		air_raid := battle_tracker_get_pending_battle(self, t, .AIR_RAID)
+		if air_raid != nil {
+			i_battle_fight(air_raid, delegate_bridge)
+		}
+	}
+	sites_sbr := battle_tracker_get_pending_battle_sites_with_bombing(self)
+	for t, _ in sites_sbr {
+		bombing_raid := battle_tracker_get_pending_battle(self, t, .BOMBING_RAID)
+		if bombing_raid != nil {
+			i_battle_fight(bombing_raid, delegate_bridge)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getDependentAmphibiousAssault(Route)
+// Java: if (!route.isUnload()) return null; return getPendingBattle(route.getStart(), NORMAL);
+battle_tracker_get_dependent_amphibious_assault :: proc(self: ^Battle_Tracker, route: ^Route) -> ^I_Battle {
+	if !route_is_unload(route) {
+		return nil
+	}
+	return battle_tracker_get_pending_battle(self, route_get_start(route), .NORMAL)
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getDependentOn(IBattle)
+// Java: dependencies.get(blocked) filtered by !battleIsEmpty; absent key → empty.
+battle_tracker_get_dependent_on :: proc(self: ^Battle_Tracker, blocked: ^I_Battle) -> map[^I_Battle]struct{} {
+	result := make(map[^I_Battle]struct{})
+	deps, ok := self.dependencies[blocked]
+	if !ok {
+		return result
+	}
+	for d, _ in deps {
+		if !i_battle_is_empty(d) {
+			result[d] = {}
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getPendingBattles(Territory)
+// Java: CollectionUtils.getMatches(pendingBattles, b -> b.getTerritory().equals(t)).
+battle_tracker_get_pending_battles_at_territory :: proc(self: ^Battle_Tracker, t: ^Territory) -> [dynamic]^I_Battle {
+	result := make([dynamic]^I_Battle)
+	for b, _ in self.pending_battles {
+		if i_battle_get_territory(b) == t {
+			append(&result, b)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getPendingBattles(IBattle$BattleType)
+// Java: CollectionUtils.getMatches(pendingBattles, b -> !b.isEmpty() && b.getBattleType() == type).
+battle_tracker_get_pending_battles_of_type :: proc(self: ^Battle_Tracker, type: I_Battle_Battle_Type) -> [dynamic]^I_Battle {
+	result := make([dynamic]^I_Battle)
+	for b, _ in self.pending_battles {
+		if !i_battle_is_empty(b) && i_battle_get_battle_type(b) == type {
+			append(&result, b)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getPendingBombingBattle(Territory)
+// Java: BattleType.bombingBattleTypes().stream().map(t -> getPendingBattle(t, type))
+//         .filter(Objects::nonNull).findAny().orElse(null);
+battle_tracker_get_pending_bombing_battle :: proc(self: ^Battle_Tracker, t: ^Territory) -> ^I_Battle {
+	types := i_battle_battle_type_bombing_battle_types()
+	defer delete(types)
+	for bt in types {
+		b := battle_tracker_get_pending_battle(self, t, bt)
+		if b != nil {
+			return b
+		}
+	}
+	return nil
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getPendingNonBombingBattle(Territory)
+// Java: BattleType.nonBombingBattleTypes().stream().map(t -> getPendingBattle(t, type))
+//         .filter(Objects::nonNull).findAny().orElse(null);
+battle_tracker_get_pending_non_bombing_battle :: proc(self: ^Battle_Tracker, t: ^Territory) -> ^I_Battle {
+	types := i_battle_battle_type_non_bombing_battle_types()
+	defer delete(types)
+	for bt in types {
+		b := battle_tracker_get_pending_battle(self, t, bt)
+		if b != nil {
+			return b
+		}
+	}
+	return nil
+}
+

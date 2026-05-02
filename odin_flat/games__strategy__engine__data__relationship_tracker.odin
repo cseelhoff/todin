@@ -162,3 +162,45 @@ relationship_tracker_get_enemies :: proc(self: ^Relationship_Tracker, p1: ^Game_
 	delete_key(&enemies, p1)
 	return enemies
 }
+
+// games.strategy.engine.data.RelationshipTracker#getRelationships(GamePlayer)
+//
+//   public Set<Relationship> getRelationships(@Nonnull final GamePlayer player1) {
+//     final Set<Relationship> relationships = new HashSet<>();
+//     for (final GamePlayer player2 : getData().getPlayerList().getPlayers()) {
+//       if (player2 == null || player2.equals(player1)) continue;
+//       relationships.add(getRelationship(player1, player2));
+//     }
+//     return relationships;
+//   }
+relationship_tracker_get_relationships :: proc(self: ^Relationship_Tracker, player1: ^Game_Player) -> map[^Relationship]struct{} {
+	result := make(map[^Relationship]struct{})
+	players := player_list_get_players(game_data_get_player_list(self.game_data_component.game_data))
+	defer delete(players)
+	for player2 in players {
+		if player2 == nil || player2 == player1 {
+			continue
+		}
+		rel := relationship_tracker_get_relationship_players(self, player1, player2)
+		result[rel] = {}
+	}
+	return result
+}
+
+// games.strategy.engine.data.RelationshipTracker#getSelfRelationshipType()
+//
+//   private RelationshipType getSelfRelationshipType() {
+//     return getData().getRelationshipTypeList().getSelfRelation();
+//   }
+relationship_tracker_get_self_relationship_type :: proc(self: ^Relationship_Tracker) -> ^Relationship_Type {
+	return relationship_type_list_get_self_relation(game_data_get_relationship_type_list(self.game_data_component.game_data))
+}
+
+// games.strategy.engine.data.RelationshipTracker#getNullRelationshipType()
+//
+//   private RelationshipType getNullRelationshipType() {
+//     return getData().getRelationshipTypeList().getNullRelation();
+//   }
+relationship_tracker_get_null_relationship_type :: proc(self: ^Relationship_Tracker) -> ^Relationship_Type {
+	return relationship_type_list_get_null_relation(game_data_get_relationship_type_list(self.game_data_component.game_data))
+}

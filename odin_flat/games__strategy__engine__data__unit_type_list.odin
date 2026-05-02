@@ -83,8 +83,7 @@ unit_type_list_new :: proc(data: ^Game_Data) -> ^Unit_Type_List {
 	self := new(Unit_Type_List)
 	self.game_data_component = make_Game_Data_Component(data)
 	self.unit_types = make(map[string]^Unit_Type)
-	self.support_rules = make(map[^Unit_Support_Attachment]struct{})
-	self.support_aa_rules = make(map[^Unit_Support_Attachment]struct{})
+	// support_rules / support_aa_rules left nil to act as Java's null cache sentinel
 	return self
 }
 
@@ -98,4 +97,44 @@ unit_type_list_lambda_get_support_rules_1 :: proc(usa: ^Unit_Support_Attachment)
 // Java: usa -> (usa.getAaRoll() || usa.getAaStrength())
 unit_type_list_lambda_get_support_aa_rules_2 :: proc(usa: ^Unit_Support_Attachment) -> bool {
 	return unit_support_attachment_get_aa_roll(usa) || unit_support_attachment_get_aa_strength(usa)
+}
+
+// games.strategy.engine.data.UnitTypeList#getSupportRules()
+// Java: if (supportRules == null) {
+//   supportRules = UnitSupportAttachment.get(this).stream()
+//       .filter(usa -> (usa.getRoll() || usa.getStrength()))
+//       .collect(Collectors.toSet());
+// } return supportRules;
+unit_type_list_get_support_rules :: proc(self: ^Unit_Type_List) -> map[^Unit_Support_Attachment]struct{} {
+	if self.support_rules == nil {
+		self.support_rules = make(map[^Unit_Support_Attachment]struct{})
+		all := unit_support_attachment_get_for_unit_type_list(self)
+		defer delete(all)
+		for usa, _ in all {
+			if unit_type_list_lambda_get_support_rules_1(usa) {
+				self.support_rules[usa] = {}
+			}
+		}
+	}
+	return self.support_rules
+}
+
+// games.strategy.engine.data.UnitTypeList#getSupportAaRules()
+// Java: if (supportAaRules == null) {
+//   supportAaRules = UnitSupportAttachment.get(this).stream()
+//       .filter(usa -> (usa.getAaRoll() || usa.getAaStrength()))
+//       .collect(Collectors.toSet());
+// } return supportAaRules;
+unit_type_list_get_support_aa_rules :: proc(self: ^Unit_Type_List) -> map[^Unit_Support_Attachment]struct{} {
+	if self.support_aa_rules == nil {
+		self.support_aa_rules = make(map[^Unit_Support_Attachment]struct{})
+		all := unit_support_attachment_get_for_unit_type_list(self)
+		defer delete(all)
+		for usa, _ in all {
+			if unit_type_list_lambda_get_support_aa_rules_2(usa) {
+				self.support_aa_rules[usa] = {}
+			}
+		}
+	}
+	return self.support_aa_rules
 }

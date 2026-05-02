@@ -59,3 +59,57 @@ main_defense_combat_value_builder :: proc(
 ) -> ^Main_Defense_Combat_Value_Main_Defense_Combat_Value_Builder {
 	return main_defense_combat_value_main_defense_combat_value_builder_new()
 }
+
+// Ported from MainDefenseCombatValue#buildWithNoUnitSupports().
+// Returns a copy of this combat value with all support pools replaced by
+// AvailableSupports.EMPTY_RESULT and friend/enemy unit lists replaced by
+// empty lists. Territory effects are preserved.
+main_defense_combat_value_build_with_no_unit_supports :: proc(self: ^Main_Defense_Combat_Value) -> ^Main_Defense_Combat_Value {
+	empty_roll_friends := available_supports_new(
+		make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment),
+		make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details),
+	)
+	empty_roll_enemies := available_supports_new(
+		make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment),
+		make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details),
+	)
+	empty_strength_friends := available_supports_new(
+		make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment),
+		make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details),
+	)
+	empty_strength_enemies := available_supports_new(
+		make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment),
+		make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details),
+	)
+	b := main_defense_combat_value_builder()
+	b = main_defense_combat_value_main_defense_combat_value_builder_game_sequence(b, self.game_sequence)
+	b = main_defense_combat_value_main_defense_combat_value_builder_game_dice_sides(b, self.game_dice_sides)
+	b = main_defense_combat_value_main_defense_combat_value_builder_lhtr_heavy_bombers(b, self.lhtr_heavy_bombers)
+	b = main_defense_combat_value_main_defense_combat_value_builder_roll_support_from_friends(b, empty_roll_friends)
+	b = main_defense_combat_value_main_defense_combat_value_builder_roll_support_from_enemies(b, empty_roll_enemies)
+	b = main_defense_combat_value_main_defense_combat_value_builder_strength_support_from_friends(b, empty_strength_friends)
+	b = main_defense_combat_value_main_defense_combat_value_builder_strength_support_from_enemies(b, empty_strength_enemies)
+	b = main_defense_combat_value_main_defense_combat_value_builder_friend_units(b, make([dynamic]^Unit))
+	b = main_defense_combat_value_main_defense_combat_value_builder_enemy_units(b, make([dynamic]^Unit))
+	b = main_defense_combat_value_main_defense_combat_value_builder_territory_effects(b, self.territory_effects)
+	return main_defense_combat_value_main_defense_combat_value_builder_build(b)
+}
+
+// Ported from MainDefenseCombatValue#buildOppositeCombatValue().
+// Returns the offensive counterpart with friend/enemy support and unit
+// collections swapped. Territory effects, dice sides, sequence, and
+// LHTR-heavy-bombers flag are preserved.
+main_defense_combat_value_build_opposite_combat_value :: proc(self: ^Main_Defense_Combat_Value) -> ^Main_Offense_Combat_Value {
+	b := main_offense_combat_value_builder()
+	b = main_offense_combat_value_main_offense_combat_value_builder_game_sequence(b, self.game_sequence)
+	b = main_offense_combat_value_main_offense_combat_value_builder_game_dice_sides(b, self.game_dice_sides)
+	b = main_offense_combat_value_main_offense_combat_value_builder_lhtr_heavy_bombers(b, self.lhtr_heavy_bombers)
+	b = main_offense_combat_value_main_offense_combat_value_builder_roll_support_from_friends(b, self.roll_support_from_enemies)
+	b = main_offense_combat_value_main_offense_combat_value_builder_roll_support_from_enemies(b, self.roll_support_from_friends)
+	b = main_offense_combat_value_main_offense_combat_value_builder_strength_support_from_friends(b, self.strength_support_from_enemies)
+	b = main_offense_combat_value_main_offense_combat_value_builder_strength_support_from_enemies(b, self.strength_support_from_friends)
+	b = main_offense_combat_value_main_offense_combat_value_builder_friend_units(b, self.enemy_units)
+	b = main_offense_combat_value_main_offense_combat_value_builder_enemy_units(b, self.friend_units)
+	b = main_offense_combat_value_main_offense_combat_value_builder_territory_effects(b, self.territory_effects)
+	return main_offense_combat_value_main_offense_combat_value_builder_build(b)
+}

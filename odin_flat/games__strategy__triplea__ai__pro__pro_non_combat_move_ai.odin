@@ -82,3 +82,62 @@ pro_non_combat_move_ai_lambda__move_units_to_best_territories__9 :: proc(
 	return !pro_territory_is_can_hold(value)
 }
 
+// Lambda: moveUnitsToDefendTerritories  proTransport -> proTransport.getTransport().equals(u)
+pro_non_combat_move_ai_lambda__move_units_to_defend_territories__4 :: proc(
+	u: ^Unit,
+	pro_transport: ^Pro_Transport,
+) -> bool {
+	return pro_transport_get_transport(pro_transport) == u
+}
+
+// Lambda: moveUnitsToDefendTerritories  proTransport -> proTransport.getTransport().equals(u)
+pro_non_combat_move_ai_lambda__move_units_to_defend_territories__5 :: proc(
+	u: ^Unit,
+	pro_transport: ^Pro_Transport,
+) -> bool {
+	return pro_transport_get_transport(pro_transport) == u
+}
+
+// Lambda: moveUnitsToBestTerritories  t -> canHold(moveMap, t)
+pro_non_combat_move_ai_lambda__move_units_to_best_territories__6 :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	move_map: map[^Territory]^Pro_Territory,
+	t: ^Territory,
+) -> bool {
+	return pro_non_combat_move_ai_can_hold(self, move_map, t)
+}
+
+// Lambda: moveUnitsToBestTerritories  proTransport -> proTransport.getTransport().equals(u)
+pro_non_combat_move_ai_lambda__move_units_to_best_territories__7 :: proc(
+	u: ^Unit,
+	pro_transport: ^Pro_Transport,
+) -> bool {
+	return pro_transport_get_transport(pro_transport) == u
+}
+
+// Lambda: moveUnitsToBestTerritories  proTransport -> proTransport.getTransport().equals(u)
+pro_non_combat_move_ai_lambda__move_units_to_best_territories__8 :: proc(
+	u: ^Unit,
+	pro_transport: ^Pro_Transport,
+) -> bool {
+	return pro_transport_get_transport(pro_transport) == u
+}
+
+// Lambda: moveConsumablesToFactories  t -> canHold(moveMap, t)
+pro_non_combat_move_ai_lambda__move_consumables_to_factories__13 :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	move_map: map[^Territory]^Pro_Territory,
+	t: ^Territory,
+) -> bool {
+	return pro_non_combat_move_ai_can_hold(self, move_map, t)
+}
+
+// Lambda: findDestinationOrSafeTerritoryOnTheWay  t -> canHold(moveMap, t)
+pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__16 :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	move_map: map[^Territory]^Pro_Territory,
+	t: ^Territory,
+) -> bool {
+	return pro_non_combat_move_ai_can_hold(self, move_map, t)
+}
+

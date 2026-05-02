@@ -890,3 +890,184 @@ unit_attachment_lambda__get_property_or_empty__27 :: proc(value: string) -> i32 
 unit_attachment_lambda__get_property_or_empty__29 :: proc(value: string) -> i32 {
 	return default_attachment_get_int(nil, value)
 }
+
+// =============================================================================
+// Phase B layer 2 additions: constructor, lazy lookups (getCanNotTarget,
+// getReceivesAbilityWhenWithMap), accessor for the embedded TechTracker, the
+// String-form `setIsFactory` / `setIsSub` parser overloads, and the synthetic
+// filter lambda emitted by javac for `getTargetsAa(UnitTypeList)`.
+// =============================================================================
+
+// Java: public UnitAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Mirrors `default_attachment_new` but allocates the concrete subclass and
+// initializes the embedded `Default_Attachment` fields directly so the
+// returned `^Unit_Attachment` is the canonical instance (no double heap
+// allocation, no detached parent object).
+unit_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Unit_Attachment {
+	self := new(Unit_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	return self
+}
+
+// Java: private TechTracker getTechTracker() { return getData().getTechTracker(); }
+// Mirrored as a private-style helper (lower-cased Odin proc; nothing else in
+// the package calls it yet at this layer).
+unit_attachment_get_tech_tracker :: proc(self: ^Unit_Attachment) -> ^Tech_Tracker {
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	return game_data_get_tech_tracker(data)
+}
+
+// Java: public Set<UnitType> getCanNotTarget()
+//   if (canNotTarget == null && (isSub || isSuicide)) {
+//     final Predicate<UnitType> unitTypeMatch =
+//         (getIsSuicideOnAttack() && getIsFirstStrike())
+//             ? Matches.unitTypeIsSuicideOnAttack().or(Matches.unitTypeIsSuicideOnDefense())
+//             : Matches.unitTypeIsAir();
+//     canNotTarget = new HashSet<>(CollectionUtils.getMatches(
+//         getData().getUnitTypeList().getAllUnitTypes(), unitTypeMatch));
+//   }
+//   return getSetProperty(canNotTarget);
+// Odin's value-typed map treats len==0 as the "unset" sentinel matching
+// Java's null-default. The lazy-init writes the result back into
+// `self.can_not_target` so subsequent calls see the cached value, just as
+// Java's field assignment does.
+unit_attachment_get_can_not_target :: proc(self: ^Unit_Attachment) -> map[^Unit_Type]struct {} {
+	if len(self.can_not_target) == 0 && (self.is_sub || self.is_suicide) {
+		data := game_data_component_get_data(&self.default_attachment.game_data_component)
+		utl := game_data_get_unit_type_list(data)
+		all := unit_type_list_get_all_unit_types(utl)
+		defer delete(all)
+		if unit_attachment_get_is_suicide_on_attack(self) && unit_attachment_get_is_first_strike(self) {
+			soa_pred, soa_ctx := matches_unit_type_is_suicide_on_attack()
+			sod_pred, sod_ctx := matches_unit_type_is_suicide_on_defense()
+			for ut in all {
+				if soa_pred(soa_ctx, ut) || sod_pred(sod_ctx, ut) {
+					self.can_not_target[ut] = {}
+				}
+			}
+		} else {
+			air_pred, air_ctx := matches_unit_type_is_air()
+			for ut in all {
+				if air_pred(air_ctx, ut) {
+					self.can_not_target[ut] = {}
+				}
+			}
+		}
+	}
+	return self.can_not_target
+}
+
+// Java: private static IntegerMap<Tuple<String, String>> getReceivesAbilityWhenWithMap(
+//          Collection<Unit> units, String filterForAbility, UnitTypeList unitTypeList)
+//   final IntegerMap<Tuple<String, String>> map = new IntegerMap<>();
+//   final Collection<UnitType> canReceive = UnitUtils.getUnitTypesFromUnitList(
+//       CollectionUtils.getMatches(units, Matches.unitCanReceiveAbilityWhenWith()));
+//   for (UnitType ut : canReceive) {
+//     for (String receive : ut.getUnitAttachment().getReceivesAbilityWhenWith()) {
+//       String[] s = splitOnColon(receive);
+//       if (filterForAbility != null && !filterForAbility.equals(s[0])) continue;
+//       map.put(Tuple.of(s[0], s[1]),
+//           CollectionUtils.countMatches(units,
+//               Matches.unitIsOfType(unitTypeList.getUnitTypeOrThrow(s[1]))));
+//     }
+//   }
+//   return map;
+// The returned `^Integer_Map` keys are heap-allocated `^Tuple(string,string)`
+// pointers. Java's content-based `Tuple.equals` is reproduced via a
+// dedup-by-content side table so repeated `(ability,unitType)` pairs reuse
+// the same key (matching Java's "put overwrites" semantics).
+unit_attachment_get_receives_ability_when_with_map :: proc(
+	units: [dynamic]^Unit,
+	filter_for_ability: string,
+	unit_type_list: ^Unit_Type_List,
+) -> ^Integer_Map {
+	out := integer_map_new()
+	// Filter units via Matches.unitCanReceiveAbilityWhenWith().
+	can_recv_pred, can_recv_ctx := matches_unit_can_receive_ability_when_with()
+	matched: [dynamic]^Unit
+	defer delete(matched)
+	for u in units {
+		if can_recv_pred(can_recv_ctx, u) {
+			append(&matched, u)
+		}
+	}
+	can_receive := unit_utils_get_unit_types_from_unit_list(matched)
+	defer delete(can_receive)
+	// dedup keys by content so Tuple.equals semantics are preserved.
+	dedup: map[string]map[string]^Tuple(string, string)
+	defer {
+		for _, inner in dedup {
+			delete(inner)
+		}
+		delete(dedup)
+	}
+	for ut in can_receive {
+		ua := unit_type_get_unit_attachment(ut)
+		receives := unit_attachment_get_receives_ability_when_with(ua)
+		for receive in receives {
+			parts := default_attachment_split_on_colon(receive)
+			defer delete(parts)
+			if len(parts) < 2 {
+				continue
+			}
+			ability := parts[0]
+			unit_name := parts[1]
+			if filter_for_ability != "" && filter_for_ability != ability {
+				continue
+			}
+			// Resolve or allocate the canonical Tuple key for (ability, unit_name).
+			inner, has_outer := dedup[ability]
+			if !has_outer {
+				inner = make(map[string]^Tuple(string, string))
+				dedup[ability] = inner
+			}
+			key, has_inner := inner[unit_name]
+			if !has_inner {
+				key = tuple_new(string, string, ability, unit_name)
+				inner[unit_name] = key
+				dedup[ability] = inner
+			}
+			// CollectionUtils.countMatches(units, Matches.unitIsOfType(target)).
+			target := unit_type_list_get_unit_type_or_throw(unit_type_list, unit_name)
+			of_type_pred, of_type_ctx := matches_unit_is_of_type(target)
+			count: i32 = 0
+			for u in units {
+				if of_type_pred(of_type_ctx, u) {
+					count += 1
+				}
+			}
+			integer_map_put(out, rawptr(key), count)
+		}
+	}
+	return out
+}
+
+// Java: lambda$getTargetsAa$5(UnitType ut) — `ut -> ut.getUnitAttachment().isAir()`
+// Non-capturing; emitted by javac for the Stream.filter call inside
+// `getTargetsAa(UnitTypeList)`.
+unit_attachment_lambda_get_targets_aa_5 :: proc(unit_type: ^Unit_Type) -> bool {
+	ua := unit_type_get_unit_attachment(unit_type)
+	if ua == nil {
+		return false
+	}
+	return unit_attachment_is_air(ua)
+}
+
+// Java: private void setIsSub(final String s) { setIsSub(getBool(s)); }
+// String-parser overload; defers to the boxed-Boolean form already defined
+// in this file. Suffix `_str` follows the project's overload-disambiguation
+// convention (cf. territory_attachment_set_is_impassable_str).
+unit_attachment_set_is_sub_str :: proc(self: ^Unit_Attachment, s: string) {
+	parsed := default_attachment_get_bool(&self.default_attachment, s)
+	unit_attachment_set_is_sub(self, &parsed)
+}
+
+// Java: private void setIsFactory(final String s) { setIsFactory(getBool(s)); }
+// String-parser overload paired with the boxed-Boolean `setIsFactory` form.
+unit_attachment_set_is_factory_str :: proc(self: ^Unit_Attachment, s: string) {
+	parsed := default_attachment_get_bool(&self.default_attachment, s)
+	unit_attachment_set_is_factory(self, &parsed)
+}

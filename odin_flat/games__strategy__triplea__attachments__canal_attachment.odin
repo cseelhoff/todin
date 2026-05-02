@@ -259,3 +259,95 @@ canal_attachment_get :: proc(
 		ctx,
 	)
 }
+
+// Java: public CanalAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Java's body chains directly to `DefaultAttachment(name, attachable, gameData)`;
+// all instance fields use their declared defaults (`canalName = ""`,
+// `landTerritories = null`, `excludedUnits = null`,
+// `canNotMoveThroughDuringCombatMove = false`), which match Odin's zero
+// values for `string`, the two `map` fields, and `bool` respectively, so
+// no extra initialization is required.
+// Per `default_attachment_new`'s contract ("subclass constructors should
+// allocate their own concrete struct and embed/initialize via field
+// assignment instead of calling this proc directly"), we replicate the
+// `DefaultAttachment` super-constructor inline on the embedded
+// `default_attachment` field — the same pattern used by
+// `relationship_type_attachment_new`.
+canal_attachment_new :: proc(
+	name: string,
+	attachable: ^Attachable,
+	game_data: ^Game_Data,
+) -> ^Canal_Attachment {
+	self := new(Canal_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	return self
+}
+
+// Java: public Set<UnitType> getExcludedUnits()
+//   if (excludedUnits == null) {
+//     return new HashSet<>(
+//         CollectionUtils.getMatches(
+//             getData().getUnitTypeList().getAllUnitTypes(), Matches.unitTypeIsAir()));
+//   }
+//   return excludedUnits;
+// The Odin field `excluded_units` is `map[^Unit_Type]struct{}`; we cannot
+// distinguish a Java `null` from an explicitly-set empty `HashSet` without
+// changing the struct shape, so this port follows the existing
+// "len == 0 ⇒ unset" convention used elsewhere in
+// `attachments/unit_attachment.odin`. When the set is empty we synthesize
+// the air-units default (Java's `CollectionUtils.getMatches(allUnitTypes,
+// Matches.unitTypeIsAir())`); otherwise we return the stored set
+// directly.
+//
+// Note on `collection_utils_get_matches`: its signature operates on
+// `[dynamic]rawptr` with a non-capturing `proc(rawptr) -> bool`
+// predicate, while `matches_unit_type_is_air()` produces the project's
+// `(proc(rawptr, ^Unit_Type) -> bool, rawptr)` Predicate pair. Bridging
+// the two would require fabricating a wrapper closure; the Java source
+// is itself a single-pass filter, so we inline the loop here, calling
+// the underlying `matches_pred_unit_type_is_air` thunk directly.
+canal_attachment_get_excluded_units :: proc(self: ^Canal_Attachment) -> map[^Unit_Type]struct{} {
+	if len(self.excluded_units) == 0 {
+		result: map[^Unit_Type]struct{}
+		data := game_data_component_get_data(&self.default_attachment.game_data_component)
+		utl := game_data_get_unit_type_list(data)
+		all := unit_type_list_get_all_unit_types(utl)
+		for ut in all {
+			if matches_pred_unit_type_is_air(nil, ut) {
+				result[ut] = {}
+			}
+		}
+		return result
+	}
+	return self.excluded_units
+}
+
+// Java: private static boolean isCanalOnRoute(final String canalName, final Route route)
+//   boolean previousTerritoryHasCanal = false;
+//   for (final Territory t : route) {
+//     boolean currentTerritoryHasCanal = hasCanal(t, canalName);
+//     if (previousTerritoryHasCanal && currentTerritoryHasCanal) {
+//       return true;
+//     }
+//     previousTerritoryHasCanal = currentTerritoryHasCanal;
+//   }
+//   return false;
+// Direct port. Iteration uses `route_iterator`, the established Odin
+// surface for `for (Territory t : route)`. The proc is static in Java,
+// so it takes no `self` parameter.
+canal_attachment_is_canal_on_route :: proc(canal_name: string, route: ^Route) -> bool {
+	previous_territory_has_canal := false
+	territories := route_iterator(route)
+	defer delete(territories)
+	for t in territories {
+		current_territory_has_canal := canal_attachment_has_canal(t, canal_name)
+		if previous_territory_has_canal && current_territory_has_canal {
+			return true
+		}
+		previous_territory_has_canal = current_territory_has_canal
+	}
+	return false
+}

@@ -137,3 +137,114 @@ resource_collection_format_integer_map :: proc(m: ^Integer_Map_Resource) -> stri
 	}
 	return strings.to_string(b)
 }
+
+// public ResourceCollection(final GameData data, final IntegerMap<Resource> resources)
+// Java: this(data); this.resources.add(resources);
+resource_collection_new_with_resources :: proc(data: ^Game_Data, resources: ^Integer_Map_Resource) -> ^Resource_Collection {
+	self := resource_collection_new(data)
+	for k, v in resources^ {
+		existing, _ := self.resources[k]
+		self.resources[k] = existing + v
+	}
+	return self
+}
+
+// public void add(final ResourceCollection otherResources)
+// Java: resources.add(otherResources.resources);
+resource_collection_add :: proc(self: ^Resource_Collection, other_resources: ^Resource_Collection) {
+	for k, v in other_resources.resources {
+		existing, _ := self.resources[k]
+		self.resources[k] = existing + v
+	}
+}
+
+// public int getQuantity(final String name)
+// Java: try (Unlocker ignored = getData().acquireReadLock()) {
+//          final Resource resource = getData().getResourceList().getResourceOrThrow(name);
+//          return getQuantity(resource);
+//       }
+// The single-threaded Odin port models acquireReadLock as a no-op (see
+// game_data_acquire_read_lock); skip the try-with-resources scaffolding.
+resource_collection_get_quantity_by_name :: proc(self: ^Resource_Collection, name: string) -> i32 {
+	data := game_data_component_get_data(&self.game_data_component)
+	resource := resource_list_get_resource_or_throw(game_data_get_resource_list(data), name)
+	return resource_collection_get_quantity(self, resource)
+}
+
+// public boolean has(final IntegerMap<Resource> map)
+// Java: return resources.greaterThanOrEqualTo(map);
+// Inlined for the typed Integer_Map_Resource alias (the generic
+// integer_map_greater_than_or_equal_to operates on ^Integer_Map with rawptr keys).
+resource_collection_has :: proc(self: ^Resource_Collection, m: ^Integer_Map_Resource) -> bool {
+	for k, v in m^ {
+		existing, _ := self.resources[k]
+		if existing < v {
+			return false
+		}
+	}
+	return true
+}
+
+// private static String toString(
+//     final IntegerMap<Resource> resources, final GameData data, final String lineSeparator)
+// Renamed to avoid colliding with any future instance toString proc.
+// Constants.PUS resolves to the literal "PUs" (see ai_utils.odin for the
+// same convention). Java's `acquireReadLock` is a no-op in the
+// single-threaded port. Java's NPE catch fallback covers deserialization
+// where data.getResourceList() may still be null; we mirror it via a nil
+// check on the resource list.
+resource_collection_to_string_static :: proc(resources: ^Integer_Map_Resource, data: ^Game_Data, line_separator: string) -> string {
+	if resources == nil {
+		return "nothing"
+	}
+	all_zero := true
+	for _, v in resources^ {
+		if v != 0 {
+			all_zero = false
+			break
+		}
+	}
+	if all_zero {
+		return "nothing"
+	}
+	pus: ^Resource = nil
+	rl := game_data_get_resource_list(data)
+	if rl != nil {
+		pus = resource_list_get_resource_or_throw(rl, "PUs")
+	} else {
+		for r, _ in resources^ {
+			if r.named.base.name == "PUs" {
+				pus = r
+				break
+			}
+		}
+	}
+	if pus == nil {
+		fmt.panicf("Possible deserialization error: PUs is null")
+	}
+	b: strings.Builder
+	strings.builder_init(&b)
+	if pus_value, ok := resources^[pus]; ok && pus_value != 0 {
+		strings.write_string(&b, line_separator)
+		strings.write_int(&b, int(pus_value))
+		strings.write_byte(&b, ' ')
+		strings.write_string(&b, pus.named.base.name)
+	}
+	for resource, value in resources^ {
+		if resource == pus {
+			continue
+		}
+		strings.write_string(&b, line_separator)
+		strings.write_int(&b, int(value))
+		strings.write_byte(&b, ' ')
+		strings.write_string(&b, resource.named.base.name)
+	}
+	out := strings.to_string(b)
+	// Java: sb.toString().replaceFirst(lineSeparator, "")
+	// The first occurrence is always the leading separator written above
+	// (or none, when no entries were appended); strip the prefix once.
+	if strings.has_prefix(out, line_separator) {
+		return out[len(line_separator):]
+	}
+	return out
+}

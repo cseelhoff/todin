@@ -243,3 +243,27 @@ unit_collection_lambda_get_player_unit_counts_5 :: proc(count: ^map[^Game_Player
 		count[owner] = 1
 	}
 }
+
+// Java: public List<Unit> getMatches(final Predicate<Unit> predicate)
+//   return CollectionUtils.getMatches(units, predicate);
+unit_collection_get_matches :: proc(self: ^Unit_Collection, pred: proc(^Unit) -> bool) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	for u in self.units {
+		if pred(u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// Java synthetic: lambda$getUnitCount$1(UnitType, GamePlayer, Unit) -> boolean
+//   from getUnitCount(UnitType, GamePlayer): u -> u.getType().equals(type) && u.isOwnedBy(owner)
+unit_collection_lambda_get_unit_count_1 :: proc(unit_type: ^Unit_Type, owner: ^Game_Player, u: ^Unit) -> bool {
+	return unit_type_equals(u.type, unit_type) && unit_is_owned_by(u, owner)
+}
+
+// Java synthetic: lambda$getUnitCount$2(GamePlayer, Unit) -> boolean
+//   from getUnitCount(GamePlayer): u -> u.isOwnedBy(owner)
+unit_collection_lambda_get_unit_count_2 :: proc(owner: ^Game_Player, u: ^Unit) -> bool {
+	return unit_is_owned_by(u, owner)
+}

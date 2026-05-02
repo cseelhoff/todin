@@ -22,6 +22,34 @@ Abstract_Pro_Ai :: struct {
 	stored_strafing_territories: [dynamic]^Territory,
 }
 
+// Java: public AbstractProAi(String name, IBattleCalculator battleCalculator,
+//                            ProData proData, String playerLabel)
+abstract_pro_ai_new :: proc(
+	name: string,
+	battle_calculator: ^I_Battle_Calculator,
+	pro_data: ^Pro_Data,
+	player_label: string,
+) -> ^Abstract_Pro_Ai {
+	self := new(Abstract_Pro_Ai)
+	// super(name, playerLabel)
+	self.name = name
+	self.player_label = player_label
+	self.pro_data = pro_data
+	self.calc = pro_odds_calculator_new(battle_calculator)
+	self.combat_move_ai = pro_combat_move_ai_new(self)
+	self.non_combat_move_ai = pro_non_combat_move_ai_new(self)
+	self.purchase_ai = pro_purchase_ai_new(self)
+	self.retreat_ai = pro_retreat_ai_new(self)
+	self.scramble_ai = pro_scramble_ai_new(self)
+	self.politics_ai = pro_politics_ai_new(self)
+	self.stored_combat_move_map = nil
+	self.stored_factory_move_map = nil
+	self.stored_purchase_territories = nil
+	self.stored_political_actions = nil
+	self.stored_strafing_territories = make([dynamic]^Territory)
+	return self
+}
+
 abstract_pro_ai_get_pro_data :: proc(self: ^Abstract_Pro_Ai) -> ^Pro_Data {
 	return self.pro_data
 }

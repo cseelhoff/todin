@@ -36,3 +36,18 @@ game_data_manager_options_builder :: proc() -> ^Game_Data_Manager_Options_Option
 	return b
 }
 
+game_data_manager_options_for_save_game :: proc() -> ^Game_Data_Manager_Options {
+	// Omit attachment data as it uses a lot of memory and is only needed for XML
+	// exports, which now read it from the original XML instead.
+	b := game_data_manager_options_builder()
+	game_data_manager_options_options_builder_with_delegates(b, true)
+	game_data_manager_options_options_builder_with_history(b, true)
+	game_data_manager_options_options_builder_with_attachment_xml_data(b, false)
+	return game_data_manager_options_options_builder_build(b)
+}
+
+game_data_manager_options_for_battle_calculator :: proc() -> ^Game_Data_Manager_Options {
+	b := game_data_manager_options_builder()
+	return game_data_manager_options_options_builder_build(b)
+}
+

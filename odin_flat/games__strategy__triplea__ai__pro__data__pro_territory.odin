@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 
 Pro_Territory :: struct {
 	pro_data:                ^Pro_Data,
@@ -442,4 +443,54 @@ pro_territory_set_battle_result :: proc(self: ^Pro_Territory, battle_result: ^Pr
 	   battle_result.has_land_unit_remaining {
 		self.currently_wins = true
 	}
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#setBattleResultIfNull(java.util.function.Supplier)
+pro_territory_set_battle_result_if_null :: proc(
+	self: ^Pro_Territory,
+	supplier: proc() -> ^Pro_Battle_Result,
+) {
+	if self.battle_result == nil {
+		pro_territory_set_battle_result(self, supplier())
+	}
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#<init>(Territory, ProData)
+pro_territory_new :: proc(territory: ^Territory, pro_data: ^Pro_Data) -> ^Pro_Territory {
+	self := new(Pro_Territory)
+	self.territory = territory
+	self.pro_data = pro_data
+	self.max_units = make(map[^Unit]struct{})
+	self.units = make([dynamic]^Unit)
+	self.bombers = make([dynamic]^Unit)
+	self.max_battle_result = pro_battle_result_new_empty()
+	self.value = 0
+	self.sea_value = 0
+	self.can_hold = true
+	self.can_attack = false
+	self.strength_estimate = math.INF_F64
+
+	self.max_amphib_units = make([dynamic]^Unit)
+	self.amphib_attack_map = make(map[^Unit][dynamic]^Unit)
+	self.transport_territory_map = make(map[^Unit]^Territory)
+	self.need_amphib_units = false
+	self.strafing = false
+	self.is_transporting_map = make(map[^Unit]bool)
+	self.max_bombard_units = make(map[^Unit]struct{})
+	self.bombard_options_map = make(map[^Unit]map[^Territory]struct{})
+	self.bombard_territory_map = make(map[^Unit]^Territory)
+
+	self.currently_wins = false
+	self.battle_result = nil
+
+	self.cant_move_units = make(map[^Unit]struct{})
+	self.max_enemy_units = make([dynamic]^Unit)
+	self.max_enemy_bombard_units = make(map[^Unit]struct{})
+	self.min_battle_result = pro_battle_result_new_empty()
+	self.temp_units = make([dynamic]^Unit)
+	self.temp_amphib_attack_map = make(map[^Unit][dynamic]^Unit)
+	self.load_value = 0
+
+	self.max_scramble_units = make([dynamic]^Unit)
+	return self
 }

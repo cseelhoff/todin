@@ -177,3 +177,58 @@ pro_purchase_validation_utils_find_number_of_construction_type_to_place :: proc(
 	return num_construction_type_to_place
 }
 
+// Mirrors Java's private static
+//   boolean hasReachedMaxUnitBuiltPerPlayer(
+//       ProPurchaseOption purchaseOption, GamePlayer player, GameState data,
+//       List<Unit> unitsToPlace,
+//       Map<Territory, ProPurchaseTerritory> purchaseTerritories)
+// which returns true when buying purchaseOption.getQuantity() more
+// units of purchaseOption.getUnitType() owned by `player` would push
+// the total already-built + queued count past the unit type's
+// per-player cap. maxBuiltPerPlayer == -1 means unlimited; 0 means
+// the type is forbidden.
+pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
+	purchase_option: ^Pro_Purchase_Option,
+	player: ^Game_Player,
+	data: ^Game_State,
+	units_to_place: [dynamic]^Unit,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> bool {
+	max_built := pro_purchase_option_get_max_built_per_player(purchase_option)
+	type := pro_purchase_option_get_unit_type(purchase_option)
+	if max_built == 0 {
+		return true
+	} else if max_built > 0 {
+		// Predicate: unit.getType() == type && unit.getOwner() == player.
+		currently_built: i32 = 0
+		for u in units_to_place {
+			if unit_get_type(u) == type && unit_get_owner(u) == player {
+				currently_built += 1
+			}
+		}
+		all_territories := game_map_get_territories(game_state_get_map(data))
+		for t in all_territories {
+			// Inline count avoids needing a rawptr-aware overload of
+			// unit_collection_count_matches (whose pred is a bare
+			// proc(^Unit) -> bool with no closure).
+			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+				if unit_get_type(u) == type && unit_get_owner(u) == player {
+					currently_built += 1
+				}
+			}
+		}
+		for _, t in purchase_territories {
+			for place_territory in pro_purchase_territory_get_can_place_territories(t) {
+				for u in pro_place_territory_get_place_units(place_territory) {
+					if unit_get_type(u) == type && unit_get_owner(u) == player {
+						currently_built += 1
+					}
+				}
+			}
+		}
+		allowed_build := max_built - currently_built
+		return allowed_build - pro_purchase_option_get_quantity(purchase_option) < 0
+	}
+	return false
+}
+

@@ -100,3 +100,77 @@ available_supports_lambda_give_support_to_unit_3 :: proc(new_support: ^Unit) -> 
 	return integer_map_new()
 }
 
+// Lambda from getSupport(): `e -> new SupportDetails(e.getValue())`.
+// Used in Collectors.toMap to convert each Map.Entry<UnitSupportAttachment,
+// IntegerMap<Unit>> value into a SupportDetails wrapper. Java's Map.Entry
+// is decomposed into (key, value) parameters in Odin.
+available_supports_lambda_get_support_1 :: proc(
+	key: ^Unit_Support_Attachment,
+	value: ^Integer_Map_Unit,
+) -> ^Available_Supports_Support_Details {
+	return available_supports_support_details_new(value^)
+}
+
+// static AvailableSupports getSupport(SupportCalculator supportCalculator)
+//   Streams supportCalculator.getSupportUnits().entrySet() into a new map
+//   whose values are SupportDetails wrappers, then builds an AvailableSupports
+//   carrying that map plus supportCalculator.getSupportRules().
+available_supports_get_support :: proc(support_calculator: ^Support_Calculator) -> ^Available_Supports {
+	src_support_units := support_calculator_get_support_units(support_calculator)
+	transformed_support_units := make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details)
+	for k, v in src_support_units {
+		transformed_support_units[k] = available_supports_lambda_get_support_1(k, v)
+	}
+	builder := available_supports_builder()
+	builder = available_supports_available_supports_builder_support_rules(
+		builder,
+		support_calculator_get_support_rules(support_calculator),
+	)
+	builder = available_supports_available_supports_builder_support_units(
+		builder,
+		transformed_support_units,
+	)
+	return available_supports_available_supports_builder_build(builder)
+}
+
+// int giveSupportToUnit(Unit unit)
+//   Walks each bonus-type bucket in supportRules, applies as many supports
+//   from each rule as are available (bounded by the bonus type's per-unit
+//   count), records the supporter -> supportee bonus mapping in
+//   unitsGivingSupport, and returns the total bonus given.
+available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit: ^Unit) -> i32 {
+	amount_of_support_given: i32 = 0
+	for _, rules_by_bonus_type in self.support_rules {
+		if len(rules_by_bonus_type) == 0 {
+			continue
+		}
+		first_rule := rules_by_bonus_type[0]
+		max_per_bonus_type := unit_support_attachment_bonus_type_get_count(
+			unit_support_attachment_get_bonus_type(first_rule),
+		)
+		for rule in rules_by_bonus_type {
+			unit_types := unit_support_attachment_get_unit_type(rule)
+			if _, has := unit_types[unit_get_type(unit)]; !has {
+				continue
+			}
+			num_support_available_to_apply := available_supports_get_support_available(self, rule)
+			for i: i32 = 0; i < num_support_available_to_apply; i += 1 {
+				supporter := available_supports_get_next_available_supporter(self, rule)
+				bonus := unit_support_attachment_get_bonus(rule)
+				amount_of_support_given += bonus
+				im, present := self.units_giving_support[supporter]
+				if !present {
+					im = available_supports_lambda_give_support_to_unit_3(supporter)
+					self.units_giving_support[supporter] = im
+				}
+				integer_map_add(im, rawptr(unit), bonus)
+			}
+			max_per_bonus_type -= num_support_available_to_apply
+			if max_per_bonus_type <= 0 {
+				break
+			}
+		}
+	}
+	return amount_of_support_given
+}
+

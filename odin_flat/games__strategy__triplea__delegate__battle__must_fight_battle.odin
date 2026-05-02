@@ -349,4 +349,302 @@ must_fight_battle_add_round_reset_step :: proc(
 	append(steps, &outer.i_executable)
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#cleanupKilledUnits(IDelegateBridge, Side, Collection<Unit>, Collection<Unit>)
+//
+// Java:
+//   final Collection<IBattle> dependentBattles = battleTracker.getBlocked(this);
+//   if (!dependentBattles.isEmpty()) {
+//     removeFromDependentBattles(killedUnits, bridge, dependentBattles);
+//   }
+//   this.killed.addAll(killedUnits);
+//   if (side == DEFENSE) {
+//     defendingUnits.addAll(transformedUnits);
+//     defendingUnits.removeAll(killedUnits);
+//     defendingWaitingToDie.removeAll(killedUnits);
+//   } else { /* mirror with attacking */ }
+must_fight_battle_cleanup_killed_units :: proc(
+	self: ^Must_Fight_Battle,
+	bridge: ^I_Delegate_Bridge,
+	side: Battle_State_Side,
+	killed_units: [dynamic]^Unit,
+	transformed_units: [dynamic]^Unit,
+) {
+	dependent_battles := battle_tracker_get_blocked(self.battle_tracker, cast(^I_Battle)self)
+	defer delete(dependent_battles)
+	if len(dependent_battles) > 0 {
+		for dependent in dependent_battles {
+			i_battle_units_lost_in_preceding_battle(dependent, killed_units, bridge, false)
+		}
+	}
+
+	for u in killed_units {
+		append(&self.killed, u)
+	}
+
+	killed_set: map[^Unit]struct{}
+	defer delete(killed_set)
+	for u in killed_units {
+		killed_set[u] = {}
+	}
+
+	if side == .DEFENSE {
+		for u in transformed_units {
+			append(&self.defending_units, u)
+		}
+		for i := len(self.defending_units) - 1; i >= 0; i -= 1 {
+			if _, ok := killed_set[self.defending_units[i]]; ok {
+				ordered_remove(&self.defending_units, i)
+			}
+		}
+		for i := len(self.defending_waiting_to_die) - 1; i >= 0; i -= 1 {
+			if _, ok := killed_set[self.defending_waiting_to_die[i]]; ok {
+				ordered_remove(&self.defending_waiting_to_die, i)
+			}
+		}
+	} else {
+		for u in transformed_units {
+			append(&self.attacking_units, u)
+		}
+		for i := len(self.attacking_units) - 1; i >= 0; i -= 1 {
+			if _, ok := killed_set[self.attacking_units[i]]; ok {
+				ordered_remove(&self.attacking_units, i)
+			}
+		}
+		for i := len(self.attacking_waiting_to_die) - 1; i >= 0; i -= 1 {
+			if _, ok := killed_set[self.attacking_waiting_to_die[i]]; ok {
+				ordered_remove(&self.attacking_waiting_to_die, i)
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getRemainingAttackingUnits
+//
+// Java:
+//   final Set<Unit> remaining = new HashSet<>(attackingUnitsRetreated);
+//   final Collection<Unit> unitsLeftInTerritory = new ArrayList<>(battleSite.getUnits());
+//   unitsLeftInTerritory.removeAll(killed);
+//   remaining.addAll(getMatches(unitsLeftInTerritory,
+//       getWhoWon() != WhoWon.DEFENDER
+//           ? Matches.unitIsOwnedBy(attacker)
+//           : Matches.unitIsOwnedBy(attacker)
+//                 .and(Matches.unitIsAir())
+//                 .and(Matches.unitIsNotInfrastructure())));
+//   return remaining;
+must_fight_battle_get_remaining_attacking_units :: proc(self: ^Must_Fight_Battle) -> [dynamic]^Unit {
+	remaining: [dynamic]^Unit
+	seen: map[^Unit]struct{}
+	defer delete(seen)
+	for u in self.attacking_units_retreated {
+		if _, ok := seen[u]; !ok {
+			seen[u] = {}
+			append(&remaining, u)
+		}
+	}
+
+	killed_set: map[^Unit]struct{}
+	defer delete(killed_set)
+	for u in self.killed {
+		killed_set[u] = {}
+	}
+
+	site_units := unit_collection_get_units(self.battle_site.unit_collection)
+	defer delete(site_units)
+
+	defender_won := self.who_won == .DEFENDER
+	own_p, own_c := matches_unit_is_owned_by(self.attacker)
+	air_p, air_c := matches_unit_is_air()
+	ni_p, ni_c := matches_unit_is_not_infrastructure()
+
+	for u in site_units {
+		if _, k := killed_set[u]; k {
+			continue
+		}
+		matched: bool
+		if !defender_won {
+			matched = own_p(own_c, u)
+		} else {
+			matched = own_p(own_c, u) && air_p(air_c, u) && ni_p(ni_c, u)
+		}
+		if matched {
+			if _, ok := seen[u]; !ok {
+				seen[u] = {}
+				append(&remaining, u)
+			}
+		}
+	}
+	return remaining
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getRemainingDefendingUnits
+//
+// Java:
+//   final Set<Unit> remaining = new HashSet<>(defendingUnitsRetreated);
+//   remaining.addAll(defendingUnits);
+//   if (getWhoWon() != WhoWon.ATTACKER || attackingUnits.stream().allMatch(Matches.unitIsAir())) {
+//     final var unitsLeftInTerritory = new HashSet<>(getMatches(battleSite.getUnits(),
+//         Matches.unitIsOwnedBy(defender).or(Matches.enemyUnit(attacker))));
+//     unitsLeftInTerritory.removeAll(killed);
+//     remaining.addAll(unitsLeftInTerritory);
+//   }
+//   return remaining;
+must_fight_battle_get_remaining_defending_units :: proc(self: ^Must_Fight_Battle) -> [dynamic]^Unit {
+	remaining: [dynamic]^Unit
+	seen: map[^Unit]struct{}
+	defer delete(seen)
+	for u in self.defending_units_retreated {
+		if _, ok := seen[u]; !ok {
+			seen[u] = {}
+			append(&remaining, u)
+		}
+	}
+	for u in self.defending_units {
+		if _, ok := seen[u]; !ok {
+			seen[u] = {}
+			append(&remaining, u)
+		}
+	}
+
+	air_p, air_c := matches_unit_is_air()
+	all_air := true
+	for u in self.attacking_units {
+		if !air_p(air_c, u) {
+			all_air = false
+			break
+		}
+	}
+	if self.who_won != .ATTACKER || all_air {
+		killed_set: map[^Unit]struct{}
+		defer delete(killed_set)
+		for u in self.killed {
+			killed_set[u] = {}
+		}
+
+		site_units := unit_collection_get_units(self.battle_site.unit_collection)
+		defer delete(site_units)
+
+		own_def_p, own_def_c := matches_unit_is_owned_by(self.defender)
+		en_atk_p, en_atk_c := matches_enemy_unit(self.attacker)
+		// Track territory-side dedup so removeAll(killed) and addAll match Java semantics.
+		territory_seen: map[^Unit]struct{}
+		defer delete(territory_seen)
+		for u in site_units {
+			if !(own_def_p(own_def_c, u) || en_atk_p(en_atk_c, u)) {
+				continue
+			}
+			if _, k := killed_set[u]; k {
+				continue
+			}
+			if _, ts := territory_seen[u]; ts {
+				continue
+			}
+			territory_seen[u] = {}
+			if _, ok := seen[u]; !ok {
+				seen[u] = {}
+				append(&remaining, u)
+			}
+		}
+	}
+	return remaining
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getStatus
+//
+//   return BattleStatus.of(round, maxRounds, isOver, isAmphibious, headless);
+must_fight_battle_get_status :: proc(self: ^Must_Fight_Battle) -> ^Battle_State_Battle_Status {
+	return battle_state__battle_status_of(
+		self.round,
+		self.max_rounds,
+		self.is_over,
+		self.is_amphibious,
+		self.headless,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#lambda$filterUnits$1(Side[], UnitBattleStatus)
+//
+// Java synthetic produced by `status -> getUnits(status, sides).stream()` inside
+// filterUnits. Captures `this` and `sides`; the lambda parameter is `status`.
+// The Odin port mirrors that as a free proc taking the captured receiver and
+// sides plus the lambda parameter, returning the matching units (the Java
+// stream materialised). Used to build filterUnits's flat-mapped result.
+must_fight_battle_lambda_filter_units_1 :: proc(
+	self: ^Must_Fight_Battle,
+	sides: []Battle_State_Side,
+	status: Battle_State_Unit_Battle_Status,
+) -> [dynamic]^Unit {
+	return must_fight_battle_get_units_by_status(self, status, ..sides)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeAirNoLongerInTerritory
+//
+// Java:
+//   if (headless) return;
+//   final Predicate<Unit> airNotInTerritory = Matches.unitIsInTerritory(battleSite).negate();
+//   attackingUnits.removeAll(getMatches(attackingUnits, airNotInTerritory));
+// (i.e. retain only attacking units still in battleSite.)
+must_fight_battle_remove_air_no_longer_in_territory :: proc(self: ^Must_Fight_Battle) {
+	if self.headless {
+		return
+	}
+	in_p, in_c := matches_unit_is_in_territory(self.battle_site)
+	for i := len(self.attacking_units) - 1; i >= 0; i -= 1 {
+		if !in_p(in_c, self.attacking_units[i]) {
+			ordered_remove(&self.attacking_units, i)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeDisabledUnits
+//
+// Java:
+//   defendingUnits = CollectionUtils.getMatches(defendingUnits, Matches.unitIsNotDisabled());
+//   attackingUnits = CollectionUtils.getMatches(attackingUnits, Matches.unitIsNotDisabled());
+must_fight_battle_remove_disabled_units :: proc(self: ^Must_Fight_Battle) {
+	nd_p, nd_c := matches_unit_is_not_disabled()
+	for i := len(self.defending_units) - 1; i >= 0; i -= 1 {
+		if !nd_p(nd_c, self.defending_units[i]) {
+			ordered_remove(&self.defending_units, i)
+		}
+	}
+	for i := len(self.attacking_units) - 1; i >= 0; i -= 1 {
+		if !nd_p(nd_c, self.attacking_units[i]) {
+			ordered_remove(&self.attacking_units, i)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeNonCombatants(Collection<Unit>, Collection<Unit>, boolean, boolean)
+//
+// Java private filter helper:
+//   int battleRound = (removeForNextRound ? round + 1 : round);
+//   return CollectionUtils.getMatches(units,
+//       Matches.unitCanParticipateInCombat(attacking, attacker, battleSite, battleRound, enemyUnits));
+must_fight_battle_remove_non_combatants_filter :: proc(
+	self: ^Must_Fight_Battle,
+	units: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+	attacking: bool,
+	remove_for_next_round: bool,
+) -> [dynamic]^Unit {
+	battle_round := self.round
+	if remove_for_next_round {
+		battle_round = self.round + 1
+	}
+	pred, pred_ctx := matches_unit_can_participate_in_combat(
+		attacking,
+		self.attacker,
+		self.battle_site,
+		battle_round,
+		enemy_units,
+	)
+	result: [dynamic]^Unit
+	for u in units {
+		if pred(pred_ctx, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
 

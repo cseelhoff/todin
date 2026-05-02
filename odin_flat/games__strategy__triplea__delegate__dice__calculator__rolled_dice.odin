@@ -133,3 +133,46 @@ rolled_dice_lambda__get_dice_for_choose_best_roll__2 :: proc(
 	return die_new(dice_rolls[roll_number], strength, t)
 }
 
+// Static: RolledDice.getDiceForAllRolls(Deque<Integer>, UnitPowerStrengthAndRolls) -> Stream<Die>
+rolled_dice_get_dice_for_all_rolls :: proc(
+	dice_queue: ^[dynamic]i32,
+	unit_power_strength_and_rolls: ^Unit_Power_Strength_And_Rolls,
+) -> [dynamic]Die {
+	strength := unit_power_strength_and_rolls_get_strength(unit_power_strength_and_rolls)
+	rolls := unit_power_strength_and_rolls_get_rolls(unit_power_strength_and_rolls)
+	result: [dynamic]Die
+	for roll_number in 0 ..< int(rolls) {
+		append(&result, rolled_dice_lambda__get_dice_for_all_rolls__3(dice_queue, strength, i32(roll_number)))
+	}
+	return result
+}
+
+// Static: RolledDice.getDiceForChooseBestRoll(Deque<Integer>, UnitPowerStrengthAndRolls) -> Stream<Die>
+rolled_dice_get_dice_for_choose_best_roll :: proc(
+	dice_queue: ^[dynamic]i32,
+	unit_power_strength_and_rolls: ^Unit_Power_Strength_And_Rolls,
+) -> [dynamic]Die {
+	dice_rolls: [dynamic]i32
+	best_roll := unit_power_strength_and_rolls_get_dice_sides(unit_power_strength_and_rolls)
+	best_roll_index: i32 = 0
+	rolls := unit_power_strength_and_rolls_get_rolls(unit_power_strength_and_rolls)
+	for i in 0 ..< int(rolls) {
+		die_value := dice_queue[0]
+		ordered_remove(dice_queue, 0)
+		append(&dice_rolls, die_value)
+		if die_value < best_roll {
+			best_roll = die_value
+			best_roll_index = i32(i)
+		}
+	}
+
+	dice_hit_index := best_roll_index
+	strength := unit_power_strength_and_rolls_get_strength(unit_power_strength_and_rolls)
+	result: [dynamic]Die
+	for roll_number in 0 ..< int(rolls) {
+		append(&result, rolled_dice_lambda__get_dice_for_choose_best_roll__2(&dice_rolls, strength, dice_hit_index, i32(roll_number)))
+	}
+	delete(dice_rolls)
+	return result
+}
+

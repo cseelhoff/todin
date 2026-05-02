@@ -291,3 +291,53 @@ strategic_bombing_raid_battle_lambda__notify_aa_hits__7 :: proc(
 		self.attacker,
 	)
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#showBattle
+//
+//   final String title = MessageFormat.format("Bombing raid in {0}", battleSite.getName());
+//   bridge.getDisplayChannelBroadcaster().showBattle(
+//       battleId, battleSite, title,
+//       attackingUnits, defendingUnits,
+//       List.of(), List.of(), List.of(),
+//       Map.of(),
+//       attacker, defender,
+//       false, getBattleType(),
+//       Set.of());
+//   bridge.getDisplayChannelBroadcaster().listBattleSteps(battleId, steps);
+strategic_bombing_raid_battle_show_battle :: proc(
+	self:   ^Strategic_Bombing_Raid_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	site_name := default_named_get_name(&self.battle_site.named_attachable.default_named)
+	title := fmt.aprintf("Bombing raid in %s", site_name)
+
+	empty_units_1: [dynamic]^Unit
+	empty_units_2: [dynamic]^Unit
+	empty_units_3: [dynamic]^Unit
+	empty_amphib:  [dynamic]^Unit
+	empty_dependents := make(map[^Unit][dynamic]^Unit)
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_show_battle(
+		display,
+		self.battle_id,
+		self.battle_site,
+		title,
+		self.attacking_units,
+		self.defending_units,
+		empty_units_1,
+		empty_units_2,
+		empty_units_3,
+		empty_dependents,
+		self.attacker,
+		self.defender,
+		false,
+		strategic_bombing_raid_battle_get_battle_type(self),
+		empty_amphib,
+	)
+	i_display_list_battle_steps(
+		i_delegate_bridge_get_display_channel_broadcaster(bridge),
+		self.battle_id,
+		self.steps,
+	)
+}

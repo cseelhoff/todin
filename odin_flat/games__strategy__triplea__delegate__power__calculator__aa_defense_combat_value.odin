@@ -42,3 +42,35 @@ aa_defense_combat_value_new :: proc(
 	self.enemy_units = enemy_units
 	return self
 }
+
+// Mirror of static AvailableSupports.EMPTY_RESULT — a fresh AvailableSupports
+// constructed with empty supportRules / supportUnits maps. Java caches a single
+// instance; we allocate a new one per call (it is never mutated in this code
+// path because friendUnits/enemyUnits are empty, so getNextAvailableSupporter
+// is never invoked on it).
+aa_defense_combat_value_empty_available_supports :: proc() -> ^Available_Supports {
+	return available_supports_new(
+		make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment),
+		make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details),
+	)
+}
+
+// CombatValue buildWithNoUnitSupports()
+//   AaDefenseCombatValue.builder()
+//     .rollSupportFromFriends(EMPTY_RESULT)
+//     .rollSupportFromEnemies(EMPTY_RESULT)
+//     .strengthSupportFromFriends(EMPTY_RESULT)
+//     .strengthSupportFromEnemies(EMPTY_RESULT)
+//     .friendUnits(List.of())
+//     .enemyUnits(List.of())
+//     .build();
+aa_defense_combat_value_build_with_no_unit_supports :: proc(self: ^Aa_Defense_Combat_Value) -> ^Aa_Defense_Combat_Value {
+	b := aa_defense_combat_value_builder()
+	aa_defense_combat_value_builder_roll_support_from_friends(b, aa_defense_combat_value_empty_available_supports())
+	aa_defense_combat_value_builder_roll_support_from_enemies(b, aa_defense_combat_value_empty_available_supports())
+	aa_defense_combat_value_builder_strength_support_from_friends(b, aa_defense_combat_value_empty_available_supports())
+	aa_defense_combat_value_builder_strength_support_from_enemies(b, aa_defense_combat_value_empty_available_supports())
+	aa_defense_combat_value_builder_friend_units(b, make([dynamic]^Unit))
+	aa_defense_combat_value_builder_enemy_units(b, make([dynamic]^Unit))
+	return aa_defense_combat_value_builder_build(b)
+}

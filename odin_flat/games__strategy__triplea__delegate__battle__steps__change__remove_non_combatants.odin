@@ -55,3 +55,12 @@ remove_non_combatants_remove_non_combatants :: proc(
 	)
 }
 
+remove_non_combatants_execute :: proc(
+	self: ^Remove_Non_Combatants,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	remove_non_combatants_remove_non_combatants(self, .OFFENSE, bridge)
+	remove_non_combatants_remove_non_combatants(self, .DEFENSE, bridge)
+}
+

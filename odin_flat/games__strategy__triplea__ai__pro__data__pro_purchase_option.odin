@@ -212,3 +212,31 @@ pro_purchase_option_calculate_efficiency :: proc(
 		30,
 	) / f64(self.quantity)
 }
+
+// Java's 6-arg overload: calculateEfficiency(attackFactor, defenseFactor,
+//   supportAttackFactor, supportDefenseFactor, distanceFactor, data)
+// — delegates to the 7-arg form with seaFactor = 1.
+pro_purchase_option_calculate_efficiency_no_sea :: proc(
+	self: ^Pro_Purchase_Option,
+	attack_factor: f64,
+	defense_factor: f64,
+	support_attack_factor: f64,
+	support_defense_factor: f64,
+	distance_factor: f64,
+	data: ^Game_Data,
+) -> f64 {
+	return pro_purchase_option_calculate_efficiency(
+		self,
+		attack_factor,
+		defense_factor,
+		support_attack_factor,
+		support_defense_factor,
+		distance_factor,
+		1.0,
+		data,
+	)
+}
+
+pro_purchase_option_create_temp_units :: proc(self: ^Pro_Purchase_Option) -> [dynamic]^Unit {
+	return unit_type_create_temp(self.unit_type, self.quantity, self.player)
+}

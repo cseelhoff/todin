@@ -97,3 +97,60 @@ breadth_first_search_create_territory_finder :: proc(destination: ^Territory) ->
 	return make_Breadth_First_Search_Territory_Finder(destination)
 }
 
+// File-scope holder used to bridge a Predicate<Territory> (no closure) into
+// the BiPredicate-shaped `neighbor_condition` field. BFS is single-threaded
+// and constructed-then-traversed; the value is set by the Predicate-form
+// constructor immediately before the (synchronous) traverse call.
+@(private = "file")
+breadth_first_search_active_predicate: proc(t: ^Territory) -> bool
+
+@(private = "file")
+breadth_first_search_predicate_to_bipredicate :: proc(it: ^Territory, it2: ^Territory) -> bool {
+	return breadth_first_search_active_predicate(it2)
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#<init>(Collection<Territory>, Predicate<Territory>)
+// Java: this(startTerritories, (it, it2) -> neighborCondition.test(it2));
+breadth_first_search_new_with_predicate :: proc(
+	start_territories: [dynamic]^Territory,
+	neighbor_condition: proc(t: ^Territory) -> bool,
+) -> ^Breadth_First_Search {
+	breadth_first_search_active_predicate = neighbor_condition
+	return breadth_first_search_new(start_territories, breadth_first_search_predicate_to_bipredicate)
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#traverse(Visitor)
+// Java:
+//   int currentDistance = 0;
+//   Territory lastTerritoryAtCurrentDistance = territoriesToCheck.peekLast();
+//   while (!territoriesToCheck.isEmpty()) {
+//     final Territory territory = checkNextTerritory(visitor, currentDistance);
+//     if (ObjectUtils.referenceEquals(territory, lastTerritoryAtCurrentDistance)) {
+//       currentDistance++;
+//       lastTerritoryAtCurrentDistance = territoriesToCheck.peekLast();
+//     }
+//   }
+breadth_first_search_traverse :: proc(
+	self: ^Breadth_First_Search,
+	visitor: ^Breadth_First_Search_Visitor,
+) {
+	current_distance: i32 = 0
+	last_territory_at_current_distance: ^Territory = nil
+	if len(self.territories_to_check) > 0 {
+		last_territory_at_current_distance =
+			self.territories_to_check[len(self.territories_to_check) - 1]
+	}
+	for len(self.territories_to_check) > 0 {
+		territory := breadth_first_search_check_next_territory(self, visitor, current_distance)
+		if territory == last_territory_at_current_distance {
+			current_distance += 1
+			if len(self.territories_to_check) > 0 {
+				last_territory_at_current_distance =
+					self.territories_to_check[len(self.territories_to_check) - 1]
+			} else {
+				last_territory_at_current_distance = nil
+			}
+		}
+	}
+}
+

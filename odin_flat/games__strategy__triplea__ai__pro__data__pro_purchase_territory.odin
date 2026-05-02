@@ -25,6 +25,23 @@ pro_purchase_territory_get_can_place_territories :: proc(self: ^Pro_Purchase_Ter
 	return self.can_place_territories
 }
 
+// Java: int getRemainingUnitProduction() — returns unitProduction minus the
+// count of already-placed non-construction units across every can-place
+// territory. Mirrors CollectionUtils.countMatches(ppt.getPlaceUnits(),
+// Matches.unitIsNotConstruction()).
+pro_purchase_territory_get_remaining_unit_production :: proc(self: ^Pro_Purchase_Territory) -> i32 {
+	remaining := self.unit_production
+	pred, pred_ctx := matches_unit_is_not_construction()
+	for ppt in self.can_place_territories {
+		for u in pro_place_territory_get_place_units(ppt) {
+			if pred(pred_ctx, u) {
+				remaining -= 1
+			}
+		}
+	}
+	return remaining
+}
+
 pro_purchase_territory_to_string :: proc(self: ^Pro_Purchase_Territory, allocator := context.allocator) -> string {
 	sb := strings.builder_make(allocator)
 	strings.write_string(&sb, "ProPurchaseTerritory(territory=")

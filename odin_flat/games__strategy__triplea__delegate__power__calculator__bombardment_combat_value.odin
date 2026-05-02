@@ -67,3 +67,56 @@ bombardment_combat_value_builder :: proc(
 	return make_Bombardment_Combat_Value_Bombardment_Combat_Value_Builder()
 }
 
+// Mirrors AvailableSupports.EMPTY_RESULT — a fresh AvailableSupports built
+// from empty supportRules and supportUnits maps. Java holds a single static
+// instance; we return a freshly-allocated equivalent each call (the contents
+// are immutable for the consumers below).
+@(private = "file")
+bombardment_combat_value_empty_supports :: proc() -> ^Available_Supports {
+	rules := make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment)
+	units := make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details)
+	return available_supports_new(rules, units)
+}
+
+// Java: public CombatValue buildWithNoUnitSupports().
+// Rebuilds this BombardmentCombatValue with all four support slots replaced by
+// AvailableSupports.EMPTY_RESULT and friend/enemy unit lists cleared, while
+// preserving gameDiceSides, lhtrHeavyBombers, and territoryEffects.
+bombardment_combat_value_build_with_no_unit_supports :: proc(
+	self: ^Bombardment_Combat_Value,
+) -> ^Bombardment_Combat_Value {
+	b := bombardment_combat_value_builder()
+	b = bombardment_combat_value_bombardment_combat_value_builder_game_dice_sides(b, int(self.game_dice_sides))
+	b = bombardment_combat_value_bombardment_combat_value_builder_lhtr_heavy_bombers(b, self.lhtr_heavy_bombers)
+	b = bombardment_combat_value_bombardment_combat_value_builder_roll_support_from_friends(b, bombardment_combat_value_empty_supports())
+	b = bombardment_combat_value_bombardment_combat_value_builder_roll_support_from_enemies(b, bombardment_combat_value_empty_supports())
+	b = bombardment_combat_value_bombardment_combat_value_builder_strength_support_from_friends(b, bombardment_combat_value_empty_supports())
+	b = bombardment_combat_value_bombardment_combat_value_builder_strength_support_from_enemies(b, bombardment_combat_value_empty_supports())
+	b = bombardment_combat_value_bombardment_combat_value_builder_friend_units(b, make([dynamic]^Unit))
+	b = bombardment_combat_value_bombardment_combat_value_builder_enemy_units(b, make([dynamic]^Unit))
+	b = bombardment_combat_value_bombardment_combat_value_builder_territory_effects(b, self.territory_effects)
+	return bombardment_combat_value_bombardment_combat_value_builder_build(b)
+}
+
+// Java: public CombatValue buildOppositeCombatValue().
+// Swaps friend/enemy unit lists and the rollSupport pair; sets the strength
+// support pair from the (original) rollSupport pair (mirrors the Java code
+// exactly — note Java assigns rollSupport to BOTH roll and strength sides on
+// the rebuilt value). territoryEffects, gameDiceSides, lhtrHeavyBombers carry
+// over unchanged.
+bombardment_combat_value_build_opposite_combat_value :: proc(
+	self: ^Bombardment_Combat_Value,
+) -> ^Bombardment_Combat_Value {
+	b := bombardment_combat_value_builder()
+	b = bombardment_combat_value_bombardment_combat_value_builder_game_dice_sides(b, int(self.game_dice_sides))
+	b = bombardment_combat_value_bombardment_combat_value_builder_lhtr_heavy_bombers(b, self.lhtr_heavy_bombers)
+	b = bombardment_combat_value_bombardment_combat_value_builder_roll_support_from_friends(b, self.roll_support_from_enemies)
+	b = bombardment_combat_value_bombardment_combat_value_builder_roll_support_from_enemies(b, self.roll_support_from_friends)
+	b = bombardment_combat_value_bombardment_combat_value_builder_strength_support_from_friends(b, self.roll_support_from_enemies)
+	b = bombardment_combat_value_bombardment_combat_value_builder_strength_support_from_enemies(b, self.roll_support_from_friends)
+	b = bombardment_combat_value_bombardment_combat_value_builder_friend_units(b, self.enemy_units)
+	b = bombardment_combat_value_bombardment_combat_value_builder_enemy_units(b, self.friend_units)
+	b = bombardment_combat_value_bombardment_combat_value_builder_territory_effects(b, self.territory_effects)
+	return bombardment_combat_value_bombardment_combat_value_builder_build(b)
+}
+

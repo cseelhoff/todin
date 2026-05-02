@@ -1,13 +1,14 @@
 package game
 
 Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder :: struct {
-	battle_state:          ^Battle_State,
-	battle_actions:        ^Battle_Actions,
-	firing_group_splitter: proc(^Battle_State) -> [dynamic]^Firing_Group,
-	side:                  ^Battle_State_Side,
-	return_fire:           ^Must_Fight_Battle_Return_Fire,
-	dice_roller:           proc(^I_Delegate_Bridge, ^Roll_Dice_Step) -> ^Dice_Roll,
-	casualty_selector:     proc(^I_Delegate_Bridge, ^Select_Casualties) -> ^Casualty_Details,
+	battle_state:              ^Battle_State,
+	battle_actions:            ^Battle_Actions,
+	firing_group_splitter:     proc(self_raw: rawptr, state: ^Battle_State) -> [dynamic]^Firing_Group,
+	firing_group_splitter_ctx: rawptr,
+	side:                      ^Battle_State_Side,
+	return_fire:               ^Must_Fight_Battle_Return_Fire,
+	dice_roller:               proc(^I_Delegate_Bridge, ^Roll_Dice_Step) -> ^Dice_Roll,
+	casualty_selector:         proc(^I_Delegate_Bridge, ^Select_Casualties) -> ^Casualty_Details,
 }
 
 fire_round_steps_factory_builder_new :: proc() -> ^Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder {
@@ -24,8 +25,9 @@ fire_round_steps_factory_builder_battle_actions :: proc(self: ^Fire_Round_Steps_
 	return self
 }
 
-fire_round_steps_factory_builder_firing_group_splitter :: proc(self: ^Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder, firing_group_splitter: proc(^Battle_State) -> [dynamic]^Firing_Group) -> ^Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder {
+fire_round_steps_factory_builder_firing_group_splitter :: proc(self: ^Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder, firing_group_splitter: proc(self_raw: rawptr, state: ^Battle_State) -> [dynamic]^Firing_Group, ctx: rawptr = nil) -> ^Fire_Round_Steps_Factory_Fire_Round_Steps_Factory_Builder {
 	self.firing_group_splitter = firing_group_splitter
+	self.firing_group_splitter_ctx = ctx
 	return self
 }
 
@@ -67,6 +69,7 @@ fire_round_steps_factory_builder_build :: proc(self: ^Fire_Round_Steps_Factory_F
 		self.battle_state,
 		self.battle_actions,
 		self.firing_group_splitter,
+		self.firing_group_splitter_ctx,
 		side_val,
 		return_fire_val,
 		self.dice_roller,

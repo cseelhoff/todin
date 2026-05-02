@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 // Java: games.strategy.engine.framework.AutoSaveFileUtils
 // Utility class with only static methods.
 Auto_Save_File_Utils :: struct {}
@@ -38,5 +40,23 @@ auto_save_file_utils_get_auto_save_paths :: proc() -> [dynamic]Path {
 		}
 	}
 	return result
+}
+
+auto_save_file_utils_get_odd_round_auto_save_file :: proc(self: ^Auto_Save_File_Utils) -> Path {
+	return auto_save_file_utils_get_auto_save_file(self, game_data_file_utils_add_extension("autosave_round_odd"))
+}
+
+auto_save_file_utils_get_even_round_auto_save_file :: proc(self: ^Auto_Save_File_Utils) -> Path {
+	return auto_save_file_utils_get_auto_save_file(self, game_data_file_utils_add_extension("autosave_round_even"))
+}
+
+auto_save_file_utils_get_before_step_auto_save_file :: proc(self: ^Auto_Save_File_Utils, step_name: string) -> Path {
+	base := strings.concatenate({"autosaveBefore", string_utils_capitalize(step_name)})
+	return auto_save_file_utils_get_auto_save_file(self, game_data_file_utils_add_extension(base))
+}
+
+auto_save_file_utils_get_after_step_auto_save_file :: proc(self: ^Auto_Save_File_Utils, step_name: string) -> Path {
+	base := strings.concatenate({"autosaveAfter", string_utils_capitalize(step_name)})
+	return auto_save_file_utils_get_auto_save_file(self, game_data_file_utils_add_extension(base))
 }
 

@@ -7,6 +7,29 @@ Initialization_Delegate :: struct {
 	need_to_initialize: bool,
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#<init>()
+// Java's implicit no-arg constructor. The only declared field
+// `needToInitialize` has the Java initializer `= true`; embedded
+// Base_Triple_A_Delegate is zero-initialized.
+initialization_delegate_new :: proc() -> ^Initialization_Delegate {
+	self := new(Initialization_Delegate)
+	self.need_to_initialize = true
+	return self
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#saveState()
+// Builds an InitializationExtendedDelegateState. `superState` is the
+// parent delegate's save_state (Base_Triple_A_Delegate has no
+// override; this resolves to base_triple_a_delegate_save_state).
+// `super_state` on the state struct is rawptr so a
+// Base_Delegate_State pointer can be packed in.
+initialization_delegate_save_state :: proc(self: ^Initialization_Delegate) -> ^Initialization_Extended_Delegate_State {
+	state := initialization_extended_delegate_state_new()
+	state.super_state = rawptr(base_triple_a_delegate_save_state(&self.base_triple_a_delegate))
+	state.need_to_initialize = self.need_to_initialize
+	return state
+}
+
 // games.strategy.triplea.delegate.InitializationDelegate#getRemoteType()
 // Java returns `null` (no remote interface). Odin mirrors that with the
 // zero `typeid` value.

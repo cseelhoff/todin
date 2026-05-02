@@ -30,6 +30,44 @@ target_group_get_target_unit_types :: proc(self: ^Target_Group) -> map[^Unit_Typ
 	return self.target_unit_types
 }
 
+// public List<Unit> getFiringUnits(Collection<Unit> units):
+//   return CollectionUtils.getMatches(units, Matches.unitIsOfTypes(firingUnitTypes));
+// `collection_utils_get_matches` operates on `[dynamic]rawptr` with a
+// non-capturing predicate, while the matches_* factories produce a
+// (proc(rawptr, ^Unit) -> bool, rawptr) pair. Bridging the two would
+// require fabricating a wrapper closure; the Java source is itself a
+// single-pass filter, so we inline the loop and call the predicate
+// pair directly (same convention used in canal_attachment.odin).
+target_group_get_firing_units :: proc(
+	self: ^Target_Group,
+	units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	p, c := matches_unit_is_of_types(self.firing_unit_types)
+	for u in units {
+		if p(c, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// public Collection<Unit> getTargetUnits(Collection<Unit> units):
+//   return CollectionUtils.getMatches(units, Matches.unitIsOfTypes(targetUnitTypes));
+target_group_get_target_units :: proc(
+	self: ^Target_Group,
+	units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	p, c := matches_unit_is_of_types(self.target_unit_types)
+	for u in units {
+		if p(c, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
 // findTargetsInTargetGroups: find a TargetGroup whose targetUnitTypes equals
 // the given targets set, returning Optional<TargetGroup>. Odin port returns
 // the pointer to the matching Target_Group, or nil for Optional.empty().

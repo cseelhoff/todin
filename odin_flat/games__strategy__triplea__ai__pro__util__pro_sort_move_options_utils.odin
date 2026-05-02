@@ -1,6 +1,7 @@
 package game
 
 import "core:slice"
+import "core:strings"
 
 Pro_Sort_Move_Options_Utils :: struct {}
 
@@ -326,4 +327,98 @@ pro_sort_move_options_utils_calculate_attack_efficiency :: proc(
 		return 0.0
 	}
 	return f64(min_power) / unit_value
+}
+
+// Map.Entry<Unit, Set<Territory>> stand-in for the comparator lambdas.
+// `Map_Entry` is not defined elsewhere in the package; the two lambdas
+// below are the only callers, so we use a small file-local struct that
+// matches what `o1.getKey()` / `o1.getValue()` produced in the Java
+// source.
+@(private = "file")
+Pro_Sort_Move_Options_Map_Entry :: struct {
+	key:   ^Unit,
+	value: map[^Territory]struct {},
+}
+
+// Java: lambda$sortUnitMoveOptions$0(ProData proData,
+//           Map.Entry<Unit, Set<Territory>> o1,
+//           Map.Entry<Unit, Set<Territory>> o2) -> int
+//   if (o1.getValue().size() != o2.getValue().size())
+//     return o1.getValue().size() - o2.getValue().size();
+//   else if (proData.getUnitValue(o1.getKey().getType())
+//            != proData.getUnitValue(o2.getKey().getType()))
+//     return proData.getUnitValue(o1.getKey().getType())
+//          - proData.getUnitValue(o2.getKey().getType());
+//   return o1.getKey().getType().getName()
+//            .compareTo(o2.getKey().getType().getName());
+pro_sort_move_options_utils_lambda_sort_unit_move_options_0 :: proc(
+	pro_data: ^Pro_Data,
+	o1: Pro_Sort_Move_Options_Map_Entry,
+	o2: Pro_Sort_Move_Options_Map_Entry,
+) -> int {
+	size1 := len(o1.value)
+	size2 := len(o2.value)
+	if size1 != size2 {
+		return size1 - size2
+	}
+	v1 := pro_data_get_unit_value(pro_data, unit_get_type(o1.key))
+	v2 := pro_data_get_unit_value(pro_data, unit_get_type(o2.key))
+	if v1 != v2 {
+		return int(v1 - v2)
+	}
+	n1 := default_named_get_name(&unit_get_type(o1.key).named_attachable.default_named)
+	n2 := default_named_get_name(&unit_get_type(o2.key).named_attachable.default_named)
+	return strings.compare(n1, n2)
+}
+
+// Java: lambda$sortUnitNeededOptions$1(GamePlayer player,
+//           Map<Territory, ProTerritory> attackMap,
+//           ProOddsCalculator calc, ProData proData,
+//           Map.Entry<Unit, Set<Territory>> o1,
+//           Map.Entry<Unit, Set<Territory>> o2) -> int
+//   territories1 = removeWinningTerritories(o1.getValue(), player, attackMap, calc);
+//   territories2 = removeWinningTerritories(o2.getValue(), player, attackMap, calc);
+//   if (territories1.size() != territories2.size())
+//     return territories1.size() - territories2.size();
+//   UnitType unitType1 = o1.getKey().getType();
+//   UnitType unitType2 = o2.getKey().getType();
+//   int value1 = proData.getUnitValue(unitType1);
+//   int value2 = proData.getUnitValue(unitType2);
+//   if (value1 != value2) return value1 - value2;
+//   return unitType1.getName().compareTo(unitType2.getName());
+pro_sort_move_options_utils_lambda_sort_unit_needed_options_1 :: proc(
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	calc: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	o1: Pro_Sort_Move_Options_Map_Entry,
+	o2: Pro_Sort_Move_Options_Map_Entry,
+) -> int {
+	territories1 := pro_sort_move_options_utils_remove_winning_territories(
+		o1.value,
+		player,
+		attack_map,
+		calc,
+	)
+	territories2 := pro_sort_move_options_utils_remove_winning_territories(
+		o2.value,
+		player,
+		attack_map,
+		calc,
+	)
+	size1 := len(territories1)
+	size2 := len(territories2)
+	if size1 != size2 {
+		return size1 - size2
+	}
+	unit_type1 := unit_get_type(o1.key)
+	unit_type2 := unit_get_type(o2.key)
+	value1 := pro_data_get_unit_value(pro_data, unit_type1)
+	value2 := pro_data_get_unit_value(pro_data, unit_type2)
+	if value1 != value2 {
+		return int(value1 - value2)
+	}
+	n1 := default_named_get_name(&unit_type1.named_attachable.default_named)
+	n2 := default_named_get_name(&unit_type2.named_attachable.default_named)
+	return strings.compare(n1, n2)
 }

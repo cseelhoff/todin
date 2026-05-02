@@ -42,3 +42,18 @@ remote_interface_helper_get_method :: proc(method_number: i32, remote_interface:
 	return nil
 }
 
+// Java synthetic: lambda$getMethod$0(int methodNumber, Method method)
+//   method -> getNumber(method) == methodNumber
+// Captured int is emitted first by javac, followed by the SAM
+// argument. Returns true when the method carries an
+// @RemoteActionCode whose value matches methodNumber.
+remote_interface_helper_lambda_get_method_0 :: proc(method_number: i32, method: ^Method) -> bool {
+	if method == nil {
+		return false
+	}
+	if !method.has_remote_action_code {
+		return false
+	}
+	return remote_interface_helper_get_number(method) == method_number
+}
+

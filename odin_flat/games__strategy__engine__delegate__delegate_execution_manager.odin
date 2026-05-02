@@ -75,6 +75,92 @@ delegate_execution_manager_assert_game_not_over :: proc(self: ^Delegate_Executio
 	}
 }
 
+// Java: `newOutboundImplementation(Object implementor, Class<?>[] interfaces)`
+//   assertGameNotOver();
+//   InvocationHandler ih = (proxy, method, args) -> { ... method.invoke(implementor, args) ... };
+//   return Proxy.newProxyInstance(implementor.getClass().getClassLoader(), interfaces, ih);
+//
+// The Odin port has no java.lang.reflect.Proxy machinery and the AI
+// snapshot harness wires concrete delegate instances directly, so the
+// reflective proxy collapses to a pass-through that simply returns the
+// implementor after the gameOver gate. Same approach as
+// newInboundImplementation and the WrappedInvocationHandler family.
+delegate_execution_manager_new_outbound_implementation :: proc(
+	self:       ^Delegate_Execution_Manager,
+	implementor: rawptr,
+	interfaces:  []typeid,
+) -> rawptr {
+	delegate_execution_manager_assert_game_not_over(self)
+	_ = interfaces
+	return implementor
+}
+
+// Synthetic lambda body of the InvocationHandler created in
+// newOutboundImplementation:
+//   (proxy, method, args) -> {
+//     assertGameNotOver();
+//     boolean threadLocks = currentThreadHasReadLock();
+//     if (threadLocks) leaveDelegateExecution();
+//     try { return method.invoke(implementor, args); }
+//     catch (InvocationTargetException e) {
+//       if (e.getCause() instanceof MessengerException) throw new GameOverException("Game Over!");
+//       assertGameNotOver();
+//       throw e;
+//     } finally { if (threadLocks) enterDelegateExecution(); }
+//   }
+//
+// Unreachable in the AI snapshot harness because
+// newOutboundImplementation returns the implementor directly (no
+// proxy is built). Mirror the same shape used for the inbound inner
+// class (Delegate_Execution_Manager_1.invoke) and the
+// PlayerBridge$GameOverInvocationHandler port: preserve the
+// gameOver gate and the read-lock bookkeeping; drop the reflective
+// method.invoke (no reflection in the Odin port) and return nil.
+delegate_execution_manager_lambda_new_outbound_implementation_1 :: proc(
+	self:        ^Delegate_Execution_Manager,
+	implementor: rawptr,
+	proxy:       rawptr,
+	method_name: string,
+	args:        []rawptr,
+) -> rawptr {
+	delegate_execution_manager_assert_game_not_over(self)
+	thread_locks := delegate_execution_manager_current_thread_has_read_lock(self)
+	if thread_locks {
+		delegate_execution_manager_leave_delegate_execution(self)
+	}
+	defer if thread_locks {
+		delegate_execution_manager_enter_delegate_execution(self)
+	}
+	// method.invoke(implementor, args): no reflection in the Odin
+	// port, and this handler is bypassed because
+	// newOutboundImplementation returns the implementor directly,
+	// so there is nothing to forward to.
+	_ = implementor
+	_ = proxy
+	_ = method_name
+	_ = args
+	return nil
+}
+
+// Java: `newInboundImplementation(Object implementor, Class<?>[] interfaces)`
+//   assertGameNotOver();
+//   InvocationHandler ih = new WrappedInvocationHandler(implementor) { ... };
+//   return Proxy.newProxyInstance(implementor.getClass().getClassLoader(), interfaces, ih);
+//
+// As with the outbound counterpart, the Odin port skips the reflective
+// proxy and returns the implementor directly. The synthetic
+// InvocationHandler is ported as Delegate_Execution_Manager_1 in the
+// sibling file but is unreachable from this entry point.
+delegate_execution_manager_new_inbound_implementation :: proc(
+	self:       ^Delegate_Execution_Manager,
+	implementor: rawptr,
+	interfaces:  []typeid,
+) -> rawptr {
+	delegate_execution_manager_assert_game_not_over(self)
+	_ = interfaces
+	return implementor
+}
+
 // Java: `checkState(!currentThreadHasReadLock(), "Already locked?");
 //        readWriteLock.readLock().lock();
 //        currentThreadHasReadLock.set(Boolean.TRUE);`

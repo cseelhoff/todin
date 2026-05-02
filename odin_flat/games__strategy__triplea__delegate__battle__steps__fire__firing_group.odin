@@ -116,3 +116,35 @@ firing_group_generate_name :: proc(
 	}
 	return original_name
 }
+
+// games.strategy.triplea.delegate.battle.steps.fire.FiringGroup#separateSuicideOnHit(Collection<Unit>)
+// Partitions the firing units into a Multimap<UnitType, Unit> for suicide-on-hit
+// units (keyed by unit type) and an ArrayList<Unit> for the rest.
+firing_group_separate_suicide_on_hit :: proc(
+	units: [dynamic]^Unit,
+) -> ^Firing_Group_Suicide_And_Non_Suicide {
+	pred, ctx := matches_unit_is_suicide_on_hit()
+	m := multimap_new(^Unit_Type, ^Unit)
+	remaining := make([dynamic]^Unit)
+	for unit in units {
+		if pred(ctx, unit) {
+			multimap_put(m, unit_get_type(unit), unit)
+		} else {
+			append(&remaining, unit)
+		}
+	}
+	return firing_group_suicide_and_non_suicide_of(m, remaining)
+}
+
+// games.strategy.triplea.delegate.battle.steps.fire.FiringGroup#lambda$groupBySuicideOnHit$0
+// Java: units -> new FiringGroup(generateName(name, units, separatedBySuicide), name, units, targetUnits)
+// Captures name, separatedBySuicide, targetUnits; the per-bucket `units` is the parameter.
+firing_group_lambda_group_by_suicide_on_hit_0 :: proc(
+	name: string,
+	separated_by_suicide: ^Firing_Group_Suicide_And_Non_Suicide,
+	target_units: [dynamic]^Unit,
+	units: [dynamic]^Unit,
+) -> ^Firing_Group {
+	display_name := firing_group_generate_name(name, units, separated_by_suicide)
+	return firing_group_new(display_name, name, units, target_units)
+}

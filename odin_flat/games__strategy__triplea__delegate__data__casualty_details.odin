@@ -228,3 +228,71 @@ casualty_details_ensure_units_are_killed_first :: proc(
 	resize(&self.killed, write_idx)
 }
 
+// Java: public CasualtyDetails()
+//   Empty details, with autoCalculated as true.
+casualty_details_new :: proc() -> ^Casualty_Details {
+	self := new(Casualty_Details)
+	casualty_list_init(&self.casualty_list, []^Unit{}, []^Unit{})
+	self.auto_calculated = true
+	return self
+}
+
+// Java: public CasualtyDetails(boolean autoCalculated)
+//   Empty details, with the supplied autoCalculated flag.
+casualty_details_new_auto_calculated :: proc(auto: bool) -> ^Casualty_Details {
+	self := new(Casualty_Details)
+	casualty_list_init(&self.casualty_list, []^Unit{}, []^Unit{})
+	self.auto_calculated = auto
+	return self
+}
+
+// Java: lambda for `isMarine`
+//   unit -> unit.getUnitAttachment().getIsMarine() != 0
+casualty_details_lambda_ensure_units_with_positive_marine_bonus_are_killed_last_is_marine :: proc(
+	u: ^Unit,
+) -> bool {
+	return unit_attachment_get_is_marine(unit_get_unit_attachment(u)) != 0
+}
+
+// Java: lambda for `positiveMarineEffectFirstNegativeMarineEffectLast`
+//   (unit1, unit2) -> {
+//     if (unit1.getUnitAttachment().getIsMarine() > 0) {
+//       return Boolean.compare(unit1.getWasAmphibious(), unit2.getWasAmphibious());
+//     } else {
+//       return Boolean.compare(unit2.getWasAmphibious(), unit1.getWasAmphibious());
+//     }
+//   }
+// Returned as a "less-than" comparator (true iff u1 should sort before u2).
+// Boolean.compare(a, b) < 0  ⇔  !a && b   (since false < true).
+casualty_details_lambda_ensure_units_with_positive_marine_bonus_are_killed_last_cmp :: proc(
+	u1: ^Unit,
+	u2: ^Unit,
+) -> bool {
+	is_marine_1 := unit_attachment_get_is_marine(unit_get_unit_attachment(u1))
+	a1 := unit_get_was_amphibious(u1)
+	a2 := unit_get_was_amphibious(u2)
+	if is_marine_1 > 0 {
+		// Boolean.compare(a1, a2) < 0
+		return !a1 && a2
+	}
+	// Boolean.compare(a2, a1) < 0
+	return a1 && !a2
+}
+
+// Java: public void ensureUnitsWithPositiveMarineBonusAreKilledLast(Collection<Unit> units)
+//
+// Ensures that any killed or damaged units have no better marine effect than
+// others of the same type. `units` should be a superset of the union of
+// `killed` and `damaged`.
+casualty_details_ensure_units_with_positive_marine_bonus_are_killed_last :: proc(
+	self: ^Casualty_Details,
+	units: []^Unit,
+) {
+	casualty_details_ensure_units_are_killed_first(
+		self,
+		units,
+		casualty_details_lambda_ensure_units_with_positive_marine_bonus_are_killed_last_is_marine,
+		casualty_details_lambda_ensure_units_with_positive_marine_bonus_are_killed_last_cmp,
+	)
+}
+

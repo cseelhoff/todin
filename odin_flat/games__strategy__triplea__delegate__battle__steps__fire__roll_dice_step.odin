@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 
 Roll_Dice_Step :: struct {
+	using battle_step: Battle_Step,
 	battle_state:     ^Battle_State,
 	side:             Battle_State_Side,
 	firing_group:     ^Firing_Group,
@@ -36,6 +37,14 @@ roll_dice_step_get_firing_group :: proc(self: ^Roll_Dice_Step) -> ^Firing_Group 
 
 roll_dice_step_get_side :: proc(self: ^Roll_Dice_Step) -> Battle_State_Side {
 	return self.side
+}
+
+// Java: public List<StepDetails> getAllStepDetails()
+//   return List.of(new StepDetails(getName(), this));
+roll_dice_step_get_all_step_details :: proc(self: ^Roll_Dice_Step) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	append(&out, battle_step_step_details_new(roll_dice_step_get_name(self), &self.battle_step))
+	return out
 }
 
 // Java: private String getName()

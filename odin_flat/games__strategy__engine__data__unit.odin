@@ -435,3 +435,60 @@ unit_set_owner :: proc(self: ^Unit, player: ^Game_Player) {
 	}
 	self.owner = player_list_get_null_player(data.player_list)
 }
+
+// games.strategy.engine.data.Unit#<init>(UUID, UnitType, GamePlayer, GameData)
+//
+// games.strategy.engine.data.Unit#<init>(UnitType, GamePlayer, GameData)
+//
+// Java: `this.type = checkNotNull(type); this.id = UUID.randomUUID(); setOwner(owner);`
+// Generates a fresh UUID and delegates to the explicit-UUID constructor.
+unit_new :: proc(unit_type: ^Unit_Type, owner: ^Game_Player, data: ^Game_Data) -> ^Unit {
+	return unit_new_with_uuid(uuid_random_uuid(), unit_type, owner, data)
+}
+
+// Explicit-UUID constructor. Mirrors the Java field initializers:
+// `unloaded = List.of()`, `alreadyMoved = BigDecimal.ZERO`, `maxScrambleCount = -1`,
+// all other primitives default-zero/false. Calls `setOwner` so a nil owner falls
+// back to the PlayerList null-player sentinel.
+unit_new_with_uuid :: proc(
+	uuid: Uuid,
+	unit_type: ^Unit_Type,
+	owner: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Unit {
+	assert(unit_type != nil)
+	self := new(Unit)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.id = uuid
+	self.type = unit_type
+	self.max_scramble_count = -1
+	unit_set_owner(self, owner)
+	return self
+}
+
+// games.strategy.engine.data.Unit#getTransporting(java.util.Collection)
+//
+// Returns the subset of the given collection whose `transportedBy` points at
+// this unit. Java: `CollectionUtils.getMatches(transportedUnitsPossible,
+// o -> equals(o.getTransportedBy()))`. Unit equality is by UUID; since each
+// Unit has a unique UUID and is heap-allocated, pointer identity matches the
+// Java semantics (consistent with the existing `unit_get_transporting_in_territory`).
+unit_get_transporting :: proc(
+	self: ^Unit,
+	transported_units_possible: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	result: [dynamic]^Unit
+	for u in transported_units_possible {
+		if u != nil && u.transported_by == self {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// games.strategy.engine.data.Unit#getUnitAttachment()
+//
+// `return type.getUnitAttachment()`.
+unit_get_unit_attachment :: proc(self: ^Unit) -> ^Unit_Attachment {
+	return unit_type_get_unit_attachment(self.type)
+}

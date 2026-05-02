@@ -44,3 +44,28 @@ pro_my_move_options_get_bomber_move_map :: proc(self: ^Pro_My_Move_Options) -> m
 	return self.bomber_move_map
 }
 
+// games.strategy.triplea.ai.pro.data.ProMyMoveOptions#<init>(ProMyMoveOptions, ProData)
+// Java copy constructor.
+pro_my_move_options_new_copy :: proc(other: ^Pro_My_Move_Options, pro_data: ^Pro_Data) -> ^Pro_My_Move_Options {
+	self := pro_my_move_options_new()
+	for t, pt in other.territory_map {
+		self.territory_map[t] = pro_territory_new_from_other(pt, pro_data)
+	}
+	for u, terrs in other.unit_move_map {
+		self.unit_move_map[u] = terrs
+	}
+	for u, terrs in other.transport_move_map {
+		self.transport_move_map[u] = terrs
+	}
+	for u, terrs in other.bombard_map {
+		self.bombard_map[u] = terrs
+	}
+	for tr in other.transport_list {
+		append(&self.transport_list, tr)
+	}
+	for u, terrs in other.bomber_move_map {
+		self.bomber_move_map[u] = terrs
+	}
+	return self
+}
+

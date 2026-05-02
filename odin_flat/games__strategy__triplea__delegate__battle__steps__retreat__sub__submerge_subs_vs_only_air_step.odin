@@ -22,6 +22,14 @@ submerge_subs_vs_only_air_step_get_order :: proc(
 	return Battle_Step_Order.SUBMERGE_SUBS_VS_ONLY_AIR
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.sub.SubmergeSubsVsOnlyAirStep#valid
+submerge_subs_vs_only_air_step_valid :: proc(
+	self: ^Submerge_Subs_Vs_Only_Air_Step,
+) -> bool {
+	return submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs(self, .OFFENSE) ||
+		submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs(self, .DEFENSE)
+}
+
 // games.strategy.triplea.delegate.battle.steps.retreat.sub.SubmergeSubsVsOnlyAirStep#sideOnlyHasAirThatCanNotTargetSubs
 submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs :: proc(
 	self: ^Submerge_Subs_Vs_Only_Air_Step,

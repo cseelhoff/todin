@@ -220,3 +220,35 @@ relationship_type_attachment_can_move_through_canals :: proc(self: ^Relationship
 	}
 	return self.can_move_through_canals == RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_TRUE
 }
+
+// games.strategy.triplea.attachments.RelationshipTypeAttachment#<init>(String, Attachable, GameData)
+//   public RelationshipTypeAttachment(String name, Attachable attachable, GameData gameData) {
+//       super(name, attachable, gameData);
+//   }
+// Java's no-op constructor body chains to `DefaultAttachment(name, attachable, gameData)`.
+// Per `default_attachment_new`'s convention ("subclass constructors should
+// allocate their own concrete struct and embed/initialize via field
+// assignment instead of calling this proc directly"), we replicate the
+// `DefaultAttachment` super-constructor inline on the embedded
+// `default_attachment` field. The Java field initializers
+// (`archeType = ARCHETYPE_WAR`, all other strings = `PROPERTY_DEFAULT`) are
+// also applied here, since Odin zero-initializes strings to `""`.
+relationship_type_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Relationship_Type_Attachment {
+	self := new(Relationship_Type_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.arche_type = RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR
+	self.can_move_land_units_over_owned_land = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.can_move_air_units_over_owned_land = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.alliances_can_chain_together = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.is_default_war_position = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.upkeep_cost = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.can_land_air_units_on_owned_land = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.can_take_over_owned_territory = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.gives_back_original_territories = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.can_move_into_during_combat_move = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.can_move_through_canals = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	self.rockets_can_fly_over = RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+	return self
+}

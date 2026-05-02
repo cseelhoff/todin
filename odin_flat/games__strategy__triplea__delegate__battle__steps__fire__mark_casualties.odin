@@ -161,3 +161,13 @@ mark_casualties_remove_suicide_on_hit_units :: proc(
 	)
 }
 
+// Java: MarkCasualties#getAllStepDetails
+//   return List.of(new StepDetails(getName(), this));
+mark_casualties_get_all_step_details :: proc(
+	self: ^Mark_Casualties,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	append(&out, battle_step_step_details_new(mark_casualties_get_name(self), &self.battle_step))
+	return out
+}
+

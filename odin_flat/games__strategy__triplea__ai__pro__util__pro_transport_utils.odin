@@ -103,3 +103,39 @@ pro_transport_utils_get_decreasing_attack_comparator :: proc(
 	ctx.player = player
 	return pro_transport_utils_decreasing_attack_comparator_less, rawptr(ctx)
 }
+
+// Java: public static List<Unit> getTransports(
+//     GamePlayer player,
+//     Map<Territory, ProTerritory> moveMap,
+//     Collection<Territory> territories)
+//   Predicate<Unit> isTransport = ProMatches.unitIsOwnedTransport(player);
+//   List<Unit> transports = new ArrayList<>();
+//   for (Territory t : territories) {
+//     ProTerritory proTerritory = moveMap.get(t);
+//     if (proTerritory != null) {
+//       transports.addAll(CollectionUtils.getMatches(proTerritory.getAllDefenders(), isTransport));
+//     }
+//   }
+//   return transports;
+pro_transport_utils_get_transports :: proc(
+player: ^Game_Player,
+move_map: map[^Territory]^Pro_Territory,
+territories: [dynamic]^Territory,
+) -> [dynamic]^Unit {
+	is_transport_pred, is_transport_ctx := pro_matches_unit_is_owned_transport(player)
+	transports: [dynamic]^Unit
+	for t in territories {
+		pro_territory, ok := move_map[t]
+		if !ok || pro_territory == nil {
+			continue
+		}
+		defenders := pro_territory_get_all_defenders(pro_territory)
+		for u in defenders {
+			if is_transport_pred(is_transport_ctx, u) {
+				append(&transports, u)
+			}
+		}
+		delete(defenders)
+	}
+	return transports
+}

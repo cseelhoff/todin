@@ -180,3 +180,23 @@ pro_purchase_utils_lambda_get_units_to_consume_2 :: proc(ctx: rawptr, u: ^Unit) 
 	return !exists
 }
 
+
+// Java: private static ProductionRule getProductionRule(UnitType unitType, GamePlayer player)
+// Iterates the player's production frontier and returns the first rule whose
+// results contain `unitType` with a positive count, else nil.
+pro_purchase_utils_get_production_rule :: proc(
+	unit_type: ^Unit_Type,
+	player: ^Game_Player,
+) -> ^Production_Rule {
+	frontier := player.production_frontier
+	if frontier == nil {
+		return nil
+	}
+	for rule in production_frontier_iterator(frontier) {
+		results := production_rule_get_results(rule)
+		if integer_map_get_int(&results, rawptr(unit_type)) > 0 {
+			return rule
+		}
+	}
+	return nil
+}

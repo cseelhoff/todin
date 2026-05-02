@@ -29,3 +29,30 @@ move_delegate_lambda_delegate_currently_requires_user_input_0 :: proc(ctx: rawpt
 move_delegate_pus_lost :: proc(self: ^Move_Delegate, t: ^Territory, amt: i32) {
 	self.pus_lost[t] = self.pus_lost[t] + amt
 }
+
+// games.strategy.triplea.delegate.MoveDelegate#loadState(java.io.Serializable)
+// Java:
+//   final MoveExtendedDelegateState s = (MoveExtendedDelegateState) state;
+//   super.loadState(s.superState);
+//   needToInitialize = s.needToInitialize;
+//   needToDoRockets = s.needToDoRockets;
+//   pusLost = s.pusLost;
+// `super.loadState` dispatches to AbstractMoveDelegate.loadState; the saved
+// `superState` was produced by AbstractMoveDelegate.saveState and is therefore
+// an Abstract_Move_Extended_Delegate_State (stored as rawptr in the state).
+// `pus_lost` lives as `map[^Territory]i32` on Move_Delegate but is serialized
+// as ^Integer_Map; rebuild the in-memory map from the saved Integer_Map.
+move_delegate_load_state :: proc(self: ^Move_Delegate, state: ^Move_Extended_Delegate_State) {
+	abstract_move_delegate_load_state(
+		&self.abstract_move_delegate,
+		(^Abstract_Move_Extended_Delegate_State)(state.super_state),
+	)
+	self.need_to_initialize = state.need_to_initialize
+	self.need_to_do_rockets = state.need_to_do_rockets
+	clear(&self.pus_lost)
+	if state.pus_lost != nil {
+		for k, v in state.pus_lost.map_values {
+			self.pus_lost[(^Territory)(k)] = v
+		}
+	}
+}

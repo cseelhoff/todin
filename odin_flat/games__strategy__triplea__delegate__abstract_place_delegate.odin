@@ -382,3 +382,50 @@ abstract_place_delegate_undo_move :: proc(self: ^Abstract_Place_Delegate, move_i
         }
         return nil
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#<init>()
+// Java's implicit no-arg constructor. Mirrors the field initializers
+// `produced = new HashMap<>()` and `placements = new ArrayList<>()`.
+abstract_place_delegate_new :: proc() -> ^Abstract_Place_Delegate {
+	self := new(Abstract_Place_Delegate)
+	self.produced = make(map[^Territory][dynamic]^Unit)
+	self.placements = make([dynamic]^Undoable_Placement)
+	return self
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#saveState()
+// Java builds a PlaceExtendedDelegateState whose superState is the parent's
+// saveState() result, then copies `produced` and `placements` references.
+abstract_place_delegate_save_state :: proc(self: ^Abstract_Place_Delegate) -> ^Place_Extended_Delegate_State {
+	state := place_extended_delegate_state_new()
+	state.super_state = rawptr(base_triple_a_delegate_save_state(&self.base_triple_a_delegate))
+	state.produced = self.produced
+	state.placements = self.placements
+	return state
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#howManyOfConstructionUnit(UnitType, IntegerMap<String>)
+// Static. Java consults the unit's UnitAttachment: only true constructions with
+// positive per-turn / per-territory caps may place; the count is then the
+// remaining quota for that construction_type, floored at 0. Java's
+// IntegerMap<String> uses value-based string equality, modeled here as a
+// `map[string]i32` per the existing convention in pro_purchase_utils.
+abstract_place_delegate_how_many_of_construction_unit :: proc(
+	ut: ^Unit_Type,
+	constructions_map: map[string]i32,
+) -> i32 {
+	ua := unit_type_get_unit_attachment(ut)
+	if !unit_attachment_is_construction(ua) ||
+	   unit_attachment_get_constructions_per_terr_per_type_per_turn(ua) < 1 ||
+	   unit_attachment_get_max_constructions_per_type_per_terr(ua) < 1 {
+		return 0
+	}
+	val: i32 = 0
+	if v, ok := constructions_map[unit_attachment_get_construction_type(ua)]; ok {
+		val = v
+	}
+	if val < 0 {
+		return 0
+	}
+	return val
+}

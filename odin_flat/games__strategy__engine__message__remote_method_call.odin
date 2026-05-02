@@ -16,6 +16,29 @@ Remote_Method_Call :: struct {
 	arg_types:     []string,
 }
 
+// Constructor: RemoteMethodCall(String remoteName, Method method, Object[] args)
+remote_method_call_new :: proc(remote_name: string, method: ^Method, args: []any) -> ^Remote_Method_Call {
+	arg_types := method.parameter_types
+	if args == nil && len(arg_types) != 0 {
+		panic("args but no types")
+	}
+	if args != nil && len(args) != len(arg_types) {
+		panic("Arg and arg type lengths dont match")
+	}
+	self := new(Remote_Method_Call)
+	self.remote_name = remote_name
+	self.method_name = method_get_name(method)
+	self.args = args
+	self.arg_types = remote_method_call_classes_to_string(arg_types, args)
+	self.method_number = remote_interface_helper_get_number(method)
+	return self
+}
+
+// Instance: getArgTypes() — Class<?>[]
+remote_method_call_get_arg_types :: proc(self: ^Remote_Method_Call) -> []^Class {
+	return remote_method_call_strings_to_classes(self.arg_types, self.args)
+}
+
 // Instance: getRemoteName()
 remote_method_call_get_remote_name :: proc(self: ^Remote_Method_Call) -> string {
 	return self.remote_name

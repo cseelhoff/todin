@@ -11,6 +11,19 @@ Pro_Dummy_Delegate_Bridge :: struct {
 	all_changes:   ^Composite_Change,
 }
 
+pro_dummy_delegate_bridge_new :: proc(ai: ^Abstract_Pro_Ai, player: ^Game_Player, game_data: ^Game_Data) -> ^Pro_Dummy_Delegate_Bridge {
+	self := new(Pro_Dummy_Delegate_Bridge)
+	self.random_source = plain_random_source_new()^
+	self.display = headless_display_new()
+	self.sound_channel = headless_sound_channel_new()
+	self.writer = delegate_history_writer_create_no_op_implementation()
+	self.all_changes = composite_change_new()
+	self.pro_ai = ai
+	self.game_data = game_data
+	self.player = player
+	return self
+}
+
 pro_dummy_delegate_bridge_get_data :: proc(self: ^Pro_Dummy_Delegate_Bridge) -> ^Game_Data {
 	return self.game_data
 }

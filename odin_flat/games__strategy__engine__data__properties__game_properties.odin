@@ -116,3 +116,29 @@ game_properties_set :: proc(self: ^Game_Properties, key: string, value: rawptr) 
 		append(&self.ordering, key)
 	}
 }
+
+// GameProperties.get(String, boolean)
+// Java: returns defaultValue when get(key) is null, else (boolean) value.
+game_properties_get_bool_with_default :: proc(self: ^Game_Properties, key: string, default_value: bool) -> bool {
+	value := game_properties_get(self, key)
+	if value == nil {
+		return default_value
+	}
+	if b, ok := value.(bool); ok {
+		return b
+	}
+	return default_value
+}
+
+// GameProperties.get(String, int)
+// Java: returns defaultValue when get(key) is null, else (int) value.
+game_properties_get_int_with_default :: proc(self: ^Game_Properties, key: string, default_value: i32) -> i32 {
+	value := game_properties_get(self, key)
+	if value == nil {
+		return default_value
+	}
+	if i, ok := value.(i32); ok {
+		return i
+	}
+	return default_value
+}

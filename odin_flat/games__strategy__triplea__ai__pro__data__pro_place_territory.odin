@@ -76,3 +76,15 @@ pro_place_territory_to_string :: proc(self: ^Pro_Place_Territory) -> string {
 	return territory_to_string(self.territory)
 }
 
+pro_place_territory_new :: proc(territory: ^Territory) -> ^Pro_Place_Territory {
+	self := new(Pro_Place_Territory)
+	self.territory = territory
+	self.place_units = make([dynamic]^Unit)
+	self.defending_units = make([dynamic]^Unit)
+	self.min_battle_result = pro_battle_result_new_empty()
+	self.defense_value = 0
+	self.strategic_value = 0
+	self.can_hold = true
+	return self
+}
+

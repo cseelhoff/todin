@@ -82,3 +82,27 @@ aa_casualty_selector_lambda__find_rolled_targets__1 :: proc(
 	return dice.rolls[roll_idx].type == Die_Die_Type.HIT
 }
 
+// games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#calculateRolledAaCasualties(java.util.List,games.strategy.triplea.delegate.power.calculator.AaPowerStrengthAndRolls,games.strategy.triplea.delegate.DiceRoll,games.strategy.engine.delegate.IDelegateBridge)
+aa_casualty_selector_calculate_rolled_aa_casualties :: proc(
+	available_targets: [dynamic]^Unit,
+	unit_power_and_rolls_map: ^Aa_Power_Strength_And_Rolls,
+	dice: ^Dice_Roll,
+	bridge: ^I_Delegate_Bridge,
+) -> [dynamic]^Unit {
+	if aa_power_strength_and_rolls_calculate_total_rolls(unit_power_and_rolls_map) ==
+			i32(len(available_targets)) &&
+		dice_roll_get_hits(dice) < i32(len(available_targets)) {
+		// there is a roll for every target but not enough hits to kill all the targets
+		// so no need to get a random set of units since all units will either have a hit
+		// or miss roll
+		return aa_casualty_selector_find_rolled_targets(available_targets, dice)
+	} else {
+		// randomly choose targets (or all targets if there's enough hits)
+		return aa_casualty_selector_find_random_targets(
+			available_targets,
+			bridge,
+			dice_roll_get_hits(dice),
+		)
+	}
+}
+
