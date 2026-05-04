@@ -537,6 +537,21 @@ server_game_wait_for_player_to_finish_step :: proc(self: ^Server_Game) {
 	}
 }
 
+// games.strategy.engine.framework.ServerGame#runNextStep()
+// Java: if delegateExecutionStopped, either stopGame() or block on the
+// stop latch; otherwise run a fresh (non-restored) step.
+server_game_run_next_step :: proc(self: ^Server_Game) {
+	if self.delegate_execution_stopped {
+		if self.stop_game_on_delegate_execution_stop {
+			server_game_stop_game(self)
+		} else {
+			interruptibles_await_latch(self.delegate_execution_stopped_latch)
+		}
+	} else {
+		server_game_run_step(self, false)
+	}
+}
+
 // games.strategy.engine.framework.ServerGame#runStep(boolean)
 // Java drives one full step of the game sequence: short-circuit on
 // already-maxed steps and on game-over checkpoints, run the

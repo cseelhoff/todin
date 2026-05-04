@@ -2827,3 +2827,24 @@ abstract_place_delegate_place_units :: proc(
 	}
 	return nil
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#end()
+// Java body:
+//   super.end();
+//   doAfterEnd();
+abstract_place_delegate_end :: proc(self: ^Abstract_Place_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	abstract_place_delegate_do_after_end(self)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#placeUnits(Collection,Territory,BidMode)
+// Java body: the bidMode param is unused; delegates to placeUnits(units, at).
+abstract_place_delegate_place_units_with_bid_mode :: proc(
+	self:     ^Abstract_Place_Delegate,
+	units:    [dynamic]^Unit,
+	at:       ^Territory,
+	bid_mode: I_Abstract_Place_Delegate_Bid_Mode,
+) -> Maybe(string) {
+	_ = bid_mode
+	return abstract_place_delegate_place_units(self, units, at)
+}

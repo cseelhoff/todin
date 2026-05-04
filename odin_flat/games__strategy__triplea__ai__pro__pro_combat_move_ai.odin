@@ -2243,3 +2243,1033 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	return sorted_unit_attack_options
 }
 
+// Java: ProCombatMoveAi#determineTerritoriesToAttack(List<ProTerritory> prioritizedTerritories)
+//   Iteratively grows the set of territories under attack: tries the first N,
+//   estimates each battle, and either commits the slice (incrementing N) or
+//   removes the last failing territory. Also drops still-amphib targets once
+//   we've exhausted our attack transports.
+pro_combat_move_ai_determine_territories_to_attack :: proc(
+	self:                    ^Pro_Combat_Move_Ai,
+	prioritized_territories: ^[dynamic]^Pro_Territory,
+) {
+	pro_logger_info("Determine which territories to attack")
+
+	// Assign units to territories by prioritization
+	num_to_attack: i32 = i32(min(1, len(prioritized_territories^)))
+	have_removed_all_amphib_territories := false
+	for {
+		territories_to_try_to_attack: [dynamic]^Pro_Territory
+		for i: i32 = 0; i < num_to_attack; i += 1 {
+			append(&territories_to_try_to_attack, prioritized_territories^[i])
+		}
+		pro_logger_debug(fmt.tprintf("Current number of territories: %d", num_to_attack))
+		empty_already_moved: [dynamic]^Unit
+		residual := pro_combat_move_ai_try_to_attack_territories(
+			self,
+			territories_to_try_to_attack,
+			empty_already_moved,
+		)
+		delete(empty_already_moved)
+		// Discard residual map (Java only consumes it indirectly via attackMap state).
+		for _, inner in residual {
+			delete(inner)
+		}
+		delete(residual)
+
+		// Determine if all attacks are successful
+		are_successful := true
+		for patd in territories_to_try_to_attack {
+			t := pro_territory_get_territory(patd)
+			if pro_territory_get_battle_result(patd) == nil {
+				pro_territory_estimate_battle_result(patd, self.calc, self.player)
+			}
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s with attackers: %v",
+					pro_territory_get_result_string(patd),
+					pro_territory_get_units(patd),
+				),
+			)
+			estimate := pro_battle_utils_estimate_strength_difference(
+				t,
+				pro_territory_get_units(patd),
+				pro_territory_get_max_enemy_defenders(patd, self.player),
+			)
+			result := pro_territory_get_battle_result(patd)
+			if !pro_territory_is_strafing(patd) &&
+			   estimate < pro_territory_get_strength_estimate(patd) &&
+			   (pro_battle_result_get_win_percentage(result) <
+					   self.pro_data.min_win_percentage ||
+					   !pro_battle_result_is_has_land_unit_remaining(result)) {
+				are_successful = false
+			}
+		}
+
+		if are_successful {
+			for patd in territories_to_try_to_attack {
+				pro_territory_set_can_attack(patd, true)
+				estimate := pro_battle_utils_estimate_strength_difference(
+					pro_territory_get_territory(patd),
+					pro_territory_get_units(patd),
+					pro_territory_get_max_enemy_defenders(patd, self.player),
+				)
+				if estimate < pro_territory_get_strength_estimate(patd) {
+					pro_territory_set_strength_estimate(patd, estimate)
+				}
+			}
+
+			// If already used all transports then remove any remaining amphib territories
+			if !have_removed_all_amphib_territories &&
+			   pro_territory_manager_have_used_all_attack_transports(self.territory_manager) {
+				amphib_territories_to_remove: [dynamic]^Pro_Territory
+				defer delete(amphib_territories_to_remove)
+				for i: i32 = num_to_attack; i < i32(len(prioritized_territories^)); i += 1 {
+					if pro_territory_is_need_amphib_units(prioritized_territories^[i]) {
+						append(&amphib_territories_to_remove, prioritized_territories^[i])
+						pro_logger_debug(
+							fmt.tprintf(
+								"Removing amphib territory since already used all transports: %s",
+								territory_to_string(
+									pro_territory_get_territory(prioritized_territories^[i]),
+								),
+							),
+						)
+					}
+				}
+				for rem in amphib_territories_to_remove {
+					for j := 0; j < len(prioritized_territories^); j += 1 {
+						if prioritized_territories^[j] == rem {
+							ordered_remove(prioritized_territories, j)
+							break
+						}
+					}
+				}
+				have_removed_all_amphib_territories = true
+			}
+
+			// Can attack all territories in list so end
+			num_to_attack += 1
+			if num_to_attack > i32(len(prioritized_territories^)) {
+				delete(territories_to_try_to_attack)
+				break
+			}
+		} else {
+			pro_logger_debug(
+				fmt.tprintf(
+					"Removing territory: %s",
+					territory_to_string(
+						pro_territory_get_territory(
+							prioritized_territories^[num_to_attack - 1],
+						),
+					),
+				),
+			)
+			ordered_remove(prioritized_territories, int(num_to_attack - 1))
+			if num_to_attack > i32(len(prioritized_territories^)) {
+				num_to_attack -= 1
+			}
+		}
+		delete(territories_to_try_to_attack)
+	}
+	pro_logger_debug(fmt.tprintf("Final number of territories: %d", num_to_attack - 1))
+}
+
+// Java: ProCombatMoveAi#determineTerritoriesThatCanBeHeld(
+//     List<ProTerritory> prioritizedTerritories, List<Territory> clearedTerritories)
+//   Decides for each prioritized territory whether we can hold it after
+//   capturing it. Uses ProTerritoryValueUtils to score the value of every
+//   territory adjacent to our attackers, then runs a counter-attack
+//   simulation through the odds calculator.
+pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
+	self:                    ^Pro_Combat_Move_Ai,
+	prioritized_territories: [dynamic]^Pro_Territory,
+	cleared_territories:     [dynamic]^Territory,
+) {
+	pro_logger_info("Check if we should try to hold attack territories")
+
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(self.territory_manager)
+	attack_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_attack_options(self.territory_manager),
+	)
+
+	// Determine which territories to try and hold
+	territories_to_check := make(map[^Territory]struct {})
+	defer delete(territories_to_check)
+	not_air_p, not_air_c := matches_unit_is_not_air()
+	for patd in prioritized_territories {
+		t := pro_territory_get_territory(patd)
+		territories_to_check[t] = {}
+		for u, _ in pro_territory_get_max_units(patd) {
+			if not_air_p(not_air_c, u) {
+				territories_to_check[pro_data_get_unit_territory(self.pro_data, u)] = {}
+			}
+		}
+	}
+
+	empty_cant_be_held: [dynamic]^Territory
+	defer delete(empty_cant_be_held)
+	territory_value_map := pro_territory_value_utils_find_territory_values(
+		self.pro_data,
+		self.player,
+		empty_cant_be_held,
+		cleared_territories,
+		territories_to_check,
+	)
+	defer delete(territory_value_map)
+
+	for patd in prioritized_territories {
+		t := pro_territory_get_territory(patd)
+
+		// If strafing then can't hold
+		if pro_territory_is_strafing(patd) {
+			pro_territory_set_can_hold(patd, false)
+			pro_logger_debug(fmt.tprintf("%s, strafing so CanHold=false", territory_to_string(t)))
+			continue
+		}
+
+		// Set max enemy attackers
+		enemy_attack_max := pro_other_move_options_get_max(enemy_attack_options, t)
+		if enemy_attack_max != nil {
+			enemy_attacking_units_set := make(map[^Unit]struct {})
+			defer delete(enemy_attacking_units_set)
+			for u, _ in pro_territory_get_max_units(enemy_attack_max) {
+				enemy_attacking_units_set[u] = {}
+			}
+			for u in pro_territory_get_max_amphib_units(enemy_attack_max) {
+				enemy_attacking_units_set[u] = {}
+			}
+			enemy_attacking_units_list: [dynamic]^Unit
+			for u, _ in enemy_attacking_units_set {
+				append(&enemy_attacking_units_list, u)
+			}
+			pro_territory_set_max_enemy_units(patd, enemy_attacking_units_list)
+			delete(enemy_attacking_units_list)
+			max_bombard := pro_territory_get_max_bombard_units(enemy_attack_max)
+			pro_territory_set_max_enemy_bombard_units(patd, max_bombard)
+		}
+
+		// Add strategic value for factories
+		is_factory: i32 = 0
+		factory_p, factory_c := pro_matches_territory_has_infra_factory_and_is_land()
+		if factory_p(factory_c, t) {
+			is_factory = 1
+		}
+
+		// Determine whether its worth trying to hold territory
+		total_value := 0.0
+		non_air_attackers: [dynamic]^Unit
+		defer delete(non_air_attackers)
+		for u, _ in pro_territory_get_max_units(patd) {
+			if not_air_p(not_air_c, u) {
+				append(&non_air_attackers, u)
+			}
+		}
+		for u in non_air_attackers {
+			total_value += territory_value_map[pro_data_get_unit_territory(self.pro_data, u)]
+		}
+		average_value := 0.0
+		if len(non_air_attackers) > 0 {
+			average_value = total_value / f64(len(non_air_attackers)) * 0.75
+		}
+		territory_value := territory_value_map[t] * (1.0 + 4.0 * f64(is_factory))
+		if !territory_is_water(t) && territory_value < average_value {
+			pro_territory_set_can_hold(attack_map[t], false)
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, CanHold=false, value=%v, averageAttackFromValue=%v",
+					territory_to_string(t),
+					territory_value_map[t],
+					average_value,
+				),
+			)
+			continue
+		}
+		if pro_other_move_options_get_max(enemy_attack_options, t) != nil {
+			// Find max remaining defenders
+			attacking_units_set := make(map[^Unit]struct {})
+			defer delete(attacking_units_set)
+			for u, _ in pro_territory_get_max_units(patd) {
+				attacking_units_set[u] = {}
+			}
+			for u in pro_territory_get_max_amphib_units(patd) {
+				attacking_units_set[u] = {}
+			}
+			attacking_units_list: [dynamic]^Unit
+			defer delete(attacking_units_list)
+			for u, _ in attacking_units_set {
+				append(&attacking_units_list, u)
+			}
+			max_bombard_set := pro_territory_get_max_bombard_units(patd)
+			max_bombard_list: [dynamic]^Unit
+			defer delete(max_bombard_list)
+			for u, _ in max_bombard_set {
+				append(&max_bombard_list, u)
+			}
+			result := pro_odds_calculator_estimate_attack_battle_results(
+				self.calc,
+				self.pro_data,
+				t,
+				attacking_units_list,
+				pro_territory_get_max_enemy_defenders(patd, self.player),
+				max_bombard_list,
+			)
+			air_p, air_c := matches_unit_is_air()
+			remaining_units_to_defend_with: [dynamic]^Unit
+			for u in pro_battle_result_get_average_attackers_remaining(result) {
+				if !air_p(air_c, u) {
+					append(&remaining_units_to_defend_with, u)
+				}
+			}
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, value=%v, averageAttackFromValue=%v, MyAttackers=%d, RemainingUnits=%d",
+					territory_to_string(t),
+					territory_value_map[t],
+					average_value,
+					len(attacking_units_list),
+					len(remaining_units_to_defend_with),
+				),
+			)
+
+			// Determine counter-attack results to see if I can hold it
+			enemy_max := pro_other_move_options_get_max(enemy_attack_options, t)
+			enemy_max_bombard_set := pro_territory_get_max_bombard_units(enemy_max)
+			enemy_max_bombard_list: [dynamic]^Unit
+			defer delete(enemy_max_bombard_list)
+			for u, _ in enemy_max_bombard_set {
+				append(&enemy_max_bombard_list, u)
+			}
+			result2 := pro_odds_calculator_calculate_battle_results(
+				self.calc,
+				self.pro_data,
+				t,
+				pro_territory_get_max_enemy_units(patd),
+				remaining_units_to_defend_with,
+				enemy_max_bombard_list,
+			)
+			can_hold :=
+				(!pro_battle_result_is_has_land_unit_remaining(result2) && !territory_is_water(t)) ||
+				(pro_battle_result_get_tuv_swing(result2) < 0) ||
+				(pro_battle_result_get_win_percentage(result2) < self.pro_data.min_win_percentage)
+			pro_territory_set_can_hold(patd, can_hold)
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, CanHold=%v, MyDefenders=%d, EnemyAttackers=%d, win%%=%v, EnemyTUVSwing=%v, hasLandUnitRemaining=%v",
+					territory_to_string(t),
+					can_hold,
+					len(remaining_units_to_defend_with),
+					len(pro_territory_get_max_enemy_units(patd)),
+					pro_battle_result_get_win_percentage(result2),
+					pro_battle_result_get_tuv_swing(result2),
+					pro_battle_result_is_has_land_unit_remaining(result2),
+				),
+			)
+			delete(remaining_units_to_defend_with)
+		} else {
+			pro_territory_set_can_hold(attack_map[t], true)
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, CanHold=true since no enemy counter attackers, value=%v, averageAttackFromValue=%v",
+					territory_to_string(t),
+					territory_value_map[t],
+					average_value,
+				),
+			)
+		}
+	}
+}
+
+// Java: ProCombatMoveAi#determineUnitsToAttackWith(
+//     List<ProTerritory> prioritizedTerritories, List<Unit> alreadyMovedUnits)
+//   Iteratively distributes our attack force across the prioritized
+//   territories. After each round it re-evaluates whether each territory
+//   should still be attacked (computing TUV swing, counter-attack risk and
+//   neutral-territory penalties); when a territory is rejected it is
+//   removed from `prioritizedTerritories` and the loop runs again.
+pro_combat_move_ai_determine_units_to_attack_with :: proc(
+	self:                    ^Pro_Combat_Move_Ai,
+	prioritized_territories: ^[dynamic]^Pro_Territory,
+	already_moved_units:     [dynamic]^Unit,
+) {
+	pro_logger_info("Determine units to attack each territory with")
+
+	attack_options := pro_territory_manager_get_attack_options(self.territory_manager)
+	attack_map := pro_my_move_options_get_territory_map(attack_options)
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(self.territory_manager)
+	unit_attack_map := pro_my_move_options_get_unit_move_map(attack_options)
+
+	// Assign units to territories by prioritization
+	for {
+		sorted_unit_attack_options := pro_combat_move_ai_try_to_attack_territories(
+			self,
+			prioritized_territories^,
+			already_moved_units,
+		)
+
+		// Clear bombers
+		for _, pt in attack_map {
+			clear(&pt.bombers)
+		}
+
+		// Get all units that have already moved
+		already_attacked_with_units := make(map[^Unit]struct {})
+		for _, t in attack_map {
+			for u in pro_territory_get_units(t) {
+				already_attacked_with_units[u] = {}
+			}
+			for u, _ in pro_territory_get_amphib_attack_map(t) {
+				already_attacked_with_units[u] = {}
+			}
+		}
+
+		// Check to see if any territories can be bombed
+		pro_combat_move_ai_determine_territories_that_can_be_bombed(
+			self,
+			attack_map,
+			sorted_unit_attack_options,
+			already_attacked_with_units,
+		)
+		delete(already_attacked_with_units)
+
+		// Re-sort attack options
+		sorted_unit_attack_options =
+			pro_sort_move_options_utils_sort_unit_needed_options_then_attack(
+				self.pro_data,
+				self.player,
+				sorted_unit_attack_options,
+				attack_map,
+				self.calc,
+			)
+		added_units: [dynamic]^Unit
+		defer delete(added_units)
+		added_set := make(map[^Unit]struct {})
+		defer delete(added_set)
+
+		// Set air units in any territory with no AA
+		for unit, _ in sorted_unit_attack_options {
+			is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
+			if !is_air_unit {
+				continue
+			}
+			min_win_territory: ^Territory = nil
+			min_win_percentage := max(f64)
+			for t, _ in sorted_unit_attack_options[unit] {
+				patd := attack_map[t]
+
+				// Check landing safety
+				ef_p, ef_c := pro_matches_territory_has_infra_factory_and_is_enemy_land(
+					self.player,
+				)
+				is_enemy_factory := ef_p(ef_c, t)
+				if !is_enemy_factory &&
+				   !pro_combat_move_ai_can_air_safely_land_after_attack(self, unit, t) {
+					continue
+				}
+				if pro_territory_get_battle_result(patd) == nil {
+					pro_territory_estimate_battle_result(patd, self.calc, self.player)
+				}
+				result := pro_territory_get_battle_result(patd)
+				if pro_battle_result_get_win_percentage(result) < min_win_percentage ||
+				   (!pro_battle_result_is_has_land_unit_remaining(result) &&
+						   min_win_territory == nil) {
+					attacking_units := pro_territory_get_units(patd)
+					defending_units := pro_territory_get_max_enemy_defenders(patd, self.player)
+					is_overwhelming_win := pro_battle_utils_check_for_overwhelming_win(
+						t,
+						attacking_units,
+						defending_units,
+					)
+					aa_p, aa_c := matches_unit_is_aa_for_anything()
+					has_aa := false
+					for d in defending_units {
+						if aa_p(aa_c, d) {
+							has_aa = true
+							break
+						}
+					}
+					if !has_aa && !is_overwhelming_win {
+						min_win_percentage = pro_battle_result_get_win_percentage(result)
+						min_win_territory = t
+					}
+				}
+			}
+			if min_win_territory != nil {
+				pro_territory_set_battle_result(attack_map[min_win_territory], nil)
+				pro_territory_add_unit(attack_map[min_win_territory], unit)
+				append(&added_units, unit)
+				added_set[unit] = {}
+			}
+		}
+		for u in added_units {
+			delete_key(&sorted_unit_attack_options, u)
+		}
+
+		// Re-sort attack options
+		sorted_unit_attack_options =
+			pro_sort_move_options_utils_sort_unit_needed_options_then_attack(
+				self.pro_data,
+				self.player,
+				sorted_unit_attack_options,
+				attack_map,
+				self.calc,
+			)
+
+		// Find territory that we can try to hold that needs unit
+		for unit, _ in sorted_unit_attack_options {
+			if _, in_added := added_set[unit]; in_added {
+				continue
+			}
+			min_win_territory: ^Territory = nil
+			for t, _ in sorted_unit_attack_options[unit] {
+				patd := attack_map[t]
+				if pro_territory_is_can_hold(patd) {
+					if pro_territory_get_battle_result(patd) == nil {
+						pro_territory_estimate_battle_result(patd, self.calc, self.player)
+					}
+					result := pro_territory_get_battle_result(patd)
+					attacking_units := pro_territory_get_units(patd)
+					defending_units := pro_territory_get_max_enemy_defenders(patd, self.player)
+					is_overwhelming_win := pro_battle_utils_check_for_overwhelming_win(
+						t,
+						attacking_units,
+						defending_units,
+					)
+					if !is_overwhelming_win && pro_battle_result_get_battle_rounds(result) > 2 {
+						min_win_territory = t
+						break
+					}
+				}
+			}
+			if min_win_territory != nil {
+				pro_territory_set_battle_result(attack_map[min_win_territory], nil)
+				units_to_add := pro_transport_utils_get_units_to_add(
+					self.pro_data,
+					unit,
+					already_moved_units,
+					attack_map,
+				)
+				pro_territory_add_units(attack_map[min_win_territory], units_to_add)
+				for u2 in units_to_add {
+					append(&added_units, u2)
+					added_set[u2] = {}
+				}
+			}
+		}
+		for u in added_units {
+			delete_key(&sorted_unit_attack_options, u)
+		}
+
+		// Re-sort attack options
+		sorted_unit_attack_options =
+			pro_sort_move_options_utils_sort_unit_needed_options_then_attack(
+				self.pro_data,
+				self.player,
+				sorted_unit_attack_options,
+				attack_map,
+				self.calc,
+			)
+
+		// Add sea units to any territory that significantly increases TUV gain
+		for unit, _ in sorted_unit_attack_options {
+			is_sea_unit := unit_attachment_is_sea(unit_get_unit_attachment(unit))
+			if !is_sea_unit {
+				continue
+			}
+			for t, _ in sorted_unit_attack_options[unit] {
+				patd := attack_map[t]
+				if pro_territory_get_battle_result(patd) == nil {
+					pro_territory_estimate_battle_result(patd, self.calc, self.player)
+				}
+				result := pro_territory_get_battle_result(patd)
+				attackers := make([dynamic]^Unit)
+				for u in pro_territory_get_units(patd) {
+					append(&attackers, u)
+				}
+				append(&attackers, unit)
+				bombard_keys: [dynamic]^Unit
+				for u, _ in pro_territory_get_bombard_territory_map(patd) {
+					append(&bombard_keys, u)
+				}
+				result2 := pro_odds_calculator_estimate_attack_battle_results(
+					self.calc,
+					self.pro_data,
+					t,
+					attackers,
+					pro_territory_get_max_enemy_defenders(patd, self.player),
+					bombard_keys,
+				)
+				delete(attackers)
+				delete(bombard_keys)
+				unit_value := f64(pro_data_get_unit_value(self.pro_data, unit_get_type(unit)))
+				if (pro_battle_result_get_tuv_swing(result2) - unit_value / 3.0) >
+				   pro_battle_result_get_tuv_swing(result) {
+					pro_territory_set_battle_result(patd, nil)
+					pro_territory_add_unit(patd, unit)
+					append(&added_units, unit)
+					added_set[unit] = {}
+					break
+				}
+			}
+		}
+		for u in added_units {
+			delete_key(&sorted_unit_attack_options, u)
+		}
+
+		// Determine if all attacks are worth it
+		used_units: [dynamic]^Unit
+		used_set := make(map[^Unit]struct {})
+		for patd in prioritized_territories^ {
+			for u in pro_territory_get_units(patd) {
+				append(&used_units, u)
+				used_set[u] = {}
+			}
+		}
+		territory_to_remove: ^Pro_Territory = nil
+		for patd in prioritized_territories^ {
+			t := pro_territory_get_territory(patd)
+
+			// Find battle result
+			if pro_territory_get_battle_result(patd) == nil {
+				pro_territory_estimate_battle_result(patd, self.calc, self.player)
+			}
+			result := pro_territory_get_battle_result(patd)
+
+			// Determine enemy counter-attack results
+			can_hold := true
+			enemy_counter_tuv_swing: f64 = 0
+			water_adj_p, water_adj_c :=
+				pro_matches_territory_is_water_and_adjacent_to_owned_factory(self.player)
+			if pro_other_move_options_get_max(enemy_attack_options, t) != nil &&
+			   !water_adj_p(water_adj_c, t) {
+				air_p, air_c := matches_unit_is_air()
+				remaining_units_to_defend_with: [dynamic]^Unit
+				for u in pro_battle_result_get_average_attackers_remaining(result) {
+					if !air_p(air_c, u) {
+						append(&remaining_units_to_defend_with, u)
+					}
+				}
+				max_bombard_set := pro_territory_get_max_bombard_units(patd)
+				max_bombard_list: [dynamic]^Unit
+				for u, _ in max_bombard_set {
+					append(&max_bombard_list, u)
+				}
+				result2 := pro_odds_calculator_calculate_battle_results(
+					self.calc,
+					self.pro_data,
+					t,
+					pro_territory_get_max_enemy_units(patd),
+					remaining_units_to_defend_with,
+					max_bombard_list,
+				)
+				if pro_territory_is_can_hold(patd) &&
+				   pro_battle_result_get_tuv_swing(result2) > 0 {
+					unused_units_set := make(map[^Unit]struct {})
+					for u, _ in pro_territory_get_max_units(patd) {
+						unused_units_set[u] = {}
+					}
+					for u in pro_territory_get_max_amphib_units(patd) {
+						unused_units_set[u] = {}
+					}
+					for u in used_units {
+						delete_key(&unused_units_set, u)
+					}
+					for u in remaining_units_to_defend_with {
+						unused_units_set[u] = {}
+					}
+					unused_units_list: [dynamic]^Unit
+					for u, _ in unused_units_set {
+						append(&unused_units_list, u)
+					}
+					delete(unused_units_set)
+					result3 := pro_odds_calculator_calculate_battle_results(
+						self.calc,
+						self.pro_data,
+						t,
+						pro_territory_get_max_enemy_units(patd),
+						unused_units_list,
+						max_bombard_list,
+					)
+					if pro_battle_result_get_tuv_swing(result3) <
+					   pro_battle_result_get_tuv_swing(result2) {
+						result2 = result3
+						delete(remaining_units_to_defend_with)
+						remaining_units_to_defend_with = unused_units_list
+					} else {
+						delete(unused_units_list)
+					}
+				}
+				can_hold =
+					(!pro_battle_result_is_has_land_unit_remaining(result2) &&
+							!territory_is_water(t)) ||
+					(pro_battle_result_get_tuv_swing(result2) < 0) ||
+					(pro_battle_result_get_win_percentage(result2) <
+							self.pro_data.min_win_percentage)
+				if pro_battle_result_get_tuv_swing(result2) > 0 {
+					enemy_counter_tuv_swing = pro_battle_result_get_tuv_swing(result2)
+				}
+				pro_logger_trace(
+					fmt.tprintf(
+						"Territory=%s, CanHold=%v, MyDefenders=%d, EnemyAttackers=%d, win%%=%v, EnemyTUVSwing=%v, hasLandUnitRemaining=%v",
+						territory_to_string(t),
+						can_hold,
+						len(remaining_units_to_defend_with),
+						len(pro_territory_get_max_enemy_units(patd)),
+						pro_battle_result_get_win_percentage(result2),
+						pro_battle_result_get_tuv_swing(result2),
+						pro_battle_result_is_has_land_unit_remaining(result2),
+					),
+				)
+				delete(remaining_units_to_defend_with)
+				delete(max_bombard_list)
+			}
+
+			// Find attack value
+			is_neutral := pro_utils_is_neutral_land(t)
+			is_land: i32 = 0
+			if !territory_is_water(t) {
+				is_land = 1
+			}
+			is_can_hold: i32 = 0
+			if can_hold {
+				is_can_hold = 1
+			}
+			is_cant_hold_amphib: i32 = 0
+			if !can_hold && len(pro_territory_get_amphib_attack_map(patd)) > 0 {
+				is_cant_hold_amphib = 1
+			}
+			factory_p, factory_c := pro_matches_territory_has_infra_factory_and_is_land()
+			is_factory: i32 = 0
+			if factory_p(factory_c, t) {
+				is_factory = 1
+			}
+			capturable_units: i32 = 0
+			tl_p, tl_c := matches_territory_is_land()
+			if tl_p(tl_c, t) {
+				cap_p, cap_c := matches_unit_can_be_captured_on_entering_this_territory(
+					self.player,
+					t,
+				)
+				for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+					if cap_p(cap_c, u) {
+						capturable_units += 1
+					}
+				}
+			}
+			is_ffa: i32 = 0
+			if pro_utils_is_ffa(&self.data.game_state, self.player) {
+				is_ffa = 1
+			}
+			production := territory_attachment_static_get_production(t)
+			capital_value: f64 = 0
+			ta := territory_attachment_get(t)
+			if ta != nil && territory_attachment_is_capital(ta) {
+				capital_value = pro_utils_get_player_production(
+					territory_get_owner(t),
+					&self.data.game_state,
+				)
+			}
+			territory_value :=
+				(1.0 +
+						f64(is_land) -
+						f64(is_cant_hold_amphib) +
+						f64(is_factory) +
+						f64(is_can_hold) *
+							(1.0 +
+									2.0 * f64(is_ffa) +
+									1.5 * f64(is_factory) +
+									0.5 * f64(capturable_units))) *
+					f64(production) +
+				capital_value
+			tuv_swing := pro_battle_result_get_tuv_swing(result)
+			if is_ffa == 1 && tuv_swing > 0 {
+				tuv_swing *= 0.5
+			}
+			attack_value :=
+				1 +
+				tuv_swing +
+				territory_value * pro_battle_result_get_win_percentage(result) / 100.0 -
+				enemy_counter_tuv_swing * 2.0 / 3.0
+			all_units_can_attack_other_territory := true
+			if is_neutral && attack_value < 0 {
+				for u in pro_territory_get_units(patd) {
+					can_attack_other_territory := false
+					for patd2 in prioritized_territories^ {
+						if patd != patd2 {
+							if ts, ok := unit_attack_map[u]; ok {
+								if _, in_set :=
+									ts[pro_territory_get_territory(patd2)]; in_set {
+									can_attack_other_territory = true
+									break
+								}
+							}
+						}
+					}
+					if !can_attack_other_territory {
+						all_units_can_attack_other_territory = false
+						break
+					}
+				}
+			}
+
+			// Determine whether to remove attack
+			if !pro_territory_is_strafing(patd) &&
+			   (pro_battle_result_get_win_percentage(result) <
+					   self.pro_data.min_win_percentage ||
+					   !pro_battle_result_is_has_land_unit_remaining(result) ||
+					   (is_neutral && !can_hold) ||
+					   (attack_value < 0 &&
+							   (!is_neutral ||
+									   all_units_can_attack_other_territory ||
+									   pro_battle_result_get_battle_rounds(result) >= 4))) {
+				territory_to_remove = patd
+			}
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, attackValue=%v, territoryValue=%v, allUnitsCanAttackOtherTerritory=%v with attackers=%v",
+					pro_territory_get_result_string(patd),
+					attack_value,
+					territory_value,
+					all_units_can_attack_other_territory,
+					pro_territory_get_units(patd),
+				),
+			)
+		}
+		delete(used_units)
+		delete(used_set)
+
+		// Determine whether all attacks are successful or try to hold fewer territories
+		if territory_to_remove == nil {
+			break
+		}
+		for j := 0; j < len(prioritized_territories^); j += 1 {
+			if prioritized_territories^[j] == territory_to_remove {
+				ordered_remove(prioritized_territories, j)
+				break
+			}
+		}
+		pro_logger_debug(
+			fmt.tprintf(
+				"Removing %s",
+				territory_to_string(pro_territory_get_territory(territory_to_remove)),
+			),
+		)
+	}
+}
+
+// Java: ProCombatMoveAi#removeAttacksUntilCapitalCanBeHeld(
+//     List<ProTerritory> prioritizedTerritories,
+//     List<ProPurchaseOption> landPurchaseOptions)
+//   While our capital cannot be held against the projected enemy
+//   counter-attack, drops the prioritized attack whose committed units
+//   are most concentrated near the capital.
+pro_combat_move_ai_remove_attacks_until_capital_can_be_held :: proc(
+	self:                    ^Pro_Combat_Move_Ai,
+	prioritized_territories: ^[dynamic]^Pro_Territory,
+	land_purchase_options:   [dynamic]^Pro_Purchase_Option,
+) {
+	pro_logger_info("Check capital defenses after attack moves")
+
+	attack_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_attack_options(self.territory_manager),
+	)
+	my_capital := pro_data_get_my_capital(self.pro_data)
+
+	// Add max purchase defenders to capital for non-mobile factories
+	place_units: [dynamic]^Unit
+	defer delete(place_units)
+	nmf_p, nmf_c := pro_matches_territory_has_non_mobile_factory_and_is_not_conquered_owned_land(
+		self.player,
+	)
+	if nmf_p(nmf_c, my_capital) {
+		max_defenders := pro_purchase_utils_find_max_purchase_defenders(
+			self.pro_data,
+			self.player,
+			my_capital,
+			land_purchase_options,
+		)
+		for u in max_defenders {
+			append(&place_units, u)
+		}
+		delete(max_defenders)
+	}
+
+	// Remove attack until capital can be defended
+	gm := game_data_get_map(self.data)
+	for {
+		if len(prioritized_territories^) == 0 {
+			break
+		}
+
+		// Determine max enemy counter attack units
+		territories_to_attack: [dynamic]^Territory
+		for t in prioritized_territories^ {
+			append(&territories_to_attack, pro_territory_get_territory(t))
+		}
+		pro_logger_trace(
+			fmt.tprintf("Remaining territories to attack=%v", territories_to_attack),
+		)
+		cleared_capital: [dynamic]^Territory
+		append(&cleared_capital, my_capital)
+		pro_territory_manager_populate_enemy_attack_options(
+			self.territory_manager,
+			territories_to_attack,
+			cleared_capital,
+		)
+		delete(territories_to_attack)
+		delete(cleared_capital)
+		enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
+			self.territory_manager,
+		)
+		if pro_other_move_options_get_max(enemy_attack_options, my_capital) == nil {
+			break
+		}
+
+		// Find max remaining defenders
+		land_p, land_c := matches_territory_is_land()
+		territories_adjacent_to_capital := game_map_get_neighbors_predicate(
+			gm,
+			my_capital,
+			land_p,
+			land_c,
+		)
+		allied_p, allied_c := matches_is_unit_allied(self.player)
+		defenders: [dynamic]^Unit
+		for u in unit_collection_get_units(territory_get_unit_collection(my_capital)) {
+			if allied_p(allied_c, u) {
+				append(&defenders, u)
+			}
+		}
+		for u in place_units {
+			append(&defenders, u)
+		}
+		owned_p, owned_c := pro_matches_unit_can_be_moved_and_is_owned_land(self.player, false)
+		for t, _ in territories_adjacent_to_capital {
+			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+				if owned_p(owned_c, u) {
+					append(&defenders, u)
+				}
+			}
+		}
+		delete(territories_adjacent_to_capital)
+		// defenders.removeAll(t.getUnits()) for every t in attackMap.values()
+		used_set := make(map[^Unit]struct {})
+		for _, t in attack_map {
+			for u in pro_territory_get_units(t) {
+				used_set[u] = {}
+			}
+		}
+		filtered_defenders: [dynamic]^Unit
+		for u in defenders {
+			if _, in_used := used_set[u]; !in_used {
+				append(&filtered_defenders, u)
+			}
+		}
+		delete(defenders)
+		delete(used_set)
+
+		// Determine counter-attack results
+		enemy_max := pro_other_move_options_get_max(enemy_attack_options, my_capital)
+		enemy_attacking_units_set := make(map[^Unit]struct {})
+		for u, _ in pro_territory_get_max_units(enemy_max) {
+			enemy_attacking_units_set[u] = {}
+		}
+		for u in pro_territory_get_max_amphib_units(enemy_max) {
+			enemy_attacking_units_set[u] = {}
+		}
+		enemy_attacking_units_list: [dynamic]^Unit
+		for u, _ in enemy_attacking_units_set {
+			append(&enemy_attacking_units_list, u)
+		}
+		delete(enemy_attacking_units_set)
+		max_bombard_set := pro_territory_get_max_bombard_units(enemy_max)
+		max_bombard_list: [dynamic]^Unit
+		for u, _ in max_bombard_set {
+			append(&max_bombard_list, u)
+		}
+		result := pro_odds_calculator_estimate_defend_battle_results(
+			self.calc,
+			self.pro_data,
+			my_capital,
+			enemy_attacking_units_list,
+			filtered_defenders,
+			max_bombard_list,
+		)
+		pro_logger_trace(
+			fmt.tprintf(
+				"Current capital result hasLandUnitRemaining=%v, TUVSwing=%v, defenders=%d, attackers=%d",
+				pro_battle_result_is_has_land_unit_remaining(result),
+				pro_battle_result_get_tuv_swing(result),
+				len(filtered_defenders),
+				len(enemy_attacking_units_list),
+			),
+		)
+		delete(enemy_attacking_units_list)
+		delete(max_bombard_list)
+		delete(filtered_defenders)
+
+		// Determine attack to remove
+		if pro_battle_result_is_has_land_unit_remaining(result) {
+			max_units_near_capital_per_value: f64 = 0
+			max_territory: ^Territory = nil
+			territories_near_capital := game_map_get_neighbors_predicate(
+				gm,
+				my_capital,
+				land_p,
+				land_c,
+			)
+			territories_near_capital[my_capital] = {}
+			for t, attack_pt in attack_map {
+				units_near_capital: i32 = 0
+				for u in pro_territory_get_units(attack_pt) {
+					ut := pro_data_get_unit_territory(self.pro_data, u)
+					if _, in_set := territories_near_capital[ut]; in_set {
+						units_near_capital += 1
+					}
+				}
+				val := pro_territory_get_value(attack_map[t])
+				if val == 0 {
+					continue
+				}
+				units_near_capital_per_value := f64(units_near_capital) / val
+				pro_logger_trace(
+					fmt.tprintf(
+						"%s has unit near capital per value: %v",
+						territory_to_string(t),
+						units_near_capital_per_value,
+					),
+				)
+				if units_near_capital_per_value > max_units_near_capital_per_value {
+					max_units_near_capital_per_value = units_near_capital_per_value
+					max_territory = t
+				}
+			}
+			delete(territories_near_capital)
+			if max_territory != nil {
+				patd_max := attack_map[max_territory]
+				for j := 0; j < len(prioritized_territories^); j += 1 {
+					if prioritized_territories^[j] == patd_max {
+						ordered_remove(prioritized_territories, j)
+						break
+					}
+				}
+				clear(&patd_max.units)
+				clear(&patd_max.amphib_attack_map)
+				pro_territory_set_battle_result(patd_max, nil)
+				pro_logger_debug(
+					fmt.tprintf(
+						"Removing territory to try to hold capital: %s",
+						territory_to_string(max_territory),
+					),
+				)
+			} else {
+				break
+			}
+		} else {
+			pro_logger_debug(
+				fmt.tprintf("Can hold capital: %s", territory_to_string(my_capital)),
+			)
+			break
+		}
+	}
+}
+

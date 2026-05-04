@@ -1,6 +1,9 @@
 package game
 
 import "core:fmt"
+import "core:math"
+import "core:strconv"
+import "core:strings"
 
 Abstract_End_Turn_Delegate :: struct {
 	using base_triple_a_delegate: Base_Triple_A_Delegate,
@@ -876,4 +879,277 @@ abstract_end_turn_delegate_get_blockade_production_loss :: proc(
 		string_builder_append(end_turn_report, "<br />")
 	}
 	return real_total_loss
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#end()
+// Java body:
+//   super.end();
+//   needToInitialize = true;
+//   getData().getBattleDelegate().getBattleTracker().clear();
+abstract_end_turn_delegate_end :: proc(self: ^Abstract_End_Turn_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	self.need_to_initialize = true
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	battle_tracker_clear(
+		battle_delegate_get_battle_tracker(game_data_get_battle_delegate(data)),
+	)
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#start()
+// Mirrors the Java method literally: snapshot the player's current PUs
+// and resource map BEFORE super.start(), then run the income-collection
+// pipeline (territory production minus convoy blockades, war bonds,
+// Pacific-theater VPs, other resources, national objectives, bonus
+// income, relationship upkeep). Calls into EndTurnDelegate's
+// addOtherResources / doNationalObjectivesAndOtherEndTurnEffects via a
+// downcast (the Java protected-abstract dispatch resolves to
+// EndTurnDelegate at runtime, the only concrete subclass in the port).
+abstract_end_turn_delegate_start :: proc(self: ^Abstract_End_Turn_Delegate) {
+	// figure out our current PUs before we do anything else, including super methods
+	data := i_delegate_bridge_get_data(self.bridge)
+	pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
+	left_over_pus := resource_collection_get_quantity(
+		game_player_get_resources(i_delegate_bridge_get_game_player(self.bridge)),
+		pus,
+	)
+	left_over_resources := resource_collection_get_resources_copy(
+		game_player_get_resources(i_delegate_bridge_get_game_player(self.bridge)),
+	)
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	if !self.need_to_initialize {
+		return
+	}
+	end_turn_report := string_builder_new()
+	self.has_posted_turn_summary = false
+	pa := player_attachment_get(self.player)
+	// can't collect unless you own your own capital
+	if !abstract_end_turn_delegate_can_player_collect_income(self.player, game_data_get_map(data)) {
+		string_builder_append(
+			end_turn_report,
+			abstract_end_turn_delegate_roll_war_bonds_for_friends(
+				self,
+				self.bridge,
+				self.player,
+				game_data_get_technology_frontier(data),
+				game_data_get_map(data),
+				game_data_get_resource_list(data),
+			),
+		)
+		// we do not collect any income this turn
+	} else {
+		territories := game_map_get_territories_owned_by(game_data_get_map(data), self.player)
+		defer delete(territories)
+		to_add := abstract_end_turn_delegate_get_production_instance(self, territories)
+		blockade_loss := abstract_end_turn_delegate_get_blockade_production_loss(
+			self,
+			self.player,
+			cast(^Game_State)&data.game_state,
+			self.bridge,
+			end_turn_report,
+		)
+		to_add -= blockade_loss
+		to_add *= properties_get_pu_multiplier(game_data_get_properties(data))
+		total := resource_collection_get_quantity(game_player_get_resources(self.player), pus) + to_add
+		player_name := default_named_get_name(&self.player.named_attachable.default_named)
+		transcript_text: string
+		if blockade_loss == 0 {
+			transcript_text = fmt.aprintf(
+				"%s collect %d%s; end with %d%s",
+				player_name,
+				to_add,
+				my_formatter_pluralize_quantity(" PU", to_add),
+				total,
+				my_formatter_pluralize_quantity(" PU", total),
+			)
+		} else {
+			transcript_text = fmt.aprintf(
+				"%s collect %d%s (%d lost to blockades); end with %d%s",
+				player_name,
+				to_add,
+				my_formatter_pluralize_quantity(" PU", to_add),
+				blockade_loss,
+				total,
+				my_formatter_pluralize_quantity(" PU", total),
+			)
+		}
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			transcript_text,
+		)
+		string_builder_append(string_builder_append(end_turn_report, transcript_text), "<br />")
+		// do war bonds
+		bonds := abstract_end_turn_delegate_roll_war_bonds(
+			self,
+			self.bridge,
+			self.player,
+			game_data_get_technology_frontier(data),
+		)
+		if bonds > 0 {
+			total += bonds
+			to_add += bonds
+			bond_text := fmt.aprintf(
+				"%s collect %d%s from War Bonds; end with %d%s",
+				player_name,
+				bonds,
+				my_formatter_pluralize_quantity(" PU", bonds),
+				total,
+				my_formatter_pluralize_quantity(" PU", total),
+			)
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(self.bridge),
+				bond_text,
+			)
+			string_builder_append(end_turn_report, "<br />")
+			string_builder_append(string_builder_append(end_turn_report, bond_text), "<br />")
+		}
+		if total < 0 {
+			to_add -= total
+		}
+		change := change_factory_change_resources_change(self.player, pus, to_add)
+		i_delegate_bridge_add_change(self.bridge, change)
+
+		if properties_get_pacific_theater(game_data_get_properties(data)) && pa != nil {
+			vps_value := new(i32)
+			vps_value^ =
+				player_attachment_get_vps(pa) +
+				(to_add / 10) +
+				(player_attachment_get_capture_vps(pa) / 10)
+			change_vp := change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(pa),
+				rawptr(vps_value),
+				"vps",
+			)
+			capture_vps_value := new(string)
+			capture_vps_value^ = "0"
+			change_capture_vp := change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(pa),
+				rawptr(capture_vps_value),
+				"captureVps",
+			)
+			cc_vp := composite_change_new_from_varargs(change_vp, change_capture_vp)
+			i_delegate_bridge_add_change(self.bridge, &cc_vp.change)
+		}
+
+		string_builder_append(end_turn_report, "<br />")
+		string_builder_append(
+			end_turn_report,
+			end_turn_delegate_add_other_resources(cast(^End_Turn_Delegate)self, self.bridge),
+		)
+		string_builder_append(end_turn_report, "<br />")
+		string_builder_append(
+			end_turn_report,
+			end_turn_delegate_do_national_objectives_and_other_end_turn_effects(
+				cast(^End_Turn_Delegate)self,
+				self.bridge,
+			),
+		)
+
+		// IntegerMap<Resource> income = player.getResources().getResourcesCopy(); income.subtract(leftOverResources);
+		income := integer_map_new()
+		current_copy := resource_collection_get_resources_copy(
+			game_player_get_resources(self.player),
+		)
+		for r, v in current_copy {
+			integer_map_put(income, rawptr(r), v)
+		}
+		for r, v in left_over_resources {
+			integer_map_add(income, rawptr(r), -v)
+		}
+		string_builder_append(end_turn_report, "<br />")
+		string_builder_append(
+			end_turn_report,
+			bonus_income_utils_add_bonus_income(income, self.bridge, self.player),
+		)
+
+		// upkeep costs
+		current_pus := resource_collection_get_quantity(
+			game_player_get_resources(self.player),
+			pus,
+		)
+		relationship_upkeep_cost_flat: i32 = 0
+		relationship_upkeep_cost_percentage: i32 = 0
+		relationships := relationship_tracker_get_relationships(
+			game_data_get_relationship_tracker(data),
+			self.player,
+		)
+		for r, _ in relationships {
+			upkeep_str := relationship_type_attachment_get_upkeep_cost(
+				relationship_type_get_relationship_type_attachment(
+					relationship_get_relationship_type(r),
+				),
+			)
+			parts := strings.split_n(upkeep_str, ":", 2)
+			defer delete(parts)
+			amount, _ := strconv.parse_int(parts[0])
+			if len(parts) == 1 || parts[1] == "flat" {
+				relationship_upkeep_cost_flat += i32(amount)
+			} else if parts[1] == "percentage" {
+				relationship_upkeep_cost_percentage += i32(amount)
+			}
+		}
+		if relationship_upkeep_cost_percentage > 100 {
+			relationship_upkeep_cost_percentage = 100
+		}
+		relationship_upkeep_total_cost: i32 = 0
+		if relationship_upkeep_cost_percentage != 0 {
+			gained_pus := f32(current_pus - left_over_pus)
+			if gained_pus < 0 {
+				gained_pus = 0
+			}
+			relationship_upkeep_total_cost += i32(math.round(
+				f64(gained_pus) * f64(relationship_upkeep_cost_percentage) / 100.0,
+			))
+		}
+		if relationship_upkeep_cost_flat != 0 {
+			relationship_upkeep_total_cost += relationship_upkeep_cost_flat
+		}
+		// can't remove more than we have, then flip the sign
+		if relationship_upkeep_total_cost > current_pus {
+			relationship_upkeep_total_cost = current_pus
+		}
+		relationship_upkeep_total_cost = -1 * relationship_upkeep_total_cost
+		if relationship_upkeep_total_cost != 0 {
+			new_total := current_pus + relationship_upkeep_total_cost
+			verb := " pays "
+			if relationship_upkeep_total_cost >= 0 {
+				verb = " taxes "
+			}
+			transcript_text2 := fmt.aprintf(
+				"%s%s%d%s in order to maintain current relationships with other players, and ends the turn with %d%s",
+				player_name,
+				verb,
+				-1 * relationship_upkeep_total_cost,
+				my_formatter_pluralize_quantity(" PU", relationship_upkeep_total_cost),
+				new_total,
+				my_formatter_pluralize_quantity(" PU", new_total),
+			)
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(self.bridge),
+				transcript_text2,
+			)
+			string_builder_append(end_turn_report, "<br />")
+			string_builder_append(string_builder_append(end_turn_report, transcript_text2), "<br />")
+			upkeep_change := change_factory_change_resources_change(
+				self.player,
+				pus,
+				relationship_upkeep_total_cost,
+			)
+			i_delegate_bridge_add_change(self.bridge, upkeep_change)
+		}
+	}
+	if game_step_properties_helper_is_repair_units(data) {
+		move_delegate_repair_multiple_hit_point_units(
+			self.bridge,
+			i_delegate_bridge_get_game_player(self.bridge),
+		)
+	}
+	if properties_get_give_units_by_territory(
+		   game_data_get_properties(abstract_delegate_get_data(&self.abstract_delegate)),
+	   ) &&
+	   pa != nil &&
+	   len(player_attachment_get_give_unit_control(pa)) > 0 {
+		abstract_end_turn_delegate_change_unit_ownership(self.bridge)
+	}
+	self.need_to_initialize = false
+	abstract_end_turn_delegate_show_end_turn_report(self, string_builder_to_string(end_turn_report))
 }

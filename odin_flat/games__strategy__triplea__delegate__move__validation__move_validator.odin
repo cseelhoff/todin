@@ -3478,3 +3478,175 @@ move_validator_validate_fuel :: proc(
 		),
 	)
 }
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateMove(
+//   games.strategy.engine.data.MoveDescription,
+//   games.strategy.engine.data.GamePlayer,
+//   java.util.List)
+// Java: public MoveValidationResult validateMove(MoveDescription move,
+//       GamePlayer player, List<UndoableMove> undoableMoves)
+move_validator_validate_move :: proc(
+	self: ^Move_Validator,
+	move: ^Move_Description,
+	player: ^Game_Player,
+	undoable_moves: [dynamic]^Undoable_Move,
+) -> ^Move_Validation_Result {
+	units := move.abstract_move_description.units
+	route := move_description_get_route(move)
+	units_to_sea_transports := move_description_get_units_to_sea_transports(move)
+	air_transports_set := move_description_get_air_transports_dependents(move)
+
+	// Move_Description stores airTransportsDependents as Set<Unit> per key
+	// (`map[^Unit]map[^Unit]struct{}`), but the validate_* procs accept the
+	// `Map<Unit, Collection<Unit>>` form (`map[^Unit][dynamic]^Unit`). Build
+	// a transient view in the dynamic-array shape.
+	air_transport_dependents := make(map[^Unit][dynamic]^Unit)
+	defer {
+		for _, v in air_transport_dependents {
+			delete(v)
+		}
+		delete(air_transport_dependents)
+	}
+	for k, v in air_transports_set {
+		arr: [dynamic]^Unit
+		for u, _ in v {
+			append(&arr, u)
+		}
+		air_transport_dependents[k] = arr
+	}
+
+	result := move_validation_result_new()
+	if route_has_no_steps(route) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_first(self, units, route, player, result),
+	) {
+		return result
+	}
+	if self.is_non_combat {
+		if move_validation_result_has_error(
+			move_validator_validate_non_combat(self, units, route, player, result),
+		) {
+			return result
+		}
+	} else {
+		if move_validation_result_has_error(
+			move_validator_validate_combat(
+				self,
+				units,
+				air_transport_dependents,
+				route,
+				player,
+				result,
+			),
+		) {
+			return result
+		}
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_non_enemy_units_on_path(self, units, route, player, result),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_basic(
+			self,
+			units,
+			route,
+			player,
+			units_to_sea_transports,
+			air_transport_dependents,
+			result,
+		),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		air_movement_validator_validate_air_can_land(units[:], route, player, result),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_transport(
+			self,
+			undoable_moves,
+			units,
+			route,
+			player,
+			units_to_sea_transports,
+			result,
+		),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_paratroops(
+			self,
+			units,
+			air_transport_dependents,
+			route,
+			player,
+			result,
+		),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_canal_to_result(
+			self,
+			units,
+			route,
+			player,
+			air_transport_dependents,
+			result,
+		),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_fuel(self, units[:], route, player, result),
+	) {
+		return result
+	}
+
+	// Don't let the user move out of a battle zone, the exception is air
+	// units and unloading units into a battle zone.
+	bt := abstract_move_delegate_get_battle_tracker(self.data)
+	not_air_pred, not_air_ctx := matches_unit_is_not_air()
+	any_not_air := false
+	for u in units {
+		if not_air_pred(not_air_ctx, u) {
+			any_not_air = true
+			break
+		}
+	}
+	if battle_tracker_has_pending_non_bombing_battle(bt, route_get_start(route)) &&
+	   any_not_air {
+		units_started_in_territory := true
+		for unit in units {
+			if abstract_move_delegate_get_route_used_to_move_into(
+				   undoable_moves,
+				   unit,
+				   route_get_end(route),
+			   ) != nil {
+				units_started_in_territory = false
+				break
+			}
+		}
+		if !units_started_in_territory {
+			unload := route_is_unload(route)
+			end_owner := territory_get_owner(route_get_end(route))
+			attack :=
+				!game_player_is_allied(end_owner, player) ||
+				battle_tracker_was_conquered(bt, route_get_end(route))
+			if !(unload && attack) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot move units out of battle zone",
+				)
+			}
+		}
+	}
+	return result
+}

@@ -139,3 +139,23 @@ abstract_move_delegate_update_undoable_moves :: proc(self: ^Abstract_Move_Delega
 	abstract_move_delegate_update_undoable_move_indexes(self)
 }
 
+// games.strategy.triplea.delegate.AbstractMoveDelegate#start()
+// Calls super.start(); if a tempMovePerformer was suspended in a prior
+// turn, re-bind it to this delegate, resume the in-progress move, then
+// clear the slot.
+abstract_move_delegate_start :: proc(self: ^Abstract_Move_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	if self.temp_move_performer != nil {
+		move_performer_initialize(self.temp_move_performer, self)
+		move_performer_resume(self.temp_move_performer)
+		self.temp_move_performer = nil
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#end()
+// Calls super.end() and clears the undoable-move list for the turn.
+abstract_move_delegate_end :: proc(self: ^Abstract_Move_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	clear(&self.moves_to_undo)
+}
+
