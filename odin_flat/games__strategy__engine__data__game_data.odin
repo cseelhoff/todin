@@ -620,6 +620,64 @@ game_data_lambda_perform_change_8 :: proc(change: ^Change, listener: ^Game_Data_
 	game_data_change_listener_game_data_changed(listener, change)
 }
 
+// games.strategy.engine.data.GameData#lambda$getGameXmlPath$9(MapDescriptionYaml)
+//
+// Java: yaml -> yaml.getGameXmlPathByGameName(getGameName())
+//
+// `this` (Game_Data) is captured so the lambda can call getGameName();
+// `yaml` is the value flowing through Optional.flatMap. The Java return
+// type is Optional<Path>; in Odin we mirror that as (Path, bool).
+game_data_lambda_get_game_xml_path_9 :: proc(
+	self: ^Game_Data,
+	yaml: ^Map_Description_Yaml,
+) -> (
+	Path,
+	bool,
+) {
+	return map_description_yaml_get_game_xml_path_by_game_name(
+		yaml,
+		game_data_get_game_name(self),
+	)
+}
+
+// games.strategy.engine.data.GameData#performChange(Change)
+//
+// Java:
+//   public void performChange(final Change change) {
+//     if (areChangesOnlyInSwingEventThread()) {
+//       Util.ensureOnEventDispatchThread();
+//     }
+//     try (Unlocker ignored = acquireWriteLock()) {
+//       change.perform(this);
+//     }
+//     dataChangeListeners.forEach(listener -> listener.gameDataChanged(change));
+//     GameDataEvent.lookupEvent(change).ifPresent(this::fireGameDataEvent);
+//   }
+//
+// The single-threaded snapshot port has no Swing event-dispatch thread
+// and acquire_write_lock is a no-op, so the guard and try-with-resources
+// collapse to a direct change_perform call. Game_Data embeds Game_State
+// (line 15: `using game_state: Game_State`) so &self.game_state is the
+// receiver Change.perform expects. dataChangeListeners.forEach maps to
+// an explicit loop calling the lambda; lookupEvent's Optional becomes a
+// (value, ok) tuple from game_data_event_lookup_event.
+game_data_perform_change :: proc(self: ^Game_Data, change: ^Change) {
+	if game_data_are_changes_only_in_swing_event_thread(self) {
+		// Util.ensureOnEventDispatchThread() — no Swing thread in the
+		// single-threaded snapshot port; the assertion is a no-op.
+	}
+	{
+		_ = game_data_acquire_write_lock(self)
+		change_perform(change, &self.game_state)
+	}
+	for listener in self.data_change_listeners {
+		game_data_lambda_perform_change_8(change, listener)
+	}
+	if event, ok := game_data_event_lookup_event(change); ok {
+		game_data_fire_game_data_event(self, event)
+	}
+}
+
 // games.strategy.engine.data.GameData#fixUpNullPlayers()
 //
 // Java:

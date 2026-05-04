@@ -115,3 +115,23 @@ unit_comparator_lambda_get_increasing_capacity_comparator_2 :: proc(
 	cache[u] = val
 	return val
 }
+
+// ---------------------------------------------------------------------------
+// lambda$getUnloadableTransportsComparator$3
+// ---------------------------------------------------------------------------
+// Java factory tail:
+//   .thenComparingInt(t -> noTies ? t.hashCode() : 0);
+// lambda$3 is the synthetic
+//   (boolean noTies, Unit t) -> int
+// helper: when noTies is true it falls back to the unit's hashCode so
+// the comparator becomes a total order; otherwise it returns 0 to
+// keep ties (stable on the previous keys).
+unit_comparator_lambda_get_unloadable_transports_comparator_3 :: proc(
+	no_ties: bool,
+	t: ^Unit,
+) -> i32 {
+	if no_ties {
+		return unit_hash_code(t)
+	}
+	return 0
+}

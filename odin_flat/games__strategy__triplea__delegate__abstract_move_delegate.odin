@@ -98,3 +98,28 @@ abstract_move_delegate_load_state :: proc(self: ^Abstract_Move_Delegate, state: 
 	self.temp_move_performer = state.temp_move_performer
 }
 
+// games.strategy.triplea.delegate.AbstractMoveDelegate#getBattleTracker(games.strategy.engine.data.GameData)
+// Static helper: returns the BattleTracker owned by the GameData's BattleDelegate.
+abstract_move_delegate_get_battle_tracker :: proc(data: ^Game_Data) -> ^Battle_Tracker {
+	return battle_delegate_get_battle_tracker(game_data_get_battle_delegate(data))
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#getUnitsOwner(java.util.Collection)
+// In edit mode (and given a non-empty unit collection), returns the owner of
+// any one of the units; otherwise falls back to the delegate's current player.
+abstract_move_delegate_get_units_owner :: proc(self: ^Abstract_Move_Delegate, units: [dynamic]^Unit) -> ^Game_Player {
+	if len(units) == 0 || !edit_delegate_get_edit_mode(game_data_get_properties(i_delegate_bridge_get_data(self.bridge))) {
+		return self.player
+	}
+	return unit_get_owner(units[0])
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#updateUndoableMoves(games.strategy.triplea.delegate.UndoableMove)
+// Appends `current_move` to the undo list after wiring up its dependencies on
+// the prior moves, then renumbers every move's index to its new position.
+abstract_move_delegate_update_undoable_moves :: proc(self: ^Abstract_Move_Delegate, current_move: ^Undoable_Move) {
+	undoable_move_initialize_dependencies(current_move, self.moves_to_undo)
+	append(&self.moves_to_undo, current_move)
+	abstract_move_delegate_update_undoable_move_indexes(self)
+}
+

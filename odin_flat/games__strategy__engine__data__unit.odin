@@ -473,7 +473,7 @@ unit_new_with_uuid :: proc(
 // o -> equals(o.getTransportedBy()))`. Unit equality is by UUID; since each
 // Unit has a unique UUID and is heap-allocated, pointer identity matches the
 // Java semantics (consistent with the existing `unit_get_transporting_in_territory`).
-unit_get_transporting :: proc(
+unit_get_transporting_collection :: proc(
 	self: ^Unit,
 	transported_units_possible: [dynamic]^Unit,
 ) -> [dynamic]^Unit {
@@ -486,9 +486,585 @@ unit_get_transporting :: proc(
 	return result
 }
 
+// games.strategy.engine.data.Unit#getTransporting()
+//
+// Java: if this unit can transport or is a carrier, find the territory that
+// contains it and return getTransporting(territory); otherwise List.of().
+// The carrier/transport gate matches Java exactly; the territory loop mirrors
+// the existing `unit_is_transporting_any` traversal.
+unit_get_transporting_no_args :: proc(self: ^Unit) -> [dynamic]^Unit {
+	empty: [dynamic]^Unit
+	if !matches_pred_unit_can_transport(nil, self) && !matches_pred_unit_is_carrier(nil, self) {
+		return empty
+	}
+	if self.game_data == nil {
+		return empty
+	}
+	gmap := game_data_get_map(self.game_data)
+	if gmap == nil {
+		return empty
+	}
+	for t in gmap.territories {
+		if t == nil || t.unit_collection == nil {
+			continue
+		}
+		if unit_collection_contains(t.unit_collection, self) {
+			return unit_get_transporting_in_territory(self, t)
+		}
+	}
+	return empty
+}
+
+// Proc group covering Java overloads `getTransporting()` and
+// `getTransporting(Collection<Unit>)`.
+unit_get_transporting :: proc{unit_get_transporting_no_args, unit_get_transporting_collection}
+
 // games.strategy.engine.data.Unit#getUnitAttachment()
 //
 // `return type.getUnitAttachment()`.
 unit_get_unit_attachment :: proc(self: ^Unit) -> ^Unit_Attachment {
 	return unit_type_get_unit_attachment(self.type)
+}
+
+// games.strategy.engine.data.Unit#hitsUnitCanTakeHitWithoutBeingKilled()
+//
+// Java: `return getUnitAttachment().getHitPoints() - 1 - hits;`
+unit_hits_unit_can_take_hit_without_being_killed :: proc(self: ^Unit) -> i32 {
+	return unit_attachment_get_hit_points(unit_get_unit_attachment(self)) - 1 - self.hits
+}
+
+// games.strategy.engine.data.Unit#lambda$getPropertyOrEmpty$0(Unit$PropertyName)
+//
+// Java: the inner `unitPropertyName -> switch (unitPropertyName) { ... }`
+// passed to `Optional.map` inside `getPropertyOrEmpty`'s default branch.
+// Captures `this`; the Odin port carries it as the explicit `self` parameter.
+// Each enum arm builds a `MutableProperty.ofSimple(this::setX, this::getX)`
+// over the corresponding Unit field. The setter value-pointer points at the
+// typed value (matching the convention used by `tech_attachment_get_property_or_empty`):
+// reference fields receive `^^T` (pointer to a pointer); primitives receive
+// `^T`. Getters allocate a freshly boxed value so callers may dereference
+// uniformly.
+unit_lambda_get_property_or_empty_0 :: proc(
+	self: ^Unit,
+	unit_property_name: Unit_Property_Name,
+) -> ^Mutable_Property {
+	switch unit_property_name {
+	case .Transported_By:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_transported_by(cast(^Unit)ctx, (cast(^^Unit)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Unit)
+					out^ = unit_get_transported_by(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Unloaded:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_unloaded(cast(^Unit)ctx, (cast(^[dynamic]^Unit)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new([dynamic]^Unit)
+					out^ = unit_get_unloaded(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Loaded_This_Turn:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_loaded_this_turn(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_loaded_this_turn(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Unloaded_To:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_unloaded_to(cast(^Unit)ctx, (cast(^^Territory)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Territory)
+					out^ = unit_get_unloaded_to(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Unloaded_In_Combat_Phase:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_unloaded_in_combat_phase(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_unloaded_in_combat_phase(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Already_Moved:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_already_moved(cast(^Unit)ctx, (cast(^f64)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(f64)
+					out^ = unit_get_already_moved(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Bonus_Movement:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_bonus_movement(cast(^Unit)ctx, (cast(^i32)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_get_bonus_movement(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Submerged:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_submerged(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_submerged(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Was_In_Combat:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_in_combat(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_in_combat(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Loaded_After_Combat:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_loaded_after_combat(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_loaded_after_combat(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Unloaded_Amphibious:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					_ = unit_set_was_amphibious(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_amphibious(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Originated_From:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_originated_from(cast(^Unit)ctx, (cast(^^Territory)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Territory)
+					out^ = unit_get_originated_from(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Was_Scrambled:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_scrambled(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_scrambled(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Max_Scramble_Count:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_max_scramble_count(cast(^Unit)ctx, (cast(^i32)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_get_max_scramble_count(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Was_In_Air_Battle:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_was_in_air_battle(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_was_in_air_battle(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Launched:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_launched(cast(^Unit)ctx, (cast(^i32)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_get_launched(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Airborne:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_airborne(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_airborne(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case .Charged_Flat_Fuel_Cost:
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_charged_flat_fuel_cost(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_charged_flat_fuel_cost(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	}
+	return nil
+}
+
+// games.strategy.engine.data.Unit#getHowMuchDamageCanThisUnitTakeTotal(Territory)
+//
+// Java:
+//   if (!Matches.unitCanBeDamaged().test(this)) return -1;
+//   ua = getType().getUnitAttachment();
+//   territoryUnitProduction = TerritoryAttachment.getUnitProduction(t);
+//   if (Properties.getDamageFromBombingDoneToUnitsInsteadOfTerritories(getData().getProperties())) {
+//     if (ua.getMaxDamage() <= 0)               return territoryUnitProduction * 2;
+//     if (Matches.unitCanProduceUnits().test(this))
+//       return ua.getCanProduceXUnits() < 0
+//                ? territoryUnitProduction * ua.getMaxDamage()
+//                : ua.getMaxDamage();
+//     return ua.getMaxDamage();
+//   }
+//   return Integer.MAX_VALUE;
+unit_get_how_much_damage_can_this_unit_take_total :: proc(self: ^Unit, t: ^Territory) -> i32 {
+	if !matches_pred_unit_can_be_damaged(nil, self) {
+		return -1
+	}
+	ua := unit_type_get_unit_attachment(unit_get_type(self))
+	territory_unit_production := territory_attachment_static_get_unit_production(t)
+	if properties_get_damage_from_bombing_done_to_units_instead_of_territories(
+		game_data_get_properties(game_data_component_get_data(&self.game_data_component)),
+	) {
+		if unit_attachment_get_max_damage(ua) <= 0 {
+			return territory_unit_production * 2
+		}
+		if matches_pred_unit_can_produce_units(nil, self) {
+			if unit_attachment_get_can_produce_x_units(ua) < 0 {
+				return territory_unit_production * unit_attachment_get_max_damage(ua)
+			}
+			return unit_attachment_get_max_damage(ua)
+		}
+		return unit_attachment_get_max_damage(ua)
+	}
+	return max(i32)
+}
+
+// games.strategy.engine.data.Unit#getMaxMovementAllowed()
+//
+// Java: `return Math.max(0, bonusMovement + getType().getUnitAttachment().getMovement(getOwner()));`
+unit_get_max_movement_allowed :: proc(self: ^Unit) -> i32 {
+	mv := unit_attachment_get_movement_with_player(
+		unit_type_get_unit_attachment(unit_get_type(self)),
+		unit_get_owner(self),
+	)
+	return max(i32(0), self.bonus_movement + mv)
+}
+
+// games.strategy.engine.data.Unit#getMovementLeft()
+//
+// Java: `return new BigDecimal(getType().getUnitAttachment().getMovement(getOwner()))
+//                  .add(new BigDecimal(bonusMovement))
+//                  .subtract(alreadyMoved);`
+// BigDecimal → f64 per the Odin port convention.
+unit_get_movement_left :: proc(self: ^Unit) -> f64 {
+	mv := unit_attachment_get_movement_with_player(
+		unit_type_get_unit_attachment(unit_get_type(self)),
+		unit_get_owner(self),
+	)
+	return f64(mv) + f64(self.bonus_movement) - self.already_moved
+}
+
+// games.strategy.engine.data.Unit#getPropertyOrEmpty(String)
+//
+// Java: head switch on a fixed list of names, falling through to a parse of
+// the supplied string into a `Unit$PropertyName` and dispatch to
+// `lambda$getPropertyOrEmpty$0` (already ported as
+// `unit_lambda_get_property_or_empty_0`). The Java return type is
+// `Optional<MutableProperty<?>>`; here `nil` represents `Optional.empty()`.
+unit_get_property_or_empty :: proc(self: ^Unit, property_name: string) -> ^Mutable_Property {
+	switch property_name {
+	case "owner":
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_owner(cast(^Unit)ctx, (cast(^^Game_Player)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Game_Player)
+					out^ = unit_get_owner(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "uid":
+		return mutable_property_of_read_only_simple(
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(Uuid)
+					out^ = unit_get_id(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "hits":
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_hits(cast(^Unit)ctx, (cast(^i32)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_get_hits(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "type":
+		return mutable_property_of_read_only_simple(
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Unit_Type)
+					out^ = unit_get_type(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "unitDamage":
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_unit_damage(cast(^Unit)ctx, (cast(^i32)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_get_unit_damage(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "originalOwner":
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_original_owner(cast(^Unit)ctx, (cast(^^Game_Player)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(^Game_Player)
+					out^ = unit_get_original_owner(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	case "disabled":
+		return mutable_property_of_simple(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_set_disabled(cast(^Unit)ctx, (cast(^bool)v)^)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = unit_get_disabled(cast(^Unit)ctx)
+					return out
+				},
+				ctx = self,
+			},
+		)
+	}
+	prop, ok := unit_property_name_parse_from_string(property_name)
+	if !ok {
+		return nil
+	}
+	return unit_lambda_get_property_or_empty_0(self, prop)
 }

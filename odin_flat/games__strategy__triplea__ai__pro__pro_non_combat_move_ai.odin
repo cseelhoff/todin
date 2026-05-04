@@ -141,3 +141,28 @@ pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__16
 	return pro_non_combat_move_ai_can_hold(self, move_map, t)
 }
 
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#checkCanHold(games.strategy.triplea.ai.pro.data.ProTerritory)
+pro_non_combat_move_ai_check_can_hold :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	pro_territory: ^Pro_Territory,
+) -> bool {
+	if !pro_territory_is_can_hold(pro_territory) {
+		return false
+	}
+
+	// Check if territory is safe after all current moves
+	if pro_territory_get_battle_result(pro_territory) == nil {
+		pro_territory_set_battle_result(
+			pro_territory,
+			pro_odds_calculator_calculate_battle_results(self.calc, self.pro_data, pro_territory),
+		)
+	}
+	result := pro_territory_get_battle_result(pro_territory)
+	if pro_battle_result_get_win_percentage(result) >= self.pro_data.min_win_percentage ||
+	   pro_battle_result_get_tuv_swing(result) > 0 {
+		pro_territory_set_can_hold(pro_territory, false)
+		return false
+	}
+	return true
+}
+

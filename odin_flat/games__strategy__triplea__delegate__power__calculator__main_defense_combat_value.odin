@@ -113,3 +113,10 @@ main_defense_combat_value_build_opposite_combat_value :: proc(self: ^Main_Defens
 	b = main_offense_combat_value_main_offense_combat_value_builder_territory_effects(b, self.territory_effects)
 	return main_offense_combat_value_main_offense_combat_value_builder_build(b)
 }
+
+// Ported from MainDefenseCombatValue#chooseBestRoll(Unit).
+// Returns true if LHTR heavy bombers is enabled or if the unit's attachment
+// has chooseBestRoll set.
+main_defense_combat_value_choose_best_roll :: proc(self: ^Main_Defense_Combat_Value, unit: ^Unit) -> bool {
+	return self.lhtr_heavy_bombers || unit_attachment_get_choose_best_roll(unit_get_unit_attachment(unit))
+}

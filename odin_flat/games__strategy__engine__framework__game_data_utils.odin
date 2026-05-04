@@ -110,3 +110,19 @@ game_data_utils_translate_into_other_game_data :: proc(object: rawptr, translate
 	return object
 }
 
+// proc:games.strategy.engine.framework.GameDataUtils#cloneGameData
+// Java:
+//   final byte[] bytes = gameDataToBytes(data, options).orElse(null);
+//   if (bytes != null) { return createGameDataFromBytes(bytes); }
+//   return Optional.empty();
+// Optional<GameData> is represented as ^Game_Data (nil = empty),
+// matching createGameDataFromBytes above. gameDataToBytes returns
+// the (bytes, present) tuple form of Optional<byte[]>.
+game_data_utils_clone_game_data :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options) -> ^Game_Data {
+	bytes, present := game_data_utils_game_data_to_bytes(data, options)
+	if present {
+		return game_data_utils_create_game_data_from_bytes(bytes)
+	}
+	return nil
+}
+

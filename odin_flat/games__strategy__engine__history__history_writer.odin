@@ -81,3 +81,47 @@ history_writer_close_current :: proc(self: ^History_Writer) {
 	old_ihn := cast(^Indexed_History_Node)old
 	old_ihn.change_stop_index = cast(i32)len(self.history.changes)
 }
+
+// games.strategy.engine.history.HistoryWriter#addToAndSetCurrent(HistoryNode)
+//
+// Java: addToCurrent(newNode); current = newNode;
+history_writer_add_to_and_set_current :: proc(self: ^History_Writer, new_node: ^History_Node) {
+	history_writer_add_to_current(self, new_node)
+	self.current = new_node
+}
+
+// games.strategy.engine.history.HistoryWriter#startEvent(java.lang.String)
+//
+// Java: closes any open event, then attaches a fresh Event node as the
+// new current. assertCorrectThread() is the Swing EDT guard from Java;
+// the headless port runs single-threaded.
+history_writer_start_event :: proc(self: ^History_Writer, event_name: string) {
+	if history_writer_is_current_event(self) {
+		history_writer_close_current(self)
+	}
+	event := event_new(event_name, cast(i32)len(self.history.changes))
+	history_writer_add_to_and_set_current(self, cast(^History_Node)event)
+}
+
+// games.strategy.engine.history.HistoryWriter#startNextRound(int)
+//
+// Java: closes any open event/step/round, resets current to the tree
+// root (a RootHistoryNode constructed by History's super(...) call,
+// hence safely castable to ^History_Node), then attaches a new Round
+// as the current node.
+history_writer_start_next_round :: proc(self: ^History_Writer, round: i32) {
+	if history_writer_is_current_event(self) {
+		history_writer_close_current(self)
+	}
+	if history_writer_is_current_step(self) {
+		history_writer_close_current(self)
+	}
+	if history_writer_is_current_round(self) {
+		history_writer_close_current(self)
+	}
+	current_round := round_new(round, cast(i32)len(self.history.changes))
+	self.current = cast(^History_Node)default_tree_model_get_root(
+		&self.history.default_tree_model,
+	)
+	history_writer_add_to_and_set_current(self, cast(^History_Node)current_round)
+}

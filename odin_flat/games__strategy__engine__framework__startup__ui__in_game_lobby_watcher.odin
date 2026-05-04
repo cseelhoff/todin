@@ -43,3 +43,30 @@ in_game_lobby_watcher_lambda_new_2 :: proc(old: ^In_Game_Lobby_Watcher) -> ^Game
 in_game_lobby_watcher_lambda_new_4 :: proc(self: ^In_Game_Lobby_Watcher, id: string) {
 	self.game_id = id
 }
+
+in_game_lobby_watcher_shut_down :: proc(self: ^In_Game_Lobby_Watcher) {
+	self.is_shutdown = true
+	// if game_id is not empty (game was created in lobby successfully) send remove
+	// game message to lobby now that game is to be shut down.
+	if self.game_id != "" && self.game_to_lobby_connection != nil {
+		game_to_lobby_connection_disconnect(self.game_to_lobby_connection, self.game_id)
+	}
+	// serverMessenger.removeConnectionChangeListener(connectionChangeListener)
+	if self.server_messenger != nil && self.connection_change_listener != nil {
+		sm := cast(^Server_Messenger)self.server_messenger
+		for i := 0; i < len(sm.connection_listeners); i += 1 {
+			if sm.connection_listeners[i] == self.connection_change_listener {
+				ordered_remove(&sm.connection_listeners, i)
+				break
+			}
+		}
+	}
+	// Optional.ofNullable(keepAliveTimer).ifPresent(ScheduledTimer::cancel)
+	if self.keep_alive_timer != nil {
+		self.keep_alive_timer.running = false
+		if self.keep_alive_timer.timer != nil {
+			timer_cancel(self.keep_alive_timer.timer)
+		}
+	}
+	in_game_lobby_watcher_clean_up_game_model_listener(self)
+}

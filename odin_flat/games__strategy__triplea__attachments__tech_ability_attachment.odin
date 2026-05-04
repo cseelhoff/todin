@@ -565,3 +565,403 @@ tech_ability_attachment_set_war_bond_dice_sides :: proc(
 		true,
 	)
 }
+
+// --- IntegerMap<UnitType> string setters --------------------------------
+//
+// Each Java setter has the shape:
+//   private void setXxxBonus(final String value) throws GameParseException {
+//     if (xxxBonus == null) { xxxBonus = new IntegerMap<>(); }
+//     applyCheckedValue("xxxBonus", value, xxxBonus::put);
+//   }
+//
+// The Odin port inlines `applyCheckedValue` because Odin's bare proc
+// signature on `tech_ability_attachment_apply_checked_value` cannot
+// carry the captured `xxxBonus` field reference that
+// `xxxBonus::put` represents. Inlining keeps the behavior identical
+// (split/validate, resolve unit type, parse int, store) without
+// introducing a rawptr-ctx adapter for a single internal call site.
+
+// Java: private void setAttackBonus(final String value)
+tech_ability_attachment_set_attack_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.attack_bonus == nil {
+		self.attack_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "attackBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.attack_bonus, rawptr(ut), v)
+}
+
+// Java: private void setDefenseBonus(final String value)
+tech_ability_attachment_set_defense_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.defense_bonus == nil {
+		self.defense_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "defenseBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.defense_bonus, rawptr(ut), v)
+}
+
+// Java: private void setMovementBonus(final String value)
+tech_ability_attachment_set_movement_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.movement_bonus == nil {
+		self.movement_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "movementBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.movement_bonus, rawptr(ut), v)
+}
+
+// Java: private void setRadarBonus(final String value)
+tech_ability_attachment_set_radar_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.radar_bonus == nil {
+		self.radar_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "radarBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.radar_bonus, rawptr(ut), v)
+}
+
+// Java: private void setAirAttackBonus(final String value)
+tech_ability_attachment_set_air_attack_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.air_attack_bonus == nil {
+		self.air_attack_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "airAttackBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.air_attack_bonus, rawptr(ut), v)
+}
+
+// Java: private void setAirDefenseBonus(final String value)
+tech_ability_attachment_set_air_defense_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.air_defense_bonus == nil {
+		self.air_defense_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "airDefenseBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.air_defense_bonus, rawptr(ut), v)
+}
+
+// Java: private void setProductionBonus(final String value)
+tech_ability_attachment_set_production_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.production_bonus == nil {
+		self.production_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "productionBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.production_bonus, rawptr(ut), v)
+}
+
+// Java: private void setAttackRollsBonus(final String value)
+tech_ability_attachment_set_attack_rolls_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.attack_rolls_bonus == nil {
+		self.attack_rolls_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "attackRollsBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.attack_rolls_bonus, rawptr(ut), v)
+}
+
+// Java: private void setDefenseRollsBonus(final String value)
+tech_ability_attachment_set_defense_rolls_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.defense_rolls_bonus == nil {
+		self.defense_rolls_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "defenseRollsBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.defense_rolls_bonus, rawptr(ut), v)
+}
+
+// Java: private void setBombingBonus(final String value)
+tech_ability_attachment_set_bombing_bonus :: proc(
+	self: ^Tech_Ability_Attachment,
+	value: string,
+) {
+	if self.bombing_bonus == nil {
+		self.bombing_bonus = integer_map_new()
+	}
+	s := tech_ability_attachment_split_and_validate(self, "bombingBonus", value)
+	defer delete(s)
+	ut := default_attachment_get_unit_type_or_throw(&self.default_attachment, s[1])
+	v := default_attachment_get_int(&self.default_attachment, s[0])
+	integer_map_put(self.bombing_bonus, rawptr(ut), v)
+}
+
+// --- setDefaultTechnologyAttachments(GameData) --------------------------
+
+// Java: public static void setDefaultTechnologyAttachments(GameData data)
+//          throws GameParseException
+//
+// Walks every TechAdvance in the master technology frontier and, for each
+// predefined "hard-coded" tech that lacks a TechAbilityAttachment, allocates
+// the attachment, wires it into the advance via `addAttachment`, and
+// populates it with the canonical defaults baked into the Java method.
+// Generic tech advances are unwrapped to their underlying advance (or
+// skipped when null), and any property string outside the supported
+// switch cases is intentionally ignored — Java's `default` branch is a
+// no-op preserving the comment block listing the techs that are handled
+// elsewhere (shipyards, industrialTechnology, improvedArtillerySupport,
+// paratroopers, mechanizedInfantry).
+//
+// Predicate composition note: Java's
+// `Matches.unitTypeIsAir().and(Matches.unitTypeIsStrategicBomber().negate())`
+// for the JET_POWER case is inlined as a single boolean expression because
+// the project's matches return `(proc(rawptr,^Unit_Type)->bool, rawptr)`
+// pairs that do not currently expose `.and`/`.negate` combinators.
+tech_ability_attachment_set_default_technology_attachments :: proc(data: ^Game_Data) {
+	advances := tech_advance_get_tech_advances_no_player(game_data_get_technology_frontier(data))
+	defer delete(advances)
+	for advance in advances {
+		ta: ^Tech_Advance
+		if advance.is_generic {
+			adv := generic_tech_advance_get_advance(cast(^Generic_Tech_Advance)advance)
+			if adv != nil {
+				ta = adv
+			} else {
+				continue
+			}
+		} else {
+			ta = advance
+		}
+		property_string := tech_advance_get_property(ta)
+		taa := tech_ability_attachment_get(ta)
+		if taa != nil {
+			continue
+		}
+		switch property_string {
+		case TECH_PROPERTY_LONG_RANGE_AIRCRAFT:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_is_air()
+			for air in all {
+				if pred(ctx, air) {
+					s := fmt.aprintf("2:%s", air.named.base.name)
+					tech_ability_attachment_set_movement_bonus(taa, s)
+					delete(s)
+				}
+			}
+		case TECH_PROPERTY_AA_RADAR:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_is_aa_for_anything()
+			for aa in all {
+				if pred(ctx, aa) {
+					s := fmt.aprintf("1:%s", aa.named.base.name)
+					tech_ability_attachment_set_radar_bonus(taa, s)
+					delete(s)
+				}
+			}
+		case TECH_PROPERTY_SUPER_SUBS:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_is_first_strike()
+			for sub in all {
+				if pred(ctx, sub) {
+					s := fmt.aprintf("1:%s", sub.named.base.name)
+					tech_ability_attachment_set_attack_bonus(taa, s)
+					delete(s)
+				}
+			}
+		case TECH_PROPERTY_JET_POWER:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			air_pred, air_ctx := matches_unit_type_is_air()
+			bomber_pred, bomber_ctx := matches_unit_type_is_strategic_bomber()
+			ww2v3_tech_model := properties_get_ww2_v3_tech_model(game_data_get_properties(data))
+			for jet in all {
+				if air_pred(air_ctx, jet) && !bomber_pred(bomber_ctx, jet) {
+					s := fmt.aprintf("1:%s", jet.named.base.name)
+					if ww2v3_tech_model {
+						tech_ability_attachment_set_attack_bonus(taa, s)
+						tech_ability_attachment_set_air_attack_bonus(taa, s)
+					} else {
+						tech_ability_attachment_set_defense_bonus(taa, s)
+						tech_ability_attachment_set_air_defense_bonus(taa, s)
+					}
+					delete(s)
+				}
+			}
+		case TECH_PROPERTY_INCREASED_FACTORY_PRODUCTION:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_can_produce_units()
+			for factory in all {
+				if pred(ctx, factory) {
+					s := fmt.aprintf("2:%s", factory.named.base.name)
+					tech_ability_attachment_set_production_bonus(taa, s)
+					delete(s)
+					tech_ability_attachment_set_minimum_territory_value_for_production_bonus(taa, "3")
+					// means a 50% discount, which is half price
+					tech_ability_attachment_set_repair_discount(taa, "50")
+				}
+			}
+		case TECH_PROPERTY_WAR_BONDS:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			sides := fmt.aprintf("%d", game_data_get_dice_sides(data))
+			defer delete(sides)
+			tech_ability_attachment_set_war_bond_dice_sides(taa, sides)
+			tech_ability_attachment_set_war_bond_dice_number(taa, "1")
+		case TECH_PROPERTY_ROCKETS:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_is_rocket()
+			for rocket in all {
+				if pred(ctx, rocket) {
+					s := fmt.aprintf("1:%s", rocket.named.base.name)
+					tech_ability_attachment_set_rocket_dice_number(taa, s)
+					delete(s)
+				}
+			}
+			tech_ability_attachment_set_rocket_distance(taa, "3")
+			tech_ability_attachment_set_rocket_number_per_territory(taa, "1")
+		case TECH_PROPERTY_DESTROYER_BOMBARD:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			destroyer_pred, destroyer_ctx := matches_unit_type_is_destroyer()
+			sea_pred, sea_ctx := matches_unit_type_is_sea()
+			for destroyer in all {
+				if destroyer_pred(destroyer_ctx, destroyer) && sea_pred(sea_ctx, destroyer) {
+					s := fmt.aprintf("%s:%s", destroyer.named.base.name, ABILITY_CAN_BOMBARD)
+					tech_ability_attachment_set_unit_abilities_gained(taa, s)
+					delete(s)
+				}
+			}
+		case TECH_PROPERTY_HEAVY_BOMBER:
+			taa = tech_ability_attachment_new(TECH_ABILITY_ATTACHMENT_NAME, cast(^Attachable)ta, data)
+			named_attachable_add_attachment(
+				&ta.named_attachable,
+				TECH_ABILITY_ATTACHMENT_NAME,
+				cast(^I_Attachment)taa,
+			)
+			all := unit_type_list_get_all_unit_types(game_data_get_unit_type_list(data))
+			defer delete(all)
+			pred, ctx := matches_unit_type_is_strategic_bomber()
+			heavy_bomber_dice_rolls_total := properties_get_heavy_bomber_dice_rolls(
+				game_data_get_properties(data),
+			)
+			heavy_bombers_lhtr := properties_get_lhtr_heavy_bombers(game_data_get_properties(data))
+			null_player := player_list_get_null_player(game_data_get_player_list(data))
+			for bomber in all {
+				if !pred(ctx, bomber) {
+					continue
+				}
+				// TODO: The bomber dice rolls get set when the xml is parsed.
+				// we subtract the base rolls to get the bonus
+				heavy_bomber_dice_rolls_bonus :=
+					heavy_bomber_dice_rolls_total -
+					unit_attachment_get_attack_rolls_with_player(
+						unit_type_get_unit_attachment(bomber),
+						null_player,
+					)
+				s := fmt.aprintf("%d:%s", heavy_bomber_dice_rolls_bonus, bomber.named.base.name)
+				tech_ability_attachment_set_attack_rolls_bonus(taa, s)
+				if heavy_bombers_lhtr {
+					// TODO: this all happens WHEN the xml is parsed. Which means if
+					// the user changes the game options, this does not get changed.
+					// (meaning, turning on LHTR bombers will not result in this bonus
+					// damage, etc. It would have to start on, in the xml.)
+					tech_ability_attachment_set_defense_rolls_bonus(taa, s)
+					// LHTR adds 1 to base roll
+					b := fmt.aprintf("1:%s", bomber.named.base.name)
+					tech_ability_attachment_set_bombing_bonus(taa, b)
+					delete(b)
+				}
+				delete(s)
+			}
+		case:
+			// shipyards / industrialTechnology / improvedArtillerySupport /
+			// paratroopers / mechanizedInfantry — handled elsewhere; no-op here.
+		}
+	}
+}

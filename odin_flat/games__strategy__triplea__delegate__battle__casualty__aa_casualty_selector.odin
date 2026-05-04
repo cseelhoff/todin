@@ -9,11 +9,78 @@ aa_casualty_selector_lambda_build_casualty_details_0 :: proc(
 	hp: i64,
 ) -> i64 {
 	if hp > 1 {
-		casualty_list_add_to_damaged(&casualty_details.casualty_list, unit)
+		casualty_list_add_to_damaged_one(&casualty_details.casualty_list, unit)
 	} else {
 		casualty_list_add_to_killed(&casualty_details.casualty_list, unit)
 	}
 	return hp - 1
+}
+
+// games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#calculateAvailableTargets(java.util.Collection,boolean)
+aa_casualty_selector_calculate_available_targets :: proc(
+	targets: [dynamic]^Unit,
+	allow_multiple_hits_per_unit: bool,
+) -> [dynamic]^Unit {
+	targets_list := make([dynamic]^Unit, 0)
+	for target in targets {
+		raw_hp := unit_attachment_get_hit_points(unit_get_unit_attachment(target)) - unit_get_hits(target)
+		hp_left: i32
+		if allow_multiple_hits_per_unit {
+			hp_left = raw_hp
+		} else {
+			hp_left = raw_hp
+			if hp_left > 1 {
+				hp_left = 1
+			}
+		}
+		for hp: i32 = 0; hp < hp_left; hp += 1 {
+			// if allow_multiple_hits_per_unit, then the target needs to be added for each hp
+			append(&targets_list, target)
+		}
+	}
+	return targets_list
+}
+
+// games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#buildCasualtyDetails(java.util.List,java.util.Collection)
+aa_casualty_selector_build_casualty_details :: proc(
+	available_targets: [dynamic]^Unit,
+	hit_targets: [dynamic]^Unit,
+) -> ^Casualty_Details {
+	// availableTargets.stream().collect(groupingBy(identity, counting()))
+	unit_hp := make(map[^Unit]i64)
+	defer delete(unit_hp)
+	for u in available_targets {
+		unit_hp[u] = unit_hp[u] + 1
+	}
+
+	casualty_details := casualty_details_new()
+	for hit_target in hit_targets {
+		// availableTargets.get(availableTargets.indexOf(hitTarget))
+		// — the canonical instance is the first occurrence in availableTargets
+		// that equals hitTarget. Pointer equality matches Java reference equality.
+		var_unit: ^Unit = nil
+		for u in available_targets {
+			if u == hit_target {
+				var_unit = u
+				break
+			}
+		}
+		if var_unit == nil {
+			continue
+		}
+		hp, present := unit_hp[var_unit]
+		if !present {
+			continue
+		}
+		new_hp := aa_casualty_selector_lambda_build_casualty_details_0(
+			casualty_details,
+			var_unit,
+			var_unit,
+			hp,
+		)
+		unit_hp[var_unit] = new_hp
+	}
+	return casualty_details
 }
 
 // games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#findRandomTargets(java.util.List,games.strategy.engine.delegate.IDelegateBridge,int)

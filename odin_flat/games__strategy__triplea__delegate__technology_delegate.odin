@@ -11,6 +11,32 @@ Technology_Delegate :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.TechnologyDelegate
 
+// games.strategy.triplea.delegate.TechnologyDelegate#<init>()
+// Java has an explicit empty no-arg constructor; field initializers set
+// `needToInitialize = true`. Other fields default to their zero values
+// (techCost = 0, techs = null, techCategory = null) and the embedded
+// BaseTripleADelegate / AbstractDelegate state is zero-initialized.
+technology_delegate_new :: proc() -> ^Technology_Delegate {
+	self := new(Technology_Delegate)
+	self.need_to_initialize = true
+	return self
+}
+
+// games.strategy.triplea.delegate.TechnologyDelegate#saveState()
+// Builds a TechnologyExtendedDelegateState whose superState is the
+// BaseTripleADelegate state, then copies needToInitialize and the techs
+// map. Java returns `Serializable`; the Odin port returns the concrete
+// state pointer (callers downcast in `loadState`).
+technology_delegate_save_state :: proc(
+	self: ^Technology_Delegate,
+) -> ^Technology_Extended_Delegate_State {
+	state := technology_extended_delegate_state_new()
+	state.super_state = base_triple_a_delegate_save_state(&self.base_triple_a_delegate)
+	state.need_to_initialize = self.need_to_initialize
+	state.techs = self.techs
+	return state
+}
+
 // games.strategy.triplea.delegate.TechnologyDelegate#initialize(String, String)
 // Calls super.initialize(name, displayName), then allocates the per-player
 // tech-advance map and resets techCost to -1 (matching Java).

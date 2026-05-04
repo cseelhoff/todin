@@ -19,6 +19,19 @@ Path_Client_Setting :: struct {
 	has_current:   bool,
 }
 
+// Java: PathClientSetting(final String name) { super(Path.class, name); }
+// Single-arg form: parent ctor delegates to the no-default
+// ClientSetting form (client_setting_new_no_default) for its
+// name/type/listener bookkeeping; the Path-specialized subclass
+// fields are zero-initialized (no current, no default).
+path_client_setting_new_no_default :: proc(name: string) -> ^Path_Client_Setting {
+	parent := client_setting_new_no_default(Path, name)
+	s := new(Path_Client_Setting)
+	s.name = parent.name
+	s.has_current = false
+	return s
+}
+
 // Java: PathClientSetting(final String name, final Path defaultValue) {
 //   super(Path.class, name, defaultValue);
 // }

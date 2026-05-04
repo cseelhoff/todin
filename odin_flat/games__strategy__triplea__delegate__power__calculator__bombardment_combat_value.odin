@@ -37,6 +37,16 @@ bombardment_combat_value_get_battle_side :: proc(
 	return .OFFENSE
 }
 
+// Java: public boolean chooseBestRoll(final Unit unit) {
+//   return lhtrHeavyBombers || unit.getUnitAttachment().getChooseBestRoll();
+// }
+bombardment_combat_value_choose_best_roll :: proc(
+	self: ^Bombardment_Combat_Value,
+	unit: ^Unit,
+) -> bool {
+	return self.lhtr_heavy_bombers || unit_attachment_get_choose_best_roll(unit_get_unit_attachment(unit))
+}
+
 bombardment_combat_value_new :: proc(
 	game_dice_sides: i32,
 	lhtr_heavy_bombers: bool,

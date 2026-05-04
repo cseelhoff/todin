@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProPurchaseValidationUtils
 
@@ -232,3 +234,121 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 	return false
 }
 
+// Mirrors Java's private static
+//   boolean unitsToConsumeAreAllPresent(
+//       ProData proData, GamePlayer player, Territory t,
+//       Collection<Unit> unitsToBuild)
+// Returns true when every UnitType the buildables would consume is
+// already present in territory `t` in sufficient quantity, ignoring
+// units already earmarked for consumption via proData.unitsToBeConsumed.
+pro_purchase_validation_utils_units_to_consume_are_all_present :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	t: ^Territory,
+	units_to_build: [dynamic]^Unit,
+) -> bool {
+	required_units := integer_map_new()
+	for unit_to_build in units_to_build {
+		consumes := unit_attachment_get_consumes_units(unit_get_unit_attachment(unit_to_build))
+		for ut, qty in consumes {
+			integer_map_add(required_units, rawptr(ut), qty)
+		}
+	}
+	if integer_map_is_empty(required_units) {
+		return true
+	}
+	eligible_territory_units := integer_map_new()
+	// TODO: This will need to change if consumed units may come from other territories.
+	consumed := pro_data_get_units_to_be_consumed(pro_data)
+	for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+		if _, already_consumed := consumed[u]; already_consumed {
+			continue
+		}
+		pred, ctx := matches_eligible_unit_to_consume(player, unit_get_type(u))
+		if pred(ctx, u) {
+			integer_map_add(eligible_territory_units, rawptr(unit_get_type(u)), 1)
+		}
+	}
+	return integer_map_greater_than_or_equal_to(eligible_territory_units, required_units)
+}
+
+
+// Mirrors Java's private static
+//   int findMaxConstructionTypeAllowed(
+//       ProPurchaseOption purchaseOption, GameState data, Territory territory)
+// which returns the cap on how many construction-type buildings of
+// purchaseOption.getUnitType() may be placed in `territory`. The
+// factory and structure construction types use the option's own
+// configured maximum verbatim. Other construction types may be
+// expanded by the unlimitedConstructions / moreConstructionsWithFactory
+// game properties.
+//
+// Constants.CONSTRUCTION_TYPE_FACTORY is the literal string "factory"
+// and Constants.CONSTRUCTION_TYPE_STRUCTURE is the literal string
+// "structure" (see triplea Constants.java); inlined here since the
+// Odin Constants file does not yet export these tokens.
+pro_purchase_validation_utils_find_max_construction_type_allowed :: proc(
+	purchase_option: ^Pro_Purchase_Option,
+	data: ^Game_State,
+	territory: ^Territory,
+) -> i32 {
+	max_construction_type := pro_purchase_option_get_max_construction_type(purchase_option)
+	construction_type := pro_purchase_option_get_construction_type(purchase_option)
+	if construction_type != "factory" &&
+	   !strings.has_suffix(construction_type, "structure") {
+		props := game_state_get_properties(data)
+		if properties_get_unlimited_constructions(props) {
+			max_construction_type = max(i32)
+		} else if properties_get_more_constructions_with_factory(props) {
+			// Java: TerritoryAttachment.get(territory)
+			//         .map(TerritoryAttachment::getProduction).orElse(0)
+			production: i32 = 0
+			att := territory_attachment_get(territory)
+			if att != nil {
+				production = territory_attachment_get_production(att)
+			}
+			if production > max_construction_type {
+				max_construction_type = production
+			}
+		}
+	}
+	return max_construction_type
+}
+
+// Mirrors Java's private static
+//   boolean isPlacingFightersOnNewCarriers(Territory t, List<Unit> units)
+// which is true iff `t` is a sea zone, the produceFightersOnCarriers
+// game property is enabled, and `units` contains at least one air
+// unit and at least one carrier.
+pro_purchase_validation_utils_is_placing_fighters_on_new_carriers :: proc(
+	t: ^Territory,
+	units: [dynamic]^Unit,
+) -> bool {
+	if !territory_is_water(t) {
+		return false
+	}
+	data := game_data_component_get_data(
+		&t.named_attachable.default_named.game_data_component,
+	)
+	if !properties_get_produce_fighters_on_carriers(game_data_get_properties(data)) {
+		return false
+	}
+	air_pred, air_ctx := matches_unit_is_air()
+	any_air := false
+	for u in units {
+		if air_pred(air_ctx, u) {
+			any_air = true
+			break
+		}
+	}
+	if !any_air {
+		return false
+	}
+	carrier_pred, carrier_ctx := matches_unit_is_carrier()
+	for u in units {
+		if carrier_pred(carrier_ctx, u) {
+			return true
+		}
+	}
+	return false
+}

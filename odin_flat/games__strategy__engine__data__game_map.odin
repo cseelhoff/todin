@@ -104,6 +104,79 @@ game_map_get_distance_predicate :: proc(
 	)
 }
 
+// File-scope holders bridging a rawptr-ctx BiPredicate<Territory,Territory>
+// (the route condition supplied by callers) into the bare two-arg proc
+// signature that `Breadth_First_Search.neighbor_condition` accepts. BFS is
+// constructed-then-traversed synchronously, so the holder is set
+// immediately before `breadth_first_search_traverse` runs and read by
+// the non-capturing trampoline below. Mirrors the same pattern used by
+// `breadth_first_search_new_with_predicate` for the Predicate overload.
+@(private = "file")
+game_map_active_distance_bipredicate: proc(rawptr, ^Territory, ^Territory) -> bool
+
+@(private = "file")
+game_map_active_distance_bipredicate_ctx: rawptr
+
+@(private = "file")
+game_map_distance_bipredicate_trampoline :: proc(a: ^Territory, b: ^Territory) -> bool {
+	return game_map_active_distance_bipredicate(
+		game_map_active_distance_bipredicate_ctx,
+		a,
+		b,
+	)
+}
+
+// Adapter that lets a `Breadth_First_Search_Territory_Finder` be used where
+// BFS expects a generic `Breadth_First_Search_Visitor`. The visitor is the
+// first (embedded) field of the finder via `using`, so a pointer to the
+// embedded visitor coincides with the finder; cast back to dispatch to
+// `breadth_first_search_territory_finder_visit`.
+@(private = "file")
+game_map_territory_finder_visit_adapter :: proc(
+	self: ^Breadth_First_Search_Visitor,
+	territory: ^Territory,
+	distance: i32,
+) -> bool {
+	finder := cast(^Breadth_First_Search_Territory_Finder)self
+	return breadth_first_search_territory_finder_visit(finder, territory, distance)
+}
+
+// Mirrors GameMap.getDistance(Territory, Territory, BiPredicate<Territory,Territory>):
+//   checkNotNull(t2);
+//   if (t1.equals(t2)) return 0;
+//   var territoryFinder = BreadthFirstSearch.createTerritoryFinder(t2);
+//   new BreadthFirstSearch(List.of(t1), routeCond).traverse(territoryFinder);
+//   return territoryFinder.getDistanceFound();
+// The BiPredicate is rendered with the rawptr-ctx convention (see
+// llm-instructions.md) so callers' capturing lambdas survive the trip
+// into BFS. Two Territories compare equal in Java via DefaultNamed.equals,
+// which boils down to pointer or name equality in the engine's identity-
+// tracked map.
+game_map_get_distance_bipredicate :: proc(
+	self: ^Game_Map,
+	t1: ^Territory,
+	t2: ^Territory,
+	route_cond: proc(rawptr, ^Territory, ^Territory) -> bool,
+	route_cond_ctx: rawptr,
+) -> i32 {
+	assert(t2 != nil)
+	if t1 == t2 || t1.named.base.name == t2.named.base.name {
+		return 0
+	}
+	territory_finder := breadth_first_search_create_territory_finder(t2)
+	territory_finder.visit = game_map_territory_finder_visit_adapter
+
+	starts := make([dynamic]^Territory, 0, 1)
+	append(&starts, t1)
+
+	game_map_active_distance_bipredicate = route_cond
+	game_map_active_distance_bipredicate_ctx = route_cond_ctx
+
+	bfs := breadth_first_search_new(starts, game_map_distance_bipredicate_trampoline)
+	breadth_first_search_traverse(bfs, &territory_finder.visitor)
+	return breadth_first_search_territory_finder_get_distance_found(territory_finder)
+}
+
 // Returns all adjacent neighbors of the starting territory. Does NOT include
 // the original/starting territory in the returned set. Mirrors
 // GameMap.getNeighbors(Territory) in Java; throws if the territory has no

@@ -4,6 +4,15 @@ Super_Subs_Advance :: struct {
 	using tech_advance: Tech_Advance,
 }
 
+// Java: SuperSubsAdvance(GameData data) { super(TECH_NAME_SUPER_SUBS, data); }
+super_subs_advance_init :: proc(self: ^Super_Subs_Advance, data: ^Game_Data) {
+	self.named.base.name = "Super subs"
+	self.game_data = data
+	self.tech_advance.has_tech = proc(t: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
+		return super_subs_advance_has_tech(transmute(^Super_Subs_Advance)t, ta)
+	}
+}
+
 super_subs_advance_get_property :: proc(self: ^Super_Subs_Advance) -> string {
 	return "superSub"
 }

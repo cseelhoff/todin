@@ -23,3 +23,10 @@ unit_holder_get_units :: proc(self: ^Unit_Holder) -> [dynamic]^Unit {
 unit_holder_any_units_match :: proc(self: ^Unit_Holder, pred: proc(^Unit) -> bool) -> bool {
 	return unit_collection_any_match(unit_holder_get_unit_collection(self), pred)
 }
+
+// Java: default List<Unit> getMatches(final Predicate<Unit> matcher) {
+//         return getUnitCollection().getMatches(matcher);
+//       }
+unit_holder_get_matches :: proc(self: ^Unit_Holder, pred: proc(^Unit) -> bool) -> [dynamic]^Unit {
+	return unit_collection_get_matches(unit_holder_get_unit_collection(self), pred)
+}

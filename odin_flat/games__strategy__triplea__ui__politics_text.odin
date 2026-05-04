@@ -17,3 +17,23 @@ politics_text_get_message :: proc(self: ^Politics_Text, politics_key: string, me
 	return politics_text_get_string(self, fmt.tprintf("%s.%s", politics_key, message_key))
 }
 
+politics_text_get_notification_success :: proc(self: ^Politics_Text, politics_key: string) -> string {
+	return politics_text_get_message(self, politics_key, "NOTIFICATION_SUCCESS")
+}
+
+politics_text_get_notification_success_others :: proc(self: ^Politics_Text, politics_key: string) -> string {
+	return politics_text_get_message(self, politics_key, "OTHER_NOTIFICATION_SUCCESS")
+}
+
+politics_text_get_notification_failure :: proc(self: ^Politics_Text, politics_key: string) -> string {
+	return politics_text_get_message(self, politics_key, "NOTIFICATION_FAILURE")
+}
+
+politics_text_get_notification_failure_others :: proc(self: ^Politics_Text, politics_key: string) -> string {
+	return politics_text_get_message(self, politics_key, "OTHER_NOTIFICATION_FAILURE")
+}
+
+politics_text_get_acceptance_question :: proc(self: ^Politics_Text, politics_key: string) -> string {
+	return politics_text_get_message(self, politics_key, "ACCEPT_QUESTION")
+}
+

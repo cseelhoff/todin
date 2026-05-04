@@ -22,3 +22,12 @@ in_game_lobby_watcher_wrapper_get_in_game_lobby_watcher :: proc(self: ^In_Game_L
 in_game_lobby_watcher_wrapper_set_in_game_lobby_watcher :: proc(self: ^In_Game_Lobby_Watcher_Wrapper, watcher: ^In_Game_Lobby_Watcher) {
 	self.lobby_watcher = watcher
 }
+
+in_game_lobby_watcher_wrapper_shut_down :: proc(self: ^In_Game_Lobby_Watcher_Wrapper) {
+	if self == nil {
+		return
+	}
+	if self.lobby_watcher != nil {
+		in_game_lobby_watcher_shut_down(self.lobby_watcher)
+	}
+}

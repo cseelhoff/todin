@@ -248,3 +248,27 @@ resource_collection_to_string_static :: proc(resources: ^Integer_Map_Resource, d
 	}
 	return out
 }
+
+// public void add(final IntegerMap<Resource> resources)
+// Java: for (Resource r : resources.keySet()) addResource(r, resources.getInt(r));
+resource_collection_add_integer_map :: proc(self: ^Resource_Collection, resources: ^Integer_Map_Resource) {
+	for resource, qty in resources^ {
+		resource_collection_add_resource(self, resource, qty)
+	}
+}
+
+// public static String toString(final IntegerMap<Resource> resources, final GameData data)
+// Java: return toString(resources, data, ", ");
+resource_collection_to_string :: proc(resources: ^Integer_Map_Resource, data: ^Game_Data) -> string {
+	return resource_collection_to_string_static(resources, data, ", ")
+}
+
+// public void add(final IntegerMap<Resource> resources, final int quantity)
+// Java: for (int i = 0; i < quantity; i++) { add(resources); }
+// Distinct from the 1-arg overload (resource_collection_add_integer_map);
+// repeats the additive merge `quantity` times.
+resource_collection_add_times :: proc(self: ^Resource_Collection, resources: ^Integer_Map_Resource, quantity: i32) {
+	for i: i32 = 0; i < quantity; i += 1 {
+		resource_collection_add_integer_map(self, resources)
+	}
+}

@@ -15,3 +15,14 @@ main_defense_combat_value_main_defense_roll_new :: proc(
 	return self
 }
 
+// Java: MainDefenseRoll.getSupportGiven()
+//   return SupportCalculator.getCombinedSupportGiven(supportFromFriends, supportFromEnemies);
+main_defense_combat_value_main_defense_roll_get_support_given :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Roll,
+) -> map[^Unit]^Integer_Map {
+	return support_calculator_get_combined_support_given(
+		self.support_from_friends,
+		self.support_from_enemies,
+	)
+}
+

@@ -21,6 +21,46 @@ defensive_general_lambda__get_all_step_details__0 :: proc(step: ^Battle_Step) ->
 	return battle_step_get_all_step_details(step)
 }
 
+// Java: List<StepDetails> getAllStepDetails()
+//   return getSteps().stream()
+//       .flatMap(step -> step.getAllStepDetails().stream())
+//       .collect(Collectors.toList());
+defensive_general_get_all_step_details :: proc(
+	self: ^Defensive_General,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	steps := defensive_general_get_steps(self)
+	for step in steps {
+		details := defensive_general_lambda__get_all_step_details__0(step)
+		for d in details {
+			append(&out, d)
+		}
+	}
+	return out
+}
+
+// Java: void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   final List<BattleStep> steps = getSteps();
+//   // steps go in reverse order on the stack
+//   Collections.reverse(steps);
+//   steps.forEach(stack::push);
+defensive_general_execute :: proc(
+	self: ^Defensive_General,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	steps := defensive_general_get_steps(self)
+	n := len(steps)
+	for i in 0 ..< n / 2 {
+		steps[i], steps[n - 1 - i] = steps[n - 1 - i], steps[i]
+	}
+	// Battle_Step embeds I_Executable at offset 0; cast mirrors the
+	// pattern used in defensive_first_strike_execute.
+	for step in steps {
+		execution_stack_push_one(stack, cast(^I_Executable)step)
+	}
+}
+
 // Java: private List<BattleStep> DefensiveGeneral.getSteps()
 //
 //   return FireRoundStepsFactory.builder()

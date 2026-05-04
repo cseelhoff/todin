@@ -43,3 +43,8 @@ pro_dummy_delegate_bridge_get_remote_player :: proc(self: ^Pro_Dummy_Delegate_Br
 pro_dummy_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^Pro_Dummy_Delegate_Bridge) -> ^Headless_Sound_Channel {
 	return self.sound_channel
 }
+
+pro_dummy_delegate_bridge_add_change :: proc(self: ^Pro_Dummy_Delegate_Bridge, change: ^Change) {
+	composite_change_add(self.all_changes, change)
+	game_data_perform_change(self.game_data, change)
+}

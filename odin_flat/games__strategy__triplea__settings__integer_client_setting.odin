@@ -15,6 +15,18 @@ integer_client_setting_encode_value :: proc(self: ^Integer_Client_Setting, value
 	return fmt.aprintf("%d", value)
 }
 
+// Java: IntegerClientSetting(final String name) {
+//         super(Integer.class, name);
+//       }
+// One-arg form delegates to the parent's no-default constructor; no
+// autoboxing is required because there is no default value to lift.
+integer_client_setting_new :: proc(name: string) -> ^Integer_Client_Setting {
+	parent := client_setting_new_no_default(i32, name)
+	self := new(Integer_Client_Setting)
+	self.client_setting = parent^
+	return self
+}
+
 // Java: IntegerClientSetting(final String name, final int defaultValue) {
 //         super(Integer.class, name, defaultValue);
 //       }
@@ -22,7 +34,7 @@ integer_client_setting_encode_value :: proc(self: ^Integer_Client_Setting, value
 // by heap-boxing the i32 so it fits Client_Setting's `default_value:
 // rawptr` slot, then delegate to the parent constructor and copy its
 // state into our embedded `client_setting` field.
-integer_client_setting_new :: proc(name: string, default_value: i32) -> ^Integer_Client_Setting {
+integer_client_setting_new_with_default :: proc(name: string, default_value: i32) -> ^Integer_Client_Setting {
 	boxed := new(i32)
 	boxed^ = default_value
 	parent := client_setting_new(i32, name, rawptr(boxed))

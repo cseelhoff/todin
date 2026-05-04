@@ -101,3 +101,42 @@ unit_separator_lambda_get_comparator_unit_categories_8 :: proc(
 	return !pred(ctx, ut)
 }
 
+// Lambda $9 in `getComparatorUnitCategories(...)`:
+//   `ut -> !Matches.unitTypeIsLand().test(ut)`
+unit_separator_lambda_get_comparator_unit_categories_9 :: proc(ut: ^Unit_Type) -> bool {
+	pred, ctx := matches_unit_type_is_land()
+	return !pred(ctx, ut)
+}
+
+// Lambda $10 in `getComparatorUnitCategories(...)`:
+//   `uc -> uc.getUnitAttachment().getAttack((currentPlayer == null ? uc.getOwner() : currentPlayer))`
+unit_separator_lambda_get_comparator_unit_categories_10 :: proc(
+	current_player: ^Game_Player,
+	uc: ^Unit_Category,
+) -> i32 {
+	if uc == nil {
+		return 0
+	}
+	att := unit_category_get_unit_attachment(uc)
+	if att == nil {
+		return 0
+	}
+	// `unit_attachment_get_attack` is a plain getter in the Odin port; the
+	// player argument from the Java side has no effect on the returned value.
+	_ = current_player
+	return unit_attachment_get_attack(att)
+}
+
+// Predicate used by `categorize(...)`:
+//   `unit.getUnitAttachment().isAir() && unit.getUnitAttachment().getHitPoints() > 1`
+unit_separator_is_air_with_hit_points_remaining :: proc(unit: ^Unit) -> bool {
+	if unit == nil {
+		return false
+	}
+	att := unit_get_unit_attachment(unit)
+	if att == nil {
+		return false
+	}
+	return unit_attachment_is_air(att) && unit_attachment_get_hit_points(att) > 1
+}
+

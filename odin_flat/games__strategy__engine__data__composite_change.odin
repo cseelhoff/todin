@@ -68,6 +68,28 @@ composite_change_new_from_varargs :: proc(changes: ..^Change) -> ^Composite_Chan
 	return self
 }
 
+// Java: CompositeChange#lambda$flatten$0(Change)
+// The mapping lambda used inside flatten()'s stream pipeline:
+//   change -> change instanceof CompositeChange
+//                ? ((CompositeChange) change).flatten().getChanges()
+//                : List.of(change)
+// Returns the list of leaf-level Change values contributed by `change`:
+// for a CompositeChange, recursively flatten and return its children;
+// for any other Change, return a singleton list containing it.
+composite_change_lambda_flatten_0 :: proc(change: ^Change) -> [dynamic]^Change {
+	out := make([dynamic]^Change)
+	if change != nil && change.kind == .Composite_Change {
+		inner := cast(^Composite_Change)change
+		flattened := composite_change_flatten(inner)
+		for c in flattened.changes {
+			append(&out, c)
+		}
+	} else {
+		append(&out, change)
+	}
+	return out
+}
+
 // Java: public CompositeChange flatten()
 // Recursively unwraps nested CompositeChange children: a non-composite
 // child is kept as-is, while a composite child is flattened first and
@@ -76,14 +98,9 @@ composite_change_new_from_varargs :: proc(changes: ..^Change) -> ^Composite_Chan
 composite_change_flatten :: proc(self: ^Composite_Change) -> ^Composite_Change {
 	flat := make([dynamic]^Change)
 	for child in self.changes {
-		if child != nil && child.kind == .Composite_Change {
-			inner := cast(^Composite_Change)child
-			flattened := composite_change_flatten(inner)
-			for c in flattened.changes {
-				append(&flat, c)
-			}
-		} else {
-			append(&flat, child)
+		mapped := composite_change_lambda_flatten_0(child)
+		for c in mapped {
+			append(&flat, c)
 		}
 	}
 	return composite_change_new_from_list(flat)

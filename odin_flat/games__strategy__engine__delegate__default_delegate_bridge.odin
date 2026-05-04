@@ -67,3 +67,92 @@ default_delegate_bridge_get_random :: proc(
 	random_stats_add_random(self.random_stats, random_values[:], player, dice_type)
 	return random_values
 }
+
+// Java: `private Object getOutbound(final Object o)`
+//   final Class<?>[] interfaces = o.getClass().getInterfaces();
+//   return delegateExecutionManager.newOutboundImplementation(o, interfaces);
+//
+// In the AI snapshot harness there is no reflection and no
+// java.lang.reflect.Proxy: newOutboundImplementation collapses to a
+// gameOver-gated pass-through that returns the implementor unchanged
+// (see delegate_execution_manager_new_outbound_implementation). We
+// therefore drop the o.getClass().getInterfaces() call (typeid list
+// is unused by the helper) and forward an empty interface slice.
+default_delegate_bridge_get_outbound :: proc(
+	self: ^Default_Delegate_Bridge,
+	o:    rawptr,
+) -> rawptr {
+	return delegate_execution_manager_new_outbound_implementation(
+		self.delegate_execution_manager,
+		o,
+		nil,
+	)
+}
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#addChange(games.strategy.engine.data.Change)
+// Java:
+//   if (change instanceof CompositeChange) {
+//     final CompositeChange c = (CompositeChange) change;
+//     if (c.getChanges().size() == 1) { addChange(c.getChanges().get(0)); return; }
+//   }
+//   if (!change.isEmpty()) { game.addChange(change); }
+//
+// The composite-with-one-child shortcut unwraps trivial wrappers so that
+// the broadcaster sees the inner change directly.
+default_delegate_bridge_add_change :: proc(self: ^Default_Delegate_Bridge, change: ^Change) {
+	if change != nil && change.kind == .Composite_Change {
+		c := cast(^Composite_Change)change
+		children := composite_change_get_changes(c)
+		if len(children) == 1 {
+			default_delegate_bridge_add_change(self, children[0])
+			return
+		}
+	}
+	if !change_is_empty(change) {
+		server_game_add_change(self.game, change)
+	}
+}
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#getDisplayChannelBroadcaster()
+// Java: implementor = game.getMessengers().getChannelBroadcaster(AbstractGame.getDisplayChannel());
+//       return (IDisplay) getOutbound(implementor);
+default_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^Default_Delegate_Bridge) -> ^I_Display {
+	implementor := messengers_get_channel_broadcaster(
+		self.game.messengers,
+		abstract_game_get_display_channel(),
+	)
+	return cast(^I_Display)default_delegate_bridge_get_outbound(self, rawptr(implementor))
+}
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#getRemotePlayer(games.strategy.engine.data.GamePlayer)
+// Java:
+//   try {
+//     Object implementor = game.getMessengers().getRemote(ServerGame.getRemoteName(gamePlayer));
+//     return (Player) getOutbound(implementor);
+//   } catch (RuntimeException e) {
+//     if (e.getCause() instanceof MessengerException) throw new GameOverException("Game Over!");
+//     throw e;
+//   }
+//
+// Odin port has no exceptions and the messengers lookup does not raise
+// (see player_bridge_get_remote_that_checks_for_game_over for the same
+// rationale): the catch-MessengerException-wrap collapses to a direct
+// pass-through.
+default_delegate_bridge_get_remote_player :: proc(self: ^Default_Delegate_Bridge, game_player: ^Game_Player) -> ^Player {
+	implementor := messengers_get_remote(
+		self.game.messengers,
+		server_game_get_remote_name_for_player(game_player),
+	)
+	return cast(^Player)default_delegate_bridge_get_outbound(self, rawptr(implementor))
+}
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#getSoundChannelBroadcaster()
+// Java: implementor = game.getMessengers().getChannelBroadcaster(AbstractGame.getSoundChannel());
+//       return (ISound) getOutbound(implementor);
+default_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^Default_Delegate_Bridge) -> ^I_Sound {
+	implementor := messengers_get_channel_broadcaster(
+		self.game.messengers,
+		abstract_game_get_sound_channel(),
+	)
+	return cast(^I_Sound)default_delegate_bridge_get_outbound(self, rawptr(implementor))
+}

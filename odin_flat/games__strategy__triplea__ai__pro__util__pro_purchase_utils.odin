@@ -180,6 +180,83 @@ pro_purchase_utils_lambda_get_units_to_consume_2 :: proc(ctx: rawptr, u: ^Unit) 
 	return !exists
 }
 
+// Java: public static Collection<Unit> getUnitsToConsume(
+//     GamePlayer player, Collection<Unit> existingUnits, Collection<Unit> unitsToPlace) {
+//   Collection<Unit> unitsThatConsume =
+//       CollectionUtils.getMatches(unitsToPlace, Matches.unitConsumesUnitsOnCreation());
+//   Set<Unit> unitsToConsume = new HashSet<>();
+//   for (Unit unitToBuild : unitsThatConsume) {
+//     IntegerMap<UnitType> needed = unitToBuild.getUnitAttachment().getConsumesUnits();
+//     for (UnitType neededType : needed.keySet()) {
+//       final Predicate<Unit> matcher =
+//           Matches.eligibleUnitToConsume(player, neededType).and(u -> !unitsToConsume.contains(u));
+//       int neededCount = needed.getInt(neededType);
+//       Collection<Unit> found = CollectionUtils.getNMatches(existingUnits, neededCount, matcher);
+//       Preconditions.checkState(
+//           found.size() == neededCount,
+//           "Not found: " + neededCount + " of " + neededType + " for " + unitsToPlace);
+//       unitsToConsume.addAll(found);
+//     }
+//   }
+//   return unitsToConsume;
+// }
+//
+// The Java predicate captures the mutable `unitsToConsume` Set; here we
+// inline the search loop so the per-iteration "not already consumed"
+// check reads directly from our local set, avoiding a heap-allocated
+// closure ctx per neededType. The set is materialized as the returned
+// [dynamic]^Unit (HashSet -> distinct collection).
+pro_purchase_utils_get_units_to_consume :: proc(
+	player: ^Game_Player,
+	existing_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	cuc_pred, cuc_ctx := matches_unit_consumes_units_on_creation()
+	units_that_consume: [dynamic]^Unit
+	defer delete(units_that_consume)
+	for u in units_to_place {
+		if cuc_pred(cuc_ctx, u) {
+			append(&units_that_consume, u)
+		}
+	}
+	units_to_consume_set := make(map[^Unit]struct {})
+	for unit_to_build in units_that_consume {
+		needed := unit_attachment_get_consumes_units(unit_get_unit_attachment(unit_to_build))
+		for needed_type, needed_count in needed {
+			eligible_pred, eligible_ctx := matches_eligible_unit_to_consume(player, needed_type)
+			found_count: i32 = 0
+			for u in existing_units {
+				if found_count >= needed_count {
+					break
+				}
+				if _, already := units_to_consume_set[u]; already {
+					continue
+				}
+				if !eligible_pred(eligible_ctx, u) {
+					continue
+				}
+				units_to_consume_set[u] = struct {}{}
+				found_count += 1
+			}
+			// The caller should have already validated that the required units are present.
+			if found_count != needed_count {
+				panic(fmt.tprintf(
+					"Not found: %d of %s for %v",
+					needed_count,
+					default_named_get_name(&needed_type.named_attachable.default_named),
+					units_to_place,
+				))
+			}
+		}
+	}
+	result: [dynamic]^Unit
+	for u in units_to_consume_set {
+		append(&result, u)
+	}
+	delete(units_to_consume_set)
+	return result
+}
+
 
 // Java: private static ProductionRule getProductionRule(UnitType unitType, GamePlayer player)
 // Iterates the player's production frontier and returns the first rule whose

@@ -49,8 +49,21 @@ end_point_invoke_local :: proc(self: ^End_Point, call: ^Remote_Method_Call, numb
 end_point_invoke_multiple :: proc(self: ^End_Point, call: ^Remote_Method_Call, from: ^I_Node) -> [dynamic]^Remote_Method_Call_Results {
 	// Snapshot harness does not exercise this path; no reflective dispatch available.
 	results: [dynamic]^Remote_Method_Call_Results
-	for _ in self.implementors {
-		append(&results, remote_method_call_results_new(nil))
+	for impl in self.implementors {
+		append(&results, end_point_invoke_single(self, call, impl, from))
 	}
 	return results
+}
+
+end_point_invoke_single :: proc(self: ^End_Point, call: ^Remote_Method_Call, implementor: rawptr, message_originator: ^I_Node) -> ^Remote_Method_Call_Results {
+	remote_method_call_resolve(call, (^Class)(self.remote_class))
+	message_context_set_sender_node_for_thread(message_originator)
+	// No reflective dispatch in Odin port; return a nil-valued result mirroring a successful void call.
+	result := remote_method_call_results_new(nil)
+	message_context_set_sender_node_for_thread(nil)
+	return result
+}
+
+end_point_lambda_invoke_multiple_0 :: proc(self: ^End_Point, call: ^Remote_Method_Call, message_originator: ^I_Node, implementor: rawptr) -> ^Remote_Method_Call_Results {
+	return end_point_invoke_single(self, call, implementor, message_originator)
 }

@@ -52,3 +52,16 @@ select_main_battle_casualties_limit_transports_to_select :: proc(
 	return transports_to_select
 }
 
+// Java: int getMaxHits(Collection<Unit> units)
+// The maximum number of hits this collection of units can sustain,
+// taking into account units with two hits and existing damage.
+select_main_battle_casualties_get_max_hits :: proc(units: [dynamic]^Unit) -> i32 {
+	count: i32 = 0
+	for unit in units {
+		count += unit_attachment_get_hit_points(unit_get_unit_attachment(unit))
+		count -= unit_get_hits(unit)
+	}
+	return count
+}
+
+

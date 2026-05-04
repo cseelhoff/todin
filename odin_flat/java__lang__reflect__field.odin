@@ -8,15 +8,30 @@ package game
 // name and declaring class for error formatting. No real reflective
 // access is performed during the AI snapshot run.
 
+// Field_Type_Tag is a shim-only enum that records the Java declared
+// type of the underlying reflective field for the small subset of
+// call sites that branch on it (notably AttributeValueCasting). The
+// real port does not perform reflection, so no Field instances are
+// constructed at runtime; this tag exists to give the cast helpers a
+// faithful dispatch surface.
+Field_Type_Tag :: enum {
+	STRING,
+	INTEGER,
+	DOUBLE,
+	BOOLEAN,
+}
+
 Field :: struct {
 	name:            string,
 	declaring_class: ^Class,
+	field_type_tag:  Field_Type_Tag,
 }
 
-field_new :: proc(name: string, declaring_class: ^Class) -> ^Field {
+field_new :: proc(name: string, declaring_class: ^Class, field_type_tag: Field_Type_Tag = .STRING) -> ^Field {
 	f := new(Field)
 	f.name = name
 	f.declaring_class = declaring_class
+	f.field_type_tag = field_type_tag
 	return f
 }
 

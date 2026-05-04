@@ -41,3 +41,55 @@ relationship_type_list_get_all_relationship_types :: proc(self: ^Relationship_Ty
 	}
 	return list
 }
+
+// games.strategy.engine.data.RelationshipTypeList#createDefaultRelationship(java.lang.String,java.lang.String,games.strategy.engine.data.GameData)
+//   private void createDefaultRelationship(
+//       final String relationshipTypeConstant,
+//       final String relationshipArcheType,
+//       final GameData data) throws GameParseException {
+//     final RelationshipType relationshipType = new RelationshipType(relationshipTypeConstant, data);
+//     final RelationshipTypeAttachment at =
+//         new RelationshipTypeAttachment(
+//             Constants.RELATIONSHIPTYPE_ATTACHMENT_NAME, relationshipType, data);
+//     at.setArcheType(relationshipArcheType);
+//     relationshipType.addAttachment(Constants.RELATIONSHIPTYPE_ATTACHMENT_NAME, at);
+//     addRelationshipType(relationshipType);
+//   }
+//
+// Java's `Constants.RELATIONSHIPTYPE_ATTACHMENT_NAME` is the literal
+// `"relationshipTypeAttachment"`, used inline here to match the convention
+// already established elsewhere in the port (e.g. the literal use in
+// `relationship_type_attachment.odin` and `trigger_attachment.odin`).
+//
+// Java passes `relationshipType` (a `NamedAttachable`, which implements
+// `Attachable`) as the `attachable` argument to the attachment constructor.
+// The Odin port follows the existing convention from
+// `game_parser_find_attachment` / `game_player.odin` of `cast(^Attachable)`
+// on the `^Relationship_Type` to obtain the `Attachable` view stored in
+// `Default_Attachment.attached_to`.
+//
+// Java's GameParseException (thrown by `setArcheType` for an invalid
+// archetype) is replicated by `relationship_type_attachment_set_arche_type`'s
+// `panicf`. Since this proc is only ever called with the WAR / ALLIED
+// archetype constants (matching Java's caller) the panic path is unreachable,
+// mirroring Java's "this should never happen" comment on the catch block.
+relationship_type_list_create_default_relationship :: proc(
+	self: ^Relationship_Type_List,
+	relationship_type_constant: string,
+	relationship_arche_type: string,
+	data: ^Game_Data,
+) {
+	relationship_type := relationship_type_new(relationship_type_constant, data)
+	at := relationship_type_attachment_new(
+		"relationshipTypeAttachment",
+		cast(^Attachable)relationship_type,
+		data,
+	)
+	relationship_type_attachment_set_arche_type(at, relationship_arche_type)
+	named_attachable_add_attachment(
+		&relationship_type.named_attachable,
+		"relationshipTypeAttachment",
+		cast(^I_Attachment)at,
+	)
+	relationship_type_list_add_relationship_type(self, relationship_type)
+}

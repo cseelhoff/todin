@@ -74,3 +74,23 @@ clear_first_strike_casualties_get_all_step_details :: proc(
 	return out
 }
 
+// Java: ClearFirstStrikeCasualties#getSidesToClear
+//   if (Properties.getWW2V2(battleState.getGameData().getProperties())) {
+//     if (offenseState == SNEAK_ATTACK && defenseState != SNEAK_ATTACK) return EnumSet.of(DEFENSE);
+//     else if (defenseState == SNEAK_ATTACK && offenseState != SNEAK_ATTACK) return EnumSet.of(OFFENSE);
+//   }
+//   return EnumSet.of(OFFENSE, DEFENSE);
+clear_first_strike_casualties_get_sides_to_clear :: proc(
+	self: ^Clear_First_Strike_Casualties,
+) -> []Battle_State_Side {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	if properties_get_ww2_v2(props) {
+		if self.offense_state == .SNEAK_ATTACK && self.defense_state != .SNEAK_ATTACK {
+			return []Battle_State_Side{.DEFENSE}
+		} else if self.defense_state == .SNEAK_ATTACK && self.offense_state != .SNEAK_ATTACK {
+			return []Battle_State_Side{.OFFENSE}
+		}
+	}
+	return []Battle_State_Side{.OFFENSE, .DEFENSE}
+}
+

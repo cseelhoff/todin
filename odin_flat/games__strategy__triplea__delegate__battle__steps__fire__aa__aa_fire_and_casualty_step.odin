@@ -54,3 +54,44 @@ aa_fire_and_casualty_step_get_steps :: proc(self: ^Aa_Fire_And_Casualty_Step) ->
 	factory := fire_round_steps_factory_builder_build(builder)
 	return fire_round_steps_factory_create_steps(factory)
 }
+
+// Java: public List<StepDetails> getAllStepDetails()
+//   return getSteps().stream()
+//       .flatMap(step -> step.getAllStepDetails().stream())
+//       .collect(Collectors.toList());
+//
+// `battle_step_get_all_step_details` is a forward-referenced virtual
+// dispatcher defined in a higher method layer; Odin's package-level
+// scope resolves it once Phase B completes.
+aa_fire_and_casualty_step_get_all_step_details :: proc(
+	self: ^Aa_Fire_And_Casualty_Step,
+) -> [dynamic]^Battle_Step_Step_Details {
+	steps := aa_fire_and_casualty_step_get_steps(self)
+	result := make([dynamic]^Battle_Step_Step_Details)
+	for step in steps {
+		details := battle_step_get_all_step_details(step)
+		for d in details {
+			append(&result, d)
+		}
+	}
+	return result
+}
+
+// Java: public void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   final List<BattleStep> steps = getSteps();
+//   // steps go in reverse order on the stack
+//   Collections.reverse(steps);
+//   steps.forEach(stack::push);
+//
+// Iterating the original list in reverse is equivalent to reversing
+// then iterating forward; we push each step's embedded I_Executable.
+aa_fire_and_casualty_step_execute :: proc(
+	self: ^Aa_Fire_And_Casualty_Step,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	steps := aa_fire_and_casualty_step_get_steps(self)
+	for i := len(steps) - 1; i >= 0; i -= 1 {
+		execution_stack_push_one(stack, &steps[i].i_executable)
+	}
+}

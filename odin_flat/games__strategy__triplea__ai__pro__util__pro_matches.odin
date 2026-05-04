@@ -1776,3 +1776,377 @@ pro_matches_unit_is_owned_combat_transportable_unit :: proc(
 	return pro_matches_pred_unit_is_owned_combat_transportable_unit, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// lambda$territoryIsEnemyNotNeutralLand$8(t)
+//   == t -> !ProUtils.isNeutralPlayer(t.getOwner())
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_territory_is_enemy_not_neutral_land :: proc(t: ^Territory) -> bool {
+	return !pro_utils_is_neutral_player(territory_get_owner(t))
+}
+
+// ---------------------------------------------------------------------------
+// lambda$unitIsNeutral$16(u)
+//   == u -> ProUtils.isNeutralPlayer(u.getOwner())
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_unit_is_neutral :: proc(u: ^Unit) -> bool {
+	return pro_utils_is_neutral_player(unit_get_owner(u))
+}
+
+// ---------------------------------------------------------------------------
+// lambda$unitIsOwnedCarrier$17(player, unit)
+//   == unit -> unit.getUnitAttachment().getCarrierCapacity() != -1
+//              && Matches.unitIsOwnedBy(player).test(unit)
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_unit_is_owned_carrier :: proc(player: ^Game_Player, unit: ^Unit) -> bool {
+	if unit_attachment_get_carrier_capacity(unit_get_unit_attachment(unit)) == -1 {
+		return false
+	}
+	o_p, o_c := matches_unit_is_owned_by(player)
+	return o_p(o_c, unit)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$unitIsOwnedTransportableUnitAndCanBeLoaded$18(isCombatMove, transport, player, u)
+//   == u -> (!isCombatMove
+//              || (!Matches.unitCanNotMoveDuringCombatMove().test(u)
+//                  && u.getUnitAttachment().canInvadeFrom(transport)))
+//           && unitIsOwnedTransportableUnit(player)
+//                .and(Matches.unitHasNotMoved())
+//                .and(Matches.unitHasMovementLeft())
+//                .and(Matches.unitIsBeingTransported().negate())
+//                .test(u)
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_unit_is_owned_transportable_unit_and_can_be_loaded :: proc(
+	is_combat_move: bool,
+	transport: ^Unit,
+	player: ^Game_Player,
+	u: ^Unit,
+) -> bool {
+	if is_combat_move {
+		nm_p, nm_c := matches_unit_can_not_move_during_combat_move()
+		if nm_p(nm_c, u) {
+			return false
+		}
+		if !unit_attachment_can_invade_from(unit_get_unit_attachment(u), transport) {
+			return false
+		}
+	}
+	tu_p, tu_c := pro_matches_unit_is_owned_transportable_unit(player)
+	if !tu_p(tu_c, u) {
+		return false
+	}
+	hnm_p, hnm_c := matches_unit_has_not_moved()
+	if !hnm_p(hnm_c, u) {
+		return false
+	}
+	hml_p, hml_c := matches_unit_has_movement_left()
+	if !hml_p(hml_c, u) {
+		return false
+	}
+	bt_p, bt_c := matches_unit_is_being_transported()
+	return !bt_p(bt_c, u)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasFactoryAndIsNotConqueredOwnedLand(player) -> Predicate<Territory>
+//   == territoryIsNotConqueredOwnedLand(player)
+//        .and(territoryHasFactoryAndIsOwnedLand(player))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_factory_and_is_not_conquered_owned_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_has_factory_and_is_not_conquered_owned_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_factory_and_is_not_conquered_owned_land)ctx_ptr
+	nc_p, nc_c := pro_matches_territory_is_not_conquered_owned_land(ctx.player)
+	if !nc_p(nc_c, t) {
+		return false
+	}
+	hf_p, hf_c := pro_matches_territory_has_factory_and_is_owned_land(ctx.player)
+	return hf_p(hf_c, t)
+}
+
+pro_matches_territory_has_factory_and_is_not_conquered_owned_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_factory_and_is_not_conquered_owned_land)
+	ctx.player = player
+	return pro_matches_pred_territory_has_factory_and_is_not_conquered_owned_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasInfraFactoryAndIsEnemyLand(player) -> Predicate<Territory>
+//   == territoryHasInfraFactoryAndIsLand().and(Matches.isTerritoryEnemy(player))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_infra_factory_and_is_enemy_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_has_infra_factory_and_is_enemy_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_infra_factory_and_is_enemy_land)ctx_ptr
+	if_p, if_c := pro_matches_territory_has_infra_factory_and_is_land()
+	if !if_p(if_c, t) {
+		return false
+	}
+	en_p, en_c := matches_is_territory_enemy(ctx.player)
+	return en_p(en_c, t)
+}
+
+pro_matches_territory_has_infra_factory_and_is_enemy_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_infra_factory_and_is_enemy_land)
+	ctx.player = player
+	return pro_matches_pred_territory_has_infra_factory_and_is_enemy_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasInfraFactoryAndIsOwnedByPlayersOrCantBeHeld(
+//   player, players, territoriesThatCantBeHeld) -> Predicate<Territory>
+//
+//   ownedAndCantBeHeld   = isTerritoryOwnedBy(player).and(territoriesThatCantBeHeld::contains)
+//   enemyOrOwnedCantHeld = isTerritoryOwnedByAnyOf(players).or(ownedAndCantBeHeld)
+//   return territoryHasInfraFactoryAndIsLand().and(enemyOrOwnedCantHeld)
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held :: struct {
+	player:                        ^Game_Player,
+	players:                       [dynamic]^Game_Player,
+	territories_that_cant_be_held: [dynamic]^Territory,
+}
+
+pro_matches_pred_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held)ctx_ptr
+	if_p, if_c := pro_matches_territory_has_infra_factory_and_is_land()
+	if !if_p(if_c, t) {
+		return false
+	}
+	oa_p, oa_c := matches_is_territory_owned_by_any_of(ctx.players)
+	if oa_p(oa_c, t) {
+		return true
+	}
+	ob_p, ob_c := matches_is_territory_owned_by(ctx.player)
+	if !ob_p(ob_c, t) {
+		return false
+	}
+	for ct in ctx.territories_that_cant_be_held {
+		if ct == t {
+			return true
+		}
+	}
+	return false
+}
+
+pro_matches_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held :: proc(
+	player: ^Game_Player,
+	players: [dynamic]^Game_Player,
+	territories_that_cant_be_held: [dynamic]^Territory,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held)
+	ctx.player = player
+	ctx.players = players
+	ctx.territories_that_cant_be_held = territories_that_cant_be_held
+	return pro_matches_pred_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasInfraFactoryAndIsOwnedLandAdjacentToSea(player) -> Predicate<Territory>
+//   == territoryHasInfraFactoryAndIsOwnedLand(player)
+//        .and(Matches.territoryHasNeighborMatching(
+//               player.getData().getMap(), Matches.territoryIsWater()))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea)ctx_ptr
+	if_p, if_c := pro_matches_territory_has_infra_factory_and_is_owned_land(ctx.player)
+	if !if_p(if_c, t) {
+		return false
+	}
+	water_p, water_c := matches_territory_is_water()
+	game_map := game_data_get_map(game_player_get_data(ctx.player))
+	hn_p, hn_c := matches_territory_has_neighbor_matching(game_map, water_p, water_c)
+	return hn_p(hn_c, t)
+}
+
+pro_matches_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea)
+	ctx.player = player
+	return pro_matches_pred_territory_has_infra_factory_and_is_owned_land_adjacent_to_sea, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasNoInfraFactoryAndIsNotConqueredOwnedLand(player) -> Predicate<Territory>
+//   == territoryIsNotConqueredOwnedLand(player)
+//        .and(territoryHasInfraFactoryAndIsOwnedLand(player).negate())
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_no_infra_factory_and_is_not_conquered_owned_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_has_no_infra_factory_and_is_not_conquered_owned_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_no_infra_factory_and_is_not_conquered_owned_land)ctx_ptr
+	nc_p, nc_c := pro_matches_territory_is_not_conquered_owned_land(ctx.player)
+	if !nc_p(nc_c, t) {
+		return false
+	}
+	if_p, if_c := pro_matches_territory_has_infra_factory_and_is_owned_land(ctx.player)
+	return !if_p(if_c, t)
+}
+
+pro_matches_territory_has_no_infra_factory_and_is_not_conquered_owned_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_no_infra_factory_and_is_not_conquered_owned_land)
+	ctx.player = player
+	return pro_matches_pred_territory_has_no_infra_factory_and_is_not_conquered_owned_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsWaterAndAdjacentToOwnedFactory(player) -> Predicate<Territory>
+//
+//   hasOwnedFactoryNeighbor = Matches.territoryHasNeighborMatching(
+//       player.getData().getMap(),
+//       ProMatches.territoryHasInfraFactoryAndIsOwnedLand(player));
+//   return hasOwnedFactoryNeighbor.and(territoryCanMoveSeaUnits(player, true));
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_water_and_adjacent_to_owned_factory :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_water_and_adjacent_to_owned_factory :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_water_and_adjacent_to_owned_factory)ctx_ptr
+	inner_p, inner_c := pro_matches_territory_has_infra_factory_and_is_owned_land(ctx.player)
+	game_map := game_data_get_map(game_player_get_data(ctx.player))
+	hn_p, hn_c := matches_territory_has_neighbor_matching(game_map, inner_p, inner_c)
+	if !hn_p(hn_c, t) {
+		return false
+	}
+	sea_p, sea_c := pro_matches_territory_can_move_sea_units(ctx.player, true)
+	return sea_p(sea_c, t)
+}
+
+pro_matches_territory_is_water_and_adjacent_to_owned_factory :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_water_and_adjacent_to_owned_factory)
+	ctx.player = player
+	return pro_matches_pred_territory_is_water_and_adjacent_to_owned_factory, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// unitIsEnemyNotLand(player) -> Predicate<Unit>
+//   == Matches.enemyUnit(player).and(Matches.unitIsNotLand())
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_unit_is_enemy_not_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_unit_is_enemy_not_land :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_unit_is_enemy_not_land)ctx_ptr
+	e_p, e_c := matches_enemy_unit(ctx.player)
+	if !e_p(e_c, u) {
+		return false
+	}
+	nl_p, nl_c := matches_unit_is_not_land()
+	return nl_p(nl_c, u)
+}
+
+pro_matches_unit_is_enemy_not_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_unit_is_enemy_not_land)
+	ctx.player = player
+	return pro_matches_pred_unit_is_enemy_not_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// unitIsOwnedNotLand(player) -> Predicate<Unit>
+//   == Matches.unitIsNotLand().and(Matches.unitIsOwnedBy(player))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_unit_is_owned_not_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_unit_is_owned_not_land :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_unit_is_owned_not_land)ctx_ptr
+	nl_p, nl_c := matches_unit_is_not_land()
+	if !nl_p(nl_c, u) {
+		return false
+	}
+	o_p, o_c := matches_unit_is_owned_by(ctx.player)
+	return o_p(o_c, u)
+}
+
+pro_matches_unit_is_owned_not_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_unit_is_owned_not_land)
+	ctx.player = player
+	return pro_matches_pred_unit_is_owned_not_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryHasNonMobileFactoryAndIsNotConqueredOwnedLand(player) -> Predicate<Territory>
+//   == territoryHasNonMobileInfraFactory()
+//        .and(territoryHasFactoryAndIsNotConqueredOwnedLand(player))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_has_non_mobile_factory_and_is_not_conquered_owned_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_has_non_mobile_factory_and_is_not_conquered_owned_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_has_non_mobile_factory_and_is_not_conquered_owned_land)ctx_ptr
+	nm_p, nm_c := pro_matches_territory_has_non_mobile_infra_factory()
+	if !nm_p(nm_c, t) {
+		return false
+	}
+	hf_p, hf_c := pro_matches_territory_has_factory_and_is_not_conquered_owned_land(ctx.player)
+	return hf_p(hf_c, t)
+}
+
+pro_matches_territory_has_non_mobile_factory_and_is_not_conquered_owned_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_has_non_mobile_factory_and_is_not_conquered_owned_land)
+	ctx.player = player
+	return pro_matches_pred_territory_has_non_mobile_factory_and_is_not_conquered_owned_land, rawptr(ctx)
+}
+

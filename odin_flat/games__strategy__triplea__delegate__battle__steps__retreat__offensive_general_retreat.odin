@@ -107,3 +107,70 @@ offensive_general_retreat_lambda__retreat__1 :: proc(bridge: ^I_Delegate_Bridge,
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#retreat(
+//   games.strategy.engine.delegate.IDelegateBridge,
+//   games.strategy.triplea.delegate.battle.steps.retreat.Retreater,
+//   games.strategy.engine.data.Territory)
+//
+// Retreater is dispatched via its proc-pointer vtable. The websocket
+// branches (sendMessage(NotifyUnitsRetreatingMessage / NotifyRetreatMessage))
+// are dormant for snapshot runs; we always take the broadcaster path,
+// mirroring the convention used in evader_retreat.odin and
+// remove_non_combatants.odin.
+offensive_general_retreat_retreat :: proc(
+	self: ^Offensive_General_Retreat,
+	bridge: ^I_Delegate_Bridge,
+	retreater: ^Retreater,
+	retreat_to: ^Territory,
+) {
+	retreat_units := retreater.get_retreat_units(retreater.self_raw)
+
+	sound_utils_play_retreat_type(
+		battle_state_get_player(self.battle_state, .OFFENSE),
+		retreat_units,
+		retreater.get_retreat_type(retreater.self_raw),
+		bridge,
+	)
+
+	retreat_changes := retreater.compute_changes(retreater.self_raw, retreat_to)
+	i_delegate_bridge_add_change(bridge, retreat_changes_get_change(retreat_changes))
+
+	for history_child in retreat_changes_get_history_text(retreat_changes) {
+		offensive_general_retreat_lambda__retreat__1(bridge, history_child)
+	}
+
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	alive_offense := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	if len(alive_offense) == 0 {
+		battle_actions_end_battle(self.battle_actions, .DEFENDER, bridge)
+	} else {
+		display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+		i_display_notify_retreat_units(
+			display,
+			battle_state_get_battle_id(self.battle_state),
+			retreat_units,
+		)
+	}
+
+	offense_player := battle_state_get_player(self.battle_state, .OFFENSE)
+	short_message := fmt.aprintf(
+		"%s%s",
+		offense_player.named.base.name,
+		offensive_general_retreat_get_short_broadcast_suffix(self, retreater.get_retreat_type(retreater.self_raw)),
+	)
+	long_message := fmt.aprintf(
+		"%s%s",
+		offense_player.named.base.name,
+		offensive_general_retreat_get_long_broadcast_suffix(self, retreater.get_retreat_type(retreater.self_raw), retreat_to),
+	)
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_notify_retreat(
+		display,
+		short_message,
+		long_message,
+		offensive_general_retreat_get_name(self),
+		offense_player,
+	)
+}
+

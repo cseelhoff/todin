@@ -349,3 +349,196 @@ move_validator_no_enemy_units_on_path_middle_steps :: proc(
 	return true
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#findNonDependentUnits
+// Java:
+//   private static Collection<Unit> findNonDependentUnits(
+//       final Collection<Unit> units,
+//       final Route route,
+//       final Map<Unit, Collection<Unit>> airTransportDependents) {
+//     final Collection<Unit> unitsWithoutDependents = new ArrayList<>();
+//     unitsWithoutDependents.addAll(route.getStart().isWater() ? getNonLand(units) : units);
+//     unitsWithoutDependents.removeIf(u -> u.getTransportedBy() != null);
+//     for (Collection<Unit> dependents : airTransportDependents.values()) {
+//       unitsWithoutDependents.removeAll(dependents);
+//     }
+//     return unitsWithoutDependents;
+//   }
+move_validator_find_non_dependent_units :: proc(
+	units: [dynamic]^Unit,
+	route: ^Route,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+) -> [dynamic]^Unit {
+	result := make([dynamic]^Unit)
+	if territory_is_water(route_get_start(route)) {
+		non_land := move_validator_get_non_land(units)
+		defer delete(non_land)
+		for u in non_land {
+			append(&result, u)
+		}
+	} else {
+		for u in units {
+			append(&result, u)
+		}
+	}
+	// removeIf u -> u.getTransportedBy() != nil
+	{
+		i := 0
+		for i < len(result) {
+			if move_validator_lambda_find_non_dependent_units_7(result[i]) {
+				ordered_remove(&result, i)
+			} else {
+				i += 1
+			}
+		}
+	}
+	// removeAll dependents (across all map values)
+	for _, dependents in air_transport_dependents {
+		for d in dependents {
+			i := 0
+			for i < len(result) {
+				if result[i] == d {
+					ordered_remove(&result, i)
+				} else {
+					i += 1
+				}
+			}
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#getCanCarry
+// Java:
+//   private static Collection<Unit> getCanCarry(
+//       final Unit carrier,
+//       final Collection<Unit> selectFrom,
+//       final GamePlayer playerWhoIsDoingTheMovement) {
+//     final UnitAttachment ua = carrier.getUnitAttachment();
+//     final Collection<Unit> canCarry = new ArrayList<>();
+//     int available = ua.getCarrierCapacity();
+//     for (final Unit plane : selectFrom) {
+//       final UnitAttachment planeAttachment = plane.getUnitAttachment();
+//       final int cost = planeAttachment.getCarrierCost();
+//       if (available >= cost
+//           && ((carrier.getAlreadyMoved().compareTo(plane.getAlreadyMoved()) == 0)
+//               || (Matches.unitHasNotMoved().test(plane) && Matches.unitHasNotMoved().test(carrier))
+//               || (Matches.unitIsOwnedBy(playerWhoIsDoingTheMovement).negate().test(plane)
+//                   && Matches.alliedUnit(playerWhoIsDoingTheMovement).test(plane)))) {
+//         available -= cost;
+//         canCarry.add(plane);
+//       }
+//       if (available == 0) {
+//         break;
+//       }
+//     }
+//     return canCarry;
+//   }
+move_validator_get_can_carry :: proc(
+	carrier: ^Unit,
+	select_from: [dynamic]^Unit,
+	player_who_is_doing_the_movement: ^Game_Player,
+) -> [dynamic]^Unit {
+	ua := unit_get_unit_attachment(carrier)
+	can_carry := make([dynamic]^Unit)
+	available := unit_attachment_get_carrier_capacity(ua)
+	for plane in select_from {
+		plane_attachment := unit_get_unit_attachment(plane)
+		cost := unit_attachment_get_carrier_cost(plane_attachment)
+		if available >= cost {
+			ok := false
+			if unit_get_already_moved(carrier) == unit_get_already_moved(plane) {
+				ok = true
+			} else {
+				hnm_p, hnm_c := matches_unit_has_not_moved()
+				if hnm_p(hnm_c, plane) && hnm_p(hnm_c, carrier) {
+					ok = true
+				} else {
+					owned_p, owned_c := matches_unit_is_owned_by(player_who_is_doing_the_movement)
+					allied_p, allied_c := matches_allied_unit(player_who_is_doing_the_movement)
+					if !owned_p(owned_c, plane) && allied_p(allied_c, plane) {
+						ok = true
+					}
+				}
+			}
+			if ok {
+				available -= cost
+				append(&can_carry, plane)
+			}
+		}
+		if available == 0 {
+			break
+		}
+	}
+	return can_carry
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#getUnitsThatCantGoOnWater
+// Java:
+//   private static Collection<Unit> getUnitsThatCantGoOnWater(final Collection<Unit> units) {
+//     final Collection<Unit> retUnits = new ArrayList<>();
+//     for (final Unit unit : units) {
+//       final UnitAttachment ua = unit.getUnitAttachment();
+//       if (!ua.isSea() && !ua.isAir() && ua.getTransportCost() == -1) {
+//         retUnits.add(unit);
+//       }
+//     }
+//     return retUnits;
+//   }
+move_validator_get_units_that_cant_go_on_water :: proc(
+	units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	ret_units := make([dynamic]^Unit)
+	for unit in units {
+		ua := unit_get_unit_attachment(unit)
+		if !unit_attachment_is_sea(ua) && !unit_attachment_is_air(ua) &&
+		   unit_attachment_get_transport_cost(ua) == -1 {
+			append(&ret_units, unit)
+		}
+	}
+	return ret_units
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#lambda$validateBasic$6
+// Java (the `hasMovementOrAttackingLimit` predicate captured inside validateBasic):
+//   unit -> {
+//     final var ua = unit.getUnitAttachment();
+//     if (ua.getMovementLimit().isPresent() || ua.getAttackingLimit().isPresent()) {
+//       return true;
+//     }
+//     for (final var limit : playerMovementLimit) {
+//       if (limit.getThird().contains(unit.getType())) { return true; }
+//     }
+//     for (final var limit : playerAttackingLimit) {
+//       if (limit.getThird().contains(unit.getType())) { return true; }
+//     }
+//     return false;
+//   }
+// Captured Sets carried via the rawptr-ctx convention.
+Move_Validator_Validate_Basic_6_Ctx :: struct {
+	player_movement_limit:  map[^Triple(i32, string, map[^Unit_Type]struct {})]struct {},
+	player_attacking_limit: map[^Triple(i32, string, map[^Unit_Type]struct {})]struct {},
+}
+
+move_validator_lambda_validate_basic_6 :: proc(ctx: rawptr, unit: ^Unit) -> bool {
+	c := cast(^Move_Validator_Validate_Basic_6_Ctx)ctx
+	ua := unit_get_unit_attachment(unit)
+	if unit_attachment_get_movement_limit(ua) != nil ||
+	   unit_attachment_get_attacking_limit(ua) != nil {
+		return true
+	}
+	ut := unit_get_type(unit)
+	for limit in c.player_movement_limit {
+		third := triple_get_third(limit)
+		if _, ok := third[ut]; ok {
+			return true
+		}
+	}
+	for limit in c.player_attacking_limit {
+		third := triple_get_third(limit)
+		if _, ok := third[ut]; ok {
+			return true
+		}
+	}
+	return false
+}
+

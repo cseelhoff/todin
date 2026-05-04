@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Object_Property_Change :: struct {
 	using change: Change,
 	object:    ^Unit,
@@ -29,4 +31,21 @@ object_property_change_new :: proc(
 	self.new_value = new_value
 	self.old_value = mutable_property_get_value(unit_get_property_or_throw(object, property))
 	return self
+}
+
+// Java: protected void perform(GameState data) — applies new_value to the
+// unit's named mutable property; an InvalidValueException returned from the
+// setter is rethrown as an IllegalStateException-equivalent panic, matching
+// the Java try/catch that wraps the failure with object/property/value
+// context.
+object_property_change_perform :: proc(self: ^Object_Property_Change, data: ^Game_State) {
+	if err, ok := mutable_property_set_value(
+		unit_get_property_or_throw(self.object, self.property),
+		self.new_value,
+	).(^Mutable_Property_Invalid_Value_Exception); ok && err != nil {
+		panic(fmt.aprintf(
+			"failed to set value '%v' on property '%s' for object '%v': %s",
+			self.new_value, self.property, self.object, err.message,
+		))
+	}
 }

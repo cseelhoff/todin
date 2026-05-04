@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 import "core:strings"
 
@@ -239,5 +240,314 @@ battle_delegate_save_state :: proc(self: ^Battle_Delegate) -> ^Battle_Extended_D
 	state.need_to_cleanup = self.need_to_cleanup
 	state.current_battle = self.current_battle
 	return state
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#delegateCurrentlyRequiresUserInput()
+//   final BattleListing battles = getBattleListing();
+//   if (battles.isEmpty()) {
+//     final IBattle battle = getCurrentBattle();
+//     return battle != null;
+//   }
+//   return true;
+battle_delegate_delegate_currently_requires_user_input :: proc(self: ^Battle_Delegate) -> bool {
+	battles := battle_delegate_get_battle_listing(self)
+	if battle_listing_is_empty(battles) {
+		return battle_delegate_get_current_battle(self) != nil
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#fightBattle(Territory, boolean, IBattle$BattleType)
+// Mirrors the Java method byte-for-byte. Returns "" on success (Java `null`)
+// and a human-readable error string otherwise. The `bombing` parameter is
+// declared by the IBattleDelegate remote API but the Java body, like ours,
+// does not consult it — the lookup is keyed by `type` alone.
+battle_delegate_fight_battle :: proc(
+	self: ^Battle_Delegate,
+	territory: ^Territory,
+	bombing: bool,
+	type: I_Battle_Battle_Type,
+) -> string {
+	_ = bombing
+	battle := battle_tracker_get_pending_battle(self.battle_tracker, territory, type)
+	if self.current_battle != nil && self.current_battle != battle {
+		cur_terr := i_battle_get_territory(self.current_battle)
+		return fmt.aprintf(
+			"Must finish %s in %s first",
+			battle_delegate_get_fighting_word(self.current_battle),
+			cur_terr.named.base.name,
+		)
+	}
+	if battle == nil {
+		return fmt.aprintf("No pending battle in%s", territory.named.base.name)
+	}
+	all_must_precede := battle_tracker_get_dependent_on(self.battle_tracker, battle)
+	defer delete(all_must_precede)
+	if len(all_must_precede) > 0 {
+		// CollectionUtils.getAny(allMustPrecede): pick an arbitrary element.
+		first_precede: ^I_Battle = nil
+		for k, _ in all_must_precede {
+			first_precede = k
+			break
+		}
+		name := i_battle_get_territory(first_precede).named.base.name
+		return strings.concatenate(
+			[]string{
+				MUST_COMPLETE_BATTLE_PREFIX,
+				battle_delegate_get_fighting_word(first_precede),
+				" in ",
+				name,
+				" first",
+			},
+		)
+	}
+	self.current_battle = battle
+	i_battle_fight(battle, self.bridge)
+	return ""
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#getPossibleBombardingTerritories()
+//   final Map<Territory, Collection<IBattle>> possibleBombardingTerritories = new HashMap<>();
+//   for (IBattle battle : battleTracker.getPendingBattles(BattleType.NORMAL)) {
+//     if (!(battle instanceof MustFightBattle)) continue;
+//     if (!battle.isAmphibious()) continue;
+//     final Map<Territory, Collection<Unit>> attackingFromMap =
+//         ((MustFightBattle) battle).getAttackingFromMap();
+//     for (final Territory neighbor : ((MustFightBattle) battle).getAttackingFrom()) {
+//       if (battleTracker.noBombardAllowedFromHere(neighbor)) continue;
+//       final Collection<Unit> neighbourUnits = attackingFromMap.get(neighbor);
+//       if (!neighbourUnits.isEmpty() && neighbourUnits.stream().allMatch(Matches.unitIsAir())) continue;
+//       final Collection<IBattle> battles =
+//           possibleBombardingTerritories.computeIfAbsent(neighbor, k -> new ArrayList<>());
+//       battles.add(battle);
+//     }
+//   }
+//   return possibleBombardingTerritories;
+battle_delegate_get_possible_bombarding_territories :: proc(
+	self: ^Battle_Delegate,
+) -> map[^Territory][dynamic]^I_Battle {
+	possible := make(map[^Territory][dynamic]^I_Battle)
+	pending := battle_tracker_get_pending_battles_of_type(self.battle_tracker, .NORMAL)
+	defer delete(pending)
+	for battle in pending {
+		ab := cast(^Abstract_Battle)battle
+		// Java: `instanceof MustFightBattle`. NonFightingBattle also extends
+		// DependentBattle and FinishedBattle has its own attackingFromMap, so
+		// neither battle_type nor isAmphibious is sufficient — we use the
+		// is_must_fight_battle discriminator that MFB constructors set.
+		if !ab.is_must_fight_battle {
+			continue
+		}
+		if !i_battle_is_amphibious(battle) {
+			continue
+		}
+		mfb := cast(^Must_Fight_Battle)battle
+		attacking_from := dependent_battle_get_attacking_from(&mfb.dependent_battle)
+		defer delete(attacking_from)
+		for neighbor in attacking_from {
+			if battle_tracker_no_bombard_allowed_from_here(self.battle_tracker, neighbor) {
+				continue
+			}
+			neighbour_units, has_units := mfb.attacking_from_map[neighbor]
+			if has_units && len(neighbour_units) > 0 {
+				all_air := true
+				for u in neighbour_units {
+					if !matches_pred_unit_is_air(nil, u) {
+						all_air = false
+						break
+					}
+				}
+				if all_air {
+					continue
+				}
+			}
+			bucket, exists := possible[neighbor]
+			if !exists {
+				bucket = battle_delegate_lambda_get_possible_bombarding_territories_0(neighbor)
+			}
+			append(&bucket, battle)
+			possible[neighbor] = bucket
+		}
+	}
+	return possible
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#airBattleCleanup()
+//   private void airBattleCleanup() {
+//     final GameState data = getData();
+//     if (!Properties.getRaidsMayBePreceededByAirBattles(data.getProperties())) return;
+//     final CompositeChange change = new CompositeChange();
+//     for (final Territory t : data.getMap().getTerritories()) {
+//       for (final Unit u : t.getUnitCollection().getMatches(Matches.unitWasInAirBattle())) {
+//         change.add(ChangeFactory.unitPropertyChange(u, false, Unit.PropertyName.WAS_IN_AIR_BATTLE));
+//       }
+//     }
+//     if (!change.isEmpty()) {
+//       bridge.getHistoryWriter().startEvent("Cleaning up after air battles");
+//       bridge.addChange(change);
+//     }
+//   }
+battle_delegate_air_battle_cleanup :: proc(self: ^Battle_Delegate) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	if !properties_get_raids_may_be_preceeded_by_air_battles(game_data_get_properties(data)) {
+		return
+	}
+	change := composite_change_new()
+	for t in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		uc := territory_get_unit_collection(t)
+		for u in unit_collection_get_units(uc) {
+			if !matches_pred_unit_was_in_air_battle(nil, u) {
+				continue
+			}
+			boxed := new(bool)
+			boxed^ = false
+			composite_change_add(
+				change,
+				change_factory_unit_property_change_property_name(
+					u,
+					rawptr(boxed),
+					.Was_In_Air_Battle,
+				),
+			)
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			"Cleaning up after air battles",
+		)
+		i_delegate_bridge_add_change(self.bridge, &change.change)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#resetMaxScrambleCount(IDelegateBridge)
+//   private static void resetMaxScrambleCount(final IDelegateBridge bridge) {
+//     final GameState data = bridge.getData();
+//     if (!Properties.getScrambleRulesInEffect(data.getProperties())) return;
+//     final CompositeChange change = new CompositeChange();
+//     for (final Territory t : data.getMap().getTerritories()) {
+//       final Collection<Unit> airbases = t.getUnitCollection().getMatches(Matches.unitIsAirBase());
+//       for (final Unit airbase : airbases) {
+//         final UnitAttachment ua = airbase.getUnitAttachment();
+//         final int currentMax = airbase.getMaxScrambleCount();
+//         final int allowedMax = ua.getMaxScrambleCount();
+//         if (currentMax != allowedMax) {
+//           change.add(ChangeFactory.unitPropertyChange(
+//               airbase, allowedMax, Unit.PropertyName.MAX_SCRAMBLE_COUNT));
+//         }
+//       }
+//     }
+//     if (!change.isEmpty()) {
+//       bridge.getHistoryWriter().startEvent("Preparing Airbases for Possible Scrambling");
+//       bridge.addChange(change);
+//     }
+//   }
+battle_delegate_reset_max_scramble_count :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	if !properties_get_scramble_rules_in_effect(game_data_get_properties(data)) {
+		return
+	}
+	change := composite_change_new()
+	for t in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		uc := territory_get_unit_collection(t)
+		for airbase in unit_collection_get_units(uc) {
+			if !matches_pred_unit_is_air_base(nil, airbase) {
+				continue
+			}
+			ua := unit_get_unit_attachment(airbase)
+			current_max := unit_get_max_scramble_count(airbase)
+			allowed_max := unit_attachment_get_max_scramble_count(ua)
+			if current_max != allowed_max {
+				boxed := new(i32)
+				boxed^ = allowed_max
+				composite_change_add(
+					change,
+					change_factory_unit_property_change_property_name(
+						airbase,
+						rawptr(boxed),
+						.Max_Scramble_Count,
+					),
+				)
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			"Preparing Airbases for Possible Scrambling",
+		)
+		i_delegate_bridge_add_change(bridge, &change.change)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#selectBombardingBattle(Unit, Territory, Collection)
+//   /** Select which territory to bombard. */
+//   private IBattle selectBombardingBattle(
+//       final Unit u, final Territory unitTerritory, final Collection<IBattle> battles) {
+//     if (battles.size() == 1) return CollectionUtils.getAny(battles);
+//     final List<Territory> territories = new ArrayList<>();
+//     final Map<Territory, IBattle> battleTerritories = new HashMap<>();
+//     for (final IBattle battle : battles) {
+//       if (!Properties.getShoreBombardPerGroundUnitRestricted(getData().getProperties())
+//           || (battle.getBombardingUnits().size()
+//               < battle.getAttackingUnits().stream().filter(Matches.unitWasAmphibious()).count())) {
+//         territories.add(battle.getTerritory());
+//       }
+//       battleTerritories.put(battle.getTerritory(), battle);
+//     }
+//     final Player remotePlayer = bridge.getRemotePlayer();
+//     Territory bombardingTerritory = null;
+//     if (!territories.isEmpty()) {
+//       bombardingTerritory =
+//           remotePlayer.selectBombardingTerritory(u, unitTerritory, territories, true);
+//     }
+//     if (bombardingTerritory != null) {
+//       return battleTerritories.get(bombardingTerritory);
+//     }
+//     return null;
+//   }
+battle_delegate_select_bombarding_battle :: proc(
+	self: ^Battle_Delegate,
+	u: ^Unit,
+	unit_territory: ^Territory,
+	battles: [dynamic]^I_Battle,
+) -> ^I_Battle {
+	if len(battles) == 1 {
+		return battles[0]
+	}
+	territories := make([dynamic]^Territory)
+	battle_territories := make(map[^Territory]^I_Battle)
+	restricted := properties_get_shore_bombard_per_ground_unit_restricted(
+		game_data_get_properties(i_delegate_bridge_get_data(self.bridge)),
+	)
+	for battle in battles {
+		bombarding_units := i_battle_get_bombarding_units(battle)
+		attacking_units := i_battle_get_attacking_units(battle)
+		amphib_count: i32 = 0
+		for au in attacking_units {
+			if matches_pred_unit_was_amphibious(nil, au) {
+				amphib_count += 1
+			}
+		}
+		if !restricted || i32(len(bombarding_units)) < amphib_count {
+			append(&territories, i_battle_get_territory(battle))
+		}
+		battle_territories[i_battle_get_territory(battle)] = battle
+	}
+	remote_player := i_delegate_bridge_get_remote_player(self.bridge, nil)
+	bombarding_territory: ^Territory = nil
+	if len(territories) > 0 {
+		bombarding_territory = player_select_bombarding_territory(
+			remote_player,
+			u,
+			unit_territory,
+			territories,
+			true,
+		)
+	}
+	if bombarding_territory != nil {
+		return battle_territories[bombarding_territory]
+	}
+	return nil
 }
 

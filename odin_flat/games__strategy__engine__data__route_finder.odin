@@ -142,6 +142,101 @@ route_finder_lambda_find_route_by_distance_0 :: proc(territory: ^Territory) -> f
 	return 1.0
 }
 
+// Captures for the AND-combined predicate built inside
+// route_finder_get_neighbors_validating_canals when a non-null GamePlayer
+// is supplied. Mirrors what Java's `neighborFilter.and(t -> moveValidator
+// .canAnyUnitsPassCanal(territory, t, units, player))` closes over: the
+// outer (per-call) territory, the original neighbor filter (with its
+// rawptr ctx), the unit collection, the player, and the MoveValidator
+// reachable through the RouteFinder. Per llm-instructions.md the Java
+// Predicate becomes a (rawptr, ^Territory) -> bool plus its userdata.
+@(private="file")
+Route_Finder_Get_Neighbors_Validating_Canals_And_Ctx :: struct {
+	self:                ^Route_Finder,
+	territory:           ^Territory,
+	neighbor_filter:     proc(rawptr, ^Territory) -> bool,
+	neighbor_filter_ctx: rawptr,
+	units:               [dynamic]^Unit,
+	player:              ^Game_Player,
+}
+
+// Implements the `Predicate.and` combination of the caller-supplied
+// neighborFilter with the canal-check lambda from the Java
+// getNeighborsValidatingCanals body. Java short-circuits via `&&` inside
+// Predicate.and, so we evaluate neighborFilter first and only consult the
+// MoveValidator on a non-null GamePlayer when that succeeds. The canal
+// proc `move_validator_can_any_units_pass_canal` is a forward reference
+// (layer 6) — Odin resolves procs at the package level, so emitting the
+// call here is fine even though it isn't yet implemented.
+@(private="file")
+route_finder_get_neighbors_validating_canals_and_proc :: proc(
+	ctx: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Route_Finder_Get_Neighbors_Validating_Canals_And_Ctx)ctx
+	if c.neighbor_filter != nil && !c.neighbor_filter(c.neighbor_filter_ctx, t) {
+		return false
+	}
+	return move_validator_can_any_units_pass_canal(
+		c.self.move_validator,
+		c.territory,
+		t,
+		c.units,
+		c.player,
+	)
+}
+
+// Mirrors private RouteFinder#getNeighborsValidatingCanals(Territory,
+// Predicate<Territory>, Collection<Unit>, GamePlayer):
+//     return map.getNeighbors(
+//         territory,
+//         player == null
+//             ? neighborFilter
+//             : neighborFilter.and(
+//                 t -> moveValidator.canAnyUnitsPassCanal(
+//                     territory, t, units, player)));
+// Returns the set of neighbor Territories of `territory` that pass the
+// effective predicate. The Java `Predicate<Territory>` is rendered with
+// the rawptr-ctx convention (proc + ctx) per llm-instructions.md so
+// capturing predicates from Java callers survive the port. When `player`
+// is nil we forward the caller's predicate verbatim to
+// game_map_get_neighbors_predicate; otherwise we build an AND-combined
+// predicate over file-private state. The canal lambda's MoveValidator
+// call is a layer-6 forward reference — package-level proc resolution in
+// Odin makes this safe, mirroring the in-package layering of the Java
+// source.
+route_finder_get_neighbors_validating_canals :: proc(
+	self: ^Route_Finder,
+	territory: ^Territory,
+	neighbor_filter: proc(rawptr, ^Territory) -> bool,
+	neighbor_filter_ctx: rawptr,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> map[^Territory]struct{} {
+	if player == nil {
+		return game_map_get_neighbors_predicate(
+			self.game_map,
+			territory,
+			neighbor_filter,
+			neighbor_filter_ctx,
+		)
+	}
+	and_ctx := new(Route_Finder_Get_Neighbors_Validating_Canals_And_Ctx)
+	defer free(and_ctx)
+	and_ctx.self = self
+	and_ctx.territory = territory
+	and_ctx.neighbor_filter = neighbor_filter
+	and_ctx.neighbor_filter_ctx = neighbor_filter_ctx
+	and_ctx.units = units
+	and_ctx.player = player
+	return game_map_get_neighbors_predicate(
+		self.game_map,
+		territory,
+		route_finder_get_neighbors_validating_canals_and_proc,
+		rawptr(and_ctx),
+	)
+}
+
 // Mirrors the private all-args RouteFinder constructor synthesized by
 // Lombok's @RequiredArgsConstructor(access = PRIVATE): assigns each final
 // field directly. Java's `Predicate<Territory> condition` is translated

@@ -353,3 +353,91 @@ unit_support_attachment_get_targets :: proc(unit_type_list: ^Unit_Type_List) -> 
 	return types
 }
 
+// Java: static void addRule(final UnitType type, final GameData data, final boolean first)
+//     throws GameParseException
+//   final String attachmentName =
+//       (first ? Constants.SUPPORT_RULE_NAME_OLD_TEMP_FIRST : Constants.SUPPORT_RULE_NAME_OLD)
+//           + type.getName();
+//   final UnitSupportAttachment rule = new UnitSupportAttachment(attachmentName, type, data);
+//   rule.setBonus(1);
+//   rule.setBonusType(Constants.OLD_ART_RULE_NAME);
+//   rule.setDice(PropertyName.STRENGTH.value);
+//   rule.setFaction(PropertyName.ALLIED.value);
+//   rule.setImpArtTech(true);
+//   rule.setNumber(first ? 0 : 1);
+//   rule.setSide(PropertyName.OFFENCE.value);
+//   rule.addUnitTypes(first ? Set.of(type) : getTargets(data.getUnitTypeList()));
+//   if (!first) {
+//     rule.setPlayers(new ArrayList<>(data.getPlayerList().getPlayers()));
+//   }
+//   type.addAttachment(attachmentName, rule);
+//
+// `Constants.SUPPORT_RULE_NAME_OLD = "supportAttachmentArtyOld"`,
+// `Constants.SUPPORT_RULE_NAME_OLD_TEMP_FIRST = "supportAttachmentArtyOldTempFirst"`,
+// `Constants.OLD_ART_RULE_NAME = "ArtyOld"`. PropertyName values are the
+// lowercase Java field names: `strength`, `allied`, `offence`.
+unit_support_attachment_add_rule :: proc(type: ^Unit_Type, data: ^Game_Data, first: bool) {
+	prefix := "supportAttachmentArtyOldTempFirst" if first else "supportAttachmentArtyOld"
+	type_name := default_named_get_name(&type.named_attachable.default_named)
+	attachment_name := strings.concatenate({prefix, type_name})
+
+	rule := unit_support_attachment_new(attachment_name, cast(^Attachable)type, data)
+	unit_support_attachment_set_bonus(rule, 1)
+	unit_support_attachment_set_bonus_type(rule, "ArtyOld")
+	unit_support_attachment_set_dice(rule, "strength")
+	unit_support_attachment_set_faction(rule, "allied")
+	unit_support_attachment_set_imp_art_tech(rule, true)
+	unit_support_attachment_set_number(rule, 0 if first else 1)
+	unit_support_attachment_set_side(rule, "offence")
+
+	if first {
+		single: map[^Unit_Type]struct {}
+		single[type] = {}
+		unit_support_attachment_add_unit_types(rule, single)
+		delete(single)
+	} else {
+		targets := unit_support_attachment_get_targets(game_data_get_unit_type_list(data))
+		unit_support_attachment_add_unit_types(rule, targets)
+		delete(targets)
+	}
+
+	if !first {
+		players_src := player_list_get_players(game_data_get_player_list(data))
+		players_copy: [dynamic]^Game_Player
+		for p in players_src {
+			append(&players_copy, p)
+		}
+		unit_support_attachment_set_players(rule, players_copy)
+	}
+
+	named_attachable_add_attachment(&type.named_attachable, attachment_name, cast(^I_Attachment)rule)
+}
+
+// Java: static void addTarget(final UnitType type, final GameData data) throws GameParseException
+//   boolean first = true;
+//   for (final UnitSupportAttachment rule : get(data.getUnitTypeList())) {
+//     if (rule.getBonusType().isOldArtilleryRule()) {
+//       rule.addUnitTypes(Set.of(type));
+//       first = false;
+//     }
+//   }
+//   if (first) { addRule(type, data, true); }
+unit_support_attachment_add_target :: proc(type: ^Unit_Type, data: ^Game_Data) {
+	first := true
+	rules := unit_support_attachment_get_for_unit_type_list(game_data_get_unit_type_list(data))
+	defer delete(rules)
+	for rule, _ in rules {
+		bt := unit_support_attachment_get_bonus_type(rule)
+		if bt != nil && unit_support_attachment_bonus_type_is_old_artillery_rule(bt) {
+			single: map[^Unit_Type]struct {}
+			single[type] = {}
+			unit_support_attachment_add_unit_types(rule, single)
+			delete(single)
+			first = false
+		}
+	}
+	if first {
+		unit_support_attachment_add_rule(type, data, true)
+	}
+}
+

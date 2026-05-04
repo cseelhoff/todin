@@ -56,3 +56,19 @@ pro_log_settings_lambda_save_settings_1 :: proc(settings: ^Pro_Log_Settings, str
 pro_log_settings_load_settings_impl :: proc() -> ^Pro_Log_Settings {
 	return pro_log_settings_new()
 }
+
+// Static ProLogSettings.currentSettings field. Java caches the
+// loaded settings in this static so subsequent calls to loadSettings
+// return the same instance until saveSettings clears it.
+@(private = "file")
+pro_log_settings_current_settings: ^Pro_Log_Settings = nil
+
+// Static ProLogSettings.loadSettings: returns the cached
+// currentSettings if non-null; otherwise calls loadSettingsImpl,
+// caches the result, and returns it.
+pro_log_settings_load_settings :: proc() -> ^Pro_Log_Settings {
+	if pro_log_settings_current_settings == nil {
+		pro_log_settings_current_settings = pro_log_settings_load_settings_impl()
+	}
+	return pro_log_settings_current_settings
+}

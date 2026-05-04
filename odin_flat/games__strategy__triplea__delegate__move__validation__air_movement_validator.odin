@@ -175,3 +175,113 @@ air_movement_validator_get_friendly :: proc(
 	}
 	return result
 }
+
+// Java: public static int carrierCapacity(
+//     final Unit unit, final Territory territoryUnitsAreCurrentlyIn) { ... }
+//
+// Mirrors the Java logic exactly: non-carriers report 0; carriers
+// without the UNITS_MAY_NOT_LAND_ON_CARRIER combat-damaged effect
+// report their attachment's full carrier capacity; carriers with
+// that effect AND with UNITS_MAY_NOT_LEAVE_ALLIED_CARRIER report 0;
+// otherwise report the carrier-cost sum of any allied air cargo
+// already transported by this carrier in the territory.
+air_movement_validator_carrier_capacity_unit :: proc(
+	unit: ^Unit,
+	territory_units_are_currently_in: ^Territory,
+) -> i32 {
+	carrier_pred, carrier_ctx := matches_unit_is_carrier()
+	if !carrier_pred(carrier_ctx, unit) {
+		return 0
+	}
+	if !air_movement_validator_unit_has_combat_damaged_effect(
+		unit,
+		"unitsMayNotLandOnCarrier",
+	) {
+		return unit_attachment_get_carrier_capacity(unit_get_unit_attachment(unit))
+	}
+	if !air_movement_validator_unit_has_combat_damaged_effect(
+		unit,
+		"unitsMayNotLeaveAlliedCarrier",
+	) {
+		return 0
+	}
+	cargo: i32 = 0
+	air_pred, air_ctx := matches_unit_is_air()
+	land_pred, land_ctx := matches_unit_can_land_on_carrier()
+	for air_unit in territory_units_are_currently_in.unit_collection.units {
+		if !air_pred(air_ctx, air_unit) {
+			continue
+		}
+		if !land_pred(land_ctx, air_unit) {
+			continue
+		}
+		transported_by := unit_get_transported_by(air_unit)
+		if transported_by != nil && transported_by == unit {
+			cargo += unit_attachment_get_carrier_cost(
+				unit_get_unit_attachment(air_unit),
+			)
+		}
+	}
+	return cargo
+}
+
+// Helper for carrierCapacity above. Java calls
+//   Matches.unitHasWhenCombatDamagedEffect(EFFECT).test(unit)
+// which returns true iff any of the unit's WhenCombatDamaged entries
+// has the given effect string. The package-level
+// matches_unit_has_when_combat_damaged_effect predicate is the
+// no-arg overload (any effect), so we open-code the per-effect
+// filter here.
+air_movement_validator_unit_has_combat_damaged_effect :: proc(
+	unit: ^Unit,
+	effect: string,
+) -> bool {
+	entries := unit_attachment_get_when_combat_damaged(unit_get_unit_attachment(unit))
+	for w in entries {
+		if w != nil && w.effect == effect {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: public static int carrierCost(final Unit unit) {
+//   if (Matches.unitCanLandOnCarrier().test(unit)) {
+//     return unit.getUnitAttachment().getCarrierCost();
+//   }
+//   return 0;
+// }
+air_movement_validator_carrier_cost_unit :: proc(unit: ^Unit) -> i32 {
+	pred, ctx := matches_unit_can_land_on_carrier()
+	if pred(ctx, unit) {
+		return unit_attachment_get_carrier_cost(unit_get_unit_attachment(unit))
+	}
+	return 0
+}
+
+// Java: private static boolean getEditMode(final GameState data) {
+//   return EditDelegate.getEditMode(data.getProperties());
+// }
+air_movement_validator_get_edit_mode :: proc(data: ^Game_State) -> bool {
+	return edit_delegate_get_edit_mode(game_state_get_properties(data))
+}
+
+// Java synthetic: lambda$populateStaticAlliedAndBuildingCarrierCapacity$0
+//   from the .map(units -> units.getMatches(Matches.unitIsCarrier()))
+// stage of the carriersInProductionQueue stream pipeline. Takes a
+// UnitCollection and returns the matched carriers.
+air_movement_validator_lambda_populate_static_allied_and_building_carrier_capacity_0 :: proc(
+	units: ^Unit_Collection,
+) -> [dynamic]^Unit {
+	pred, ctx := matches_unit_is_carrier()
+	result: [dynamic]^Unit
+	if units == nil {
+		return result
+	}
+	for u in units.units {
+		if pred(ctx, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}

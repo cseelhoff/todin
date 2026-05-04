@@ -16,3 +16,10 @@ look_and_feel_is_color_dark :: proc(color: Color) -> bool {
 	return luma < 0.5
 }
 
+// Java: games.strategy.engine.framework.lookandfeel.LookAndFeel#lambda$initialize$0(GameSetting)
+// Swing UI listener body (setupLookAndFeel + SettingsWindow.updateLookAndFeel +
+// JOptionPane.showMessageDialog) — out of scope for the AI-snapshot harness.
+look_and_feel_lambda_initialize_0 :: proc(self: ^Look_And_Feel, game_setting: ^Game_Setting) {
+	// Swing UI listener body — out of scope for the AI-snapshot harness
+}
+

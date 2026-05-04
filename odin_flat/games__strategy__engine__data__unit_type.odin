@@ -83,12 +83,56 @@ unit_type_create_5 :: proc(
 // Mirrors Java's 2-arg
 //   public List<Unit> UnitType.create(int quantity, GamePlayer owner)
 //   return create(quantity, owner, false, 0, 0);
-unit_type_create :: proc(
+// Suffix _2 disambiguates from the private single-unit
+// `unit_type_create(self, owner, is_temp, hits_taken, bombing_unit_damage)`
+// (Odin has no overloading); _5 is the full quantity-based variant.
+unit_type_create_2 :: proc(
 	self: ^Unit_Type,
 	quantity: i32,
 	owner: ^Game_Player,
 ) -> [dynamic]^Unit {
 	return unit_type_create_5(self, quantity, owner, false, 0, 0)
+}
+
+// Mirrors Java's constructor
+//   public UnitType(final String name, final GameData data) {
+//     super(name, data);
+//   }
+// `super` is `NamedAttachable(String, GameData)`.
+unit_type_new :: proc(name: string, data: ^Game_Data) -> ^Unit_Type {
+	self := new(Unit_Type)
+	base := named_attachable_new(name, data)
+	self.named_attachable = base^
+	free(base)
+	return self
+}
+
+// Mirrors Java's private single-unit
+//   private Unit UnitType.create(GamePlayer owner, boolean isTemp,
+//       int hitsTaken, int bombingUnitDamage) {
+//     final Unit u = new Unit(this, owner, getData());
+//     u.setHits(hitsTaken);
+//     u.setUnitDamage(bombingUnitDamage);
+//     if (!isTemp) { getData().getUnits().put(u); }
+//     return u;
+//   }
+unit_type_create :: proc(
+	self: ^Unit_Type,
+	owner: ^Game_Player,
+	is_temp: bool,
+	hits_taken: i32,
+	bombing_unit_damage: i32,
+) -> ^Unit {
+	data := game_data_component_get_data(
+		&self.named_attachable.default_named.game_data_component,
+	)
+	u := unit_new(self, owner, data)
+	unit_set_hits(u, hits_taken)
+	unit_set_unit_damage(u, bombing_unit_damage)
+	if !is_temp {
+		units_list_put(game_data_get_units(data), u)
+	}
+	return u
 }
 
 // Mirrors Java's `UnitType.getUnitAttachment()`:

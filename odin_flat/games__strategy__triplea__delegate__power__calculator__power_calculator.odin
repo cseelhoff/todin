@@ -23,6 +23,15 @@ power_calculator_new :: proc(
 	return self
 }
 
+power_calculator_get_value_unit :: proc(self: ^Power_Calculator, unit: ^Unit) -> i32 {
+	return power_calculator_get_value(
+		self.choose_best_roll(unit),
+		self.get_dice_sides(unit),
+		strength_calculator_get_strength(self.strength_calculator, unit),
+		roll_calculator_get_roll(self.roll_calculator, unit),
+	)
+}
+
 power_calculator_get_value :: proc(
 	choose_best_roll: bool,
 	dice_sides: i32,

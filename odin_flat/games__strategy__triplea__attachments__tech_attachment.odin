@@ -22,6 +22,34 @@ Tech_Attachment :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.attachments.TechAttachment
 
+// Java: public TechAttachment(final String name, final Attachable attachable,
+//                             final GameData gameData) {
+//   super(name, attachable, gameData);
+//   setGenericTechs();
+// }
+// Java's `super(...)` is the DefaultAttachment constructor, which sets the
+// component's GameData, the attachment name, and the attached-to owner; in
+// the port that work lives in `default_attachment_new`. Rather than calling
+// it (which would allocate a separate Default_Attachment), we replicate its
+// three steps inline so the embedded `default_attachment` value on the
+// freshly allocated Tech_Attachment is initialized in place. The Java field
+// initializers (`techCost = 5`, all booleans `false`, `genericTech = new
+// HashMap<>()`) are reproduced by `new(Tech_Attachment)` (zeroing) plus an
+// explicit `tech_cost = 5`; the `genericTech` map is left nil here and
+// allocated lazily by `tech_attachment_set_generic_techs` on first insert,
+// matching the "empty collections default to null" comment on the Java
+// class. Finally we invoke `set_generic_techs` to seed the map from the
+// game's technology frontier exactly as Java does.
+tech_attachment_new :: proc(name: string, attachable: ^Attachable, data: ^Game_Data) -> ^Tech_Attachment {
+	self := new(Tech_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.tech_cost = 5
+	tech_attachment_set_generic_techs(self)
+	return self
+}
+
 tech_attachment_get_tech_cost :: proc(self: ^Tech_Attachment) -> i32 {
 	return self.tech_cost
 }

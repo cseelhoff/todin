@@ -31,3 +31,29 @@ pro_logger_format_message :: proc(message: string, t: ^Throwable, level: Level) 
 	return strings.to_string(builder)
 }
 
+// Static ProLogger.log(Level, String, Throwable). Mirrors the Java
+// gate logic: load (cached) ProLogSettings, drop the message if
+// logging is disabled or if the configured depth is coarser than
+// the message's level, otherwise route the formatted message to
+// the AI log UI sink. The snapshot harness has no AI log window,
+// so the sink is a no-op — the formatted message is computed
+// (matching the Java side effects of formatMessage) and discarded.
+pro_logger_log :: proc(level: Level, message: string, t: ^Throwable) {
+	settings := pro_log_settings_load_settings()
+	if !pro_log_settings_is_log_enabled(settings) {
+		return
+	}
+	log_depth := pro_log_settings_get_log_level(settings)
+	level_value := level_int_value(level)
+	fine := level_int_value(.Fine)
+	finer := level_int_value(.Finer)
+	finest := level_int_value(.Finest)
+	if log_depth == fine && (level_value == finer || level_value == finest) {
+		return
+	}
+	if log_depth == finer && level_value == finest {
+		return
+	}
+	_ = pro_logger_format_message(message, t, level)
+}
+

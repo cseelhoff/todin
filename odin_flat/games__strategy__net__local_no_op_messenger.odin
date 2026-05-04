@@ -7,6 +7,12 @@ Local_No_Op_Messenger :: struct {
 	node: ^I_Node,
 }
 
+local_no_op_messenger_new :: proc() -> ^Local_No_Op_Messenger {
+	self := new(Local_No_Op_Messenger)
+	self.node = node_new("dummy", node_get_local_host(), 0)
+	return self
+}
+
 local_no_op_messenger_is_server :: proc(self: ^Local_No_Op_Messenger) -> bool {
 	return true
 }

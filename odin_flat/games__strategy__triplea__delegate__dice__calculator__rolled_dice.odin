@@ -176,3 +176,15 @@ rolled_dice_get_dice_for_choose_best_roll :: proc(
 	return result
 }
 
+// Lambda body of getDiceHits flatMap:
+//   unitPowerStrengthAndRolls -> chooseBestRoll ? getDiceForChooseBestRoll(...) : getDiceForAllRolls(...)
+rolled_dice_lambda__get_dice_hits__1 :: proc(
+	dice_queue: ^[dynamic]i32,
+	unit_power_strength_and_rolls: ^Unit_Power_Strength_And_Rolls,
+) -> [dynamic]Die {
+	if unit_power_strength_and_rolls_get_choose_best_roll(unit_power_strength_and_rolls) {
+		return rolled_dice_get_dice_for_choose_best_roll(dice_queue, unit_power_strength_and_rolls)
+	}
+	return rolled_dice_get_dice_for_all_rolls(dice_queue, unit_power_strength_and_rolls)
+}
+

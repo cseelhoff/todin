@@ -99,3 +99,24 @@ abstract_pro_ai_get_game_steps_for_player :: proc(
 abstract_pro_ai_should_bomber_bomb :: proc(self: ^Abstract_Pro_Ai, territory: ^Territory) -> bool {
 	return pro_combat_move_ai_is_bombing(self.combat_move_ai)
 }
+
+// Java: private GameData copyData(GameData data) {
+//   GameDataManager.Options options = GameDataManager.Options.builder().withDelegates(true).build();
+//   GameData dataCopy = GameDataUtils.cloneGameData(data, options).orElse(null);
+//   Optional.ofNullable(dataCopy).ifPresent(this::prepareData);
+//   return dataCopy;
+// }
+abstract_pro_ai_copy_data :: proc(self: ^Abstract_Pro_Ai, data: ^Game_Data) -> ^Game_Data {
+	options := game_data_manager_options_options_builder_build(
+		game_data_manager_options_options_builder_with_delegates(
+			game_data_manager_options_builder(),
+			true,
+		),
+	)
+	data_copy := game_data_utils_clone_game_data(data, options)
+	if data_copy != nil {
+		// prepareData is abstract; dispatch to the concrete ProAi override.
+		pro_ai_prepare_data(cast(^Pro_Ai)self, data_copy)
+	}
+	return data_copy
+}

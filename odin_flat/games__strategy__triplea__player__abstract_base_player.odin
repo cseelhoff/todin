@@ -34,3 +34,7 @@ abstract_base_player_initialize :: proc(self: ^Abstract_Base_Player, player_brid
 	self.game_player = game_player
 }
 
+abstract_base_player_get_game_data :: proc(self: ^Abstract_Base_Player) -> ^Game_Data {
+	return player_bridge_get_game_data(self.player_bridge)
+}
+

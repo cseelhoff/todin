@@ -39,6 +39,16 @@ remote_messenger_get_remote :: proc(
 	return cast(^I_Remote)ih
 }
 
+// Java: public IRemote getRemote(final RemoteName remoteName) {
+//         return getRemote(remoteName, false);
+//       }
+remote_messenger_get_remote_default :: proc(
+	self: ^Remote_Messenger,
+	name: ^Remote_Name,
+) -> ^I_Remote {
+	return remote_messenger_get_remote(self, name, false)
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteMessenger
 

@@ -54,6 +54,16 @@ add_units_build_units_with_owner :: proc(self: ^Add_Units, state: ^Game_State) -
 	return result
 }
 
+// Java: AddUnits#<init>(UnitCollection, Collection<Unit>)
+//   this(collection.getHolder().getName(), collection.getHolder().getType(), units);
+add_units_new_2 :: proc(
+	collection: ^Unit_Collection,
+	units: [dynamic]^Unit,
+) -> ^Add_Units {
+	holder := unit_collection_get_holder(collection)
+	return add_units_new_3(holder.named.base.name, named_unit_holder_get_type(holder), units)
+}
+
 // Java: AddUnits#<init>(String, String, Collection<Unit>)
 //   this(name, type, units, AddUnits.buildUnitOwnerMap(units));
 add_units_new_3 :: proc(

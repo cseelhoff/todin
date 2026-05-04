@@ -252,3 +252,299 @@ tech_tracker_lambda_get_fully_researched_player_tech_categories_24 :: proc(
 	return tech_advance_has_tech(t, attachment)
 }
 
+// =====================================================================
+// Static-port bonus accessors.
+//
+// These methods are recorded in port.sqlite as static (no Tech_Tracker
+// receiver) — the call sites in the AI test path treat them as pure
+// functions of (GamePlayer[, UnitType]). The instance variant in Java
+// caches results in a ConcurrentHashMap; the static port is faithful to
+// the *real behavior* (the bonus values produced) but skips the cache,
+// which is a pure performance optimization. Each method:
+//   1. Resolves the player's currently-researched TechAdvances by
+//      walking the player's TechnologyFrontier (via getData()) and
+//      filtering with TechAdvance.hasTech(playerTechAttachment) —
+//      exactly the inline expansion of Java's
+//      `getCurrentTechAdvances(player)` instance helper.
+//   2. Sums (or, for can*, ORs) the per-attachment value the Java
+//      method-reference selects from each non-null TechAbilityAttachment.
+// Lower-layer methods such as `getCurrentTechAdvances(GamePlayer)` and
+// `getSumOfBonuses(...)` are at higher method_layers in the tracker and
+// would otherwise require forward references; the per-method bodies
+// inline the equivalent stream pipelines instead.
+// =====================================================================
+
+// Inline expansion of Java's instance `getCurrentTechAdvances(GamePlayer)`,
+// which delegates to the static `getCurrentTechAdvances(GamePlayer,
+// TechnologyFrontier)`. Both higher-layer procs are deliberately not
+// referenced here — the body is exactly their composed behavior.
+@(private = "file")
+tech_tracker_static_current_tech_advances :: proc(
+	player: ^Game_Player,
+) -> [dynamic]^Tech_Advance {
+	result := make([dynamic]^Tech_Advance, 0)
+	if player == nil {
+		return result
+	}
+	attachment := game_player_get_tech_attachment(player)
+	data := game_player_get_data(player)
+	if data == nil {
+		return result
+	}
+	frontier := game_data_get_technology_frontier(data)
+	all := tech_advance_get_tech_advances(frontier, player)
+	defer delete(all)
+	for ta in all {
+		if tech_tracker_lambda_get_current_tech_advances_23(attachment, ta) {
+			append(&result, ta)
+		}
+	}
+	return result
+}
+
+// Java: public int getMovementBonus(GamePlayer player, UnitType type)
+//   getCached(... () -> getSumOfBonuses(TAA::getMovementBonus, type, player))
+// Static port: sumIntegerMap(TAA::getMovementBonus, type, currentTechAdvances).
+tech_tracker_get_movement_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.movement_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.movement_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getAttackBonus(GamePlayer player, UnitType type)
+tech_tracker_get_attack_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.attack_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.attack_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getAttackRollsBonus(GamePlayer player, UnitType type)
+tech_tracker_get_attack_rolls_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.attack_rolls_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.attack_rolls_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getDefenseBonus(GamePlayer player, UnitType type)
+tech_tracker_get_defense_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.defense_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.defense_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getDefenseRollsBonus(GamePlayer player, UnitType type)
+tech_tracker_get_defense_rolls_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.defense_rolls_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.defense_rolls_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getRadarBonus(GamePlayer player, UnitType type)
+tech_tracker_get_radar_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.radar_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.radar_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getRocketDiceNumber(GamePlayer player, UnitType type)
+tech_tracker_get_rocket_dice_number :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.rocket_dice_number == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.rocket_dice_number, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getBombingBonus(GamePlayer player, UnitType type)
+tech_tracker_get_bombing_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.bombing_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.bombing_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getProductionBonus(GamePlayer player, UnitType type)
+tech_tracker_get_production_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.production_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.production_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public boolean canBlitz(GamePlayer player, UnitType type)
+//   getUnitAbilitiesGained(ABILITY_CAN_BLITZ, type, player)
+//   = currentTechAdvances.stream()
+//        .map(TAA::get).filter(nonNull)
+//        .map(TAA::getUnitAbilitiesGained)
+//        .map(m -> m.get(type)).filter(nonNull)
+//        .flatMap(Collection::stream)
+//        .anyMatch(ABILITY_CAN_BLITZ::equals);
+tech_tracker_can_blitz :: proc(player: ^Game_Player, type: ^Unit_Type) -> bool {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil {
+			continue
+		}
+		set, ok := taa.unit_abilities_gained[type]
+		if !ok {
+			continue
+		}
+		if _, present := set[ABILITY_CAN_BLITZ]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: public boolean canBombard(GamePlayer player, UnitType type)
+tech_tracker_can_bombard :: proc(player: ^Game_Player, type: ^Unit_Type) -> bool {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil {
+			continue
+		}
+		set, ok := taa.unit_abilities_gained[type]
+		if !ok {
+			continue
+		}
+		if _, present := set[ABILITY_CAN_BOMBARD]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: public int getMinimumTerritoryValueForProductionBonus(GamePlayer player)
+//   max(0, currentTechAdvances.stream()
+//             .map(TAA::get).filter(nonNull)
+//             .mapToInt(TAA::getMinimumTerritoryValueForProductionBonus)
+//             .filter(i -> i != -1)
+//             .min()
+//             .orElse(-1));
+tech_tracker_get_minimum_territory_value_for_production_bonus :: proc(
+	player: ^Game_Player,
+) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	min_val: i32 = -1
+	have_any := false
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil {
+			continue
+		}
+		v := taa.minimum_territory_value_for_production_bonus
+		if !tech_tracker_lambda_get_minimum_territory_value_for_production_bonus_13(v) {
+			continue
+		}
+		if !have_any || v < min_val {
+			min_val = v
+			have_any = true
+		}
+	}
+	if !have_any {
+		min_val = -1
+	}
+	if min_val < 0 {
+		return 0
+	}
+	return min_val
+}
+
+// Java: public int getRocketNumberPerTerritory(GamePlayer player)
+//   sumNumbers(TAA::getRocketNumberPerTerritory, TECH_NAME_ROCKETS,
+//              currentTechAdvances).
+// TECH_NAME_ROCKETS == "Rockets Advance" (Java TechAdvance constant).
+tech_tracker_get_rocket_number_per_territory :: proc(player: ^Game_Player) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	mapper :: proc(taa: ^Tech_Ability_Attachment) -> i32 {
+		return taa.rocket_number_per_territory
+	}
+	return tech_tracker_sum_numbers(mapper, "Rockets Advance", advances)
+}
+
+// Java: public int getRocketDistance(GamePlayer player)
+//   sumNumbers(TAA::getRocketDistance, TECH_NAME_ROCKETS,
+//              currentTechAdvances).
+tech_tracker_get_rocket_distance :: proc(player: ^Game_Player) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	mapper :: proc(taa: ^Tech_Ability_Attachment) -> i32 {
+		return taa.rocket_distance
+	}
+	return tech_tracker_sum_numbers(mapper, "Rockets Advance", advances)
+}
+

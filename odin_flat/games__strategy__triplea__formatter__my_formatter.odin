@@ -333,6 +333,20 @@ my_formatter_default_named_to_text_list :: proc(
 	return strings.to_string(buf)
 }
 
+// Java public static String defaultNamedToTextList(Collection<? extends DefaultNamed>)
+// One-arg overload: delegates to the 3-arg form with separator=", " and showQuantity=false.
+my_formatter_default_named_to_text_list_simple :: proc(
+	list: [dynamic]^Default_Named,
+) -> string {
+	return my_formatter_default_named_to_text_list(list, ", ", false)
+}
+
+// Java public static String unitsToTextNoOwner(final Collection<Unit> units)
+// One-arg overload: delegates to the 2-arg form with owner=nil.
+my_formatter_units_to_text_no_owner_simple :: proc(units: [dynamic]^Unit) -> string {
+	return my_formatter_units_to_text_no_owner(units, nil)
+}
+
 // Java public static String integerUnitMapToString(
 //     IntegerMap<? extends Unit>, String separator, String assignment,
 //     boolean valueBeforeKey)

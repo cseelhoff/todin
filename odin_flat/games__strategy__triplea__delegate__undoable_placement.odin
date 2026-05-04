@@ -18,6 +18,12 @@ undoable_placement_set_producer_territory :: proc(self: ^Undoable_Placement, pro
 	self.producer_territory = producer_territory
 }
 
+// Java: protected final PlacementDescription getDescriptionObject()
+undoable_placement_get_description_object :: proc(self: ^Undoable_Placement) -> ^Abstract_Move_Description {
+	pd := placement_description_new(self.units[:], self.place_territory)
+	return cast(^Abstract_Move_Description)pd
+}
+
 // Java: UndoablePlacement(CompositeChange, Territory producerTerritory, Territory placeTerritory, Collection<Unit>)
 undoable_placement_new :: proc(
 	change: ^Composite_Change,

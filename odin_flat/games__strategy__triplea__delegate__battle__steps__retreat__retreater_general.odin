@@ -17,6 +17,62 @@ retreater_general_get_retreat_type :: proc(self: ^Retreater_General) -> Must_Fig
 	return .DEFAULT
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#getRetreatUnits()
+// Java:
+//   final Collection<Unit> retreatUnits = new HashSet<>(battleState.filterUnits(ALIVE, OFFENSE));
+//   retreatUnits.addAll(
+//       battleState.getBattleSite().getUnitCollection().getMatches(
+//           Matches.unitIsOwnedBy(battleState.getPlayer(OFFENSE))
+//               .and(Matches.unitIsSubmerged().negate())));
+//   retreatUnits.removeAll(battleState.filterUnits(REMOVED_CASUALTY));
+//   return retreatUnits;
+retreater_general_get_retreat_units :: proc(self: ^Retreater_General) -> [dynamic]^Unit {
+	seen := make(map[^Unit]bool)
+	defer delete(seen)
+	result: [dynamic]^Unit
+
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	alive_offense := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	for u in alive_offense {
+		if !(u in seen) {
+			seen[u] = true
+			append(&result, u)
+		}
+	}
+
+	battle_site := battle_state_get_battle_site(self.battle_state)
+	offense_player := battle_state_get_player(self.battle_state, .OFFENSE)
+	uc := territory_get_unit_collection(battle_site)
+
+	owned_p, owned_c := matches_unit_is_owned_by(offense_player)
+	sub_p, sub_c := matches_unit_is_submerged()
+	for u in uc.units {
+		if owned_p(owned_c, u) && !sub_p(sub_c, u) {
+			if !(u in seen) {
+				seen[u] = true
+				append(&result, u)
+			}
+		}
+	}
+
+	casualty_filter := battle_state_unit_battle_filter_new(.Removed_Casualty)
+	casualty_units := battle_state_filter_units(self.battle_state, casualty_filter, .OFFENSE)
+	casualty_set := make(map[^Unit]bool)
+	defer delete(casualty_set)
+	for u in casualty_units {
+		casualty_set[u] = true
+	}
+
+	filtered: [dynamic]^Unit
+	for u in result {
+		if !(u in casualty_set) {
+			append(&filtered, u)
+		}
+	}
+	delete(result)
+	return filtered
+}
+
 // games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#getPossibleRetreatSites(java.util.Collection)
 // Java:
 //   final Collection<Territory> allRetreatTerritories = battleState.getAttackerRetreatTerritories();

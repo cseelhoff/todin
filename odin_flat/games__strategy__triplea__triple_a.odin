@@ -30,3 +30,71 @@ triple_a_new_players :: proc(self: ^Triple_A, player_names: map[string]^Player_T
 	}
 	return result
 }
+
+// games.strategy.triplea.TripleA#startGame(IGame, Set<Player>, LaunchAction, Chat)
+//
+// Java:
+//   public void startGame(IGame game, Set<Player> players, LaunchAction
+//       launchAction, @Nullable Chat chat) {
+//     this.game = game;
+//     if (game.getData().getDelegateOptional("edit").isEmpty()) {
+//       final EditDelegate delegate = new EditDelegate();
+//       delegate.initialize("edit", "edit");
+//       game.getData().addDelegate(delegate);
+//       if (game instanceof ServerGame serverGame) {
+//         serverGame.addDelegateMessenger(delegate);
+//       }
+//     }
+//     final LocalPlayers localPlayers = new LocalPlayers(players);
+//     launchAction.startGame(localPlayers, game, players, chat);
+//   }
+//
+// Notes:
+// - The I_Game_Loader interface signature uses [dynamic]^Player for the
+//   `players` set; matching that here keeps dispatch consistent.
+// - Java's `getDelegateOptional("edit").isEmpty()` collapses to a nil
+//   check on the ^I_Delegate returned by game_data_get_delegate_optional.
+// - EditDelegate inherits initialize from AbstractDelegate via
+//   BasePersistentDelegate; we invoke abstract_delegate_initialize on the
+//   embedded chain. Passing the delegate to game_data_add_delegate /
+//   server_game_add_delegate_messenger uses &delegate.i_delegate, which
+//   points at the I_Delegate vtable that is the first field of the
+//   embedded Abstract_Delegate.
+// - The `instanceof ServerGame` check is realized by inspecting the
+//   I_Game vtable's setDisplay slot: every Server_Game/Abstract_Game
+//   exposed via `abstract_game_as_i_game` installs
+//   `abstract_game_view_set_display`. Within the harness's reachable
+//   call paths, the only IGame implementer that flows through TripleA is
+//   ServerGame (ClientGame is unreachable from the snapshot harness),
+//   so when the view discriminator matches we type-pun the embedded
+//   Abstract_Game pointer back to its outer Server_Game.
+triple_a_start_game :: proc(
+	self:          ^Triple_A,
+	game:          ^I_Game,
+	players:       [dynamic]^Player,
+	launch_action: ^Launch_Action,
+	chat:          ^Chat,
+) {
+	self.game = game
+	if i_game_get_data(game) != nil &&
+	   game_data_get_delegate_optional(i_game_get_data(game), "edit") == nil {
+		delegate := edit_delegate_new()
+		abstract_delegate_initialize(&delegate.abstract_delegate, "edit", "edit")
+		game_data_add_delegate(i_game_get_data(game), &delegate.i_delegate)
+
+		// Java: `if (game instanceof ServerGame serverGame)`. The I_Game
+		// interface table is the first field of Abstract_Game_I_Game_View;
+		// confirm we're looking at that view by checking its vtable, then
+		// recover the outer Server_Game by reinterpreting the view's
+		// Abstract_Game target (Abstract_Game is the first field of
+		// Server_Game via `using abstract_game`).
+		if game.set_display == abstract_game_view_set_display {
+			view := cast(^Abstract_Game_I_Game_View)game
+			server_game := cast(^Server_Game)view.target
+			server_game_add_delegate_messenger(server_game, &delegate.i_delegate)
+		}
+	}
+	local_players := new(Local_Players)
+	local_players^ = make_Local_Players(players)
+	launch_action_start_game(launch_action, local_players, game, players, chat)
+}

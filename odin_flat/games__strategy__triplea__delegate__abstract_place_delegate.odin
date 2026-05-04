@@ -429,3 +429,93 @@ abstract_place_delegate_how_many_of_construction_unit :: proc(
 	}
 	return val
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#lambda$getHardestToPlaceWithRequiresUnitsRestrictions$6(Unit,Unit)
+// Synthetic body of the static `(u1, u2) -> { ... }` lambda inside
+// getHardestToPlaceWithRequiresUnitsRestrictions(); delegates to the named
+// comparator helper that already implements the full ordering rule.
+abstract_place_delegate_lambda_get_hardest_to_place_with_requires_units_restrictions_6 :: proc(u1: ^Unit, u2: ^Unit) -> i32 {
+	return abstract_place_delegate_hardest_to_place_compare(u1, u2)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#wasConquered(Territory)
+// Java: `return getData().getBattleDelegate().getBattleTracker().wasConquered(t);`
+abstract_place_delegate_was_conquered :: proc(self: ^Abstract_Place_Delegate, t: ^Territory) -> bool {
+	tracker := battle_delegate_get_battle_tracker(game_data_get_battle_delegate(abstract_delegate_get_data(&self.abstract_delegate)))
+	return battle_tracker_was_conquered(tracker, t)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#hasUnitPlacementRestrictions()
+// Java: `return Properties.getUnitPlacementRestrictions(getProperties());`
+abstract_place_delegate_has_unit_placement_restrictions :: proc(self: ^Abstract_Place_Delegate) -> bool {
+	return properties_get_unit_placement_restrictions(abstract_delegate_get_properties(&self.abstract_delegate))
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#isPlayerAllowedToPlacementAnyTerritoryOwnedLand(GamePlayer)
+// Java:
+//   if (Properties.getPlaceInAnyTerritory(getProperties())) {
+//     final RulesAttachment ra = player.getRulesAttachment();
+//     return ra != null && ra.getPlacementAnyTerritory();
+//   }
+//   return false;
+abstract_place_delegate_is_player_allowed_to_placement_any_territory_owned_land :: proc(
+	self:   ^Abstract_Place_Delegate,
+	player: ^Game_Player,
+) -> bool {
+	if properties_get_place_in_any_territory(abstract_delegate_get_properties(&self.abstract_delegate)) {
+		ra := game_player_get_rules_attachment(player)
+		return ra != nil && ra.placement_any_territory
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#isPlayerAllowedToPlacementAnySeaZoneByOwnedLand(GamePlayer)
+// Java:
+//   if (Properties.getPlaceInAnyTerritory(getProperties())) {
+//     final RulesAttachment ra = player.getRulesAttachment();
+//     return ra != null && ra.getPlacementAnySeaZone();
+//   }
+//   return false;
+abstract_place_delegate_is_player_allowed_to_placement_any_sea_zone_by_owned_land :: proc(
+	self:   ^Abstract_Place_Delegate,
+	player: ^Game_Player,
+) -> bool {
+	if properties_get_place_in_any_territory(abstract_delegate_get_properties(&self.abstract_delegate)) {
+		ra := game_player_get_rules_attachment(player)
+		return ra != nil && ra.placement_any_sea_zone
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#unitIsCarrierOwnedByCombinedPlayers(GamePlayer)
+// Java:
+//   final Predicate<Unit> ownedByMatcher =
+//       Matches.unitIsOwnedByAnyOf(GameStepPropertiesHelper.getCombinedTurns(getData(), player));
+//   return Matches.unitIsCarrier().and(ownedByMatcher);
+Abstract_Place_Delegate_Carrier_Owned_By_Combined_Ctx :: struct {
+	players: [dynamic]^Game_Player,
+}
+
+abstract_place_delegate_pred_unit_is_carrier_owned_by_combined_players :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Abstract_Place_Delegate_Carrier_Owned_By_Combined_Ctx)ctx_ptr
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	if !carrier_p(carrier_c, u) {
+		return false
+	}
+	owned_p, owned_c := matches_unit_is_owned_by_any_of(c.players)
+	return owned_p(owned_c, u)
+}
+
+abstract_place_delegate_unit_is_carrier_owned_by_combined_players :: proc(
+	self:   ^Abstract_Place_Delegate,
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	combined := game_step_properties_helper_get_combined_turns(abstract_delegate_get_data(&self.abstract_delegate), player)
+	players := make([dynamic]^Game_Player)
+	for p in combined {
+		append(&players, p)
+	}
+	ctx := new(Abstract_Place_Delegate_Carrier_Owned_By_Combined_Ctx)
+	ctx.players = players
+	return abstract_place_delegate_pred_unit_is_carrier_owned_by_combined_players, rawptr(ctx)
+}

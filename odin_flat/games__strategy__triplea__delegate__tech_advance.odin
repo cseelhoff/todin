@@ -220,6 +220,52 @@ tech_advance_find_defined_advance_and_create_advance :: proc(technology_name: st
 	return factory(data)
 }
 
+// Java: TechAdvance.getTechAdvances(TechnologyFrontier, GamePlayer)
+// Returns all tech advances that this player can possibly research. If
+// `player` is nil, returns all techs available in the game frontier.
+// Java returns an immutable List; the port returns a [dynamic]^Tech_Advance
+// (callers already treat it as read-only — see existing technology_frontier
+// helpers). When the frontier is nil or empty, an empty dynamic is returned,
+// mirroring Java's `List.of()`.
+tech_advance_get_tech_advances :: proc(technology_frontier: ^Technology_Frontier, player: ^Game_Player) -> [dynamic]^Tech_Advance {
+	if technology_frontier != nil && !technology_frontier_is_empty(technology_frontier) {
+		if player != nil {
+			return technology_frontier_list_get_advances(game_player_get_technology_frontier_list(player))
+		}
+		return technology_frontier_get_techs(technology_frontier)
+	}
+	return make([dynamic]^Tech_Advance, 0)
+}
+
+// Java: TechAdvance.getWW2v3CategoriesWithTheirAdvances(GameData)
+// Splits the master technology frontier into the WW2v3 air-and-naval and
+// land-and-production buckets based on each advance's property string.
+// Java is `private static` and returns Tuple<List<TechAdvance>,
+// List<TechAdvance>>; the port mirrors that shape. The single-threaded
+// port's `acquireReadLock` is a no-op (see game_data_acquire_read_lock)
+// but is retained for API parity with Java.
+tech_advance_get_ww2v3_categories_with_their_advances :: proc(data: ^Game_Data) -> ^Tuple([dynamic]^Tech_Advance, [dynamic]^Tech_Advance) {
+	game_data_acquire_read_lock(data)
+	all_advances := make([dynamic]^Tech_Advance, 0)
+	for t in technology_frontier_get_techs(game_data_get_technology_frontier(data)) {
+		append(&all_advances, t)
+	}
+	air_and_naval := make([dynamic]^Tech_Advance, 0)
+	land_and_production := make([dynamic]^Tech_Advance, 0)
+	for ta in all_advances {
+		property_string := tech_advance_get_property(ta)
+		switch property_string {
+		case "superSub", "jetPower", "shipyards", "aARadar", "longRangeAir", "heavyBomber":
+			append(&air_and_naval, ta)
+		case "improvedArtillerySupport", "rocket", "paratroopers", "increasedFactoryProduction", "warBonds", "mechanizedInfantry":
+			append(&land_and_production, ta)
+		case:
+			panic("We should not be using ww2v3 categories if we have custom techs")
+		}
+	}
+	return tuple_new([dynamic]^Tech_Advance, [dynamic]^Tech_Advance, air_and_naval, land_and_production)
+}
+
 // Java: TechAdvance.equals(Object)
 // Java rejects non-TechAdvance arguments via instanceof; in Odin the typed
 // pointer parameter encodes that check (callers cannot pass a non-Tech_Advance
@@ -233,5 +279,31 @@ tech_advance_equals :: proc(self: ^Tech_Advance, o: ^Tech_Advance) -> bool {
 	self_name := self.named.base.name
 	other_name := o.named.base.name
 	return len(other_name) > 0 && len(self_name) > 0 && self_name == other_name
+}
+
+// Java: TechAdvance(String name, GameData data) — the abstract base
+// constructor. Java is `public TechAdvance(name, data) { super(name, data); }`
+// which forwards to NamedAttachable. The Odin port allocates a Tech_Advance,
+// initializes the embedded Named_Attachable via named_attachable_new, and
+// returns the pointer. Subtype factories (make_super_subs_advance, etc.)
+// continue to allocate the concrete subtype directly because they need to
+// set per-subtype name strings and the has_tech dispatch field; this proc
+// remains the canonical translation of the Java constructor for callers
+// that work with the abstract base type.
+tech_advance_new :: proc(name: string, data: ^Game_Data) -> ^Tech_Advance {
+	self := new(Tech_Advance)
+	base := named_attachable_new(name, data)
+	self.named_attachable = base^
+	free(base)
+	return self
+}
+
+// Java: TechAdvance.getTechAdvances(TechnologyFrontier) — single-argument
+// overload that delegates to the (TechnologyFrontier, GamePlayer) variant
+// with a null player. Suffix `_no_player` matches the disambiguation
+// convention used elsewhere in the port (see TechAbilityAttachment's
+// `_no_args` / `_with_techs` overload pair).
+tech_advance_get_tech_advances_no_player :: proc(technology_frontier: ^Technology_Frontier) -> [dynamic]^Tech_Advance {
+	return tech_advance_get_tech_advances(technology_frontier, nil)
 }
 

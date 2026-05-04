@@ -130,3 +130,25 @@ firing_group_splitter_general_get_combat_participants :: proc(
 	return result
 }
 
+// ---------------------------------------------------------------------------
+// buildFiringGroups(String name, Collection<Unit> canFire,
+//                   Collection<Unit> enemyUnits, TargetGroup targetGroup)
+//   -> List<FiringGroup>
+//
+//   Collection<Unit> firingUnits = targetGroup.getFiringUnits(canFire);
+//   Collection<Unit> targetUnits = targetGroup.getTargetUnits(enemyUnits);
+//   return FiringGroup.groupBySuicideOnHit(name, firingUnits, targetUnits);
+// ---------------------------------------------------------------------------
+
+firing_group_splitter_general_build_firing_groups :: proc(
+	self: ^Firing_Group_Splitter_General,
+	name: string,
+	can_fire: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+	target_group: ^Target_Group,
+) -> [dynamic]^Firing_Group {
+	firing_units := target_group_get_firing_units(target_group, can_fire)
+	target_units := target_group_get_target_units(target_group, enemy_units)
+	return firing_group_group_by_suicide_on_hit(name, firing_units, target_units)
+}
+

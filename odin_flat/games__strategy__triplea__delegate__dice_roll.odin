@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Dice_Roll :: struct {
@@ -32,6 +33,24 @@ dice_roll_get_player_name_from_annotation :: proc(annotation: string) -> string 
 		return annotation
 	}
 	return annotation[:idx]
+}
+
+dice_roll_get_annotation :: proc(
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+	territory: ^Territory,
+	battle_round: i32,
+) -> string {
+	player_name := default_named_get_name(&player.named_attachable.default_named)
+	territory_name := default_named_get_name(&territory.named_attachable.default_named)
+	units_text := my_formatter_units_to_text_no_owner(units, nil)
+	return fmt.aprintf(
+		"%s roll dice for %s in %s, round %d",
+		player_name,
+		units_text,
+		territory_name,
+		battle_round + 1,
+	)
 }
 
 dice_roll_get_rolls :: proc(self: ^Dice_Roll, roll_at: i32) -> [dynamic]^Die {

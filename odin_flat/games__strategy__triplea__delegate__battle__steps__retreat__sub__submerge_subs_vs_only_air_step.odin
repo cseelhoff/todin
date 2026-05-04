@@ -22,6 +22,17 @@ submerge_subs_vs_only_air_step_get_order :: proc(
 	return Battle_Step_Order.SUBMERGE_SUBS_VS_ONLY_AIR
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.sub.SubmergeSubsVsOnlyAirStep#getAllStepDetails
+submerge_subs_vs_only_air_step_get_all_step_details :: proc(
+	self: ^Submerge_Subs_Vs_Only_Air_Step,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	if submerge_subs_vs_only_air_step_valid(self) {
+		append(&out, battle_step_step_details_new(BATTLE_STEP_SUBMERGE_SUBS_VS_AIR_ONLY, &self.battle_step))
+	}
+	return out
+}
+
 // games.strategy.triplea.delegate.battle.steps.retreat.sub.SubmergeSubsVsOnlyAirStep#valid
 submerge_subs_vs_only_air_step_valid :: proc(
 	self: ^Submerge_Subs_Vs_Only_Air_Step,

@@ -494,3 +494,82 @@ pro_territory_new :: proc(territory: ^Territory, pro_data: ^Pro_Data) -> ^Pro_Te
 	self.max_scramble_units = make([dynamic]^Unit)
 	return self
 }
+
+// Mirrors Java ProTerritory#getEligibleDefenders(GamePlayer):
+//   Collection<Unit> defendingUnits = getAllDefenders();
+//   if (getTerritory().isWater()) return defendingUnits;
+//   return CollectionUtils.getMatches(
+//       defendingUnits, ProMatches.unitIsAlliedNotOwnedAir(player).negate());
+pro_territory_get_eligible_defenders :: proc(
+	self: ^Pro_Territory,
+	player: ^Game_Player,
+) -> [dynamic]^Unit {
+	defending_units := pro_territory_get_all_defenders(self)
+	defer delete(defending_units)
+	result: [dynamic]^Unit
+	if territory_is_water(pro_territory_get_territory(self)) {
+		for u in defending_units {
+			append(&result, u)
+		}
+		return result
+	}
+	pred, ctx := pro_matches_unit_is_allied_not_owned_air(player)
+	for u in defending_units {
+		if !pred(ctx, u) {
+			append(&result, u)
+		}
+	}
+	free(ctx)
+	return result
+}
+
+// Mirrors Java ProTerritory#getNeighbors(Predicate<Territory>):
+//   return proData.getData().getMap().getNeighbors(territory, predicate);
+// Closure capture follows the rawptr-ctx convention.
+pro_territory_get_neighbors :: proc(
+	self: ^Pro_Territory,
+	predicate: proc(rawptr, ^Territory) -> bool,
+	predicate_ctx: rawptr,
+) -> map[^Territory]struct{} {
+	return game_map_get_neighbors_predicate(
+		game_data_get_map(pro_data_get_data(self.pro_data)),
+		self.territory,
+		predicate,
+		predicate_ctx,
+	)
+}
+
+// Mirrors Java ProTerritory#getAllDefendersForCarrierCalcs(GameState, GamePlayer):
+//   if (Properties.getProduceNewFightersOnOldCarriers(data.getProperties())) {
+//     return getAllDefenders();
+//   }
+//   final Set<Unit> defenders = new HashSet<>(
+//       CollectionUtils.getMatches(
+//           cantMoveUnits, ProMatches.unitIsOwnedCarrier(player).negate()));
+//   defenders.addAll(units);
+//   defenders.addAll(tempUnits);
+//   return defenders;
+pro_territory_get_all_defenders_for_carrier_calcs :: proc(
+	self: ^Pro_Territory,
+	data: ^Game_State,
+	player: ^Game_Player,
+) -> map[^Unit]struct{} {
+	if properties_get_produce_new_fighters_on_old_carriers(game_state_get_properties(data)) {
+		return pro_territory_get_all_defenders(self)
+	}
+	defenders := make(map[^Unit]struct{})
+	pred, ctx := pro_matches_unit_is_owned_carrier(player)
+	for u in self.cant_move_units {
+		if !pred(ctx, u) {
+			defenders[u] = {}
+		}
+	}
+	free(ctx)
+	for u in self.units {
+		defenders[u] = {}
+	}
+	for u in self.temp_units {
+		defenders[u] = {}
+	}
+	return defenders
+}

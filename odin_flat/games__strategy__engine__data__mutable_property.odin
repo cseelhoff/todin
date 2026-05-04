@@ -374,3 +374,32 @@ mutable_property_no_setter :: proc() -> Mutable_Property_Setter_Slot {
 mutable_property_reset_value :: proc(self: ^Mutable_Property) {
 	self.resetter.fn(self.resetter.ctx)
 }
+
+// ofReadOnlySimple(getter) — static factory. Java:
+//   return ofSimple(noSetter(), getter);
+// Wires the "no setter" sentinel for both the typed setter slot
+// (via ofSimple → noStringSetter for the string slot, noResetter
+// for the resetter) so the resulting MutableProperty exposes only
+// `getValue()`; any setValue / setStringValue / resetValue call
+// panics through the corresponding `no_*` lambda.
+mutable_property_of_read_only_simple :: proc(
+	getter: Mutable_Property_Getter_Slot,
+) -> ^Mutable_Property {
+	return mutable_property_of_simple(mutable_property_no_setter(), getter)
+}
+
+// ofWriteOnlyString(stringSetter) — static factory. Java:
+//   return ofString(stringSetter, noGetter(), noResetter());
+// Builds a write-only MutableProperty<String> whose typed setter
+// slot is synthesised by ofString to forward to the supplied
+// string setter, while the getter and resetter are the panicking
+// sentinels.
+mutable_property_of_write_only_string :: proc(
+	string_setter: Mutable_Property_String_Setter_Slot,
+) -> ^Mutable_Property {
+	return mutable_property_of_string(
+		string_setter,
+		mutable_property_no_getter(),
+		mutable_property_no_resetter(),
+	)
+}

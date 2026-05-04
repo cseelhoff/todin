@@ -174,3 +174,37 @@ available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit:
 	return amount_of_support_given
 }
 
+// static AvailableSupports getSortedSupport(SupportCalculator supportCalculator)
+//   Builds the AvailableSupports via getSupport, then sorts each bonus
+//   bucket of rules using a SupportRuleSort comparator configured from the
+//   calculator's side / allied flag plus UnitSupportAttachment::getRoll and
+//   ::getStrength method references.
+available_supports_get_sorted_support :: proc(support_calculator: ^Support_Calculator) -> ^Available_Supports {
+	support_calculation_result := available_supports_get_support(support_calculator)
+
+	builder := support_rule_sort_builder()
+	builder = support_rule_sort_support_rule_sort_builder_side(
+		builder,
+		support_calculator_get_side(support_calculator),
+	)
+	builder = support_rule_sort_support_rule_sort_builder_friendly(
+		builder,
+		support_calculator_is_allies(support_calculator),
+	)
+	builder = support_rule_sort_support_rule_sort_builder_roll(
+		builder,
+		unit_support_attachment_get_roll,
+	)
+	builder = support_rule_sort_support_rule_sort_builder_strength(
+		builder,
+		unit_support_attachment_get_strength,
+	)
+	support_rule_sort := support_rule_sort_support_rule_sort_builder_build(builder)
+
+	rules_map := available_supports_get_support_rules(support_calculation_result)
+	for bonus_type, unit_support_attachment in rules_map {
+		available_supports_lambda_get_sorted_support_0(support_rule_sort, bonus_type, unit_support_attachment)
+	}
+	return support_calculation_result
+}
+

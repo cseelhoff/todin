@@ -253,3 +253,103 @@ unit_category_compare_to :: proc(self: ^Unit_Category, other: ^Unit_Category) ->
 	return cmp_bool(self.disabled, other.disabled)
 }
 
+// Java:
+//   private void createDependents(final Collection<Unit> dependents) {
+//     this.dependents = new ArrayList<>();
+//     if (dependents == null) { return; }
+//     for (final Unit current : dependents) {
+//       this.dependents.add(new UnitOwner(current));
+//     }
+//   }
+unit_category_create_dependents :: proc(self: ^Unit_Category, dependents: [dynamic]^Unit) {
+	self.dependents = make([dynamic]^Unit_Owner)
+	// In Odin a [dynamic] is never "null"; an empty/zeroed slice mirrors Java's null guard.
+	if len(dependents) == 0 {
+		return
+	}
+	for current in dependents {
+		append(&self.dependents, unit_owner_new(current))
+	}
+}
+
+// Java:
+//   @Override public boolean equals(final Object o) {
+//     if (o instanceof UnitCategory other) {
+//       final boolean equalsIgnoreDamaged = equalsIgnoreDamagedAndBombingDamageAndDisabled(other);
+//       return equalsIgnoreDamaged
+//           && other.damaged == this.damaged
+//           && other.bombingDamage == this.bombingDamage
+//           && other.disabled == this.disabled
+//           && other.canRetreat == this.canRetreat;
+//     }
+//     return false;
+//   }
+unit_category_equals :: proc(self: ^Unit_Category, other: ^Unit_Category) -> bool {
+	if self == nil || other == nil {
+		return self == other
+	}
+	if !unit_category_equals_ignore_damaged_and_bombing_damage_and_disabled(self, other) {
+		return false
+	}
+	return other.damaged == self.damaged &&
+		other.bombing_damage == self.bombing_damage &&
+		other.disabled == self.disabled &&
+		other.can_retreat == self.can_retreat
+}
+
+// Java: `public int getHitPoints() { return type.getUnitAttachment().getHitPoints(); }`
+unit_category_get_hit_points :: proc(self: ^Unit_Category) -> i32 {
+	return unit_attachment_get_hit_points(unit_type_get_unit_attachment(self.type))
+}
+
+// Java: `public UnitAttachment getUnitAttachment() { return getType().getUnitAttachment(); }`
+unit_category_get_unit_attachment :: proc(self: ^Unit_Category) -> ^Unit_Attachment {
+	return unit_type_get_unit_attachment(unit_category_get_type(self))
+}
+
+// Java:
+//   UnitCategory(
+//       final Unit unit,
+//       final Collection<Unit> dependents,
+//       final BigDecimal movement,
+//       final int damaged,
+//       final int bombingDamage,
+//       final boolean disabled,
+//       final int transportCost,
+//       final boolean canRetreat) {
+//     type = unit.getType();
+//     this.movement = movement;
+//     this.transportCost = transportCost;
+//     owner = unit.getOwner();
+//     this.damaged = damaged;
+//     this.bombingDamage = bombingDamage;
+//     this.disabled = disabled;
+//     this.canRetreat = canRetreat;
+//     units.add(unit);
+//     createDependents(dependents);
+//   }
+unit_category_new :: proc(
+	unit: ^Unit,
+	dependents: [dynamic]^Unit,
+	movement: f64,
+	damaged: i32,
+	bombing_damage: i32,
+	disabled: bool,
+	transport_cost: i32,
+	can_retreat: bool,
+) -> ^Unit_Category {
+	self := new(Unit_Category)
+	self.type = unit_get_type(unit)
+	self.movement = movement
+	self.transport_cost = transport_cost
+	self.owner = unit_get_owner(unit)
+	self.damaged = damaged
+	self.bombing_damage = bombing_damage
+	self.disabled = disabled
+	self.can_retreat = can_retreat
+	self.units = make([dynamic]^Unit)
+	append(&self.units, unit)
+	unit_category_create_dependents(self, dependents)
+	return self
+}
+

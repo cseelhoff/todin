@@ -102,3 +102,47 @@ political_action_attachment_get_relationship_changes :: proc(
 	}
 	return result
 }
+
+// Java: public static Collection<PoliticalActionAttachment> getValidActions(
+//     final GamePlayer player,
+//     final Map<ICondition, Boolean> testedConditions,
+//     final GameState data)
+//   if (!Properties.getUsePolitics(data.getProperties()) || !player.amNotDeadYet()) {
+//     return new ArrayList<>();
+//   }
+//   return CollectionUtils.getMatches(
+//       getPoliticalActionAttachments(player),
+//       Matches.politicalActionAffectsAtLeastOneAlivePlayer(player)
+//           .and(Matches.abstractUserActionAttachmentCanBeAttempted(testedConditions)));
+// The two project Matches helpers expose `(proc(rawptr, ^T) -> bool, rawptr)`
+// pairs; rather than bridge them through `collection_utils_get_matches`
+// (whose signature is `[dynamic]rawptr` + `proc(rawptr) -> bool` and
+// cannot carry the captured player / tested-conditions context), we
+// inline the filter, mirroring the pattern used by other attachment
+// procs in this package (see `canal_attachment_get_excluded_units`).
+political_action_attachment_get_valid_actions :: proc(
+	player: ^Game_Player,
+	tested_conditions: map[^I_Condition]bool,
+	data: ^Game_State,
+) -> [dynamic]^Political_Action_Attachment {
+	result: [dynamic]^Political_Action_Attachment
+	if !properties_get_use_politics(game_state_get_properties(data)) ||
+	   !game_player_am_not_dead_yet(player) {
+		return result
+	}
+	candidates := political_action_attachment_get_political_action_attachments(player)
+	affects_pred, affects_ctx := matches_political_action_affects_at_least_one_alive_player(player)
+	can_be_attempted_pred, can_be_attempted_ctx := matches_abstract_user_action_attachment_can_be_attempted(
+		tested_conditions,
+	)
+	for paa in candidates {
+		if !affects_pred(affects_ctx, paa) {
+			continue
+		}
+		if !can_be_attempted_pred(can_be_attempted_ctx, &paa.abstract_user_action_attachment) {
+			continue
+		}
+		append(&result, paa)
+	}
+	return result
+}

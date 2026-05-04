@@ -75,3 +75,35 @@ power_strength_and_rolls_lambda_add_units_0 :: proc(new_support: ^Unit) -> Integ
 power_strength_and_rolls_lambda_add_units_2 :: proc(new_support: ^Unit) -> Integer_Map {
 	return Integer_Map{map_values = make(map[rawptr]i32)}
 }
+
+// Lambda from addUnits: (supporter, supportedUnits) ->
+//   unitSupportPowerMap.computeIfAbsent(supporter, $0).add(supportedUnits).
+// Captures the enclosing Power_Strength_And_Rolls instance.
+power_strength_and_rolls_lambda_add_units_1 :: proc(
+	self: ^Power_Strength_And_Rolls,
+	supporter: ^Unit,
+	supported_units: ^Integer_Map,
+) {
+	if !(supporter in self.unit_support_power_map) {
+		self.unit_support_power_map[supporter] =
+			power_strength_and_rolls_lambda_add_units_0(supporter)
+	}
+	existing := self.unit_support_power_map[supporter]
+	integer_map_add_map(&existing, supported_units)
+}
+
+// Lambda from addUnits: (supporter, supportedUnits) ->
+//   unitSupportRollsMap.computeIfAbsent(supporter, $2).add(supportedUnits).
+// Captures the enclosing Power_Strength_And_Rolls instance.
+power_strength_and_rolls_lambda_add_units_3 :: proc(
+	self: ^Power_Strength_And_Rolls,
+	supporter: ^Unit,
+	supported_units: ^Integer_Map,
+) {
+	if !(supporter in self.unit_support_rolls_map) {
+		self.unit_support_rolls_map[supporter] =
+			power_strength_and_rolls_lambda_add_units_2(supporter)
+	}
+	existing := self.unit_support_rolls_map[supporter]
+	integer_map_add_map(&existing, supported_units)
+}

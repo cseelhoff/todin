@@ -68,6 +68,41 @@ target_group_get_target_units :: proc(
 	return result
 }
 
+// private static Set<UnitType> findTargets(UnitType unitType, boolean destroyerPresent,
+//     Set<UnitType> enemyUnitTypes):
+//   Set<UnitType> cannotTarget = unitType.getUnitAttachment().getCanNotTarget();
+//   return enemyUnitTypes.stream().filter(t -> {
+//     if (cannotTarget.contains(t)) return false;
+//     if (destroyerPresent) return true;
+//     return !t.getUnitAttachment().getCanNotBeTargetedBy().contains(unitType);
+//   }).collect(Collectors.toSet());
+// The Java single-pass stream filter is inlined directly; the result is a
+// new owned `map[^Unit_Type]struct{}` standing in for `Set<UnitType>`.
+target_group_find_targets :: proc(
+	unit_type: ^Unit_Type,
+	destroyer_present: bool,
+	enemy_unit_types: map[^Unit_Type]struct{},
+) -> map[^Unit_Type]struct{} {
+	cannot_target := unit_attachment_get_can_not_target(unit_type_get_unit_attachment(unit_type))
+	result := make(map[^Unit_Type]struct{})
+	for target_unit_type, _ in enemy_unit_types {
+		if _, in_cannot := cannot_target[target_unit_type]; in_cannot {
+			continue
+		}
+		if destroyer_present {
+			result[target_unit_type] = {}
+			continue
+		}
+		cnbt := unit_attachment_get_can_not_be_targeted_by(
+			unit_type_get_unit_attachment(target_unit_type),
+		)
+		if _, blocked := cnbt[unit_type]; !blocked {
+			result[target_unit_type] = {}
+		}
+	}
+	return result
+}
+
 // findTargetsInTargetGroups: find a TargetGroup whose targetUnitTypes equals
 // the given targets set, returning Optional<TargetGroup>. Odin port returns
 // the pointer to the matching Target_Group, or nil for Optional.empty().
@@ -129,6 +164,42 @@ target_group_lambda__find_targets_in_target_groups__1 :: proc(
 		}
 	}
 	return true
+}
+
+// public static List<TargetGroup> newTargetGroups(Collection<Unit> units,
+//     Collection<Unit> enemyUnits): build TargetGroups for firing/enemy units
+// using canNotTarget / canNotBeTargetedBy attributes (destroyer presence
+// cancels canNotBeTargetedBy), then sort ascending by target set size.
+target_group_new_target_groups :: proc(
+	units: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+) -> [dynamic]^Target_Group {
+	unit_types := unit_utils_get_unit_types_from_unit_list(units)
+	destroyer_present := false
+	{
+		p, c := matches_unit_type_is_destroyer()
+		for ut, _ in unit_types {
+			if p(c, ut) {
+				destroyer_present = true
+				break
+			}
+		}
+	}
+	enemy_unit_types := unit_utils_get_unit_types_from_unit_list(enemy_units)
+	target_groups: [dynamic]^Target_Group
+	for unit_type, _ in unit_types {
+		targets := target_group_find_targets(unit_type, destroyer_present, enemy_unit_types)
+		if len(targets) == 0 {
+			continue
+		}
+		existing := target_group_find_targets_in_target_groups(targets, target_groups)
+		if existing != nil {
+			existing.firing_unit_types[unit_type] = {}
+		} else {
+			append(&target_groups, target_group_new(unit_type, targets))
+		}
+	}
+	return target_group_sort_target_groups(target_groups)
 }
 
 // lambda$sortTargetGroups$2(TargetGroup targetGroup):

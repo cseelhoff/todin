@@ -9,6 +9,12 @@ Production_Frontier :: struct {
 	cached_rules:        [dynamic]^Production_Rule,
 }
 
+// Mirrors Java ProductionFrontier(String, GameData) — delegates to the
+// three-arg form with an empty rules list, matching `this(name, data, List.of())`.
+production_frontier_new :: proc(name: string, data: ^Game_Data) -> ^Production_Frontier {
+	return production_frontier_new_with_rules(name, data, nil)
+}
+
 // Mirrors Java ProductionFrontier(String, GameData, List<ProductionRule>).
 // Copies the supplied rules into a fresh backing list, matching the Java
 // `new ArrayList<>(rules)` semantics. The Java `checkNotNull(rules)` is

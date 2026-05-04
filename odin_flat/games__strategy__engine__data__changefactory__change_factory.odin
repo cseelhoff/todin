@@ -163,6 +163,13 @@ change_factory_unit_property_change :: proc(unit: ^Unit, new_value: rawptr, prop
 	return object_property_change_new(unit, property_name, new_value)
 }
 
+// Java: ChangeFactory#unitPropertyChange(Unit, Object, Unit.PropertyName)
+//   return unitPropertyChange(unit, newValue, unitPropertyName.toString());
+change_factory_unit_property_change_property_name :: proc(unit: ^Unit, new_value: rawptr, unit_property_name: Unit_Property_Name) -> ^Change {
+	pn := unit_property_name
+	return change_factory_unit_property_change(unit, new_value, unit_property_name_to_string(&pn))
+}
+
 // Java: ChangeFactory#addAvailableTech(TechnologyFrontier, TechAdvance, GamePlayer)
 //   return new AddAvailableTech(tf, ta, player);
 change_factory_add_available_tech :: proc(tf: ^Technology_Frontier, ta: ^Tech_Advance, player: ^Game_Player) -> ^Change {
@@ -203,4 +210,24 @@ change_factory_relationship_change :: proc(player: ^Game_Player, player2: ^Game_
 //   return new RemoveProductionRule(rule, frontier);
 change_factory_remove_production_rule :: proc(rule: ^Production_Rule, frontier: ^Production_Frontier) -> ^Change {
 	return remove_production_rule_new(rule, frontier)
+}
+
+// Java: ChangeFactory#removeResourceCollection(GamePlayer, ResourceCollection)
+//   final CompositeChange compositeChange = new CompositeChange();
+//   for (final Resource r : resourceCollection.getResourcesCopy().keySet()) {
+//     compositeChange.add(
+//         new ChangeResourceChange(gamePlayer, r, -resourceCollection.getQuantity(r)));
+//   }
+//   return compositeChange;
+change_factory_remove_resource_collection :: proc(game_player: ^Game_Player, resource_collection: ^Resource_Collection) -> ^Change {
+	composite_change := composite_change_new()
+	resources_copy := resource_collection_get_resources_copy(resource_collection)
+	defer delete(resources_copy)
+	for r, _ in resources_copy {
+		composite_change_add(
+			composite_change,
+			change_factory_change_resources_change(game_player, r, -resource_collection_get_quantity(resource_collection, r)),
+		)
+	}
+	return &composite_change.change
 }

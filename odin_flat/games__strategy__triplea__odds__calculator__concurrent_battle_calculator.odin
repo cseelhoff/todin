@@ -144,6 +144,45 @@ concurrent_battle_calculator_calculate :: proc(
 	return results
 }
 
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#setGameData(GameData)
+// Java:
+//   cancelCurrentOperation.decrementAndGet();
+//   cancel();
+//   synchronized (mutexSetGameData) {
+//     waitForGameDataReady();
+//     latchWorkerThreadsCreation =
+//         CompletableFuture.supplyAsync(() -> setGameDataInternal(data))
+//             .exceptionally(throwable -> { log.error(...); return false; });
+//     return latchWorkerThreadsCreation;
+//   }
+// Under the single-threaded JDK shim, `synchronized` is a no-op and
+// `CompletableFuture.supplyAsync` runs the supplier synchronously. The
+// exceptionally handler (`lambda$setGameData$1`) covers thrown errors; in
+// the direct-synchronous shim a thrown error in `setGameDataInternal`
+// would propagate via Odin's normal return paths, so we just invoke the
+// supplier and wrap the boolean outcome in a freshly-completed future.
+// Readers of the returned future (`waitForGameDataReady`) discard the
+// payload, so we encode it as nil — same convention used by the
+// constructor.
+concurrent_battle_calculator_set_game_data :: proc(self: ^Concurrent_Battle_Calculator, data: ^Game_Data) -> ^Completable_Future {
+	// cancel any current setting of data
+	atomic_integer_decrement_and_get(self.cancel_current_operation)
+	// cancel any existing calcing (it won't stop immediately, just quicker)
+	concurrent_battle_calculator_cancel(self)
+	// synchronized (mutex_set_game_data) — no-op in single-threaded shim.
+	concurrent_battle_calculator_wait_for_game_data_ready(self)
+	// supplyAsync(() -> setGameDataInternal(data)) — direct-synchronous in
+	// the shim, so just invoke the supplier on the current thread. The
+	// boolean result is discarded by every caller; we store a freshly
+	// completed future so subsequent waitForGameDataReady() calls return
+	// immediately.
+	_ = concurrent_battle_calculator_set_game_data_internal(self, data)
+	future := completable_future_new()
+	completable_future_complete(future, nil)
+	self.latch_worker_threads_creation = future
+	return future
+}
+
 // games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#cancel()
 // Java: forwards `cancel()` to every worker so an in-flight calculation can
 // abort early. Faithfully translated under the single-threaded shim — there

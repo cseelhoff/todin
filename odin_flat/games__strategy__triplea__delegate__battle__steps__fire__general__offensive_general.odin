@@ -68,3 +68,38 @@ offensive_general_get_steps :: proc(self: ^Offensive_General) -> [dynamic]^Battl
 	factory := fire_round_steps_factory_builder_build(builder)
 	return fire_round_steps_factory_create_steps(factory)
 }
+
+// Java: public List<StepDetails> getAllStepDetails()
+//   return getSteps().stream()
+//       .flatMap(step -> step.getAllStepDetails().stream())
+//       .collect(Collectors.toList());
+offensive_general_get_all_step_details :: proc(self: ^Offensive_General) -> [dynamic]^Battle_Step_Step_Details {
+	result := make([dynamic]^Battle_Step_Step_Details)
+	steps := offensive_general_get_steps(self)
+	for step in steps {
+		details := offensive_general_lambda__get_all_step_details__0(step)
+		for d in details {
+			append(&result, d)
+		}
+	}
+	return result
+}
+
+// Java: public void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   final List<BattleStep> steps = getSteps();
+//   Collections.reverse(steps);   // steps go in reverse order on the stack
+//   steps.forEach(stack::push);
+offensive_general_execute :: proc(
+	self: ^Offensive_General,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	steps := offensive_general_get_steps(self)
+	n := len(steps)
+	for i := 0; i < n / 2; i += 1 {
+		steps[i], steps[n - 1 - i] = steps[n - 1 - i], steps[i]
+	}
+	for s in steps {
+		execution_stack_push_one(stack, &s.i_executable)
+	}
+}

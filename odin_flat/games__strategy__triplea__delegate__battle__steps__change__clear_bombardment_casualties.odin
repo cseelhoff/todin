@@ -43,3 +43,13 @@ clear_bombardment_casualties_can_bombardment_occur :: proc(
 	return true
 }
 
+// Java: return !Properties.getNavalBombardCasualtiesReturnFire(
+//                 battleState.getGameData().getProperties());
+clear_bombardment_casualties_clear_casualties :: proc(
+	self: ^Clear_Bombardment_Casualties,
+) -> bool {
+	return !properties_get_naval_bombard_casualties_return_fire(
+		game_data_get_properties(battle_state_get_game_data(self.battle_state)),
+	)
+}
+

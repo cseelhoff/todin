@@ -45,3 +45,7 @@ aa_in_move_util_moving_player :: proc(self: ^Aa_In_Move_Util, units: [dynamic]^U
 	return player_list_get_null_player(game_data_get_player_list(game_player_get_data(self.player)))
 }
 
+// games.strategy.triplea.delegate.AaInMoveUtil#getBattleTracker()
+aa_in_move_util_get_battle_tracker :: proc(self: ^Aa_In_Move_Util) -> ^Battle_Tracker {
+	return battle_delegate_get_battle_tracker(game_data_get_battle_delegate(aa_in_move_util_get_data(self)))
+}

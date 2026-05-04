@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Battle_Tracker :: struct {
 	pending_battles:                       map[^I_Battle]struct{},
 	dependencies:                          map[^I_Battle]map[^I_Battle]struct{},
@@ -506,5 +508,377 @@ battle_tracker_get_pending_non_bombing_battle :: proc(self: ^Battle_Tracker, t: 
 		}
 	}
 	return nil
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#hasPendingNonBombingBattle(Territory)
+battle_tracker_has_pending_non_bombing_battle :: proc(self: ^Battle_Tracker, t: ^Territory) -> bool {
+	return battle_tracker_get_pending_non_bombing_battle(self, t) != nil
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#removeBattle(IBattle, GameData)
+// Java: remove battle from pending list, dependencies, mark its territory as fought,
+// and clear the battle on BattleDelegate. The Java try/catch IllegalStateException
+// (no battle delegate) maps to a nil-check here.
+battle_tracker_remove_battle :: proc(self: ^Battle_Tracker, battle: ^I_Battle, data: ^Game_Data) {
+	if battle == nil {
+		return
+	}
+	blocked := battle_tracker_get_blocked(self, battle)
+	defer delete(blocked)
+	for current, _ in blocked {
+		battle_tracker_remove_dependency(self, current, battle)
+	}
+	delete_key(&self.pending_battles, battle)
+	self.fought_battles[i_battle_get_territory(battle)] = {}
+	bd := game_data_get_battle_delegate(data)
+	if bd != nil {
+		battle_delegate_clear_current_battle(bd, battle)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getPossibleDefendingUnits(Territory, Collection)
+// Java: CollectionUtils.getMatches(defenders, Matches.unitCanBeInBattle(false, !territory.isWater(), 1, true)).
+battle_tracker_get_possible_defending_units :: proc(territory: ^Territory, defenders: [dynamic]^Unit) -> [dynamic]^Unit {
+	result := make([dynamic]^Unit)
+	p, c := matches_unit_can_be_in_battle_no_firing_units(false, !territory_is_water(territory), 1, true)
+	for u in defenders {
+		if p(c, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#fightBattleIfOnlyOne(IDelegateBridge)
+// Java: if there's exactly one pending NORMAL battle with no dependencies, fight it.
+battle_tracker_fight_battle_if_only_one :: proc(self: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	battles := battle_tracker_get_pending_battles_of_type(self, .NORMAL)
+	defer delete(battles)
+	if len(battles) == 1 {
+		battle := battles[0]
+		deps := battle_tracker_get_dependent_on(self, battle)
+		defer delete(deps)
+		if len(deps) == 0 {
+			i_battle_fight(battle, bridge)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#lambda$fightDefenselessBattles$14(IBattle)
+// Body of `battle -> getDependentOn(battle).isEmpty()`. Captures `this` (self).
+battle_tracker_lambda_fight_defenseless_battles_14 :: proc(self: ^Battle_Tracker, battle: ^I_Battle) -> bool {
+	deps := battle_tracker_get_dependent_on(self, battle)
+	defer delete(deps)
+	return len(deps) == 0
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#lambda$getBlocked$12(IBattle, IBattle)
+// Body of `current -> getDependentOn(current).contains(blocking)`. Captures `this` (self) and `blocking`.
+battle_tracker_lambda_get_blocked_12 :: proc(self: ^Battle_Tracker, blocking: ^I_Battle, current: ^I_Battle) -> bool {
+	deps := battle_tracker_get_dependent_on(self, current)
+	defer delete(deps)
+	_, ok := deps[blocking]
+	return ok
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#addChangeChangeOwnership(Territory, GamePlayer, TerritoryAttachment, GamePlayer, IDelegateBridge, UndoableMove, Collection<Unit>)
+// Java: build an OwnerChange, log it, apply it, mark the territory as conquered on
+// the undoable move (if present), and play the appropriate capture sound.
+battle_tracker_add_change_change_ownership :: proc(
+	self: ^Battle_Tracker,
+	territory: ^Territory,
+	new_owner: ^Game_Player,
+	territory_attachment: ^Territory_Attachment,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+	arrived_units: [dynamic]^Unit,
+) {
+	oc := owner_change_new(territory, new_owner)
+	take_over := &oc.change
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
+	battle_tracker_add_change(bridge, change_tracker, take_over)
+	territory_notify_changed(territory)
+	if change_tracker != nil {
+		undoable_move_add_to_conquered(change_tracker, territory)
+	}
+	broadcaster := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+	if territory_is_water(territory) {
+		headless_sound_channel_play_sound_for_all(broadcaster, "territory_capture_sea", game_player)
+	} else if territory_attachment_get_capital(territory_attachment) != "" {
+		headless_sound_channel_play_sound_for_all(broadcaster, "territory_capture_capital", game_player)
+	} else {
+		is_blitz := false
+		if _, in_blitzed := self.blitzed[territory]; in_blitzed {
+			p, c := matches_unit_can_blitz()
+			for u in arrived_units {
+				if p(c, u) {
+					is_blitz = true
+					break
+				}
+			}
+		}
+		if is_blitz {
+			headless_sound_channel_play_sound_for_all(broadcaster, "territory_capture_blitz", game_player)
+		} else {
+			headless_sound_channel_play_sound_for_all(broadcaster, "territory_capture_land", game_player)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#addChangeChargeForEnteringNeutrals(Territory, GamePlayer, IDelegateBridge, UndoableMove)
+// Java: charge gamePlayer the (positive) neutralCharge property in PUs (clamped
+// at -player.PUs so we cannot dip below zero). Logs an error if we could not
+// charge the full ideal amount; in either case writes a history child entry.
+battle_tracker_add_change_charge_for_entering_neutrals :: proc(
+	territory: ^Territory,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
+	pu_charge_ideal := -properties_get_neutral_charge(game_data_get_properties(data))
+	have_neg := -resource_collection_get_quantity(game_player_get_resources(game_player), pus)
+	pu_charge_real := min(i32(0), max(pu_charge_ideal, have_neg))
+	neutral_fee := change_factory_change_resources_change(game_player, pus, pu_charge_real)
+	battle_tracker_add_change(bridge, change_tracker, neutral_fee)
+	if pu_charge_ideal == pu_charge_real {
+		msg := fmt.aprintf(
+			"%s loses %d %s for violating %ss neutrality.",
+			game_player.name,
+			-pu_charge_real,
+			my_formatter_pluralize_quantity("PU", -pu_charge_real),
+			territory.name,
+		)
+		history_writer_add_child_to_event(history_writer, msg)
+	} else {
+		fmt.eprintln(
+			"Player,",
+			game_player.name,
+			"attacks a Neutral territory, and should have had to pay",
+			pu_charge_ideal,
+			", but did not have enough PUs to pay! This is a bug.",
+		)
+		msg := fmt.aprintf(
+			"%s loses %d %s for violating %ss neutrality.  Correct amount to charge is: %d.  Player should not have been able to make this attack!",
+			game_player.name,
+			-pu_charge_real,
+			my_formatter_pluralize_quantity("PU", -pu_charge_real),
+			territory.name,
+			pu_charge_ideal,
+		)
+		history_writer_add_child_to_event(history_writer, msg)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getAllAttachingSeaUnits(Collection<Unit>, GameData)
+// Java: total = arrived - land - air - submerged
+//       - (transports that cannot control sea zones, if property disabled)
+//       - (subs that can be moved through by enemies, if property enabled).
+battle_tracker_get_all_attaching_sea_units :: proc(arrived_units: [dynamic]^Unit, data: ^Game_Data) -> i32 {
+	total := i32(len(arrived_units))
+	lp, lc := matches_unit_is_land()
+	ap, ac := matches_unit_is_air()
+	sp, sc := matches_unit_is_submerged()
+	for u in arrived_units {
+		if lp(lc, u) { total -= 1 }
+	}
+	for u in arrived_units {
+		if ap(ac, u) { total -= 1 }
+	}
+	for u in arrived_units {
+		if sp(sc, u) { total -= 1 }
+	}
+	props := game_data_get_properties(data)
+	if !properties_get_transport_control_sea_zone(props) {
+		t1p, t1c := matches_unit_is_sea_transport_and_not_destroyer()
+		t2p, t2c := matches_unit_is_sea_transport_but_not_combat_sea_transport()
+		for u in arrived_units {
+			if t1p(t1c, u) && t2p(t2c, u) {
+				total -= 1
+			}
+		}
+	}
+	if properties_get_sub_control_sea_zone_restricted(props) {
+		mp, mc := matches_unit_can_be_moved_through_by_enemies()
+		for u in arrived_units {
+			if mp(mc, u) { total -= 1 }
+		}
+	}
+	return total
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#getNewOwnerForTakeOver(Territory, GamePlayer, GamePlayer, GameData)
+// Java: if terrOrigOwner still controls any of its capitals, give the territory back
+// to terrOrigOwner. Otherwise, if any of terrOrigOwner's capitals is the territory
+// being taken over, or is currently neutral, give it back as well; else give it to
+// gamePlayer.
+battle_tracker_get_new_owner_for_take_over :: proc(
+	territory: ^Territory,
+	game_player: ^Game_Player,
+	terr_orig_owner: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Game_Player {
+	new_owner := game_player
+	game_map := game_data_get_map(data)
+	capitals_owned := territory_attachment_get_all_currently_owned_capitals(terr_orig_owner, game_map)
+	defer delete(capitals_owned)
+	if len(capitals_owned) != 0 {
+		new_owner = terr_orig_owner
+	} else {
+		all_caps := territory_attachment_get_all_capitals(terr_orig_owner, game_map)
+		defer delete(all_caps)
+		for current in all_caps {
+			if territory == current || game_player_is_null(territory_get_owner(current)) {
+				new_owner = terr_orig_owner
+				break
+			}
+		}
+	}
+	return new_owner
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#lambda$takeOver$0(RelationshipTracker, GamePlayer, GamePlayer)
+// Body of `player -> relationshipTracker.isAllied(player, gamePlayer)` from
+// optionalTerrOrigOwner.filter(...). Captures relationshipTracker, gamePlayer.
+battle_tracker_lambda_take_over_0 :: proc(
+	relationship_tracker: ^Relationship_Tracker,
+	game_player: ^Game_Player,
+	player: ^Game_Player,
+) -> bool {
+	return relationship_tracker_is_allied(relationship_tracker, player, game_player)
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#lambda$writeHistoryOnTakeOverForConvoyRoute$4(
+//     RelationshipTracker, GamePlayer, IDelegateHistoryWriter, Territory, Territory)
+// Body of the `attachedConvoyTo.forEach(convoy -> { ... })` lambda inside
+// writeHistoryOnTakeOverForConvoyRoute. Captures relationshipTracker, newOwner,
+// historyWriter, territory; lambda param is convoy.
+battle_tracker_lambda_write_history_on_take_over_for_convoy_route_4 :: proc(
+	relationship_tracker: ^Relationship_Tracker,
+	new_owner: ^Game_Player,
+	history_writer: ^I_Delegate_History_Writer,
+	territory: ^Territory,
+	convoy: ^Territory,
+) {
+	cta := territory_attachment_get(convoy)
+	if cta == nil {
+		return
+	}
+	if !territory_attachment_get_convoy_route(cta) {
+		return
+	}
+	convoy_owner := territory_get_owner(convoy)
+	if relationship_tracker_is_allied(relationship_tracker, new_owner, convoy_owner) {
+		convoy_attached := territory_attachment_get_convoy_attached(cta)
+		any_allied := false
+		ap, ac := matches_is_territory_allied(convoy_owner)
+		for t, _ in convoy_attached {
+			if ap(ac, t) {
+				any_allied = true
+				break
+			}
+		}
+		if !any_allied {
+			msg := fmt.aprintf(
+				"%s gains %d production in %s for the liberation the convoy route in %s",
+				convoy_owner.name,
+				territory_attachment_get_production(cta),
+				convoy.name,
+				territory.name,
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+		}
+	} else if relationship_tracker_is_at_war(relationship_tracker, new_owner, convoy_owner) {
+		convoy_attached := territory_attachment_get_convoy_attached(cta)
+		count := i32(0)
+		ap, ac := matches_is_territory_allied(convoy_owner)
+		for t, _ in convoy_attached {
+			if ap(ac, t) {
+				count += 1
+			}
+		}
+		if count == 1 {
+			msg := fmt.aprintf(
+				"%s loses %d production in %s due to the capture of the convoy route in %s",
+				convoy_owner.name,
+				territory_attachment_get_production(cta),
+				convoy.name,
+				territory.name,
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#markWasInCombat(Collection<Unit>, IDelegateBridge, UndoableMove)
+// Java: if units == null, return. Else build a CompositeChange of one
+// `unit.wasInCombat = true` ObjectPropertyChange per unit and add it.
+battle_tracker_mark_was_in_combat :: proc(
+	units: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+) {
+	if units == nil {
+		return
+	}
+	cc := composite_change_new()
+	for unit in units {
+		boxed := new(bool)
+		boxed^ = true
+		composite_change_add(
+			cc,
+			change_factory_unit_property_change_property_name(unit, rawptr(boxed), .Was_In_Combat),
+		)
+	}
+	battle_tracker_add_change(bridge, change_tracker, &cc.change)
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#sendBattleRecordsToGameData(IDelegateBridge)
+// Java: if battleRecords != null and not empty, write a "Recording Battle Statistics"
+// history event and add an AddBattleRecords change carrying the current records.
+battle_tracker_send_battle_records_to_game_data :: proc(self: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	if self.battle_records != nil && !battle_records_is_empty(self.battle_records) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			"Recording Battle Statistics",
+		)
+		i_delegate_bridge_add_change(
+			bridge,
+			change_factory_add_battle_records(self.battle_records, &i_delegate_bridge_get_data(bridge).game_state),
+		)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#writeHistoryOnTakeOverForConvoyRoute(Territory, GamePlayer, IDelegateBridge)
+// Java: for each territory whose convoy route runs through `territory`, write a
+// history child entry indicating the new owner has either liberated or captured the
+// convoy route. The forEach body is split out as
+// `battle_tracker_lambda_write_history_on_take_over_for_convoy_route_4`.
+battle_tracker_write_history_on_take_over_for_convoy_route :: proc(
+	territory: ^Territory,
+	new_owner: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	relationship_tracker := game_data_get_relationship_tracker(i_delegate_bridge_get_data(bridge))
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	attached_convoy_to := territory_attachment_get_what_territories_this_is_used_in_convoys_for(
+		territory,
+		&data.game_state,
+	)
+	defer delete(attached_convoy_to)
+	for convoy, _ in attached_convoy_to {
+		battle_tracker_lambda_write_history_on_take_over_for_convoy_route_4(
+			relationship_tracker,
+			new_owner,
+			history_writer,
+			territory,
+			convoy,
+		)
+	}
 }
 

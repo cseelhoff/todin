@@ -148,3 +148,28 @@ firing_group_lambda_group_by_suicide_on_hit_0 :: proc(
 	display_name := firing_group_generate_name(name, units, separated_by_suicide)
 	return firing_group_new(display_name, name, units, target_units)
 }
+
+// games.strategy.triplea.delegate.battle.steps.fire.FiringGroup#groupBySuicideOnHit(String, Collection<Unit>, Collection<Unit>)
+// Splits firingUnits into suicide-on-hit (per unit type) and non-suicide buckets,
+// then constructs one FiringGroup per bucket, naming each via generateName.
+firing_group_group_by_suicide_on_hit :: proc(
+	name: string,
+	firing_units: [dynamic]^Unit,
+	target_units: [dynamic]^Unit,
+) -> [dynamic]^Firing_Group {
+	separated_by_suicide := firing_group_separate_suicide_on_hit(firing_units)
+	buckets := firing_group_suicide_and_non_suicide_values(separated_by_suicide)
+	result := make([dynamic]^Firing_Group)
+	for units in buckets {
+		append(
+			&result,
+			firing_group_lambda_group_by_suicide_on_hit_0(
+				name,
+				separated_by_suicide,
+				target_units,
+				units,
+			),
+		)
+	}
+	return result
+}

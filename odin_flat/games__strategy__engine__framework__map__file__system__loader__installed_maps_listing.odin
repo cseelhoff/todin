@@ -129,6 +129,14 @@ installed_maps_listing_read_map_yamls_and_generate_missing_map_yamls :: proc(
 	return result
 }
 
+// Java: public static synchronized InstalledMapsListing parseMapFiles(Path folder)
+// { return new InstalledMapsListing(folder); }
+// Synchronization is dropped (single-threaded port). The string-based
+// constructor wraps with path_of, so first convert the Path back to a string.
+installed_maps_listing_parse_map_files :: proc(folder: Path) -> ^Installed_Maps_Listing {
+	return installed_maps_listing_new(path_to_string(folder))
+}
+
 installed_maps_listing_normalize_name :: proc(map_name: string) -> string {
 	lower := strings.to_lower(map_name)
 	defer delete(lower)

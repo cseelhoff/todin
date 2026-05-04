@@ -349,15 +349,23 @@ xml_game_element_mapper_new_attachment :: proc(self: ^Xml_Game_Element_Mapper, t
 }
 
 
+// games.strategy.engine.data.gameparser.XmlGameElementMapper#<init>()
 // games.strategy.engine.data.gameparser.XmlGameElementMapper#<init>(java.util.Map,java.util.Map)
 //
-// Java's @VisibleForTesting 2-arg constructor: validates non-null inputs (Odin
-// has no equivalent, maps are passed by value/reference and may be empty), then
-// builds the two factory tables via the helpers, allowing the auxiliary maps to
-// override or extend the builtin entries.
+// Java has two constructors:
+//   * 0-arg `XmlGameElementMapper()` which delegates `this(Map.of(), Map.of())`.
+//   * @VisibleForTesting 2-arg constructor that validates non-null inputs (Odin
+//     has no equivalent — maps are passed by reference and may be empty/nil),
+//     then builds the two factory tables via the helpers, allowing the
+//     auxiliary maps to override or extend the builtin entries.
+//
+// Both overloads collapse onto a single Odin proc by giving the auxiliary maps
+// `nil` defaults. A no-arg `xml_game_element_mapper_new()` reproduces the Java
+// `Map.of()` empty-map behavior because the helpers' `for k, v in aux { ... }`
+// loops iterate zero times over a nil map.
 xml_game_element_mapper_new :: proc(
-	auxiliary_delegate_factories_by_type_name: map[string]proc() -> ^I_Delegate,
-	auxiliary_attachment_factories_by_type_name: map[string]^Xml_Game_Element_Mapper_Attachment_Factory,
+	auxiliary_delegate_factories_by_type_name: map[string]proc() -> ^I_Delegate = nil,
+	auxiliary_attachment_factories_by_type_name: map[string]^Xml_Game_Element_Mapper_Attachment_Factory = nil,
 ) -> ^Xml_Game_Element_Mapper {
 	self := new(Xml_Game_Element_Mapper)
 	self.delegate_factories_by_type_name = xml_game_element_mapper_new_delegate_factories(auxiliary_delegate_factories_by_type_name)

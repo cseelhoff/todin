@@ -9,6 +9,12 @@ Repair_Frontier :: struct {
 	cached_rules: [dynamic]^Repair_Rule,
 }
 
+// Mirrors Java `RepairFrontier(String name, GameData data)` which delegates to
+// the (name, data, List.of()) constructor with an empty rules list.
+repair_frontier_new :: proc(name: string, data: ^Game_Data) -> ^Repair_Frontier {
+	return repair_frontier_new_with_rules(name, data, make([dynamic]^Repair_Rule, 0, 0))
+}
+
 // Mirrors Java `RepairFrontier(String name, GameData data, List<RepairRule> rules)`.
 // Initializes the embedded DefaultNamed and copies `rules` into a fresh backing
 // list (Java uses `new ArrayList<>(rules)`); `cachedRules` stays nil.

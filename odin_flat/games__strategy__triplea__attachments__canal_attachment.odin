@@ -351,3 +351,223 @@ canal_attachment_is_canal_on_route :: proc(canal_name: string, route: ^Route) ->
 	}
 	return false
 }
+
+// Java synthetic lambda inside `public static List<CanalAttachment> get(
+//     final Territory t, final Route onRoute)`:
+//   attachment -> isCanalOnRoute(attachment.getCanalName(), onRoute)
+// Captured local: `onRoute`. Javac emits a static bridge whose explicit
+// signature is `lambda$get$1(Route onRoute, CanalAttachment attachment)`,
+// reproduced here verbatim. The rawptr-keyed adapter required by
+// `canal_attachment_get_by_predicate` is implemented separately in
+// `canal_attachment_get_by_route_predicate_thunk`, which forwards through
+// this proc.
+canal_attachment_lambda_get_1 :: proc(
+	on_route: ^Route,
+	attachment: ^Canal_Attachment,
+) -> bool {
+	return canal_attachment_is_canal_on_route(
+		canal_attachment_get_canal_name(attachment),
+		on_route,
+	)
+}
+
+// Java: @Override public Optional<MutableProperty<?>> getPropertyOrEmpty(
+//          final @NonNls String propertyName)
+// A `switch` over four property names. Each arm wires a fresh
+// `MutableProperty` whose four slots model the corresponding Java
+// method-reference / lambda. Following the project convention used by
+// `tech_attachment_get_property_or_empty`, the captured environment is
+// the `^Canal_Attachment` self pointer carried as the slot `ctx`; each
+// thunk casts it back. Boxed values returned by getters are heap-allocated
+// to mirror Java's autoboxing — callers go through `MutableProperty
+// .getValue()` and treat the result as a typed pointer. The default arm
+// returns `nil`, modelling Java's `Optional.empty()`.
+//
+// Method-reference resolution notes:
+//   * "landTerritories" — Java's `MutableProperty.of(setter, stringSetter,
+//     getter, resetter)` picks the `Set<Territory>` overload of
+//     `setLandTerritories` for the typed slot and the `String` overload
+//     for the string slot. The string slot's body is the colon-split
+//     parser already implemented as `canal_attachment_set_land_territories`.
+//   * "excludedUnits" — same overload split for `setExcludedUnits`. The
+//     string-arm logic (NONE/ALL/colon-split with `getDataOrThrow`) is
+//     inlined here because the `setExcludedUnits(String)` helper is not
+//     a separately-tracked proc in this port.
+//   * "canNotMoveThroughDuringCombatMove" — Java uses
+//     `MutableProperty.ofMapper(DefaultAttachment::getBool, ...)`; the
+//     project ships `mutable_property_of_mapper`, so we forward through it
+//     after wrapping the existing `canal_attachment_lambda_get_property_or_empty_4`
+//     bridge in the mapper signature `proc(string) -> (rawptr, Maybe(string))`,
+//     and the existing `canal_attachment_lambda_get_property_or_empty_5`
+//     `() -> false` constant in a getter slot.
+canal_attachment_get_property_or_empty :: proc(
+	self: ^Canal_Attachment,
+	property_name: string,
+) -> Maybe(^Mutable_Property) {
+	switch property_name {
+	case "canalName":
+		return mutable_property_of_string(
+			Mutable_Property_String_Setter_Slot{
+				fn = proc(ctx: rawptr, v: string) -> Maybe(string) {
+					canal_attachment_set_canal_name(cast(^Canal_Attachment)ctx, v)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(string)
+					out^ = canal_attachment_get_canal_name(cast(^Canal_Attachment)ctx)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Resetter_Slot{
+				fn = proc(ctx: rawptr) {
+					(cast(^Canal_Attachment)ctx).canal_name = ""
+				},
+				ctx = self,
+			},
+		)
+	case "landTerritories":
+		return mutable_property_of(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					s := cast(^Canal_Attachment)ctx
+					if v == nil {
+						s.land_territories = nil
+					} else {
+						s.land_territories = (cast(^map[^Territory]struct {})v)^
+					}
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_String_Setter_Slot{
+				fn = proc(ctx: rawptr, v: string) -> Maybe(string) {
+					canal_attachment_set_land_territories(cast(^Canal_Attachment)ctx, v)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(map[^Territory]struct {})
+					out^ = canal_attachment_get_land_territories(cast(^Canal_Attachment)ctx)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Resetter_Slot{
+				fn = proc(ctx: rawptr) {
+					(cast(^Canal_Attachment)ctx).land_territories = nil
+				},
+				ctx = self,
+			},
+		)
+	case "excludedUnits":
+		return mutable_property_of(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					s := cast(^Canal_Attachment)ctx
+					if v == nil {
+						s.excluded_units = nil
+					} else {
+						s.excluded_units = (cast(^map[^Unit_Type]struct {})v)^
+					}
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_String_Setter_Slot{
+				fn = proc(ctx: rawptr, value: string) -> Maybe(string) {
+					s := cast(^Canal_Attachment)ctx
+					if s.excluded_units == nil {
+						s.excluded_units = make(map[^Unit_Type]struct {})
+					}
+					if strings.equal_fold(value, "NONE") {
+						return nil
+					}
+					data := game_data_component_get_data_or_throw(
+						&s.default_attachment.game_data_component,
+					)
+					utl := game_data_get_unit_type_list(data)
+					if strings.equal_fold(value, "ALL") {
+						for ut in unit_type_list_get_all_unit_types(utl) {
+							s.excluded_units[ut] = {}
+						}
+						return nil
+					}
+					parts := default_attachment_split_on_colon(value)
+					defer delete(parts)
+					for name in parts {
+						ut := unit_type_list_get_unit_type(utl, name)
+						if ut == nil {
+							suffix := default_attachment_this_error_msg(
+								&s.default_attachment,
+							)
+							fmt.panicf(
+								"Canals: No UnitType called: %s%s",
+								name,
+								suffix,
+							)
+						}
+						s.excluded_units[ut] = {}
+					}
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(map[^Unit_Type]struct {})
+					out^ = canal_attachment_get_excluded_units(
+						cast(^Canal_Attachment)ctx,
+					)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Resetter_Slot{
+				fn = proc(ctx: rawptr) {
+					(cast(^Canal_Attachment)ctx).excluded_units = nil
+				},
+				ctx = self,
+			},
+		)
+	case "canNotMoveThroughDuringCombatMove":
+		return mutable_property_of_mapper(
+			proc(value: string) -> (rawptr, Maybe(string)) {
+				out := new(bool)
+				out^ = canal_attachment_lambda_get_property_or_empty_4(value)
+				return out, nil
+			},
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					(cast(^Canal_Attachment)ctx).can_not_move_through_during_combat_move =
+						(cast(^bool)v)^
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ =
+						(cast(^Canal_Attachment)ctx).can_not_move_through_during_combat_move
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(bool)
+					out^ = canal_attachment_lambda_get_property_or_empty_5()
+					return out
+				},
+				ctx = nil,
+			},
+		)
+	}
+	return nil
+}

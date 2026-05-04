@@ -21,6 +21,10 @@ aa_defense_combat_value_choose_best_roll :: proc(self: ^Aa_Defense_Combat_Value,
 	return false
 }
 
+aa_defense_combat_value_get_dice_sides :: proc(self: ^Aa_Defense_Combat_Value, unit: ^Unit) -> i32 {
+	return unit_attachment_get_attack_aa_max_die_sides(unit_get_unit_attachment(unit))
+}
+
 aa_defense_combat_value_builder :: proc() -> ^Aa_Defense_Combat_Value_Aa_Defense_Combat_Value_Builder {
 	return aa_defense_combat_value_builder_new()
 }

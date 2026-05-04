@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 
 Must_Fight_Battle :: struct {
 	using dependent_battle: Dependent_Battle,
@@ -645,6 +646,502 @@ must_fight_battle_remove_non_combatants_filter :: proc(
 		}
 	}
 	return result
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeNonCombatants(BattleState.Side)
+//
+// Java public override:
+//   if (side == DEFENSE) {
+//     final List<Unit> notRemovedDefending = removeNonCombatants(defendingUnits, attackingUnits, false, true);
+//     final Collection<Unit> toRemoveDefending = CollectionUtils.difference(defendingUnits, notRemovedDefending);
+//     defendingUnits = notRemovedDefending;
+//     return toRemoveDefending;
+//   } else { /* mirror with attackers */ }
+must_fight_battle_remove_non_combatants :: proc(
+	self: ^Must_Fight_Battle,
+	side: Battle_State_Side,
+) -> [dynamic]^Unit {
+	if side == .DEFENSE {
+		not_removed := must_fight_battle_remove_non_combatants_filter(
+			self,
+			self.defending_units,
+			self.attacking_units,
+			false,
+			true,
+		)
+		// difference(defendingUnits, not_removed): elements in defending_units not in not_removed.
+		kept_set: map[^Unit]struct{}
+		defer delete(kept_set)
+		for u in not_removed {
+			kept_set[u] = {}
+		}
+		to_remove: [dynamic]^Unit
+		for u in self.defending_units {
+			if _, ok := kept_set[u]; !ok {
+				append(&to_remove, u)
+			}
+		}
+		delete(self.defending_units)
+		self.defending_units = not_removed
+		return to_remove
+	} else {
+		not_removed := must_fight_battle_remove_non_combatants_filter(
+			self,
+			self.attacking_units,
+			self.defending_units,
+			true,
+			true,
+		)
+		kept_set: map[^Unit]struct{}
+		defer delete(kept_set)
+		for u in not_removed {
+			kept_set[u] = {}
+		}
+		to_remove: [dynamic]^Unit
+		for u in self.attacking_units {
+			if _, ok := kept_set[u]; !ok {
+				append(&to_remove, u)
+			}
+		}
+		delete(self.attacking_units)
+		self.attacking_units = not_removed
+		return to_remove
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#addPlayerCombatHistoryText(
+//     Collection<GamePlayer>, Collection<Unit>, boolean, IDelegateHistoryWriter)
+//
+// Java private helper invoked from writeUnitsToHistory. For each player in
+// `players`, append "<name> <verb>[ with <unitsToTextNoOwner(filtered)>]"
+// (separated by "; "), where verb depends on attacking flag and whether
+// the player is the lead attacker. Final concatenated event is written
+// only if any units were filtered overall.
+must_fight_battle_add_player_combat_history_text :: proc(
+	self: ^Must_Fight_Battle,
+	players: [dynamic]^Game_Player,
+	units: [dynamic]^Unit,
+	attacking: bool,
+	history_writer: ^I_Delegate_History_Writer,
+) {
+	sb := strings.builder_make()
+	defer strings.builder_destroy(&sb)
+	all_units: [dynamic]^Unit
+	defer delete(all_units)
+
+	for current in players {
+		if strings.builder_len(sb) > 0 {
+			strings.write_string(&sb, "; ")
+		}
+		own_p, own_c := matches_unit_is_owned_by(current)
+		filtered_units: [dynamic]^Unit
+		defer delete(filtered_units)
+		for u in units {
+			if own_p(own_c, u) {
+				append(&filtered_units, u)
+			}
+		}
+		verb: string
+		if !attacking {
+			verb = "defend"
+		} else if current == self.attacker {
+			verb = "attack"
+		} else {
+			verb = "loiter and taunt"
+		}
+		strings.write_string(&sb, current.named.base.name)
+		strings.write_string(&sb, " ")
+		strings.write_string(&sb, verb)
+		if len(filtered_units) > 0 {
+			strings.write_string(&sb, " with ")
+			strings.write_string(&sb, my_formatter_units_to_text_no_owner_simple(filtered_units))
+		}
+		for u in filtered_units {
+			append(&all_units, u)
+		}
+	}
+
+	if len(all_units) > 0 {
+		history_writer_add_child_to_event(history_writer, strings.to_string(sb), all_units)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#retreatQuery(
+//     BattleState, Player, Collection<Territory>, boolean, String)
+//
+// Java private helper:
+//   final Optional<Territory> optionalRetreatTo = remotePlayer.retreatQuery(
+//       battleState.getBattleId(), submerge, battleState.getBattleSite(),
+//       availableTerritories, text);
+//   if (optionalRetreatTo.isPresent() && !availableTerritories.contains(optionalRetreatTo.get())) {
+//     log.error("Invalid retreat selection: " + ... + " not in " +
+//               MyFormatter.defaultNamedToTextList(availableTerritories));
+//     return Optional.empty();
+//   }
+//   return optionalRetreatTo;
+must_fight_battle_retreat_query :: proc(
+	self: ^Must_Fight_Battle,
+	battle_state: ^Battle_State,
+	remote_player: ^Player,
+	available_territories: [dynamic]^Territory,
+	submerge: bool,
+	text: string,
+) -> ^Territory {
+	optional_retreat_to := player_retreat_query(
+		remote_player,
+		battle_state_get_battle_id(battle_state),
+		submerge,
+		battle_state_get_battle_site(battle_state),
+		available_territories,
+		text,
+	)
+	if optional_retreat_to != nil {
+		found := false
+		for t in available_territories {
+			if t == optional_retreat_to {
+				found = true
+				break
+			}
+		}
+		if !found {
+			named: [dynamic]^Default_Named
+			defer delete(named)
+			for t in available_territories {
+				append(&named, &t.named_attachable.default_named)
+			}
+			fmt.eprintln(
+				"Invalid retreat selection:",
+				optional_retreat_to.named.base.name,
+				"not in",
+				my_formatter_default_named_to_text_list_simple(named),
+			)
+			return nil
+		}
+	}
+	return optional_retreat_to
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#showCasualties(IDelegateBridge)
+//
+// Java private helper:
+//   if (killed.isEmpty()) return;
+//   IntegerMap<UnitType> costs = bridge.getCostsForTuv(attacker);
+//   final int tuvLostAttacker = TuvUtils.getTuv(killed, attacker, costs, gameData);
+//   costs = bridge.getCostsForTuv(defender);
+//   final int tuvLostDefender = TuvUtils.getTuv(killed, defender, costs, gameData);
+//   final int tuvChange = tuvLostDefender - tuvLostAttacker;
+//   bridge.getHistoryWriter().addChildToEvent(
+//       "Battle casualty summary: Battle score (TUV change) for attacker is " + tuvChange,
+//       new ArrayList<>(killed));
+//   attackerLostTuv += tuvLostAttacker;
+//   defenderLostTuv += tuvLostDefender;
+must_fight_battle_show_casualties :: proc(
+	self: ^Must_Fight_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if len(self.killed) == 0 {
+		return
+	}
+
+	attacker_costs_map := i_delegate_bridge_get_costs_for_tuv(bridge, self.attacker)
+	attacker_costs := new(Integer_Map_Unit_Type)
+	defer free(attacker_costs)
+	attacker_costs.entries = attacker_costs_map
+	tuv_lost_attacker := tuv_utils_get_tuv_for_player(
+		self.killed,
+		self.attacker,
+		attacker_costs,
+		self.game_data,
+	)
+
+	defender_costs_map := i_delegate_bridge_get_costs_for_tuv(bridge, self.defender)
+	defender_costs := new(Integer_Map_Unit_Type)
+	defer free(defender_costs)
+	defender_costs.entries = defender_costs_map
+	tuv_lost_defender := tuv_utils_get_tuv_for_player(
+		self.killed,
+		self.defender,
+		defender_costs,
+		self.game_data,
+	)
+
+	tuv_change := tuv_lost_defender - tuv_lost_attacker
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	text := fmt.aprintf(
+		"Battle casualty summary: Battle score (TUV change) for attacker is %d",
+		tuv_change,
+	)
+	killed_copy: [dynamic]^Unit
+	for u in self.killed {
+		append(&killed_copy, u)
+	}
+	history_writer_add_child_to_event(writer, text, killed_copy)
+	self.attacker_lost_tuv += tuv_lost_attacker
+	self.defender_lost_tuv += tuv_lost_defender
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#findAllies(
+//     Collection<GamePlayer>, GamePlayer, RelationshipTracker)
+//
+// Java private static helper:
+//   final Collection<GamePlayer> allies = new ArrayList<>();
+//   for (final GamePlayer current : candidatePlayers) {
+//     if (current.equals(player) || relationshipTracker.isAllied(player, current)) {
+//       allies.add(current);
+//     }
+//   }
+//   return allies;
+must_fight_battle_find_allies :: proc(
+	candidate_players: [dynamic]^Game_Player,
+	player: ^Game_Player,
+	relationship_tracker: ^Relationship_Tracker,
+) -> [dynamic]^Game_Player {
+	allies: [dynamic]^Game_Player
+	for current in candidate_players {
+		if current == player ||
+		   relationship_tracker_is_allied(relationship_tracker, player, current) {
+			append(&allies, current)
+		}
+	}
+	return allies
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#markAttackingTransports(IDelegateBridge)
+//
+// Java:
+//   if (headless) return;
+//   final Collection<Unit> transports =
+//       CollectionUtils.getMatches(
+//           attackingUnits, Matches.unitCanTransport().and(Matches.unitIsOwnedBy(attacker)));
+//   if (!transports.isEmpty()) {
+//     final CompositeChange change = new CompositeChange();
+//     for (final Unit unit : transports) {
+//       change.add(ChangeFactory.unitPropertyChange(unit, true, Unit.PropertyName.WAS_IN_COMBAT));
+//     }
+//     bridge.addChange(change);
+//   }
+must_fight_battle_mark_attacking_transports :: proc(
+	self: ^Must_Fight_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if self.headless {
+		return
+	}
+	can_xport_p, can_xport_c := matches_unit_can_transport()
+	owned_p, owned_c := matches_unit_is_owned_by(self.attacker)
+	transports: [dynamic]^Unit
+	defer delete(transports)
+	for u in self.attacking_units {
+		if can_xport_p(can_xport_c, u) && owned_p(owned_c, u) {
+			append(&transports, u)
+		}
+	}
+	if len(transports) == 0 {
+		return
+	}
+	change := composite_change_new()
+	for unit in transports {
+		boxed := new(bool)
+		boxed^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				unit,
+				rawptr(boxed),
+				.Was_In_Combat,
+			),
+		)
+	}
+	i_delegate_bridge_add_change(bridge, &change.change)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#queryRetreatTerritory(
+//     BattleState, IDelegateBridge, GamePlayer, Collection<Territory>, String)
+//
+//   return retreatQuery(
+//       battleState, getRemote(retreatingPlayer, bridge), availableTerritories, false, text);
+must_fight_battle_query_retreat_territory :: proc(
+	self: ^Must_Fight_Battle,
+	battle_state: ^Battle_State,
+	bridge: ^I_Delegate_Bridge,
+	retreating_player: ^Game_Player,
+	available_territories: [dynamic]^Territory,
+	text: string,
+) -> ^Territory {
+	return must_fight_battle_retreat_query(
+		self,
+		battle_state,
+		abstract_battle_get_remote_for_player(retreating_player, bridge),
+		available_territories,
+		false,
+		text,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#querySubmergeTerritory(
+//     BattleState, IDelegateBridge, GamePlayer, Collection<Territory>, String)
+//
+//   return retreatQuery(
+//       battleState, getRemote(retreatingPlayer, bridge), availableTerritories, true, text);
+must_fight_battle_query_submerge_territory :: proc(
+	self: ^Must_Fight_Battle,
+	battle_state: ^Battle_State,
+	bridge: ^I_Delegate_Bridge,
+	retreating_player: ^Game_Player,
+	available_territories: [dynamic]^Territory,
+	text: string,
+) -> ^Territory {
+	return must_fight_battle_retreat_query(
+		self,
+		battle_state,
+		abstract_battle_get_remote_for_player(retreating_player, bridge),
+		available_territories,
+		true,
+		text,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getAttackerRetreatTerritories()
+//
+// Java public:
+//   - If attacker is all planes (or headless, or RetreatingUnitsRemainInPlace),
+//     return Set.of(battleSite).
+//   - Otherwise compute possible from `attackingFromMap.keySet()`, filtered by
+//     a `Matches.territoryHasUnitsThatMatch(enemyUnitsThatPreventRetreat).negate()`,
+//     where `enemyUnitsThatPreventRetreat` ANDs:
+//       enemyUnit(attacker), unitIsNotInfrastructure, !unitIsBeingTransported,
+//       !unitIsSubmerged, !unitCanBeMovedThroughByEnemies, and (when
+//       IgnoreTransportInMovement is on) unitIsNotSeaTransportButCouldBeCombatSeaTransport.
+//   - If WW2V2 or WW2V3, further filter `possible` via the lambda that drops
+//     territories whose entire attacking-from-units list is air-only.
+//   - Remove territories matching
+//     isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted(attacker) OR
+//     (territoryIsWater AND territoryWasFoughtOver(battleTracker)).
+//   - Remove the battle site itself.
+//   - If any attacking unit is land and battleSite is not water, filter to
+//     land territories. If any attacking unit is sea, filter to water.
+must_fight_battle_get_attacker_retreat_territories :: proc(
+	self: ^Must_Fight_Battle,
+) -> [dynamic]^Territory {
+	props := game_data_get_properties(self.game_data)
+
+	all_air := false
+	if len(self.attacking_units) > 0 {
+		air_p, air_c := matches_unit_is_air()
+		all_air = true
+		for u in self.attacking_units {
+			if !air_p(air_c, u) {
+				all_air = false
+				break
+			}
+		}
+	}
+	if self.headless || all_air || properties_get_retreating_units_remain_in_place(props) {
+		out: [dynamic]^Territory
+		append(&out, self.battle_site)
+		return out
+	}
+
+	ignore_transport := properties_get_ignore_transport_in_movement(props)
+
+	enemy_p, enemy_c := matches_enemy_unit(self.attacker)
+	not_infra_p, not_infra_c := matches_unit_is_not_infrastructure()
+	being_xported_p, being_xported_c := matches_unit_is_being_transported()
+	submerged_p, submerged_c := matches_unit_is_submerged()
+	moved_through_p, moved_through_c := matches_unit_can_be_moved_through_by_enemies()
+	not_sea_xport_combat_p, not_sea_xport_combat_c :=
+		matches_unit_is_not_sea_transport_but_could_be_combat_sea_transport()
+
+	possible: [dynamic]^Territory
+	for t, _ in self.attacking_from_map {
+		has_blocker := false
+		for u in t.unit_collection.units {
+			if !enemy_p(enemy_c, u) {continue}
+			if !not_infra_p(not_infra_c, u) {continue}
+			if being_xported_p(being_xported_c, u) {continue}
+			if submerged_p(submerged_c, u) {continue}
+			if moved_through_p(moved_through_c, u) {continue}
+			if ignore_transport && !not_sea_xport_combat_p(not_sea_xport_combat_c, u) {continue}
+			has_blocker = true
+			break
+		}
+		if !has_blocker {
+			append(&possible, t)
+		}
+	}
+
+	if properties_get_ww2_v2(props) || properties_get_ww2_v3(props) {
+		filtered: [dynamic]^Territory
+		for t in possible {
+			if must_fight_battle_lambda_get_attacker_retreat_territories_2(rawptr(self), t) {
+				append(&filtered, t)
+			}
+		}
+		delete(possible)
+		possible = filtered
+	}
+
+	conq_p, conq_c := matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(
+		self.attacker,
+	)
+	water_p, water_c := matches_territory_is_water()
+	fought_p, fought_c := matches_territory_was_fought_over(self.battle_tracker)
+	{
+		filtered: [dynamic]^Territory
+		for t in possible {
+			cond := conq_p(conq_c, t) ||
+				(water_p(water_c, t) && fought_p(fought_c, t))
+			if !cond {
+				append(&filtered, t)
+			}
+		}
+		delete(possible)
+		possible = filtered
+	}
+
+	// remove battle site
+	{
+		filtered: [dynamic]^Territory
+		for t in possible {
+			if t != self.battle_site {
+				append(&filtered, t)
+			}
+		}
+		delete(possible)
+		possible = filtered
+	}
+
+	any_land := false
+	any_sea := false
+	land_p, land_c := matches_unit_is_land()
+	sea_p, sea_c := matches_unit_is_sea()
+	for u in self.attacking_units {
+		if land_p(land_c, u) {any_land = true}
+		if sea_p(sea_c, u) {any_sea = true}
+	}
+	if any_land && !territory_is_water(self.battle_site) {
+		t_land_p, t_land_c := matches_territory_is_land()
+		filtered: [dynamic]^Territory
+		for t in possible {
+			if t_land_p(t_land_c, t) {
+				append(&filtered, t)
+			}
+		}
+		delete(possible)
+		possible = filtered
+	}
+	if any_sea {
+		t_water_p, t_water_c := matches_territory_is_water()
+		filtered: [dynamic]^Territory
+		for t in possible {
+			if t_water_p(t_water_c, t) {
+				append(&filtered, t)
+			}
+		}
+		delete(possible)
+		possible = filtered
+	}
+	return possible
 }
 
 

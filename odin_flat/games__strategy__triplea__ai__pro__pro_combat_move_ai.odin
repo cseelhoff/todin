@@ -62,3 +62,71 @@ pro_combat_move_ai_lambda__determine_best_bombing_attack_for_bomber__4 :: proc(
 	return pred(pctx, c.target)
 }
 
+// Java: public static ProductionAndIsCapital getProductionAndIsCapital(Territory t)
+//   final ProductionAndIsCapital productionAndIsCapital = new ProductionAndIsCapital();
+//   final Optional<TerritoryAttachment> optionalTerritoryAttachment = TerritoryAttachment.get(t);
+//   if (optionalTerritoryAttachment.isPresent()) {
+//     final TerritoryAttachment ta = optionalTerritoryAttachment.get();
+//     productionAndIsCapital.production = ta.getProduction();
+//     if (ta.isCapital()) productionAndIsCapital.isCapital = 1;
+//   }
+//   return productionAndIsCapital;
+pro_combat_move_ai_get_production_and_is_capital :: proc(
+	t: ^Territory,
+) -> ^Pro_Combat_Move_Ai_Production_And_Is_Capital {
+	result := pro_combat_move_ai_production_and_is_capital_new()
+	ta := territory_attachment_get(t)
+	if ta != nil {
+		result.production = territory_attachment_get_production(ta)
+		if territory_attachment_is_capital(ta) {
+			result.is_capital = 1
+		}
+	}
+	return result
+}
+
+// Java: ProCombatMoveAi#lambda$removeTerritoriesThatArentWorthAttacking$0(
+//     Predicate enemyTerritory, List prioritizedTerritoryList, Territory attackFromTerritory)
+//   attackFromTerritory -> {
+//     final Set<Territory> enemyNeighbors =
+//         data.getMap().getNeighbors(attackFromTerritory, enemyTerritory);
+//     return !prioritizedTerritoryList.containsAll(enemyNeighbors);
+//   }
+// `data` is captured implicitly via `this` (the lambda is non-static); the
+// explicit parameter list mirrors what javac records on the synthetic method.
+// The Predicate<Territory> is carried as the project's (proc + rawptr) pair.
+Pro_Combat_Move_Ai_Lambda_Remove_Territories_That_Arent_Worth_Attacking_0_Ctx :: struct {
+	self:                       ^Pro_Combat_Move_Ai,
+	enemy_territory:            proc(rawptr, ^Territory) -> bool,
+	enemy_territory_ctx:        rawptr,
+	prioritized_territory_list: ^[dynamic]^Territory,
+}
+
+pro_combat_move_ai_lambda__remove_territories_that_arent_worth_attacking__0 :: proc(
+	ctx: rawptr,
+	attack_from_territory: ^Territory,
+) -> bool {
+	c := (^Pro_Combat_Move_Ai_Lambda_Remove_Territories_That_Arent_Worth_Attacking_0_Ctx)(ctx)
+	gm := game_data_get_map(c.self.data)
+	enemy_neighbors := game_map_get_neighbors_predicate(
+		gm,
+		attack_from_territory,
+		c.enemy_territory,
+		c.enemy_territory_ctx,
+	)
+	// !prioritizedTerritoryList.containsAll(enemyNeighbors)
+	for n in enemy_neighbors {
+		found := false
+		for t in c.prioritized_territory_list^ {
+			if t == n {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true
+		}
+	}
+	return false
+}
+

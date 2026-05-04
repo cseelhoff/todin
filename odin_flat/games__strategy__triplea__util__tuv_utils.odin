@@ -33,3 +33,26 @@ tuv_utils_get_tuv :: proc(units: [dynamic]^Unit, costs: ^Integer_Map_Unit_Type) 
 	return tuv
 }
 
+// Java: TuvUtils.getTuv(Collection<Unit>, GamePlayer, IntegerMap<UnitType>, GameState) -> int
+//   final Collection<Unit> playerUnits =
+//       CollectionUtils.getMatches(units, Matches.alliedUnit(player));
+//   return getTuv(playerUnits, costs);
+// `data` is unused in Java; mirror the signature.
+tuv_utils_get_tuv_for_player :: proc(
+	units:  [dynamic]^Unit,
+	player: ^Game_Player,
+	costs:  ^Integer_Map_Unit_Type,
+	data:   ^Game_State,
+) -> i32 {
+	_ = data
+	pred, pred_ctx := matches_allied_unit(player)
+	player_units: [dynamic]^Unit
+	defer delete(player_units)
+	for u in units {
+		if pred(pred_ctx, u) {
+			append(&player_units, u)
+		}
+	}
+	return tuv_utils_get_tuv(player_units, costs)
+}
+

@@ -150,3 +150,43 @@ support_calculator_lambda_get_combined_support_given_2 :: proc(u: ^Unit) -> ^Int
 support_calculator_lambda_get_combined_support_given_3 :: proc(u: ^Unit) -> ^Integer_Map {
 	return integer_map_new()
 }
+
+// Java: public int getSupport(UnitSupportAttachment rule)
+//   return supportUnits.getOrDefault(rule, IntegerMap.of()).totalValues();
+support_calculator_get_support :: proc(self: ^Support_Calculator, rule: ^Unit_Support_Attachment) -> i32 {
+	units, ok := self.support_units[rule]
+	if !ok {
+		return 0
+	}
+	total: i32 = 0
+	for _, v in units.entries {
+		total += v
+	}
+	return total
+}
+
+// Java: public static Map<Unit, IntegerMap<Unit>> getCombinedSupportGiven(
+//     AvailableSupports supportFromFriends, AvailableSupports supportFromEnemies)
+support_calculator_get_combined_support_given :: proc(
+	support_from_friends: ^Available_Supports,
+	support_from_enemies: ^Available_Supports,
+) -> map[^Unit]^Integer_Map {
+	support := make(map[^Unit]^Integer_Map)
+	for k, v in available_supports_get_units_giving_support(support_from_friends) {
+		entry, ok := support[k]
+		if !ok {
+			entry = support_calculator_lambda_get_combined_support_given_2(k)
+			support[k] = entry
+		}
+		integer_map_add_map(entry, v)
+	}
+	for k, v in available_supports_get_units_giving_support(support_from_enemies) {
+		entry, ok := support[k]
+		if !ok {
+			entry = support_calculator_lambda_get_combined_support_given_3(k)
+			support[k] = entry
+		}
+		integer_map_add_map(entry, v)
+	}
+	return support
+}

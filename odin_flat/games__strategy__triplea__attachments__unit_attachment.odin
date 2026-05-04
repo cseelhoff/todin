@@ -1071,3 +1071,373 @@ unit_attachment_set_is_factory_str :: proc(self: ^Unit_Attachment, s: string) {
 	parsed := default_attachment_get_bool(&self.default_attachment, s)
 	unit_attachment_set_is_factory(self, &parsed)
 }
+
+// =============================================================================
+// Phase B additional player-aware accessors and static aggregators.
+// =============================================================================
+
+// Java: public int getMovement(final GamePlayer player)
+//   final int bonus = getTechTracker().getMovementBonus(player, getUnitType());
+//   return Math.max(0, movement + bonus);
+unit_attachment_get_movement_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_movement_bonus(player, unit_attachment_get_unit_type(self))
+	return max(i32(0), self.movement + bonus)
+}
+
+// Java: public int getAttack(final GamePlayer player)
+//   final int bonus = getTechTracker().getAttackBonus(player, getUnitType());
+//   return Math.min(getData().getDiceSides(), Math.max(0, attack + bonus));
+unit_attachment_get_attack_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_attack_bonus(player, unit_attachment_get_unit_type(self))
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	return min(game_data_get_dice_sides(data), max(i32(0), self.attack + bonus))
+}
+
+// Java: public int getAttackRolls(final GamePlayer player)
+//   final int bonus = getTechTracker().getAttackRollsBonus(player, getUnitType());
+//   return Math.max(0, attackRolls + bonus);
+unit_attachment_get_attack_rolls_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_attack_rolls_bonus(player, unit_attachment_get_unit_type(self))
+	return max(i32(0), self.attack_rolls + bonus)
+}
+
+// Java: public int getDefenseRolls(final GamePlayer player)
+//   final int bonus = getTechTracker().getDefenseRollsBonus(player, getUnitType());
+//   return Math.max(0, defenseRolls + bonus);
+unit_attachment_get_defense_rolls_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_defense_rolls_bonus(player, unit_attachment_get_unit_type(self))
+	return max(i32(0), self.defense_rolls + bonus)
+}
+
+// Java: public boolean getCanBlitz(final GamePlayer player)
+//   return canBlitz || getTechTracker().canBlitz(player, getUnitType());
+unit_attachment_get_can_blitz_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
+	return self.can_blitz || tech_tracker_can_blitz(player, unit_attachment_get_unit_type(self))
+}
+
+// Java: public boolean getCanBombard(final GamePlayer player)
+//   return canBombard || getTechTracker().canBombard(player, getUnitType());
+unit_attachment_get_can_bombard_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
+	return self.can_bombard || tech_tracker_can_bombard(player, unit_attachment_get_unit_type(self))
+}
+
+// Java: public int getAttackAa(final GamePlayer player)
+//   final int bonus = getTechTracker().getRadarBonus(player, getUnitType());
+//   return Math.max(0, Math.min(getAttackAaMaxDieSides(), attackAa + bonus));
+unit_attachment_get_attack_aa_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_radar_bonus(player, unit_attachment_get_unit_type(self))
+	return max(i32(0), min(unit_attachment_get_attack_aa_max_die_sides(self), self.attack_aa + bonus))
+}
+
+// Java: public int getOffensiveAttackAa(final GamePlayer player)
+//   final int bonus = getTechTracker().getRadarBonus(player, getUnitType());
+//   return Math.max(0, Math.min(getOffensiveAttackAaMaxDieSides(), offensiveAttackAa + bonus));
+unit_attachment_get_offensive_attack_aa_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_radar_bonus(player, unit_attachment_get_unit_type(self))
+	return max(
+		i32(0),
+		min(
+			unit_attachment_get_offensive_attack_aa_max_die_sides(self),
+			self.offensive_attack_aa + bonus,
+		),
+	)
+}
+
+// Java: public static List<String> getAllOfTypeAas(Collection<Unit> aaUnitsAlreadyVerified)
+//   final Set<String> aaSet = new HashSet<>();
+//   for (Unit u : aaUnitsAlreadyVerified) aaSet.add(u.getUnitAttachment().getTypeAa());
+//   final List<String> aaTypes = new ArrayList<>(aaSet);
+//   Collections.sort(aaTypes);
+//   return aaTypes;
+unit_attachment_get_all_of_type_aas :: proc(aa_units_already_verified: [dynamic]^Unit) -> [dynamic]string {
+	seen: map[string]struct {}
+	defer delete(seen)
+	for u in aa_units_already_verified {
+		ua := unit_get_unit_attachment(u)
+		if ua == nil {
+			continue
+		}
+		seen[unit_attachment_get_type_aa(ua)] = {}
+	}
+	out: [dynamic]string
+	for k in seen {
+		append(&out, k)
+	}
+	// Insertion-sort ascending — Collections.sort on a small AA-type list.
+	for i in 1 ..< len(out) {
+		j := i
+		for j > 0 && out[j - 1] > out[j] {
+			tmp := out[j - 1]
+			out[j - 1] = out[j]
+			out[j] = tmp
+			j -= 1
+		}
+	}
+	return out
+}
+
+// Java: public static Set<UnitType> getAllowedBombingTargetsIntersection(
+//          Collection<Unit> bombersOrRockets, UnitTypeList unitTypeList)
+//   if (bombersOrRockets.isEmpty()) return new HashSet<>();
+//   Collection<UnitType> allowedTargets = unitTypeList.getAllUnitTypes();
+//   for (Unit u : bombersOrRockets) {
+//     UnitAttachment ua = u.getUnitAttachment();
+//     Set<UnitType> bombingTargets = ua.getBombingTargets(unitTypeList);
+//     allowedTargets = CollectionUtils.intersection(allowedTargets, bombingTargets);
+//   }
+//   return new HashSet<>(allowedTargets);
+unit_attachment_get_allowed_bombing_targets_intersection :: proc(
+	bombers_or_rockets: [dynamic]^Unit,
+	unit_type_list: ^Unit_Type_List,
+) -> map[^Unit_Type]struct {} {
+	out: map[^Unit_Type]struct {}
+	if len(bombers_or_rockets) == 0 {
+		return out
+	}
+	// Seed with all unit types.
+	all := unit_type_list_get_all_unit_types(unit_type_list)
+	defer delete(all)
+	for ut in all {
+		out[ut] = {}
+	}
+	for u in bombers_or_rockets {
+		ua := unit_get_unit_attachment(u)
+		bombing_targets := unit_attachment_get_bombing_targets(ua, unit_type_list)
+		// Intersect: drop any key not in bombing_targets.
+		to_remove: [dynamic]^Unit_Type
+		defer delete(to_remove)
+		for k in out {
+			if _, ok := bombing_targets[k]; !ok {
+				append(&to_remove, k)
+			}
+		}
+		for k in to_remove {
+			delete_key(&out, k)
+		}
+	}
+	return out
+}
+
+// Java: public static Collection<Unit> getUnitsWhichReceivesAbilityWhenWith(
+//          Collection<Unit> units, String filterForAbility, UnitTypeList unitTypeList)
+//   if (units.stream().noneMatch(Matches.unitCanReceiveAbilityWhenWith())) return new ArrayList<>();
+//   Collection<Unit> unitsCopy = new ArrayList<>(units);
+//   Set<Unit> whichReceiveNoDuplicates = new HashSet<>();
+//   IntegerMap<Tuple<String,String>> whichGive =
+//       getReceivesAbilityWhenWithMap(unitsCopy, filterForAbility, unitTypeList);
+//   for (Tuple<String,String> abilityUnitType : whichGive.keySet()) {
+//     Collection<Unit> receives = CollectionUtils.getNMatches(unitsCopy,
+//         whichGive.getInt(abilityUnitType),
+//         Matches.unitCanReceiveAbilityWhenWith(filterForAbility, abilityUnitType.getSecond()));
+//     whichReceiveNoDuplicates.addAll(receives);
+//     unitsCopy.removeAll(receives);
+//   }
+//   return whichReceiveNoDuplicates;
+unit_attachment_get_units_which_receives_ability_when_with :: proc(
+	units: [dynamic]^Unit,
+	filter_for_ability: string,
+	unit_type_list: ^Unit_Type_List,
+) -> [dynamic]^Unit {
+	out: [dynamic]^Unit
+	// Short-circuit: noneMatch(unitCanReceiveAbilityWhenWith).
+	any_pred, any_ctx := matches_unit_can_receive_ability_when_with()
+	any := false
+	for u in units {
+		if any_pred(any_ctx, u) {
+			any = true
+			break
+		}
+	}
+	if !any {
+		return out
+	}
+	// Mutable working copy.
+	units_copy: [dynamic]^Unit
+	defer delete(units_copy)
+	for u in units {
+		append(&units_copy, u)
+	}
+	// dedup via membership map keyed on ^Unit identity.
+	seen: map[^Unit]struct {}
+	defer delete(seen)
+	which_give := unit_attachment_get_receives_ability_when_with_map(
+		units_copy,
+		filter_for_ability,
+		unit_type_list,
+	)
+	for raw_key in integer_map_key_set(which_give) {
+		ability_unit_type := cast(^Tuple(string, string))raw_key
+		count := integer_map_get_int(which_give, raw_key)
+		ut_name := tuple_get_second(ability_unit_type)
+		pred, ctx := matches_unit_can_receive_ability_when_with_filter(
+			filter_for_ability,
+			ut_name,
+		)
+		// Up to `count` matching units; track them so we can remove from units_copy.
+		matched: [dynamic]^Unit
+		defer delete(matched)
+		taken: i32 = 0
+		for u in units_copy {
+			if taken >= count {
+				break
+			}
+			if pred(ctx, u) {
+				append(&matched, u)
+				taken += 1
+				if _, dup := seen[u]; !dup {
+					seen[u] = {}
+					append(&out, u)
+				}
+			}
+		}
+		// removeAll(receives): rebuild units_copy without elements in `matched`.
+		if len(matched) > 0 {
+			rebuilt: [dynamic]^Unit
+			outer: for u in units_copy {
+				for m in matched {
+					if m == u {
+						continue outer
+					}
+				}
+				append(&rebuilt, u)
+			}
+			delete(units_copy)
+			units_copy = rebuilt
+		}
+	}
+	return out
+}
+
+// =============================================================================
+// Phase B additional methods (this batch).
+// =============================================================================
+
+// Java: public boolean getCanMoveThroughEnemies()
+//   return canMoveThroughEnemies
+//       || (isSub && Properties.getSubmersibleSubs(getData().getProperties()));
+unit_attachment_get_can_move_through_enemies :: proc(self: ^Unit_Attachment) -> bool {
+	if self.can_move_through_enemies {
+		return true
+	}
+	if !self.is_sub {
+		return false
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	props := game_data_get_properties(data)
+	return properties_get_submersible_subs(props)
+}
+
+// Java: public boolean getCanBeMovedThroughByEnemies()
+//   return canBeMovedThroughByEnemies
+//       || (isSub && Properties.getIgnoreSubInMovement(getData().getProperties()));
+unit_attachment_get_can_be_moved_through_by_enemies :: proc(self: ^Unit_Attachment) -> bool {
+	if self.can_be_moved_through_by_enemies {
+		return true
+	}
+	if !self.is_sub {
+		return false
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	props := game_data_get_properties(data)
+	return properties_get_ignore_sub_in_movement(props)
+}
+
+// Java: public Set<UnitType> getCanNotBeTargetedBy()
+//   if (canNotBeTargetedBy == null && isSub) {
+//     canNotBeTargetedBy = Properties.getAirAttackSubRestricted(getData().getProperties())
+//         ? new HashSet<>(CollectionUtils.getMatches(
+//               getData().getUnitTypeList().getAllUnitTypes(), Matches.unitTypeIsAir()))
+//         : new HashSet<>();
+//   }
+//   return getSetProperty(canNotBeTargetedBy);
+// Mirrors `unit_attachment_get_can_not_target` — uses `len == 0` as the
+// null sentinel and writes the lazy-init result back into the field so
+// subsequent calls see the cached value (matching Java's field assignment).
+unit_attachment_get_can_not_be_targeted_by :: proc(
+	self: ^Unit_Attachment,
+) -> map[^Unit_Type]struct {} {
+	if len(self.can_not_be_targeted_by) == 0 && self.is_sub {
+		data := game_data_component_get_data(&self.default_attachment.game_data_component)
+		props := game_data_get_properties(data)
+		if properties_get_air_attack_sub_restricted(props) {
+			utl := game_data_get_unit_type_list(data)
+			all := unit_type_list_get_all_unit_types(utl)
+			defer delete(all)
+			air_pred, air_ctx := matches_unit_type_is_air()
+			for ut in all {
+				if air_pred(air_ctx, ut) {
+					self.can_not_be_targeted_by[ut] = {}
+				}
+			}
+		}
+		// else: leave empty — Java assigns `new HashSet<>()`, observable as len==0.
+	}
+	return self.can_not_be_targeted_by
+}
+
+// Java: public boolean getIsSuicideOnDefense()
+//   return isSuicideOnDefense
+//       || (isSuicide
+//           && !Properties.getDefendingSuicideAndMunitionUnitsDoNotFire(
+//                  getData().getProperties()));
+unit_attachment_get_is_suicide_on_defense :: proc(self: ^Unit_Attachment) -> bool {
+	if self.is_suicide_on_defense {
+		return true
+	}
+	if !self.is_suicide {
+		return false
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	props := game_data_get_properties(data)
+	return !properties_get_defending_suicide_and_munition_units_do_not_fire(props)
+}
+
+// Java: public int getStackingLimitMax(final Tuple<Integer, String> stackingLimit)
+//   int max = stackingLimit.getFirst();
+//   if (max != Integer.MAX_VALUE) return max;
+//   final GameProperties properties = getData().getProperties();
+//   if ((isAaForBombingThisUnitOnly() || isAaForCombatOnly())
+//       && !(Properties.getWW2V2(properties)
+//           || Properties.getWW2V3(properties)
+//           || Properties.getMultipleAaPerTerritory(properties))) {
+//     max = 1;
+//   }
+//   return max;
+// Java's Integer.MAX_VALUE is the sentinel for "no explicit limit"; the
+// numeric constant is reproduced verbatim.
+unit_attachment_get_stacking_limit_max :: proc(
+	self: ^Unit_Attachment,
+	stacking_limit: ^Tuple(i32, string),
+) -> i32 {
+	max_val := tuple_get_first(stacking_limit)
+	if max_val != 2147483647 {
+		return max_val
+	}
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	props := game_data_get_properties(data)
+	if (self.is_aa_for_bombing_this_unit_only || self.is_aa_for_combat_only) &&
+	   !(properties_get_ww2_v2(props) ||
+			   properties_get_ww2_v3(props) ||
+			   properties_get_multiple_aa_per_territory(props)) {
+		max_val = 1
+	}
+	return max_val
+}
+
+// Java: private void setArtillery(final String s) throws GameParseException {
+//   artillery = getBool(s);
+//   if (artillery) {
+//     UnitSupportAttachment.addRule((UnitType) getAttachedTo(), getData(), false);
+//   }
+// }
+// Suffix `_str` follows the project's overload-disambiguation convention
+// (cf. `unit_attachment_set_is_sub_str`); the Boolean overload of
+// `setArtillery` is at a higher method_layer.
+unit_attachment_set_artillery_str :: proc(self: ^Unit_Attachment, s: string) {
+	self.artillery = default_attachment_get_bool(&self.default_attachment, s)
+	if self.artillery {
+		data := game_data_component_get_data(&self.default_attachment.game_data_component)
+		unit_type := cast(^Unit_Type)self.default_attachment.attached_to
+		unit_support_attachment_add_rule(unit_type, data, false)
+	}
+}

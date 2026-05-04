@@ -40,3 +40,22 @@ game_data_manager_load_delegates :: proc(input: ^Object_Input_Stream, data: ^Gam
 	_ = input
 	_ = data
 }
+
+// games.strategy.engine.framework.GameDataManager#loadGameUncompressed(java.io.InputStream)
+// Java wraps the InputStream in an ObjectInputStream, drains a Version
+// (unused), readObjects a GameData, calls data.postDeSerialize(),
+// loadDelegates(input, data), data.fixUpNullPlayersInDelegates(), and
+// returns Optional.of(data). Optional<GameData> is represented in this
+// port as ^Game_Data with nil meaning empty (see
+// game_data_utils_create_game_data_from_bytes for the established
+// precedent). Object_Input_Stream is an opaque JDK shim with no
+// readObject implementation under the AI snapshot harness's opaque-IO
+// regime, so the GameData read collapses to nil; with no GameData in
+// hand none of the post-read mutators (postDeSerialize, loadDelegates,
+// fixUpNullPlayersInDelegates) can fire. The empty Optional is the
+// faithful translation of that collapse. Save-loading is not exercised
+// by the AI snapshot run.
+game_data_manager_load_game_uncompressed :: proc(is_stream: ^Input_Stream) -> ^Game_Data {
+	_ = is_stream
+	return nil
+}

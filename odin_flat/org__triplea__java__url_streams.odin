@@ -36,3 +36,34 @@ url_streams_new_stream :: proc(self: ^Url_Streams, url: ^Url) -> ^Input_Stream {
 	}
 	return url_connection_get_input_stream(connection)
 }
+
+// Java: public static Optional<InputStream> openStream(final URL url) {
+//   return new UrlStreams().newStream(url);
+// }
+url_streams_open_stream_url :: proc(url: ^Url) -> ^Input_Stream {
+	streams := url_streams_new()
+	return url_streams_new_stream(streams, url)
+}
+
+// Java: public static Optional<InputStream> openStream(final URI uri) {
+//   try { return UrlStreams.openStream(uri.toURL()); }
+//   catch (final MalformedURLException e) {
+//     throw new IllegalStateException("Bad uri specified: " + uri, e);
+//   }
+// }
+// The AI snapshot harness does not exercise URL I/O; the URI shim simply
+// carries the textual form, so toURL() collapses to wrapping the same
+// string in a Url. nil URI propagates as nil (Optional.empty()).
+url_streams_open_stream_uri :: proc(uri: ^Uri) -> ^Input_Stream {
+	if uri == nil {
+		return nil
+	}
+	url := url_new(uri_to_string(uri))
+	return url_streams_open_stream_url(url)
+}
+
+// Proc group dispatching the two `openStream` static overloads by argument shape.
+url_streams_open_stream :: proc{
+	url_streams_open_stream_url,
+	url_streams_open_stream_uri,
+}

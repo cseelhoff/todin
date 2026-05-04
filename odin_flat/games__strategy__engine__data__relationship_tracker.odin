@@ -204,3 +204,167 @@ relationship_tracker_get_self_relationship_type :: proc(self: ^Relationship_Trac
 relationship_tracker_get_null_relationship_type :: proc(self: ^Relationship_Tracker) -> ^Relationship_Type {
 	return relationship_type_list_get_null_relation(game_data_get_relationship_type_list(self.game_data_component.game_data))
 }
+
+// games.strategy.engine.data.RelationshipTracker#isAllied(GamePlayer, GamePlayer)
+//
+//   public boolean isAllied(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeIsAllied().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_is_allied :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_allied()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#isAtWar(GamePlayer, GamePlayer)
+//
+//   public boolean isAtWar(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeIsAtWar().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_is_at_war :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_at_war()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canMoveLandUnitsOverOwnedLand(GamePlayer, GamePlayer)
+//
+//   public boolean canMoveLandUnitsOverOwnedLand(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanMoveLandUnitsOverOwnedLand()
+//         .test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_move_land_units_over_owned_land :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_move_land_units_over_owned_land()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canMoveAirUnitsOverOwnedLand(GamePlayer, GamePlayer)
+//
+//   public boolean canMoveAirUnitsOverOwnedLand(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanMoveAirUnitsOverOwnedLand().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_move_air_units_over_owned_land :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_move_air_units_over_owned_land()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canLandAirUnitsOnOwnedLand(GamePlayer, GamePlayer)
+//
+//   public boolean canLandAirUnitsOnOwnedLand(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanLandAirUnitsOnOwnedLand().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_land_air_units_on_owned_land :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_land_air_units_on_owned_land()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canTakeOverOwnedTerritory(GamePlayer, GamePlayer)
+//
+//   public boolean canTakeOverOwnedTerritory(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanTakeOverOwnedTerritory().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_take_over_owned_territory :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_take_over_owned_territory()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canMoveIntoDuringCombatMove(GamePlayer, GamePlayer)
+//
+//   public boolean canMoveIntoDuringCombatMove(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanMoveIntoDuringCombatMove().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_move_into_during_combat_move :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_move_into_during_combat_move()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#canMoveThroughCanals(GamePlayer, GamePlayer)
+//
+//   public boolean canMoveThroughCanals(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeCanMoveThroughCanals().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_can_move_through_canals :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_can_move_through_canals()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#rocketsCanFlyOver(GamePlayer, GamePlayer)
+//
+//   public boolean rocketsCanFlyOver(final GamePlayer p1, final GamePlayer p2) {
+//     return Matches.relationshipTypeRocketsCanFlyOver().test(getRelationshipType(p1, p2));
+//   }
+relationship_tracker_rockets_can_fly_over :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_rockets_can_fly_over()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#setSelfRelations()
+//
+//   public void setSelfRelations() {
+//     for (final GamePlayer p : getData().getPlayerList().getPlayers()) {
+//       setRelationship(p, p, getSelfRelationshipType());
+//     }
+//     setRelationship(
+//         getData().getPlayerList().getNullPlayer(),
+//         getData().getPlayerList().getNullPlayer(),
+//         getSelfRelationshipType());
+//   }
+relationship_tracker_set_self_relations :: proc(self: ^Relationship_Tracker) {
+	player_list := game_data_get_player_list(self.game_data_component.game_data)
+	players := player_list_get_players(player_list)
+	defer delete(players)
+	self_rel := relationship_tracker_get_self_relationship_type(self)
+	for p in players {
+		relationship_tracker_set_relationship(self, p, p, self_rel)
+	}
+	null_player := player_list_get_null_player(player_list)
+	relationship_tracker_set_relationship(self, null_player, null_player, self_rel)
+}
+
+// games.strategy.engine.data.RelationshipTracker#setNullPlayerRelations()
+//
+//   public void setNullPlayerRelations() {
+//     for (final GamePlayer p : getData().getPlayerList().getPlayers()) {
+//       setRelationship(p, getData().getPlayerList().getNullPlayer(), getNullRelationshipType());
+//     }
+//   }
+relationship_tracker_set_null_player_relations :: proc(self: ^Relationship_Tracker) {
+	player_list := game_data_get_player_list(self.game_data_component.game_data)
+	players := player_list_get_players(player_list)
+	defer delete(players)
+	null_player := player_list_get_null_player(player_list)
+	null_rel := relationship_tracker_get_null_relationship_type(self)
+	for p in players {
+		relationship_tracker_set_relationship(self, p, null_player, null_rel)
+	}
+}
+
+// games.strategy.engine.data.RelationshipTracker#lambda$isAlliedWithAnyOfThesePlayers$0(GamePlayer, GamePlayer)
+//
+//   p2 -> Matches.relationshipTypeIsAllied().test(getRelationshipType(gamePlayer, p2))
+relationship_tracker_lambda_is_allied_with_any_of_these_players_0 :: proc(self: ^Relationship_Tracker, game_player: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_allied()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, game_player, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#lambda$getAllies$1(GamePlayer, GamePlayer)
+//
+//   player -> Matches.relationshipTypeIsAllied().test(getRelationshipType(gamePlayer, player))
+relationship_tracker_lambda_get_allies_1 :: proc(self: ^Relationship_Tracker, game_player: ^Game_Player, player: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_allied()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, game_player, player))
+}
+
+// games.strategy.engine.data.RelationshipTracker#lambda$isAtWarWithAnyOfThesePlayers$2(GamePlayer, GamePlayer)
+//
+//   p2 -> Matches.relationshipTypeIsAtWar().test(getRelationshipType(p1, p2))
+relationship_tracker_lambda_is_at_war_with_any_of_these_players_2 :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_at_war()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, p2))
+}
+
+// games.strategy.engine.data.RelationshipTracker#lambda$getEnemies$3(GamePlayer, GamePlayer)
+//
+//   player -> Matches.relationshipTypeIsAtWar().test(getRelationshipType(p1, player))
+relationship_tracker_lambda_get_enemies_3 :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, player: ^Game_Player) -> bool {
+	pred, ctx := matches_relationship_type_is_at_war()
+	return pred(ctx, relationship_tracker_get_relationship_type(self, p1, player))
+}

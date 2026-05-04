@@ -27,6 +27,39 @@ Game_Player :: struct {
 	tech_attachment:      ^Tech_Attachment,
 }
 
+// Java: public GamePlayer(String name, boolean optional, boolean canBeDisabled,
+//                        String defaultType, boolean isHidden, GameData data)
+//   super(name, data);
+//   this.optional = optional; this.canBeDisabled = canBeDisabled;
+//   this.defaultType = defaultType; this.isHidden = isHidden;
+//   unitsHeld = new UnitCollection(this, data);
+//   resources = new ResourceCollection(data);
+//   technologyFrontiers = new TechnologyFrontierList(data);
+// Java field initializer `whoAmI = "null: " + "no_one"` is mirrored here.
+game_player_new :: proc(
+	name: string,
+	optional: bool,
+	can_be_disabled: bool,
+	default_type: string,
+	hidden: bool,
+	game_data: ^Game_Data,
+) -> ^Game_Player {
+	self := new(Game_Player)
+	parent := named_attachable_new(name, game_data)
+	self.named_attachable = parent^
+	free(parent)
+	self.optional = optional
+	self.can_be_disabled = can_be_disabled
+	self.default_type = default_type
+	self.is_hidden = hidden
+	self.is_disabled = false
+	self.units_held = unit_collection_new(cast(^Named_Unit_Holder)self, game_data)
+	self.resources = resource_collection_new(game_data)
+	self.technology_frontiers = technology_frontier_list_new(game_data)
+	self.who_am_i = "null: no_one"
+	return self
+}
+
 // Java: @Nonnull @Override public GameData getData()
 // Wraps super.getData() in Preconditions.checkNotNull(...).
 game_player_get_data :: proc(self: ^Game_Player) -> ^Game_Data {
@@ -204,6 +237,20 @@ game_player_get_who_am_i :: proc(self: ^Game_Player) -> string {
 // Java: public boolean getCanBeDisabled() { return canBeDisabled; }
 game_player_get_can_be_disabled :: proc(self: ^Game_Player) -> bool {
 	return self.can_be_disabled
+}
+
+// Java: public final boolean isAllied(GamePlayer other)
+// → getData().getRelationshipTracker().isAllied(this, other).
+game_player_is_allied :: proc(self: ^Game_Player, other: ^Game_Player) -> bool {
+	rt := game_data_get_relationship_tracker(game_player_get_data(self))
+	return relationship_tracker_is_allied(rt, self, other)
+}
+
+// Java: public final boolean isAtWar(GamePlayer other)
+// → getData().getRelationshipTracker().isAtWar(this, other).
+game_player_is_at_war :: proc(self: ^Game_Player, other: ^Game_Player) -> bool {
+	rt := game_data_get_relationship_tracker(game_player_get_data(self))
+	return relationship_tracker_is_at_war(rt, self, other)
 }
 
 // Java: public final boolean isAtWarWithAnyOfThesePlayers(Collection<GamePlayer> others)

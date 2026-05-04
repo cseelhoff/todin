@@ -6,6 +6,16 @@ Client_Setting :: struct {
 	name: string,
 	default_value: rawptr,
 	listeners: [dynamic]proc(^Game_Setting),
+	// Subclass-supplied vtable for the Java abstract methods
+	// `encodeValue(T)` / `decodeValue(String)`. Nil entries model the
+	// case where no concrete subclass has wired itself up — the base
+	// methods then fall through to the same branches Java takes when
+	// the abstract calls throw `ValueEncodingException` (encode → use
+	// current encoded value; decode → reset and return default).
+	// `value` / decoded result are rawptr to match the type erasure
+	// the rest of this file already uses for the generic `T`.
+	encode_value: proc(self: ^Client_Setting, value: rawptr) -> (encoded: string, ok: bool),
+	decode_value: proc(self: ^Client_Setting, encoded_value: string) -> (value: rawptr, present: bool, err: ^Client_Setting_Value_Encoding_Exception),
 }
 
 // ClientSetting static fields. The Java class declares ~100 such
@@ -157,5 +167,112 @@ client_setting_set_encoded_value :: proc(self: ^Client_Setting, encoded_value: s
 			client_setting_lambda_set_encoded_value_2(self, listener)
 		}
 	}
+}
+
+// Java: private @Nullable String encodeValueOrElseCurrent(final T value)
+//   try { return encodeValue(value); }
+//   catch (ValueEncodingException e) { log.warn(...); return getEncodedCurrentValue().orElse(null); }
+// `@Nullable String` → (encoded, ok) tuple. The abstract `encodeValue`
+// is dispatched through the subclass-supplied vtable slot; a nil slot
+// is treated identically to the encoder throwing — Java's catch branch
+// returns the current preference value (or null when absent), which
+// here becomes the (current, present) pair from getEncodedCurrentValue.
+// The log.warn call is the only side effect dropped: the snapshot
+// harness has no logger wired up.
+client_setting_encode_value_or_else_current :: proc(self: ^Client_Setting, value: rawptr) -> (encoded: string, ok: bool) {
+	if self.encode_value != nil {
+		s, encoded_ok := self.encode_value(self, value)
+		if encoded_ok {
+			return s, true
+		}
+	}
+	return client_setting_get_encoded_current_value(self)
+}
+
+// Java: @Override public final Optional<T> getValue()
+//   final Optional<String> encodedCurrentValue = getEncodedCurrentValue();
+//   return encodedCurrentValue.isPresent()
+//       ? encodedCurrentValue.map(this::decodeValueOrElseDefault)
+//       : getDefaultValue();
+// Optional<T> → (value, present). When no encoded value is stored we
+// fall straight through to the default (matching `getDefaultValue()`).
+// Otherwise we run the same `decodeValueOrElseDefault` Java path:
+// dispatch through the subclass `decode_value` slot; on a thrown
+// `ValueEncodingException` (or a nil slot, which models the same
+// "can't decode" state) Java calls `resetValue()` and returns the
+// default — done inline here without the listener-cascade because
+// `resetValue` → `setValueAndFlush(null)` is a write side effect we
+// preserve for parity.
+client_setting_get_value :: proc(self: ^Client_Setting) -> (rawptr, bool) {
+	encoded, present := client_setting_get_encoded_current_value(self)
+	if !present {
+		return client_setting_get_default_value(self)
+	}
+	if self.decode_value != nil {
+		v, ok, err := self.decode_value(self, encoded)
+		if err == nil {
+			if ok {
+				return v, true
+			}
+			// Java's `@Nullable T decodeValue` returning null falls
+			// through `Optional.ofNullable` and propagates as an empty
+			// Optional from `getValue` (no reset).
+			return nil, false
+		}
+	}
+	// decodeValue threw (or no decoder): mirror Java's
+	// decodeValueOrElseDefault → resetValue() + return default. The
+	// `resetValue` port is not yet scheduled; inline its observable
+	// effect (clear preference, notify listeners) via setEncodedValue
+	// so we don't introduce a placeholder symbol that would later
+	// collide with the real port.
+	client_setting_set_encoded_value(self, "", false)
+	return client_setting_get_default_value(self)
+}
+
+// Java: @Override public final void setValue(final @Nullable T value)
+//   setEncodedValue(
+//     Optional.ofNullable(value)
+//       .filter(not(this::isDefaultValue))
+//       .map(this::encodeValueOrElseCurrent)
+//       .orElse(null));
+// `@Nullable T` → (value, has_value). The Optional pipeline collapses
+// to: if no value, or value equals default, write null (clears the
+// preference); otherwise encode (with the encodeValueOrElseCurrent
+// fallback) and write the resulting string. A nil result from the
+// encode step models Java's `null` Optional element and likewise
+// clears the preference.
+client_setting_set_value :: proc(self: ^Client_Setting, value: rawptr, has_value: bool) {
+	if !has_value || client_setting_is_default_value(self, value) {
+		client_setting_set_encoded_value(self, "", false)
+		return
+	}
+	encoded, ok := client_setting_encode_value_or_else_current(self, value)
+	client_setting_set_encoded_value(self, encoded, ok)
+}
+
+// Java: public final void setValueAndFlush(final @Nullable T value)
+//   setValue(value);
+//   final Preferences preferences = getPreferences();
+//   ThreadRunner.runInNewThread(() -> flush(preferences));
+// The Java comment notes the new-thread dispatch is purely to avoid
+// blocking the Swing EDT, and that `preferences` is captured before
+// spawning so a concurrent `resetPreferences()` from a test cannot
+// null it out under the worker. The Odin port has no EDT and the
+// `Thread_Runner` shim's `proc()` runnable has no closure-capture
+// support, so the lambda body (`flush(preferences)`) is invoked
+// synchronously on the captured prefs handle. The observable result
+// — value persisted, listeners notified, prefs flushed — is identical;
+// only the off-thread scheduling is dropped, which the snapshot
+// harness never exercises.
+client_setting_set_value_and_flush :: proc(self: ^Client_Setting, value: rawptr, has_value: bool) {
+	client_setting_set_value(self, value, has_value)
+
+	// do the flush on a new thread to guarantee we do not block EDT.
+	// Flush operations are pretty slow!
+	// Store preferences before spawning new thread; tests may call resetPreferences() before it can
+	// run.
+	preferences := client_setting_get_preferences()
+	client_setting_lambda_set_value_and_flush_3(preferences)
 }
 

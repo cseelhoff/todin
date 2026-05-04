@@ -87,3 +87,15 @@ abstract_ai_battle :: proc(self: ^Abstract_Ai, battle_delegate: ^I_Battle_Delega
 		}
 	}
 }
+
+// games.strategy.triplea.ai.AbstractAi#movePause()
+//   Java sleeps for ClientSetting.aiMovePauseDuration to let a human watch.
+//   Snapshot harness is single-threaded with no UI; no-op.
+abstract_ai_move_pause :: proc() {
+}
+
+// games.strategy.triplea.ai.AbstractAi#combatStepPause()
+//   Java sleeps for ClientSetting.aiCombatStepPauseDuration. No-op for harness.
+abstract_ai_combat_step_pause :: proc() {
+}
+

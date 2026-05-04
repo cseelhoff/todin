@@ -475,3 +475,98 @@ move_performer_populate_stack :: proc(
 	execution_stack_execute(self.execution_stack, self.bridge)
 }
 
+// games.strategy.triplea.delegate.MovePerformer#getBattleTracker()
+//
+//   return bridge.getData().getBattleDelegate().getBattleTracker();
+move_performer_get_battle_tracker :: proc(self: ^Move_Performer) -> ^Battle_Tracker {
+	return battle_delegate_get_battle_tracker(
+		game_data_get_battle_delegate(i_delegate_bridge_get_data(self.bridge)),
+	)
+}
+
+// games.strategy.triplea.delegate.MovePerformer#moveUnits(MoveDescription, GamePlayer, UndoableMove)
+//
+//   this.currentMove = currentMove;
+//   this.airTransportDependents = move.getAirTransportsDependents();
+//   populateStack(move.getUnits(), move.getRoute(), gamePlayer, move.getUnitsToSeaTransports());
+//   executionStack.execute(bridge);
+move_performer_move_units :: proc(
+	self: ^Move_Performer,
+	move: ^Move_Description,
+	game_player: ^Game_Player,
+	current_move: ^Undoable_Move,
+) {
+	self.current_move = current_move
+	// Move_Description stores air-transport dependents as map-of-set; the
+	// MovePerformer field uses map-of-list. Materialize each set as a list.
+	src := move_description_get_air_transports_dependents(move)
+	self.air_transport_dependents = make(map[^Unit][dynamic]^Unit)
+	for k, set in src {
+		arr := make([dynamic]^Unit)
+		for u, _ in set {
+			append(&arr, u)
+		}
+		self.air_transport_dependents[k] = arr
+	}
+	move_performer_populate_stack(
+		self,
+		move.units,
+		move_description_get_route(move),
+		game_player,
+		move_description_get_units_to_sea_transports(move),
+	)
+	execution_stack_execute(self.execution_stack, self.bridge)
+}
+
+
+// games.strategy.triplea.delegate.MovePerformer#getMustFightThroughMatch(GamePlayer)
+//
+//   return Matches.isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted(gamePlayer)
+//       .or(Matches.territoryHasNonSubmergedEnemyUnits(gamePlayer))
+//       .or(Matches.isTerritoryNotUnownedWaterAndCanBeTakenOverBy(gamePlayer));
+Move_Performer_Ctx_Get_Must_Fight_Through_Match :: struct {
+	player: ^Game_Player,
+}
+
+move_performer_pred_get_must_fight_through_match :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	c := cast(^Move_Performer_Ctx_Get_Must_Fight_Through_Match)ctx_ptr
+	p1, c1 := matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(c.player)
+	if p1(c1, t) {
+		return true
+	}
+	p2, c2 := matches_territory_has_non_submerged_enemy_units(c.player)
+	if p2(c2, t) {
+		return true
+	}
+	p3, c3 := matches_is_territory_not_unowned_water_and_can_be_taken_over_by(c.player)
+	return p3(c3, t)
+}
+
+move_performer_get_must_fight_through_match :: proc(
+	game_player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Move_Performer_Ctx_Get_Must_Fight_Through_Match)
+	ctx.player = game_player
+	return move_performer_pred_get_must_fight_through_match, rawptr(ctx)
+}
+
+// games.strategy.triplea.delegate.MovePerformer#hasConqueredNonBlitzed(Route)
+//
+//   final BattleTracker tracker = getBattleTracker();
+//   for (final Territory current : route.getSteps()) {
+//     if (tracker.wasConquered(current) && !tracker.wasBlitzed(current)) {
+//       return true;
+//     }
+//   }
+//   return false;
+move_performer_has_conquered_non_blitzed :: proc(self: ^Move_Performer, route: ^Route) -> bool {
+	tracker := move_performer_get_battle_tracker(self)
+	steps := route_get_steps(route)
+	defer delete(steps)
+	for current in steps {
+		if battle_tracker_was_conquered(tracker, current) && !battle_tracker_was_blitzed(tracker, current) {
+			return true
+		}
+	}
+	return false
+}

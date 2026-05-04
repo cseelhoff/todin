@@ -119,6 +119,38 @@ breadth_first_search_new_with_predicate :: proc(
 	return breadth_first_search_new(start_territories, breadth_first_search_predicate_to_bipredicate)
 }
 
+// File-scope holder bridging a ctx-form Predicate<Territory> into the
+// (non-ctx) BiPredicate-shaped `neighbor_condition` field. BFS is
+// single-threaded and constructed-then-traversed, so the holder is set
+// immediately before the synchronous traverse call.
+@(private = "file")
+breadth_first_search_active_ctx_predicate: proc(ctx: rawptr, t: ^Territory) -> bool
+
+@(private = "file")
+breadth_first_search_active_ctx_predicate_ctx: rawptr
+
+@(private = "file")
+breadth_first_search_ctx_predicate_to_bipredicate :: proc(it: ^Territory, it2: ^Territory) -> bool {
+	return breadth_first_search_active_ctx_predicate(
+		breadth_first_search_active_ctx_predicate_ctx,
+		it2,
+	)
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#<init>(Territory, Predicate<Territory>)
+// Java: this(List.of(startTerritory), neighborCondition);
+breadth_first_search_new_with_start_territory_and_predicate :: proc(
+	start_territory: ^Territory,
+	is_passable: proc(ctx: rawptr, t: ^Territory) -> bool,
+	ctx: rawptr = nil,
+) -> ^Breadth_First_Search {
+	starts := make([dynamic]^Territory)
+	append(&starts, start_territory)
+	breadth_first_search_active_ctx_predicate = is_passable
+	breadth_first_search_active_ctx_predicate_ctx = ctx
+	return breadth_first_search_new(starts, breadth_first_search_ctx_predicate_to_bipredicate)
+}
+
 // games.strategy.engine.data.util.BreadthFirstSearch#traverse(Visitor)
 // Java:
 //   int currentDistance = 0;
@@ -152,5 +184,24 @@ breadth_first_search_traverse :: proc(
 			}
 		}
 	}
+}
+
+// Adapter: ctx-form predicate that always returns true. Used by the
+// 1-arg `new BreadthFirstSearch(Territory)` constructor (Java: t -> true).
+@(private = "file")
+breadth_first_search_default_neighbor_predicate :: proc(ctx: rawptr, t: ^Territory) -> bool {
+	return true
+}
+
+// games.strategy.engine.data.util.BreadthFirstSearch#<init>(Territory)
+// Java: this(startTerritory, t -> true);
+breadth_first_search_new_with_start_territory :: proc(
+	start_territory: ^Territory,
+) -> ^Breadth_First_Search {
+	return breadth_first_search_new_with_start_territory_and_predicate(
+		start_territory,
+		breadth_first_search_default_neighbor_predicate,
+		nil,
+	)
 }
 

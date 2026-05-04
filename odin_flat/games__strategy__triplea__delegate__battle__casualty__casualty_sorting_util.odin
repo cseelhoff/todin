@@ -4,8 +4,17 @@ import "core:slice"
 
 Casualty_Sorting_Util :: struct {}
 
-@(private="file")
-casualty_sorting_util_marines_cmp :: proc(u1: ^Unit, u2: ^Unit) -> int {
+// games.strategy.triplea.delegate.battle.casualty.CasualtySortingUtil#lambda$compareMarines$0(Unit, Unit)
+//
+// Java:
+//   (u1, u2) -> {
+//     final int result = Boolean.compare(u1.getWasAmphibious(), u2.getWasAmphibious());
+//     if (result != 0) { return result; }
+//     final UnitAttachment ua1 = u1.getUnitAttachment();
+//     final UnitAttachment ua2 = u2.getUnitAttachment();
+//     return Integer.compare(ua1.getIsMarine(), ua2.getIsMarine());
+//   }
+casualty_sorting_util_lambda_compare_marines_0 :: proc(u1: ^Unit, u2: ^Unit) -> int {
 	a1 := unit_get_was_amphibious(u1)
 	a2 := unit_get_was_amphibious(u2)
 	v1 := 1 if a1 else 0
@@ -13,16 +22,10 @@ casualty_sorting_util_marines_cmp :: proc(u1: ^Unit, u2: ^Unit) -> int {
 	if v1 != v2 {
 		return v1 - v2
 	}
-	ua1: ^Unit_Attachment = nil
-	ua2: ^Unit_Attachment = nil
-	if u1 != nil && u1.type != nil {
-		ua1 = u1.type.unit_attachment
-	}
-	if u2 != nil && u2.type != nil {
-		ua2 = u2.type.unit_attachment
-	}
-	m1: i32 = ua1.is_marine if ua1 != nil else 0
-	m2: i32 = ua2.is_marine if ua2 != nil else 0
+	ua1 := unit_get_unit_attachment(u1)
+	ua2 := unit_get_unit_attachment(u2)
+	m1: i32 = unit_attachment_get_is_marine(ua1) if ua1 != nil else 0
+	m2: i32 = unit_attachment_get_is_marine(ua2) if ua2 != nil else 0
 	if m1 < m2 {
 		return -1
 	}
@@ -32,8 +35,13 @@ casualty_sorting_util_marines_cmp :: proc(u1: ^Unit, u2: ^Unit) -> int {
 	return 0
 }
 
+@(private="file")
+casualty_sorting_util_marines_cmp :: proc(u1: ^Unit, u2: ^Unit) -> int {
+	return casualty_sorting_util_lambda_compare_marines_0(u1, u2)
+}
+
 casualty_sorting_util_compare_marines :: proc() -> proc(a: ^Unit, b: ^Unit) -> int {
-	return casualty_sorting_util_marines_cmp
+	return casualty_sorting_util_lambda_compare_marines_0
 }
 
 // games.strategy.triplea.delegate.battle.casualty.CasualtySortingUtil#sortPreBattle(List)

@@ -20,3 +20,14 @@ main_offense_combat_value_main_offense_strength_new :: proc(
 	self.support_from_enemies = support_from_enemies
 	return self
 }
+
+// Java: MainOffenseStrength.getSupportGiven()
+//   return SupportCalculator.getCombinedSupportGiven(supportFromFriends, supportFromEnemies);
+main_offense_combat_value_main_offense_strength_get_support_given :: proc(
+	self: ^Main_Offense_Combat_Value_Main_Offense_Strength,
+) -> map[^Unit]^Integer_Map {
+	return support_calculator_get_combined_support_given(
+		self.support_from_friends,
+		self.support_from_enemies,
+	)
+}

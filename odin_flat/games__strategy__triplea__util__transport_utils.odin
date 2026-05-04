@@ -123,3 +123,68 @@ transport_utils_can_unload :: proc(unit: ^Unit, territory: ^Territory) -> bool {
 	return !pred(ctx, transport)
 }
 
+// Java: lambda$chooseEquivalentUnitsToUnload$2(Unit origUnit, Unit u)
+// Body: u.isEquivalent(origUnit). Captured: origUnit; param: u.
+lambda_transport_utils_choose_equivalent_units_to_unload_2 :: proc(
+	orig_unit: ^Unit,
+	u: ^Unit,
+) -> bool {
+	return unit_is_equivalent(u, orig_unit)
+}
+
+// Java: lambda$chooseEquivalentUnitsToUnload$3(Route route, Unit u)
+// Body: canUnload(u, route.getEnd()). Captured: route; param: u.
+lambda_transport_utils_choose_equivalent_units_to_unload_3 :: proc(
+	route: ^Route,
+	u: ^Unit,
+) -> bool {
+	return transport_utils_can_unload(u, route_get_end(route))
+}
+
+// Java: TransportUtils.mapTransportsAlreadyLoaded(Collection<Unit> units, Collection<Unit> transports)
+//   -> Map<Unit, Unit>
+// Returns a map of unit -> transport for units already transported by something
+// in the `transports` collection. Filters both sides via Matches.unitCanBeTransported
+// and Matches.unitCanTransport before pairing.
+transport_utils_map_transports_already_loaded :: proc(
+	units: [dynamic]^Unit,
+	transports: [dynamic]^Unit,
+) -> map[^Unit]^Unit {
+	cb_p, cb_c := matches_unit_can_be_transported()
+	can_be_transported := make([dynamic]^Unit, 0, len(units))
+	for u in units {
+		if cb_p(cb_c, u) {
+			append(&can_be_transported, u)
+		}
+	}
+
+	ct_p, ct_c := matches_unit_can_transport()
+	can_transport := make([dynamic]^Unit, 0, len(transports))
+	for t in transports {
+		if ct_p(ct_c, t) {
+			append(&can_transport, t)
+		}
+	}
+
+	mapping: map[^Unit]^Unit
+	for current_transported in can_be_transported {
+		transport := unit_get_transported_by(current_transported)
+		if transport == nil {
+			continue
+		}
+		// Java: !canTransport.contains(transport)
+		found := false
+		for t in can_transport {
+			if t == transport {
+				found = true
+				break
+			}
+		}
+		if !found {
+			continue
+		}
+		mapping[current_transported] = transport
+	}
+	return mapping
+}
+

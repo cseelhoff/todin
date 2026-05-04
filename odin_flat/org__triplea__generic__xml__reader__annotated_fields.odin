@@ -2,10 +2,63 @@ package game
 
 // Port of org.triplea.generic.xml.reader.AnnotatedFields
 // Java reflection helper that sorts fields by annotation (@Attribute, @Tag,
-// @TagList, @BodyText). Odin has no equivalent runtime reflection, so this
-// is a placeholder type with no fields.
+// @TagList, @BodyText). Odin has no equivalent runtime reflection, so the
+// list-of-Field members are kept (for shape parity) but always remain empty
+// in the shim. The pojo Class<T> is held as an opaque typeid marker.
 
-Annotated_Fields :: struct {}
+Annotated_Fields :: struct {
+	pojo:               typeid,
+	attribute_fields:   [dynamic]^Field,
+	tag_fields:         [dynamic]^Field,
+	tag_list_fields:    [dynamic]^Field,
+	body_text_fields:   [dynamic]^Field,
+}
+
+// Java: AnnotatedFields(final Class<T> pojo) throws JavaDataModelException
+//
+// In Java this iterates pojo.getDeclaredFields(), validates each field's
+// annotations, sets it accessible, and bins it into one of four lists by
+// annotation (@Attribute / @Tag / @TagList / @BodyText). It then enforces
+// that there is at most one @BodyText field and that @BodyText is not
+// combined with @Tag/@TagList.
+//
+// Odin has no runtime reflection, so getDeclaredFields() yields nothing in
+// the shim. The constructor records the opaque typeid (so callers can still
+// identify which Java class this AnnotatedFields was built for) and
+// initializes the four lists empty. With no fields enumerated, both
+// post-loop validation checks (bodyText size > 1, and the body-text /
+// tag(list) combination check) are vacuously satisfied, so no
+// JavaDataModelException is ever produced and the out-param exception
+// pointer remains nil.
+annotated_fields_new :: proc(pojo: typeid) -> (^Annotated_Fields, ^Java_Data_Model_Exception) {
+	self := new(Annotated_Fields)
+	self.pojo = pojo
+	self.attribute_fields = make([dynamic]^Field, 0)
+	self.tag_fields = make([dynamic]^Field, 0)
+	self.tag_list_fields = make([dynamic]^Field, 0)
+	self.body_text_fields = make([dynamic]^Field, 0)
+
+	// for (final Field field : pojo.getDeclaredFields()) { ... }
+	// No reflection: the declared-fields sequence is empty in the shim,
+	// so the loop body (validateAnnotations + bin into the four lists)
+	// never executes.
+
+	// if (bodyTextFields.size() > 1) throw ...
+	if len(self.body_text_fields) > 1 {
+		return self, java_data_model_exception_new(
+			"Too many body text fields, can only have one on any given class",
+		)
+	}
+	// if (!bodyTextFields.isEmpty() && (!tagFields.isEmpty() && !tagListFields.isEmpty())) throw ...
+	if len(self.body_text_fields) > 0 &&
+	   (len(self.tag_fields) > 0 && len(self.tag_list_fields) > 0) {
+		return self, java_data_model_exception_new(
+			"Illegal combination of annoations, may only have attributes and a body text," +
+			"or attributes and tags (or taglist), but may not have both body text and tags.",
+		)
+	}
+	return self, nil
+}
 
 annotated_fields_get_attribute_fields :: proc(self: ^Annotated_Fields) -> [dynamic]^Field {
 	_ = self

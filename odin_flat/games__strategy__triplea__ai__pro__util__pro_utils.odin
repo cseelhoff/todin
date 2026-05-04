@@ -316,3 +316,101 @@ pro_utils_summarize_units :: proc(units: [dynamic]^Unit) -> string {
 	return strings.to_string(b)
 }
 
+// Port of ProUtils.isNeutralLand —
+// `!t.isWater() && ProUtils.isNeutralPlayer(t.getOwner())`.
+pro_utils_is_neutral_land :: proc(t: ^Territory) -> bool {
+	return !territory_is_water(t) && pro_utils_is_neutral_player(territory_get_owner(t))
+}
+
+// Port of ProUtils#lambda$isFfa$2 — captured nothing; body is
+// `!isNeutralPlayer(p)`, used in
+// `enemies.stream().filter(p -> !isNeutralPlayer(p))`.
+pro_utils_lambda__is_ffa__2 :: proc(p: ^Game_Player) -> bool {
+	return !pro_utils_is_neutral_player(p)
+}
+
+// Port of ProUtils#lambda$getAlliedPlayersInTurnOrder$0 — captured
+// `(relationshipTracker, player)`; body is
+// `!relationshipTracker.isAllied(player, currentPlayer)` (the removeIf
+// predicate keeps non-allies, so true means "remove").
+pro_utils_lambda__get_allied_players_in_turn_order__0 :: proc(
+	relationship_tracker: ^Relationship_Tracker,
+	player: ^Game_Player,
+	current_player: ^Game_Player,
+) -> bool {
+	return !relationship_tracker_is_allied(relationship_tracker, player, current_player)
+}
+
+// Port of ProUtils#lambda$getEnemyPlayersInTurnOrder$1 — captured
+// `(relationshipTracker, player)`; body is
+// `relationshipTracker.isAllied(player, currentPlayer)`.
+pro_utils_lambda__get_enemy_players_in_turn_order__1 :: proc(
+	relationship_tracker: ^Relationship_Tracker,
+	player: ^Game_Player,
+	current_player: ^Game_Player,
+) -> bool {
+	return relationship_tracker_is_allied(relationship_tracker, player, current_player)
+}
+
+// Port of ProUtils.getLiveAlliedCapitals — friendly capitals that are
+// still owned by a friendly power, are not impassable to land units
+// for `player`, and are currently allied to `player`.
+pro_utils_get_live_allied_capitals :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+) -> [dynamic]^Territory {
+	capitals := make([dynamic]^Territory)
+	players := pro_utils_get_allied_players(player)
+	defer delete(players)
+	game_map := game_state_get_map(data)
+	for allied_player in players {
+		owned := territory_attachment_get_all_currently_owned_capitals(allied_player, game_map)
+		defer delete(owned)
+		for c in owned {
+			append(&capitals, c)
+		}
+	}
+	imp_pred, imp_ctx := matches_territory_is_not_impassable_to_land_units(player)
+	all_pred, all_ctx := matches_is_territory_allied(player)
+	filtered := make([dynamic]^Territory)
+	for t in capitals {
+		if imp_pred(imp_ctx, t) && all_pred(all_ctx, t) {
+			append(&filtered, t)
+		}
+	}
+	delete(capitals)
+	return filtered
+}
+
+// Port of ProUtils.getLiveEnemyCapitals — enemy capitals still owned
+// by enemy players, that are not impassable to `player`'s land units,
+// and that are currently owned by one of `player`'s potential enemies.
+pro_utils_get_live_enemy_capitals :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+) -> [dynamic]^Territory {
+	enemy_capitals := make([dynamic]^Territory)
+	enemy_players := pro_utils_get_enemy_players(player)
+	defer delete(enemy_players)
+	game_map := game_state_get_map(data)
+	for other_player in enemy_players {
+		owned := territory_attachment_get_all_currently_owned_capitals(other_player, game_map)
+		defer delete(owned)
+		for c in owned {
+			append(&enemy_capitals, c)
+		}
+	}
+	imp_pred, imp_ctx := matches_territory_is_not_impassable_to_land_units(player)
+	potential := pro_utils_get_potential_enemy_players(player)
+	defer delete(potential)
+	owned_pred, owned_ctx := matches_is_territory_owned_by_any_of(potential)
+	filtered := make([dynamic]^Territory)
+	for t in enemy_capitals {
+		if imp_pred(imp_ctx, t) && owned_pred(owned_ctx, t) {
+			append(&filtered, t)
+		}
+	}
+	delete(enemy_capitals)
+	return filtered
+}
+

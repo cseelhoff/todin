@@ -36,3 +36,30 @@ tuv_costs_calculator_get_costs_for_tuv :: proc(
 	return computed
 }
 
+// Java: private static int getTotalTuv(
+//           final UnitType unitType,
+//           final IntegerMap<UnitType> costs,
+//           final Set<UnitType> alreadyAdded)
+tuv_costs_calculator_get_total_tuv :: proc(
+	unit_type: ^Unit_Type,
+	costs: map[^Unit_Type]i32,
+	already_added: map[^Unit_Type]struct {},
+) -> i32 {
+	ua := unit_type_get_unit_attachment(unit_type)
+	if unit_attachment_get_tuv(ua) > -1 {
+		return unit_attachment_get_tuv(ua)
+	}
+	tuv := costs[unit_type]
+	consumes := unit_attachment_get_consumes_units(ua)
+	if _, seen := already_added[unit_type]; len(consumes) == 0 || seen {
+		return tuv
+	}
+	already_added_mut := already_added
+	already_added_mut[unit_type] = {}
+	for ut, count in consumes {
+		tuv += count * tuv_costs_calculator_get_total_tuv(ut, costs, already_added_mut)
+	}
+	delete_key(&already_added_mut, unit_type)
+	return tuv
+}
+

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Abstract_End_Turn_Delegate :: struct {
 	using base_triple_a_delegate: Base_Triple_A_Delegate,
 	need_to_initialize: bool,
@@ -289,4 +291,172 @@ abstract_end_turn_delegate_save_state :: proc(
 	state.need_to_initialize = self.need_to_initialize
 	state.has_posted_turn_summary = self.has_posted_turn_summary
 	return state
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#showEndTurnReport(java.lang.String)
+// Java body posts a Swing report message via the remote player. The
+// AI-snapshot harness never exercises Swing UI, so this port is a
+// deliberate no-op (mirrors the JaCoCo-filtered "UI is not in scope"
+// rule from llm-instructions.md).
+abstract_end_turn_delegate_show_end_turn_report :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	end_turn_report: string,
+) {
+	// no-op: Swing UI not in scope for the snapshot harness
+	_ = self
+	_ = end_turn_report
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#writeHistoryEventForChangeUnitOwnership(games.strategy.engine.delegate.IDelegateBridge,java.util.Collection)
+// Mirrors Java: a single-territory change emits one startEvent with the
+// units as rendering data; multiple territories emit a top-level
+// "Units Change Ownership" event followed by one addChildToEvent per
+// territory.
+abstract_end_turn_delegate_write_history_event_for_change_unit_ownership :: proc(
+	bridge: ^I_Delegate_Bridge,
+	change_list: [dynamic]^Tuple(^Territory, [dynamic]^Unit),
+) {
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	if len(change_list) == 1 {
+		tuple := change_list[0]
+		text := fmt.aprintf(
+			"Some Units in %s change ownership: %s",
+			tuple.first.named.base.name,
+			my_formatter_units_to_text_no_owner(tuple.second, nil),
+		)
+		i_delegate_history_writer_start_event(writer, text, rawptr(&tuple.second))
+	} else {
+		i_delegate_history_writer_start_event(writer, "Units Change Ownership")
+		for tuple in change_list {
+			text := fmt.aprintf(
+				"Some Units in %s change ownership: %s",
+				tuple.first.named.base.name,
+				my_formatter_units_to_text_no_owner(tuple.second, nil),
+			)
+			history_writer_add_child_to_event(writer, text, tuple.second)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#changeUnitOwnershipInTerritory(games.strategy.engine.delegate.IDelegateBridge,games.strategy.engine.data.Territory,boolean,java.util.Collection,games.strategy.engine.data.GamePlayer,games.strategy.engine.data.CompositeChange,java.util.Collection)
+// For each new owner candidate that's both eligible per the territory's
+// changeUnitOwners list (or all players when inAllTerritories) AND in
+// possibleNewOwners, transfer player's units that the owner is allowed
+// to receive (Matches.unitIsOwnedBy(player) AND
+// Matches.unitCanBeGivenByTerritoryTo(newOwner)).
+abstract_end_turn_delegate_change_unit_ownership_in_territory :: proc(
+	bridge: ^I_Delegate_Bridge,
+	curr_territory: ^Territory,
+	in_all_territories: bool,
+	possible_new_owners: [dynamic]^Game_Player,
+	player: ^Game_Player,
+	change: ^Composite_Change,
+	change_list: ^[dynamic]^Tuple(^Territory, [dynamic]^Unit),
+) {
+	// TerritoryAttachment.get(currTerritory).map(getChangeUnitOwners).orElse(List.of())
+	curr_terr_change_unit_owners: [dynamic]^Game_Player
+	{
+		ta := territory_attachment_get(curr_territory)
+		if ta != nil {
+			curr_terr_change_unit_owners = ta.change_unit_owners
+		}
+	}
+
+	if !(in_all_territories || len(curr_terr_change_unit_owners) > 0) {
+		return
+	}
+
+	// candidateOwners = (currTerrChangeUnitOwners.isEmpty() ? data.getPlayerList().getPlayers()
+	//                                                       : currTerrChangeUnitOwners)
+	//                   .retainAll(possibleNewOwners)
+	candidate_source: [dynamic]^Game_Player
+	if len(curr_terr_change_unit_owners) == 0 {
+		candidate_source = player_list_get_players(
+			game_data_get_player_list(i_delegate_bridge_get_data(bridge)),
+		)
+	} else {
+		candidate_source = curr_terr_change_unit_owners
+	}
+
+	candidate_owners: [dynamic]^Game_Player
+	defer delete(candidate_owners)
+	for cand in candidate_source {
+		for p in possible_new_owners {
+			if cand == p {
+				append(&candidate_owners, cand)
+				break
+			}
+		}
+	}
+
+	owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+	for new_owner in candidate_owners {
+		given_pred, given_ctx := matches_unit_can_be_given_by_territory_to(new_owner)
+		// territory.getMatches(unitIsOwnedBy(player).and(unitCanBeGivenByTerritoryTo(newOwner)))
+		transferable_units: [dynamic]^Unit
+		uc := territory_get_unit_collection(curr_territory)
+		if uc != nil {
+			for u in unit_collection_get_units(uc) {
+				if owned_pred(owned_ctx, u) && given_pred(given_ctx, u) {
+					append(&transferable_units, u)
+				}
+			}
+		}
+		if len(transferable_units) > 0 {
+			composite_change_add(
+				change,
+				change_factory_change_owner_3(transferable_units, new_owner, curr_territory),
+			)
+			append(change_list, tuple_new(^Territory, [dynamic]^Unit, curr_territory, transferable_units))
+		} else {
+			delete(transferable_units)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#changeUnitOwnership(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper: walks every territory on the map, collecting unit
+// ownership transfers driven by the current player's PlayerAttachment
+// (giveUnitControl / giveUnitControlInAllTerritories). When at least
+// one transfer was queued, write a history event and apply the
+// CompositeChange via the bridge.
+abstract_end_turn_delegate_change_unit_ownership :: proc(bridge: ^I_Delegate_Bridge) {
+	player := i_delegate_bridge_get_game_player(bridge)
+	pa := player_attachment_get(player)
+	possible_new_owners := player_attachment_get_give_unit_control(pa)
+	in_all_territories := player_attachment_get_give_unit_control_in_all_territories(pa)
+	change := composite_change_new()
+	change_list: [dynamic]^Tuple(^Territory, [dynamic]^Unit)
+	for curr_territory in game_map_get_territories(game_data_get_map(i_delegate_bridge_get_data(bridge))) {
+		abstract_end_turn_delegate_change_unit_ownership_in_territory(
+			bridge,
+			curr_territory,
+			in_all_territories,
+			possible_new_owners,
+			player,
+			change,
+			&change_list,
+		)
+	}
+	if !composite_change_is_empty(change) && len(change_list) > 0 {
+		abstract_end_turn_delegate_write_history_event_for_change_unit_ownership(bridge, change_list)
+		i_delegate_bridge_add_change(bridge, cast(^Change)change)
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#lambda$getSingleNeighborBlockadesThenHighestToLowestProduction$0(java.lang.Object)
+// Synthetic lambda body for
+//   Comparator.comparingInt(t -> TerritoryAttachment.getProduction((Territory) t))
+// inside getSingleNeighborBlockadesThenHighestToLowestProduction. Java
+// erases the parameter to Object then casts; the Odin port keeps the
+// resolved Territory type. Returns 0 when the territory has no
+// attachment, mirroring TerritoryAttachment.getProduction's
+// null-attachment behavior.
+abstract_end_turn_delegate_lambda__get_single_neighbor_blockades_then_highest_to_lowest_production__0 :: proc(
+	t: ^Territory,
+) -> i32 {
+	if t == nil || t.territory_attachment == nil {
+		return 0
+	}
+	return territory_attachment_get_production(t.territory_attachment)
 }

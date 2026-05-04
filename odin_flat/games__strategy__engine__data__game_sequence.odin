@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:strings"
+
 // games.strategy.engine.data.GameSequence
 //
 // Ordered list of GameStep + cursor (round, step index).
@@ -105,6 +108,57 @@ game_sequence_set_step_index :: proc(self: ^Game_Sequence, value: i32) {
 		return
 	}
 	self.current_index = value
+}
+
+// Mirrors Java GameSequence#setRoundAndStep(int, String, GamePlayer) (synchronized):
+//     round = currentRound;
+//     boolean found = false;
+//     for (int i = 0; i < steps.size(); i++) {
+//         final GameStep step = steps.get(i);
+//         if (step != null
+//             && step.getDisplayName().equalsIgnoreCase(stepDisplayName)
+//             && ((player == null && step.getPlayerId() == null)
+//                 || (player != null && player.equals(step.getPlayerId())))) {
+//             currentIndex = i;
+//             found = true;
+//             break;
+//         }
+//     }
+//     if (!found) {
+//         currentIndex = 0;
+//         log.error("Step Not Found ({}:{}), will instead use: {}", ...);
+//     }
+// `player` is @Nullable; we mirror that with `^Game_Player` accepting nil.
+// GamePlayer.equals compares by identity within a single GameData, matching
+// the convention used elsewhere in the port (pointer equality).
+game_sequence_set_round_and_step :: proc(self: ^Game_Sequence, current_round: i32, step_display_name: string, player: ^Game_Player) {
+	self.round = current_round
+	found := false
+	for i in 0 ..< len(self.steps) {
+		step := self.steps[i]
+		if step == nil {
+			continue
+		}
+		step_player := game_step_get_player_id(step)
+		player_match := (player == nil && step_player == nil) || (player != nil && player == step_player)
+		if strings.equal_fold(game_step_get_display_name(step), step_display_name) && player_match {
+			self.current_index = i32(i)
+			found = true
+			break
+		}
+	}
+	if !found {
+		self.current_index = 0
+		player_name := "null"
+		if player != nil {
+			player_name = default_named_get_name(&player.named_attachable.default_named)
+		}
+		fallback_name := ""
+		if int(self.current_index) < len(self.steps) && self.steps[self.current_index] != nil {
+			fallback_name = game_step_get_display_name(self.steps[self.current_index])
+		}
+		fmt.eprintf("Step Not Found (%s:%s), will instead use: %s\n", step_display_name, player_name, fallback_name)
+	}
 }
 
 // Mirrors Java GameSequence#<init>(GameData):

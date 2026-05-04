@@ -39,6 +39,17 @@ suicide_remove_units_and_pred :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
 	return c.a(c.a_ctx, u) && c.b(c.b_ctx, u)
 }
 
+// Java: RemoveUnits#removeUnits(IDelegateBridge, Predicate<Unit>)
+suicide_remove_units_remove_units :: proc(
+	self: ^Suicide_Remove_Units,
+	bridge: ^I_Delegate_Bridge,
+	unit_match: proc(rawptr, ^Unit) -> bool,
+	unit_match_ctx: rawptr,
+) {
+	suicide_remove_units_remove_suicide_units(self, bridge, unit_match, unit_match_ctx, .OFFENSE)
+	suicide_remove_units_remove_suicide_units(self, bridge, unit_match, unit_match_ctx, .DEFENSE)
+}
+
 // Java: RemoveUnits#removeSuicideUnits(IDelegateBridge, Predicate<Unit>, Side)
 suicide_remove_units_remove_suicide_units :: proc(
 	self: ^Suicide_Remove_Units,

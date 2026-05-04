@@ -180,40 +180,57 @@ game_parser_parse_costs_for_rule :: proc(self: ^Game_Parser, rule: ^Rule, elemen
 // harness pins.
 game_parser_parse_player_list :: proc(self: ^Game_Parser, xml_player_list: ^Xml_Player_List) {
 	for current in xml_player_list.players {
-		name := current.name
-		optional := current.optional
-		can_be_disabled := current.can_be_disabled
-		default_type := current.default_type
-		if default_type == "" {
-			default_type = "Human"
-		}
-		is_hidden := current.is_hidden
-
-		player := new(Game_Player)
-		player.named_attachable.default_named.named.base.name = name
-		player.named_attachable.default_named.named.kind = .Game_Player
-		player.named_attachable.default_named.game_data_component.game_data = self.data
-		player.optional = optional
-		player.can_be_disabled = can_be_disabled
-		player.default_type = default_type
-		player.is_hidden = is_hidden
-
-		units_held := new(Unit_Collection)
-		units_held.game_data_component.game_data = self.data
-		player.units_held = units_held
-
-		resources := new(Resource_Collection)
-		resources.game_data_component.game_data = self.data
-		player.resources = resources
-
-		tech_frontiers := new(Technology_Frontier_List)
-		tech_frontiers.game_data_component.game_data = self.data
-		player.technology_frontiers = tech_frontiers
-
-		player.who_am_i = "null: no_one"
-
-		player_list_add_player_id(game_data_get_player_list(self.data), player)
+		game_parser_lambda_parse_player_list_17(self, current)
 	}
+}
+
+// Synthetic forEach lambda from parsePlayerList (#17):
+//   current ->
+//     data.getPlayerList().addPlayerId(
+//         new GamePlayer(
+//             current.getName(),
+//             Optional.ofNullable(current.getOptional()).orElse(false),
+//             Optional.ofNullable(current.getCanBeDisabled()).orElse(false),
+//             Optional.ofNullable(current.getDefaultType()).orElse(PLAYER_TYPE_HUMAN_LABEL),
+//             Optional.ofNullable(current.getIsHidden()).orElse(false),
+//             data));
+// Captures `data` (via self.data). PLAYER_TYPE_HUMAN_LABEL resolves
+// to "Human" in the English resource bundle, which is the value the
+// snapshot harness pins.
+game_parser_lambda_parse_player_list_17 :: proc(self: ^Game_Parser, current: ^Xml_Player_List_Player) {
+	name := current.name
+	optional := current.optional
+	can_be_disabled := current.can_be_disabled
+	default_type := current.default_type
+	if default_type == "" {
+		default_type = "Human"
+	}
+	is_hidden := current.is_hidden
+
+	player := new(Game_Player)
+	player.named_attachable.default_named.named.base.name = name
+	player.named_attachable.default_named.named.kind = .Game_Player
+	player.named_attachable.default_named.game_data_component.game_data = self.data
+	player.optional = optional
+	player.can_be_disabled = can_be_disabled
+	player.default_type = default_type
+	player.is_hidden = is_hidden
+
+	units_held := new(Unit_Collection)
+	units_held.game_data_component.game_data = self.data
+	player.units_held = units_held
+
+	resources := new(Resource_Collection)
+	resources.game_data_component.game_data = self.data
+	player.resources = resources
+
+	tech_frontiers := new(Technology_Frontier_List)
+	tech_frontiers.game_data_component.game_data = self.data
+	player.technology_frontiers = tech_frontiers
+
+	player.who_am_i = "null: no_one"
+
+	player_list_add_player_id(game_data_get_player_list(self.data), player)
 }
 
 // Java: private void parseDiceSides(final DiceSides diceSides)
@@ -772,5 +789,553 @@ game_parser_parse_results :: proc(
 		} else {
 			rule_add_result(data_rule, &result_unit_type.named_attachable, quantity)
 		}
+	}
+}
+
+// Java: private void parseConnections(
+//     final List<org.triplea.map.data.elements.Map.Connection> connections)
+//     throws GameParseException
+//   for each: addConnection(getTerritory(t1), getTerritory(t2)).
+game_parser_parse_connections :: proc(
+	self: ^Game_Parser,
+	connections: [dynamic]^Map_Connection,
+) {
+	for current in connections {
+		t1 := game_parser_get_territory(self, current.t1)
+		t2 := game_parser_get_territory(self, current.t2)
+		game_map_add_connection(game_data_get_map(self.data), t1, t2)
+	}
+}
+
+// Java: private void parseCategoryTechs(
+//     final List<Technology.PlayerTech.Category.Tech> elements,
+//     final TechnologyFrontier frontier) throws GameParseException
+//   For each tech: look up by property first, then by name on the
+//   data-wide TechnologyFrontier; throw "Could not find technology: %s"
+//   on miss; otherwise frontier.addAdvance(ta).
+game_parser_parse_category_techs :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Technology_Player_Tech_Category_Tech,
+	frontier: ^Technology_Frontier,
+) {
+	all_techs := game_data_get_technology_frontier(self.data)
+	for current in elements {
+		ta := technology_frontier_get_advance_by_property(all_techs, current.name)
+		if ta == nil {
+			ta = technology_frontier_get_advance_by_name(all_techs, current.name)
+		}
+		if ta == nil {
+			fmt.panicf("Could not find technology: %s", current.name)
+		}
+		technology_frontier_add_advance(frontier, ta)
+	}
+}
+
+// Java: private void parseSteps(final List<GamePlay.Sequence.Step> stepList)
+//     throws GameParseException
+//
+// For each Step:
+//   - resolve delegate via getDelegate(current.getDelegate()) (throws on miss);
+//   - resolve player via getPlayerIdOptional(current.getPlayer()).orElse(null);
+//   - if player is null but the XML named one (non-blank), throw
+//     "The step %s wants a player with the name of ''%s''..." matching
+//     Java's doubled-single-quote literal text;
+//   - parse step properties;
+//   - displayName follows the Java `null + isBlank` pattern: stays null
+//     when display is whitespace-only (`isBlank()` true), otherwise
+//     copied verbatim (including null/empty);
+//   - construct the GameStep and apply maxRunCount when present and > 0;
+//   - data.getSequence().addStep(step).
+//
+// Modeling pragma: Game_Play_Sequence_Step.display / .player are plain
+// `string` (no Optional<String>). We treat empty string as Java's null.
+// The Java `current.getMaxRunCount() != null && > 0` guard becomes
+// `current.max_run_count != nil && current.max_run_count^ > 0`.
+game_parser_parse_steps :: proc(
+	self: ^Game_Parser,
+	step_list: [dynamic]^Game_Play_Sequence_Step,
+) {
+	for current in step_list {
+		delegate := game_parser_get_delegate(self, current.delegate)
+		player := game_parser_get_player_id_optional(self, current.player)
+		if player == nil && current.player != "" && strings.trim_space(current.player) != "" {
+			fmt.panicf(
+				"The step %s wants a player with the name of '%s', but that player cannot be found. Make sure the player's name is spelled correctly.",
+				current.name,
+				current.player,
+			)
+		}
+		name := current.name
+		step_properties := game_parser_parse_step_properties(current.step_properties)
+		// Java: displayName = null;
+		//       if (current.getDisplay() == null || !current.getDisplay().isBlank())
+		//           displayName = current.getDisplay();
+		display_name := ""
+		if current.display == "" || strings.trim_space(current.display) != "" {
+			display_name = current.display
+		}
+		step := game_step_new(name, display_name, player, delegate, self.data, step_properties)
+		if current.max_run_count != nil && current.max_run_count^ > 0 {
+			game_step_set_max_run_count(step, current.max_run_count^)
+		}
+		game_sequence_add_step(game_data_get_sequence(self.data), step)
+	}
+}
+
+// Java: private void parseUnitPlacement(
+//     final List<Initialize.UnitInitialize.UnitPlacement> elements)
+//     throws GameParseException
+//
+// For each placement element:
+//   - resolve territory and unit type (both throw on miss);
+//   - hits := Optional.ofNullable(hitsTaken).orElse(0); enforce
+//     `0 <= hits <= unitAttachment.hitPoints - 1`;
+//   - unitDamage := Optional.ofNullable(unitDamage).orElse(0);
+//     enforce `>= 0`;
+//   - if owner is null/blank, owner = territory.getData().getPlayerList()
+//     .getNullPlayer(); else owner = getPlayerIdOptional(...).orElse(null);
+//   - territory.getUnitCollection().addAll(type.create(quantity, owner,
+//     false, hits, unitDamage)).
+game_parser_parse_unit_placement :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Initialize_Unit_Initialize_Unit_Placement,
+) {
+	for current in elements {
+		territory := game_parser_get_territory(self, current.territory)
+		type := game_parser_get_unit_type(self, current.unit_type)
+		owner_string := current.owner
+		hits: i32 = 0
+		if current.hits_taken != nil {
+			hits = current.hits_taken^
+		}
+		max_hits := unit_attachment_get_hit_points(unit_type_get_unit_attachment(type)) - 1
+		if hits < 0 || hits > max_hits {
+			fmt.panicf(
+				"Unit placement issue for unit type %s in territory %s: hitsTaken is %d, but cannot be less than zero or greater than %d (one less than total hitPoints)",
+				default_named_get_name(&type.named_attachable.default_named),
+				default_named_get_name(&territory.named_attachable.default_named),
+				hits,
+				max_hits,
+			)
+		}
+
+		unit_damage: i32 = 0
+		if current.unit_damage != nil {
+			unit_damage = current.unit_damage^
+		}
+		if unit_damage < 0 {
+			fmt.panicf(
+				"Unit placement issue for unit type %s in territory %s: unitDamage is %d, but cannot be less than zero",
+				default_named_get_name(&type.named_attachable.default_named),
+				default_named_get_name(&territory.named_attachable.default_named),
+				unit_damage,
+			)
+		}
+
+		owner: ^Game_Player
+		if owner_string == "" || strings.trim_space(owner_string) == "" {
+			territory_data := game_data_component_get_data(
+				&territory.named_attachable.default_named.game_data_component,
+			)
+			owner = player_list_get_null_player(game_data_get_player_list(territory_data))
+		} else {
+			owner = game_parser_get_player_id_optional(self, current.owner)
+		}
+		quantity := current.quantity
+		units := unit_type_create_5(type, quantity, owner, false, hits, unit_damage)
+		unit_collection_add_all(territory_get_unit_collection(territory), units)
+	}
+}
+
+// Java: private List<Tuple<String, String>> setOptions(
+//     final IAttachment attachment,
+//     final List<AttachmentList.Attachment.Option> options,
+//     final Map<String, String> foreach) throws GameParseException
+//
+// For each option element:
+//   - skip when name or value is null (modeled here as empty);
+//   - decapitalize the option name and run it through the legacy
+//     property-name mapper (the Java code also calls .intern(); the
+//     Odin port has no string-intern table — semantically equivalent
+//     for a referentially-pure pipeline);
+//   - throw when the resulting name is empty;
+//   - skip names the legacy mapper says to ignore;
+//   - countAndValue := count.isNullOrEmpty ? value : count + ":" + value;
+//   - skip if any empty foreach variable substring appears in
+//     countAndValue (mirrors containsEmptyForeachVariable);
+//   - apply foreach + variable interpolation, then the legacy
+//     option-value mapper;
+//   - look up the property on the attachment (panic on miss — Java
+//     throws GameParseException via Optional.orElseThrow with the
+//     message text built by lambda_set_options_24 above) and call
+//     setValue(finalValue). MutableProperty.setValue dispatches to
+//     setStringValue when value is a String; finalValue is always a
+//     String here, so we route through mutable_property_set_string_value.
+//   - record (name, finalValue) in the result list.
+//
+// Modeling pragma: Java's outer try/catch rewraps unrelated
+// RuntimeExceptions into a GameParseException carrying `xmlUri` and
+// `attachment`. Odin panics propagate unchanged; we forfeit the
+// rewrap (it only affects the human-readable error text on a fail
+// path that real games never hit) but preserve every observable
+// success-path effect.
+game_parser_set_options :: proc(
+	self: ^Game_Parser,
+	attachment: ^I_Attachment,
+	options: [dynamic]^Attachment_List_Attachment_Option,
+	foreach: map[string]string,
+) -> [dynamic]^Tuple(string, string) {
+	results: [dynamic]^Tuple(string, string)
+	for option in options {
+		option_name := option.name
+		value := option.value
+		if option_name == "" || value == "" {
+			continue
+		}
+		// decapitalize the property name for backwards compatibility
+		name := legacy_property_mapper_map_legacy_option_name(
+			game_parser_decapitalize(option_name),
+		)
+		if name == "" {
+			fmt.panicf(
+				"Option name with zero length for attachment: %s",
+				i_attachment_get_name(attachment),
+			)
+		}
+		if legacy_property_mapper_ignore_option_name(name, value) {
+			continue
+		}
+		count := option.count
+		count_and_value: string
+		if count == "" {
+			count_and_value = value
+		} else {
+			count_and_value = fmt.aprintf("%s:%s", count, value)
+		}
+		if game_parser_contains_empty_foreach_variable(count_and_value, foreach) {
+			continue // Skip adding option if contains empty foreach variable
+		}
+		value_with_foreach := game_data_variables_replace_foreach_variables(
+			count_and_value,
+			foreach,
+		)
+		interpolated_value := game_data_variables_replace_variables(
+			self.variables,
+			value_with_foreach,
+		)
+		final_value := legacy_property_mapper_map_legacy_option_value(
+			name,
+			interpolated_value,
+		)
+		prop := i_attachment_get_property_or_throw(attachment, name)
+		_ = mutable_property_set_string_value(prop, final_value)
+		append(&results, tuple_new(string, string, name, final_value))
+	}
+	_ = self.xml_uri // Java rewraps unexpected exceptions with xmlUri; see modeling pragma.
+	return results
+}
+
+// Synthetic map lambda from parseRelationshipTypes (#14):
+//   name -> new RelationshipType(name, data)
+// Captures `data` (via self.data).
+game_parser_lambda_parse_relationship_types_14 :: proc(self: ^Game_Parser, name: string) -> ^Relationship_Type {
+	return relationship_type_new(name, self.data)
+}
+
+// Synthetic forEach lambda from parseTerritoryEffects (#15):
+//   name -> data.getTerritoryEffectList().put(name, new TerritoryEffect(name, data))
+// Captures `data` (via self.data). Mirrors the Java side's direct
+// `Map.put` on TerritoryEffectList; the Odin port models
+// TerritoryEffectList as `map[string]^Territory_Effect` exposed
+// directly through `game_data_get_territory_effect_list`.
+game_parser_lambda_parse_territory_effects_15 :: proc(self: ^Game_Parser, name: string) {
+	tel := game_data_get_territory_effect_list(self.data)
+	tel[name] = territory_effect_new(name, self.data)
+}
+
+// Java: private Attachable findAttachment(
+//     final AttachmentList.Attachment element,
+//     final String type,
+//     final Map<String, String> foreach) throws GameParseException
+//
+// Replaces foreach variables in the `attachTo` value, then dispatches by
+// type to the appropriate getter (each of which throws on miss). Mirrors
+// the Java switch/`default: throw GameParseException("Type not found...")`.
+//
+// Modeling pragma: ^Attachable in this port is the function-pointer
+// "interface" struct (games/strategy/engine/data/Attachable.odin); concrete
+// owners (Unit_Type, Territory, Resource, Territory_Effect, Game_Player,
+// Relationship_Type, Tech_Advance) are returned via raw pointer cast,
+// matching the convention used elsewhere in odin_flat/ (see e.g.
+// `cast(^Attachable)type` in unit_support_attachment_new and
+// `ta.attached_to = cast(^Attachable)self` in game_player.odin).
+game_parser_find_attachment :: proc(
+	self: ^Game_Parser,
+	element: ^Attachment_List_Attachment,
+	type: string,
+	foreach: map[string]string,
+) -> ^Attachable {
+	attach_to := game_data_variables_replace_foreach_variables(element.attach_to, foreach)
+	switch type {
+	case "unitType":
+		return cast(^Attachable)game_parser_get_unit_type(self, attach_to)
+	case "territory":
+		return cast(^Attachable)game_parser_get_territory(self, attach_to)
+	case "resource":
+		return cast(^Attachable)game_parser_get_resource_or_throw(self, attach_to)
+	case "territoryEffect":
+		return cast(^Attachable)game_parser_get_territory_effect(self, attach_to)
+	case "player":
+		return cast(^Attachable)game_parser_get_player_id(self, attach_to)
+	case "relationship":
+		return cast(^Attachable)game_parser_get_relationship_type(self, attach_to)
+	case "technology":
+		return cast(^Attachable)game_parser_get_technology(self, attach_to)
+	case:
+		fmt.panicf("Type not found to attach to: %s", type)
+	}
+	return nil
+}
+
+// Java: private void parseTerritories(
+//     final List<org.triplea.map.data.elements.Map.Territory> territories)
+//   for each: data.getMap().addTerritory(
+//       new Territory(current.getName(),
+//                     Optional.ofNullable(current.getWater()).orElse(false),
+//                     data));
+// Modeling pragma: Map_Territory.water is a plain `bool` (not Optional<Boolean>);
+// the Odin default of `false` already matches Java's orElse(false).
+game_parser_parse_territories :: proc(
+	self: ^Game_Parser,
+	territories: [dynamic]^Map_Territory,
+) {
+	for current in territories {
+		is_water := current.water
+		game_map_add_territory(
+			game_data_get_map(self.data),
+			territory_new(current.name, is_water, self.data),
+		)
+	}
+}
+
+// Java: private void parseAlliances(final Game game) throws GameParseException
+//
+// 1. For each <alliance> entry in game.getPlayerList().getAlliances(),
+//    add (player, allianceName) to AllianceTracker.
+// 2. For each player in data.getPlayerList():
+//    - allies = allianceTracker.getAllies(currentPlayer)
+//    - enemies = HashSet<>(players); enemies.removeAll(allies)
+//    - both sets remove currentPlayer
+//    - setRelationship(self, ally, defaultAlliedRelationship)
+//    - setRelationship(self, enemy, defaultWarRelationship)
+game_parser_parse_alliances :: proc(self: ^Game_Parser, game: ^Game) {
+	alliance_tracker := game_data_get_alliance_tracker(self.data)
+	players := player_list_get_players(game_data_get_player_list(self.data))
+
+	for current in xml_player_list_get_alliances(game_get_player_list(game)) {
+		p1 := game_parser_get_player_id(self, current.player)
+		alliance := current.alliance
+		alliance_tracker_add_to_alliance(alliance_tracker, p1, alliance)
+	}
+
+	relationship_tracker := game_data_get_relationship_tracker(self.data)
+	relationship_type_list := game_data_get_relationship_type_list(self.data)
+
+	for current_player in players {
+		// Java: Set<GamePlayer> allies = allianceTracker.getAllies(currentPlayer);
+		allies := alliance_tracker_get_allies(alliance_tracker, current_player)
+		// Java: Set<GamePlayer> enemies = new HashSet<>(players); enemies.removeAll(allies);
+		enemies: map[^Game_Player]struct {}
+		for p in players {
+			enemies[p] = {}
+		}
+		for ally in allies {
+			delete_key(&enemies, ally)
+		}
+		// remove self from enemies and from allies
+		delete_key(&enemies, current_player)
+		delete_key(&allies, current_player)
+
+		default_allied := relationship_type_list_get_default_allied_relationship(
+			relationship_type_list,
+		)
+		for allied_player in allies {
+			relationship_tracker_set_relationship(
+				relationship_tracker,
+				current_player,
+				allied_player,
+				default_allied,
+			)
+		}
+		default_war := relationship_type_list_get_default_war_relationship(
+			relationship_type_list,
+		)
+		for enemy_player in enemies {
+			relationship_tracker_set_relationship(
+				relationship_tracker,
+				current_player,
+				enemy_player,
+				default_war,
+			)
+		}
+	}
+}
+
+// Java: private void parseRelationInitialize(
+//     final Initialize.RelationshipInitialize relations) throws GameParseException
+//   if (!relations.getRelationships().isEmpty()) {
+//     final RelationshipTracker tracker = data.getRelationshipTracker();
+//     for each: tracker.setRelationship(p1, p2, r, roundValue);
+//   }
+// The 4-arg setRelationship is `relationship_tracker_set_relationship_with_round`.
+game_parser_parse_relation_initialize :: proc(
+	self: ^Game_Parser,
+	relations: ^Initialize_Relationship_Initialize,
+) {
+	if len(relations.relationships) == 0 {
+		return
+	}
+	tracker := game_data_get_relationship_tracker(self.data)
+	for current in relations.relationships {
+		p1 := game_parser_get_player_id(self, current.player1)
+		p2 := game_parser_get_player_id(self, current.player2)
+		r := game_parser_get_relationship_type(self, current.type)
+		round_value := current.round_value
+		relationship_tracker_set_relationship_with_round(tracker, p1, p2, r, round_value)
+	}
+}
+
+// Java: private void parseOwner(final Initialize.OwnerInitialize elements)
+//   for each: getTerritory(t).setOwner(getPlayerId(owner));
+game_parser_parse_owner :: proc(
+	self: ^Game_Parser,
+	elements: ^Initialize_Owner_Initialize,
+) {
+	for current in elements.territory_owners {
+		territory := game_parser_get_territory(self, current.territory)
+		owner := game_parser_get_player_id(self, current.owner)
+		territory_set_owner(territory, owner)
+	}
+}
+
+// Java: private void parseHeldUnits(final List<Initialize.UnitInitialize.HeldUnits> elements)
+//   for each: player.getUnitCollection().addAll(type.create(quantity, player));
+// `type.create(quantity, player)` is the 2-arg overload → unit_type_create_2.
+game_parser_parse_held_units :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Initialize_Unit_Initialize_Held_Units,
+) {
+	for current in elements {
+		player := game_parser_get_player_id(self, current.player)
+		type := game_parser_get_unit_type(self, current.unit_type)
+		quantity := current.quantity
+		units := unit_type_create_2(type, quantity, player)
+		unit_collection_add_all(game_player_get_unit_collection(player), units)
+	}
+}
+
+// Java: private void parseResourceInitialization(
+//     final Initialize.ResourceInitialize elements) throws GameParseException
+//   for each: player.getResources().addResource(resource, quantity);
+game_parser_parse_resource_initialization :: proc(
+	self: ^Game_Parser,
+	elements: ^Initialize_Resource_Initialize,
+) {
+	for current in elements.resources_given {
+		player := game_parser_get_player_id(self, current.player)
+		resource := game_parser_get_resource_or_throw(self, current.resource)
+		quantity := current.quantity
+		resource_collection_add_resource(game_player_get_resources(player), resource, quantity)
+	}
+}
+
+// Java: private void parseProductionFrontiers(
+//     final List<Production.ProductionFrontier> elements) throws GameParseException
+//   for each: build new ProductionFrontier(name, data), parseFrontierRules(...),
+//   then frontiers.addProductionFrontier(frontier).
+game_parser_parse_production_frontiers :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Production_Frontier,
+) {
+	frontiers := game_data_get_production_frontier_list(self.data)
+	for current in elements {
+		name := current.name
+		frontier := production_frontier_new(name, self.data)
+		game_parser_parse_frontier_rules(self, current.frontier_rules, frontier)
+		production_frontier_list_add_production_frontier(frontiers, frontier)
+	}
+}
+
+// Java: private void parseRepairFrontiers(
+//     final List<Production.RepairFrontier> elements) throws GameParseException
+//
+// Modeling pragma: Production_Repair_Frontier.repair_rules is a
+// `[dynamic]Production_Repair_Frontier_Repair_Rules` (value, not pointer)
+// while `game_parser_parse_repair_frontier_rules` takes a
+// `[dynamic]^Production_Repair_Frontier_Repair_Rules`. Rather than
+// allocating a parallel pointer slice, we inline the per-element loop
+// here (the helper just iterates and calls
+// `repair_frontier_add_rule(getRepairRule(element.name))`).
+game_parser_parse_repair_frontiers :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Repair_Frontier,
+) {
+	frontiers := game_data_get_repair_frontier_list(self.data)
+	for current in elements {
+		name := current.name
+		frontier := repair_frontier_new(name, self.data)
+		for i in 0 ..< len(current.repair_rules) {
+			element := &current.repair_rules[i]
+			repair_frontier_add_rule(
+				frontier,
+				game_parser_get_repair_rule(self, element.name),
+			)
+		}
+		repair_frontier_list_add_repair_frontier(frontiers, frontier)
+	}
+}
+
+// Java: private void parsePlayerProduction(
+//     final List<Production.PlayerProduction> elements) throws GameParseException
+//   for each: getPlayerId(player).setProductionFrontier(getProductionFrontier(frontier));
+game_parser_parse_player_production :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Player_Production,
+) {
+	for current in elements {
+		player := game_parser_get_player_id(self, current.player)
+		frontier := game_parser_get_production_frontier(self, current.frontier)
+		game_player_set_production_frontier(player, frontier)
+	}
+}
+
+// Java: private void parsePlayerRepair(
+//     final List<Production.PlayerRepair> elements) throws GameParseException
+//   for each: getPlayerId(player).setRepairFrontier(getRepairFrontier(frontier));
+game_parser_parse_player_repair :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Player_Repair,
+) {
+	for current in elements {
+		player := game_parser_get_player_id(self, current.player)
+		repair_frontier := game_parser_get_repair_frontier(self, current.frontier)
+		game_player_set_repair_frontier(player, repair_frontier)
+	}
+}
+
+// Java: private void parseCategories(
+//     final List<Technology.PlayerTech.Category> elements,
+//     final TechnologyFrontierList categories) throws GameParseException
+//   for each: tf := new TechnologyFrontier(name, data); parseCategoryTechs(techs, tf);
+//   categories.addTechnologyFrontier(tf).
+game_parser_parse_categories :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Technology_Player_Tech_Category,
+	categories: ^Technology_Frontier_List,
+) {
+	for current in elements {
+		technology_frontier := technology_frontier_new(current.name, self.data)
+		game_parser_parse_category_techs(self, current.techs, technology_frontier)
+		technology_frontier_list_add_technology_frontier(categories, technology_frontier)
 	}
 }

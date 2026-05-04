@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strconv"
 import "core:strings"
 
@@ -77,4 +78,69 @@ attribute_value_casting_cast_to_boolean :: proc(self: ^Attribute_Value_Casting, 
 		return nil, err
 	}
 	return strings.equal_fold(av, "true"), nil
+}
+
+// Java: Object castAttributeValue(final String attributeValue) throws XmlDataException
+//
+// Dispatches on the underlying Field's declared Java type. The Odin
+// port does not unbox these values back to typed Maybe(i32) /
+// Maybe(f64) / Maybe(bool) at any call site, so we render the cast
+// result as its textual form and return Maybe(string), preserving
+// nil-vs-empty distinctions exactly the way the Java side preserves
+// null-vs-Optional. For the String branch the Java code is
+//   Strings.emptyToNull(Optional.ofNullable(av).orElseGet(default))
+// i.e. fall back to attributeAnnotation.defaultValue() when av is
+// null, then map "" → null.
+attribute_value_casting_cast_attribute_value :: proc(self: ^Attribute_Value_Casting, attribute_value: Maybe(string)) -> (result: Maybe(string), err: ^Xml_Data_Exception) {
+	switch self.field.field_type_tag {
+	case .INTEGER:
+		v, ierr := attribute_value_casting_cast_to_int(self, attribute_value)
+		if ierr != nil {
+			return nil, ierr
+		}
+		iv, has_iv := v.?
+		if !has_iv {
+			return nil, nil
+		}
+		return fmt.tprintf("%d", iv), nil
+	case .DOUBLE:
+		v, derr := attribute_value_casting_cast_to_double(self, attribute_value)
+		if derr != nil {
+			return nil, derr
+		}
+		dv, has_dv := v.?
+		if !has_dv {
+			return nil, nil
+		}
+		buf: [40]u8
+		s := strconv.ftoa(buf[:], dv, 'g', -1, 64)
+		return strings.clone(s), nil
+	case .BOOLEAN:
+		v, berr := attribute_value_casting_cast_to_boolean(self, attribute_value)
+		if berr != nil {
+			return nil, berr
+		}
+		bv, has_bv := v.?
+		if !has_bv {
+			return nil, nil
+		}
+		if bv {
+			return "true", nil
+		}
+		return "false", nil
+	case .STRING:
+		fallthrough
+	case:
+		// Strings.emptyToNull(Optional.ofNullable(av).orElseGet(default))
+		s: string
+		if av, has_av := attribute_value.?; has_av {
+			s = av
+		} else if self.attribute_annotation != nil {
+			s = self.attribute_annotation.default_value
+		}
+		if len(s) == 0 {
+			return nil, nil
+		}
+		return s, nil
+	}
 }

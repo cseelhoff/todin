@@ -24,3 +24,32 @@ pro_move_utils_lambda__do_move__3 :: proc(move: ^Move_Description) -> bool {
 	return len(move_description_get_units_to_sea_transports(move)) == 0
 }
 
+// Synthetic lambda `route -> moves.add(new MoveDescription(unitList, route))`
+// from `ProMoveUtils.calculateBombardMoveRoutes`, applied as the
+// `Optional<Route>::ifPresent` consumer when the naval route to the
+// bombard-from territory exists. Captures the enclosing `moves` and
+// `unitList` ArrayLists; appends a freshly-constructed MoveDescription
+// (via the 2-arg Collection<Unit>+Route constructor) to `moves`.
+pro_move_utils_lambda__calculate_bombard_move_routes__1 :: proc(
+	moves: ^[dynamic]^Move_Description,
+	unit_list: [dynamic]^Unit,
+	route: ^Route,
+) {
+	append(moves, move_description_new_units_route(unit_list[:], route))
+}
+
+// Synthetic lambda `route -> moves.add(new MoveDescription(unitList, route))`
+// from `ProMoveUtils.calculateBombingRoutes`, applied as the
+// `Optional<Route>::ifPresent` consumer when the air route to the
+// strategic-bombing target territory exists. Captures the enclosing
+// `moves` and `unitList` ArrayLists; appends a freshly-constructed
+// MoveDescription (via the 2-arg Collection<Unit>+Route constructor)
+// to `moves`.
+pro_move_utils_lambda__calculate_bombing_routes__2 :: proc(
+	moves: ^[dynamic]^Move_Description,
+	unit_list: [dynamic]^Unit,
+	route: ^Route,
+) {
+	append(moves, move_description_new_units_route(unit_list[:], route))
+}
+

@@ -72,3 +72,44 @@ finished_battle_add_attack_change :: proc(
 	return &empty.change
 }
 
+// games.strategy.triplea.delegate.battle.FinishedBattle#fight
+//
+//   isOver = true;
+//   battleTracker.removeBattle(this, bridge.getData());
+//   if (headless) {
+//     return;
+//   }
+//   clearTransportedBy(bridge);
+//   battleTracker
+//       .getBattleRecords()
+//       .addResultToBattle(
+//           attacker,
+//           battleId,
+//           defender,
+//           attackerLostTuv,
+//           defenderLostTuv,
+//           battleResultDescription,
+//           new BattleResults(this, gameData));
+finished_battle_fight :: proc(self: ^Finished_Battle, bridge: ^I_Delegate_Bridge) {
+	self.is_over = true
+	battle_tracker_remove_battle(
+		self.battle_tracker,
+		cast(^I_Battle)&self.abstract_battle,
+		i_delegate_bridge_get_data(bridge),
+	)
+	if self.headless {
+		return
+	}
+	abstract_battle_clear_transported_by(&self.abstract_battle, bridge)
+	battle_records_add_result_to_battle(
+		battle_tracker_get_battle_records(self.battle_tracker),
+		self.attacker,
+		self.battle_id,
+		self.defender,
+		self.attacker_lost_tuv,
+		self.defender_lost_tuv,
+		self.battle_result_description,
+		battle_results_new(cast(^I_Battle)&self.abstract_battle, self.game_data),
+	)
+}
+

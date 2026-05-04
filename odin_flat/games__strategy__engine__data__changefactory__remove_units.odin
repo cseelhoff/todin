@@ -6,6 +6,16 @@ Remove_Units :: struct {
 // Java owners covered by this file:
 //   - games.strategy.engine.data.changefactory.RemoveUnits
 
+// Java: RemoveUnits#<init>(UnitCollection, Collection<Unit>)
+//   this(collection.getHolder().getName(), collection.getHolder().getType(), units);
+remove_units_new_2 :: proc(
+	collection: ^Unit_Collection,
+	units: [dynamic]^Unit,
+) -> ^Remove_Units {
+	holder := collection.holder
+	return remove_units_new_3(holder.named.base.name, named_unit_holder_get_type(holder), units)
+}
+
 // Java: RemoveUnits#<init>(String, String, Collection<Unit>)
 //   this(name, type, units, AddUnits.buildUnitOwnerMap(units));
 remove_units_new_3 :: proc(

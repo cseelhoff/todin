@@ -14,6 +14,53 @@ Transform_Damaged_Units_History_Change :: struct {
 	mark_no_movement_on_new_units: bool,
 }
 
+// Java:
+//   public TransformDamagedUnitsHistoryChange(
+//       final Territory location,
+//       final Collection<Unit> damagedUnits,
+//       final boolean markNoMovementOnNewUnits) { ... }
+// Mirrors the Java field initializers (`change = new CompositeChange()`,
+// `transformingUnits = new HashMap<>()`, `attributeChanges =
+// new CompositeChange()`) plus the constructor body that walks
+// `damagedUnits`, consults each unit's
+// `whenHitPointsDamagedChangesInto` map keyed by current hits, and on
+// a hit translates attributes (when the tuple's first flag is set)
+// and records the old→new mapping.
+transform_damaged_units_history_change_new :: proc(
+	location: ^Territory,
+	damaged_units: [dynamic]^Unit,
+	mark_no_movement_on_new_units: bool,
+) -> ^Transform_Damaged_Units_History_Change {
+	self := new(Transform_Damaged_Units_History_Change)
+	self.change = composite_change_new()
+	self.location = location
+	self.transforming_units = make(map[^Unit]^Unit)
+	self.attribute_changes = composite_change_new()
+	self.mark_no_movement_on_new_units = mark_no_movement_on_new_units
+
+	for unit in damaged_units {
+		m := unit_attachment_get_when_hit_points_damaged_changes_into(
+			unit_get_unit_attachment(unit),
+		)
+		hits := unit_get_hits(unit)
+		tup, ok := m[hits]
+		if !ok {
+			continue
+		}
+		translate_attributes := tuple_get_first(tup)
+		unit_type := tuple_get_second(tup)
+		to_add := unit_type_create_2(unit_type, 1, unit_get_owner(unit))
+		if translate_attributes {
+			composite_change_add(
+				self.attribute_changes,
+				unit_utils_translate_attributes_to_other_units(unit, to_add, location),
+			)
+		}
+		self.transforming_units[unit] = to_add[0]
+	}
+	return self
+}
+
 // Java: public Collection<Unit> getOldUnits()
 //   return Collections.unmodifiableCollection(transformingUnits.keySet());
 // The Java field has no `oldUnits` storage — the getter is a live view

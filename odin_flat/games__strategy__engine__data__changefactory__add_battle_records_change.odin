@@ -14,3 +14,10 @@ add_battle_records_change_new :: proc(battle_records: ^Battle_Records, data: ^Ga
 	c.records_to_add = battle_records_new_copy(battle_records)
 	return c
 }
+
+// Java: protected void perform(GameState data)
+add_battle_records_change_perform :: proc(self: ^Add_Battle_Records_Change, data: ^Game_State) {
+	current_records := &game_state_get_battle_records_list(data).battle_records
+	// make a copy because otherwise ours will be cleared when we RemoveBattleRecordsChange
+	battle_records_list_add_records(current_records, self.round, battle_records_new_copy(self.records_to_add))
+}

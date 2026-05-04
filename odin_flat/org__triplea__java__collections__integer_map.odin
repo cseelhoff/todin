@@ -215,8 +215,27 @@ integer_map_new_map :: proc(source: map[rawptr]i32) -> ^Integer_Map {
 
 // public static <X> IntegerMap<X> of() — immutable empty integer map.
 // Java passes Map.of() with copy=false; Odin's empty map literal is equivalent.
-integer_map_of :: proc() -> ^Integer_Map {
+integer_map_of_empty :: proc() -> ^Integer_Map {
 	return integer_map_new_from_map(make(map[rawptr]i32), false)
+}
+
+// public static <X> IntegerMap<X> of(final Map<X, Integer> map) — Java
+// delegates to `new IntegerMap<>(map)`, which uses the public copy constructor
+// (copy=true).
+integer_map_of_map :: proc(source: map[rawptr]i32) -> ^Integer_Map {
+	return integer_map_new_map(source)
+}
+
+// Proc group dispatching the two `of` static factories by argument shape.
+integer_map_of :: proc{
+	integer_map_of_empty,
+	integer_map_of_map,
+}
+
+// public IntegerMap(final IntegerMap<T> integerMap) — shallow clone constructor;
+// Java delegates to `this(integerMap.mapValues)` which copies the backing map.
+integer_map_new_copy :: proc(other: ^Integer_Map) -> ^Integer_Map {
+	return integer_map_new_map(other.map_values)
 }
 
 // public static <X> IntegerMap<X> unmodifiableViewOf(IntegerMap<X> other)

@@ -31,3 +31,11 @@ strength_value_is_zero :: proc(self: ^Strength_Value) -> bool {
 	return self.value == 0
 }
 
+strength_value_add :: proc(self: ^Strength_Value, extra_value: i32) -> ^Strength_Value {
+	return strength_value_of(self.dice_sides, self.value + extra_value)
+}
+
+strength_value_to_value :: proc(self: ^Strength_Value, value: i32) -> ^Strength_Value {
+	return strength_value_of(self.dice_sides, value)
+}
+

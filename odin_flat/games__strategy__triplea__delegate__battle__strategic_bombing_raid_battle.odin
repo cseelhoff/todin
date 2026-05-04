@@ -225,6 +225,18 @@ strategic_bombing_raid_battle_lambda__get_target__2 :: proc(attacker: ^Unit) -> 
 	return fmt.aprintf("Unit %s has no target", type_name)
 }
 
+// Java: lambda$fight$5(Map.Entry<Unit, Set<Unit>> entry)
+//   entry -> entry.getKey().getUnitAttachment().isAaForBombingThisUnitOnly()
+// The Map.Entry is split into key + value at the Odin call site; only the
+// key is used by the predicate.
+strategic_bombing_raid_battle_lambda__fight__5 :: proc(
+	entry_key: ^Unit,
+	entry_value: map[^Unit]struct{},
+) -> bool {
+	_ = entry_value
+	return unit_attachment_is_aa_for_bombing_this_unit_only(unit_get_unit_attachment(entry_key))
+}
+
 // Java: lambda$fight$6(Collection<Unit> attackers)
 //   FireAa::new — constructor reference desugared to a static helper that
 //   takes the Set<Unit> entry value and constructs a FireAa for it.

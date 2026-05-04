@@ -69,3 +69,176 @@ initialization_delegate_init_ai_starting_bonus_income :: proc(bridge: ^I_Delegat
 	}
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#initDestroyerArtillery(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. If the game is not WW2v2 and the
+// "Use Destroyers and Artillery" property is on, ensure the artillery and
+// destroyer production rules (plus their industrial-technology variants)
+// are present in the corresponding production frontiers, and emit a
+// history event if any rule was added.
+initialization_delegate_init_destroyer_artillery :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	add_artillery_and_destroyers := properties_get_use_destroyers_and_artillery(
+		game_data_get_properties(data),
+	)
+	if !properties_get_ww2_v2(game_data_get_properties(data)) && add_artillery_and_destroyers {
+		change := composite_change_new()
+		artillery := production_rule_list_get_production_rule(
+			game_data_get_production_rule_list(data),
+			"buyArtillery",
+		)
+		destroyer := production_rule_list_get_production_rule(
+			game_data_get_production_rule_list(data),
+			"buyDestroyer",
+		)
+		frontier := production_frontier_list_get_production_frontier(
+			game_data_get_production_frontier_list(data),
+			"production",
+		)
+		if artillery != nil {
+			frontier_rules := production_frontier_get_rules(frontier)
+			contains_artillery := false
+			for r in frontier_rules {
+				if r == artillery {
+					contains_artillery = true
+					break
+				}
+			}
+			if !contains_artillery {
+				composite_change_add(change, change_factory_add_production_rule(artillery, frontier))
+			}
+		}
+		if destroyer != nil {
+			frontier_rules := production_frontier_get_rules(frontier)
+			contains_destroyer := false
+			for r in frontier_rules {
+				if r == destroyer {
+					contains_destroyer = true
+					break
+				}
+			}
+			if !contains_destroyer {
+				composite_change_add(change, change_factory_add_production_rule(destroyer, frontier))
+			}
+		}
+		artillery_industrial_technology := production_rule_list_get_production_rule(
+			game_data_get_production_rule_list(data),
+			"buyArtilleryIndustrialTechnology",
+		)
+		destroyer_industrial_technology := production_rule_list_get_production_rule(
+			game_data_get_production_rule_list(data),
+			"buyDestroyerIndustrialTechnology",
+		)
+		frontier_industrial_technology := production_frontier_list_get_production_frontier(
+			game_data_get_production_frontier_list(data),
+			"productionIndustrialTechnology",
+		)
+		if artillery_industrial_technology != nil {
+			it_rules := production_frontier_get_rules(frontier_industrial_technology)
+			contains_it_artillery := false
+			for r in it_rules {
+				if r == artillery_industrial_technology {
+					contains_it_artillery = true
+					break
+				}
+			}
+			if !contains_it_artillery {
+				composite_change_add(
+					change,
+					change_factory_add_production_rule(
+						artillery_industrial_technology,
+						frontier_industrial_technology,
+					),
+				)
+			}
+		}
+		if destroyer_industrial_technology != nil {
+			it_rules := production_frontier_get_rules(frontier_industrial_technology)
+			contains_it_destroyer := false
+			for r in it_rules {
+				if r == destroyer_industrial_technology {
+					contains_it_destroyer = true
+					break
+				}
+			}
+			if !contains_it_destroyer {
+				composite_change_add(
+					change,
+					change_factory_add_production_rule(
+						destroyer_industrial_technology,
+						frontier_industrial_technology,
+					),
+				)
+			}
+		}
+		if !composite_change_is_empty(change) {
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(bridge),
+				"Adding destroyers and artillery production rules",
+			)
+			i_delegate_bridge_add_change(bridge, &change.change)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#initShipyards(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. If the "Use Shipyards" property is on, walk the regular
+// production frontier and copy every non-sea unit's production rule into
+// the shipyards frontier, then emit a history event. Mirrors the Java
+// loop including the always-emitted history event and always-applied change.
+initialization_delegate_init_shipyards :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	use_shipyards := properties_get_use_shipyards(game_data_get_properties(data))
+	if use_shipyards {
+		change := composite_change_new()
+		frontier_shipyards := production_frontier_list_get_production_frontier(
+			game_data_get_production_frontier_list(data),
+			"productionShipyards",
+		)
+		// Find the productionRules; if the unit is NOT a sea unit, add it
+		// to the ShipYards prod rule.
+		frontier_non_shipyards := production_frontier_list_get_production_frontier(
+			game_data_get_production_frontier_list(data),
+			"production",
+		)
+		rules := production_frontier_get_rules(frontier_non_shipyards)
+		for rule in rules {
+			// Java: rule.getAnyResultKey() returns any NamedAttachable key
+			// from the rule's results map; "instanceof UnitType" filters
+			// out Resource results. The equivalent Odin check is to look
+			// up the name in the unit-type list and skip if not found.
+			named: ^Named_Attachable = nil
+			for k, _ in rule.results.map_values {
+				named = cast(^Named_Attachable)k
+				break
+			}
+			if named == nil {
+				continue
+			}
+			unit_type := unit_type_list_get_unit_type(
+				game_data_get_unit_type_list(data),
+				default_named_get_name(&named.default_named),
+			)
+			if unit_type == nil {
+				continue
+			}
+			ua := unit_type_get_unit_attachment(unit_type)
+			is_sea := ua != nil && unit_attachment_is_sea(ua)
+			if !is_sea {
+				prod_rule := production_rule_list_get_production_rule(
+					game_data_get_production_rule_list(data),
+					default_named_get_name(&rule.default_named),
+				)
+				composite_change_add(
+					change,
+					change_factory_add_production_rule(prod_rule, frontier_shipyards),
+				)
+			}
+		}
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			"Adding shipyard production rules - land/air units",
+		)
+		i_delegate_bridge_add_change(bridge, &change.change)
+	}
+}
+

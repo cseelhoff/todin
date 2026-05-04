@@ -112,6 +112,51 @@ sound_utils_play_fire_battle_aa :: proc(
 }
 
 // games.strategy.engine.data.GamePlayer attacker
+// java.util.Collection<Unit> units
+// MustFightBattle.RetreatType retreatType
+// games.strategy.engine.delegate.IDelegateBridge bridge
+sound_utils_play_retreat_type :: proc(
+	attacker: ^Game_Player,
+	units: [dynamic]^Unit,
+	retreat_type: Must_Fight_Battle_Retreat_Type,
+	bridge: ^I_Delegate_Bridge,
+) {
+	channel := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+	switch retreat_type {
+	case .SUBS:
+		headless_sound_channel_play_sound_for_all(channel, "battle_retreat_submerge", attacker)
+	case .PLANES:
+		headless_sound_channel_play_sound_for_all(channel, "battle_retreat_air", attacker)
+	case .DEFAULT, .PARTIAL_AMPHIB:
+		sea_p, sea_c := matches_unit_is_sea()
+		land_p, land_c := matches_unit_is_land()
+		any_sea := false
+		for u in units {
+			if sea_p(sea_c, u) {
+				any_sea = true
+				break
+			}
+		}
+		if any_sea {
+			headless_sound_channel_play_sound_for_all(channel, "battle_retreat_sea", attacker)
+		} else {
+			any_land := false
+			for u in units {
+				if land_p(land_c, u) {
+					any_land = true
+					break
+				}
+			}
+			if any_land {
+				headless_sound_channel_play_sound_for_all(channel, "battle_retreat_land", attacker)
+			} else {
+				headless_sound_channel_play_sound_for_all(channel, "battle_retreat_air", attacker)
+			}
+		}
+	}
+}
+
+// games.strategy.engine.data.GamePlayer attacker
 // java.util.List<Unit> attackingUnits
 // boolean isWater
 // games.strategy.engine.delegate.IDelegateBridge bridge

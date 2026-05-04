@@ -52,9 +52,15 @@ pro_data_get_pro_territory :: proc(self: ^Pro_Data, move_map: map[^Territory]^Pr
 	if existing, ok := move_map[t]; ok {
 		return existing
 	}
-	created := pro_territory_new(t, self)
+	created := pro_data_lambda_get_pro_territory_0(self, t, t)
 	move_map[t] = created
 	return created
+}
+
+// Java synthetic: lambda$getProTerritory$0 — body of `k -> new ProTerritory(t, this)`
+// captured: this (self), t; lambda parameter: k (unused, the map key)
+pro_data_lambda_get_pro_territory_0 :: proc(self: ^Pro_Data, t: ^Territory, k: ^Territory) -> ^Pro_Territory {
+	return pro_territory_new(t, self)
 }
 
 

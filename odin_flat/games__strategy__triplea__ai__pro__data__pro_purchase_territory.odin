@@ -9,6 +9,58 @@ Pro_Purchase_Territory :: struct {
 	can_place_territories: [dynamic]^Pro_Place_Territory,
 }
 
+// Java: ProPurchaseTerritory(Territory, GameData, GamePlayer, int, boolean)
+// Tracks unit purchase and the list of place territories. When not in the bid
+// phase and the production territory has a factory and is not a conquered
+// owned land, also include adjacent water territories — except enemy-occupied
+// seas, unless WW2V2 or unitPlacementInEnemySeas is enabled.
+pro_purchase_territory_new :: proc(
+	territory: ^Territory,
+	data: ^Game_Data,
+	player: ^Game_Player,
+	unit_production: i32,
+	is_bid: bool,
+) -> ^Pro_Purchase_Territory {
+	self := new(Pro_Purchase_Territory)
+	self.territory = territory
+	self.unit_production = unit_production
+	self.can_place_territories = make([dynamic]^Pro_Place_Territory)
+	append(&self.can_place_territories, pro_place_territory_new(territory))
+	if !is_bid {
+		f_p, f_c := pro_matches_territory_has_factory_and_is_not_conquered_owned_land(player)
+		if f_p(f_c, territory) {
+			w_p, w_c := matches_territory_is_water()
+			water_neighbors := game_map_get_neighbors_predicate(
+				game_data_get_map(data),
+				territory,
+				w_p,
+				w_c,
+			)
+			props := game_data_get_properties(data)
+			ww2v2 := properties_get_ww2_v2(props)
+			placement_in_enemy_seas := properties_get_unit_placement_in_enemy_seas(props)
+			en_p, en_c := matches_enemy_unit(player)
+			for t in water_neighbors {
+				allow := ww2v2 || placement_in_enemy_seas
+				if !allow {
+					has_enemy := false
+					for u in t.unit_collection.units {
+						if en_p(en_c, u) {
+							has_enemy = true
+							break
+						}
+					}
+					allow = !has_enemy
+				}
+				if allow {
+					append(&self.can_place_territories, pro_place_territory_new(t))
+				}
+			}
+		}
+	}
+	return self
+}
+
 pro_purchase_territory_get_territory :: proc(self: ^Pro_Purchase_Territory) -> ^Territory {
 	return self.territory
 }

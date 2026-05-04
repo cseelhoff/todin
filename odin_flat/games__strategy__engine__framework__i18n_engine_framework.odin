@@ -17,3 +17,14 @@ i18n_engine_framework_get_resource_path :: proc(self: ^I18n_Engine_Framework) ->
 	return "i18n.games.strategy.engine.framework.ui"
 }
 
+// private static I18nResourceBundle instance;
+@(private="file") instance: ^I18n_Resource_Bundle
+
+// public static I18nResourceBundle get()
+i18n_engine_framework_get :: proc() -> ^I18n_Resource_Bundle {
+	if instance == nil {
+		instance = &i18n_engine_framework_new().base
+	}
+	return instance
+}
+

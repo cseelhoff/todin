@@ -5419,3 +5419,809 @@ matches_unit_can_be_in_battle_no_firing_units :: proc(
 		empty,
 	)
 }
+
+// =============================================================================
+// Additional named predicates / lambdas (forwarders + simple bodies).
+// =============================================================================
+
+// unitIsArtillery() — Predicate<Unit>: u -> u.getUnitAttachment().getArtillery()
+matches_pred_unit_is_artillery :: proc(_: rawptr, u: ^Unit) -> bool {
+	return unit_attachment_get_artillery(unit_get_unit_attachment(u))
+}
+
+matches_unit_is_artillery :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_artillery, nil
+}
+
+// unitIsArtillerySupportable() — Predicate<Unit>:
+//   u -> u.getUnitAttachment().getArtillerySupportable()
+matches_pred_unit_is_artillery_supportable :: proc(_: rawptr, u: ^Unit) -> bool {
+	return unit_attachment_get_artillery_supportable(unit_get_unit_attachment(u))
+}
+
+matches_unit_is_artillery_supportable :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_is_artillery_supportable, nil
+}
+
+// unitRequiresAirBaseToIntercept() — Predicate<Unit>:
+//   u -> u.getUnitAttachment().getRequiresAirBaseToIntercept()
+matches_pred_unit_requires_air_base_to_intercept :: proc(_: rawptr, u: ^Unit) -> bool {
+	return unit_attachment_get_requires_air_base_to_intercept(unit_get_unit_attachment(u))
+}
+
+matches_unit_requires_air_base_to_intercept :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	return matches_pred_unit_requires_air_base_to_intercept, nil
+}
+
+// relationshipTypeGivesBackOriginalTerritories() — Predicate<RelationshipType>:
+//   rt -> rt.getRelationshipTypeAttachment().givesBackOriginalTerritories()
+matches_pred_relationship_type_gives_back_original_territories :: proc(
+	_: rawptr,
+	rt: ^Relationship_Type,
+) -> bool {
+	return relationship_type_attachment_gives_back_original_territories(
+		relationship_type_get_relationship_type_attachment(rt),
+	)
+}
+
+matches_relationship_type_gives_back_original_territories :: proc(
+) -> (proc(rawptr, ^Relationship_Type) -> bool, rawptr) {
+	return matches_pred_relationship_type_gives_back_original_territories, nil
+}
+
+// territoryIsVictoryCity() — Predicate<Territory>:
+//   t -> 0 != TerritoryAttachment.get(t).map(TerritoryAttachment::getVictoryCity).orElse(0)
+matches_pred_territory_is_victory_city :: proc(_: rawptr, t: ^Territory) -> bool {
+	ta := territory_attachment_get(t)
+	if ta == nil {
+		return false
+	}
+	return ta.victory_city != 0
+}
+
+matches_territory_is_victory_city :: proc() -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	return matches_pred_territory_is_victory_city, nil
+}
+
+// unitIsLandAndOwnedBy(GamePlayer) — Predicate<Unit>:
+//   u -> { UnitAttachment ua = u.getUnitAttachment();
+//          return !ua.isSea() && !ua.isAir() && u.isOwnedBy(player); }
+Matches_Ctx_unit_is_land_and_owned_by :: struct {
+	player: ^Game_Player,
+}
+
+matches_pred_unit_is_land_and_owned_by :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_is_land_and_owned_by)ctx_ptr
+	ua := unit_get_unit_attachment(u)
+	if unit_attachment_is_sea(ua) {
+		return false
+	}
+	if unit_attachment_is_air(ua) {
+		return false
+	}
+	return unit_is_owned_by(u, c.player)
+}
+
+matches_unit_is_land_and_owned_by :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_is_land_and_owned_by)
+	ctx.player = player
+	return matches_pred_unit_is_land_and_owned_by, rawptr(ctx)
+}
+
+// territoryHasWaterNeighbor(GameMap) — Predicate<Territory>:
+//   t -> !gameMap.getNeighbors(t, territoryIsWater()).isEmpty()
+Matches_Ctx_territory_has_water_neighbor :: struct {
+	game_map: ^Game_Map,
+}
+
+matches_pred_territory_has_water_neighbor :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	c := cast(^Matches_Ctx_territory_has_water_neighbor)ctx_ptr
+	wp, wc := matches_territory_is_water()
+	neighbors := game_map_get_neighbors_predicate(c.game_map, t, wp, wc)
+	return len(neighbors) > 0
+}
+
+matches_territory_has_water_neighbor :: proc(
+	game_map: ^Game_Map,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_territory_has_water_neighbor)
+	ctx.game_map = game_map
+	return matches_pred_territory_has_water_neighbor, rawptr(ctx)
+}
+
+// isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted(GamePlayer)
+//   = territoryNotImpassibleOrRestrictedOrNeutralWaterAndNotOwnedBy(player)
+//       .and(t -> player.isAtWar(t.getOwner()))
+Matches_Ctx_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted :: struct {
+	player: ^Game_Player,
+}
+
+matches_pred_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Matches_Ctx_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted)ctx_ptr
+	bp, bc := matches_territory_not_impassible_or_restricted_or_neutral_water_and_not_owned_by(c.player)
+	if !bp(bc, t) {
+		return false
+	}
+	return game_player_is_at_war(c.player, territory_get_owner(t))
+}
+
+matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted)
+	ctx.player = player
+	return matches_pred_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted, rawptr(ctx)
+}
+
+// isTerritoryNotUnownedWaterAndCanBeTakenOverBy(GamePlayer)
+//   final RelationshipTracker rt = player.getData().getRelationshipTracker();
+//   return territoryNotImpassibleOrRestrictedOrNeutralWaterAndNotOwnedBy(player)
+//       .and(t -> rt.canTakeOverOwnedTerritory(player, t.getOwner()));
+Matches_Ctx_is_territory_not_unowned_water_and_can_be_taken_over_by :: struct {
+	player:               ^Game_Player,
+	relationship_tracker: ^Relationship_Tracker,
+}
+
+matches_pred_is_territory_not_unowned_water_and_can_be_taken_over_by :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Matches_Ctx_is_territory_not_unowned_water_and_can_be_taken_over_by)ctx_ptr
+	bp, bc := matches_territory_not_impassible_or_restricted_or_neutral_water_and_not_owned_by(c.player)
+	if !bp(bc, t) {
+		return false
+	}
+	return relationship_tracker_can_take_over_owned_territory(
+		c.relationship_tracker,
+		c.player,
+		territory_get_owner(t),
+	)
+}
+
+matches_is_territory_not_unowned_water_and_can_be_taken_over_by :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_is_territory_not_unowned_water_and_can_be_taken_over_by)
+	ctx.player = player
+	ctx.relationship_tracker = game_data_get_relationship_tracker(game_player_get_data(player))
+	return matches_pred_is_territory_not_unowned_water_and_can_be_taken_over_by, rawptr(ctx)
+}
+
+// =====================================================================
+// Phase B additions: Java synthetic lambda bodies + 3 method-level procs.
+// =====================================================================
+
+// lambda$airCanFlyOver$117(boolean, GamePlayer, Territory)
+// Body of airCanFlyOver Predicate (see Java Matches.airCanFlyOver).
+matches_lambda_air_can_fly_over_117 :: proc(
+	are_neutrals_passable_by_air: bool,
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if !are_neutrals_passable_by_air {
+		nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+		if nbnw_p(nbnw_c, t) {
+			return false
+		}
+	}
+	pnr_p, pnr_c := matches_territory_is_passable_and_not_restricted(player)
+	if !pnr_p(pnr_c, t) {
+		return false
+	}
+	land_p, land_c := matches_territory_is_land()
+	if land_p(land_c, t) {
+		rt := game_data_get_relationship_tracker(game_player_get_data(player))
+		if !relationship_tracker_can_move_air_units_over_owned_land(rt, player, territory_get_owner(t)) {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$airCanLandOnThisAlliedNonConqueredLandTerritory$229(GamePlayer, Territory)
+matches_lambda_air_can_land_on_this_allied_non_conquered_land_territory_229 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	land_p, land_c := matches_territory_is_land()
+	if !land_p(land_c, t) {
+		return false
+	}
+	bt := abstract_move_delegate_get_battle_tracker(game_player_get_data(player))
+	if battle_tracker_was_conquered(bt, t) {
+		return false
+	}
+	owner := territory_get_owner(t)
+	if game_player_is_null(owner) {
+		return false
+	}
+	rt := game_data_get_relationship_tracker(game_player_get_data(player))
+	if !relationship_tracker_can_move_air_units_over_owned_land(rt, player, owner) {
+		return false
+	}
+	if !relationship_tracker_can_land_air_units_on_owned_land(rt, player, owner) {
+		return false
+	}
+	return true
+}
+
+// lambda$isTerritoryFreeNeutral$144(GameProperties, Territory)
+// Body of the inner ".and(t -> Properties.getNeutralCharge(properties) <= 0)".
+matches_lambda_is_territory_free_neutral_144 :: proc(
+	properties: ^Game_Properties,
+	t: ^Territory,
+) -> bool {
+	return properties_get_neutral_charge(properties) <= 0
+}
+
+// lambda$isTerritoryNotUnownedWaterAndCanBeTakenOverBy$142(RelationshipTracker, GamePlayer, Territory)
+// Body of the ".and(t -> rt.canTakeOverOwnedTerritory(player, t.getOwner()))" lambda.
+matches_lambda_is_territory_not_unowned_water_and_can_be_taken_over_by_142 :: proc(
+	rt: ^Relationship_Tracker,
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	return relationship_tracker_can_take_over_owned_territory(rt, player, territory_get_owner(t))
+}
+
+// lambda$territoryAllowsCanMoveAirUnitsOverOwnedLand$199(GamePlayer, Territory)
+matches_lambda_territory_allows_can_move_air_units_over_owned_land_199 :: proc(
+	owner_of_units_moving: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_water(t) {
+		return true
+	}
+	owner := territory_get_owner(t)
+	rt := game_data_get_relationship_tracker(game_player_get_data(owner))
+	return relationship_tracker_can_move_air_units_over_owned_land(rt, owner, owner_of_units_moving)
+}
+
+// lambda$territoryAllowsCanMoveLandUnitsOverOwnedLand$197(GamePlayer, Territory)
+matches_lambda_territory_allows_can_move_land_units_over_owned_land_197 :: proc(
+	owner_of_units_moving: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_water(t) {
+		return true
+	}
+	rt := game_data_get_relationship_tracker(game_player_get_data(owner_of_units_moving))
+	return relationship_tracker_can_move_land_units_over_owned_land(
+		rt,
+		territory_get_owner(t),
+		owner_of_units_moving,
+	)
+}
+
+// lambda$territoryAllowsRocketsCanFlyOver$230(GamePlayer, Territory)
+matches_lambda_territory_allows_rockets_can_fly_over_230 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	land_p, land_c := matches_territory_is_land()
+	if !land_p(land_c, t) {
+		return true
+	}
+	owner := territory_get_owner(t)
+	if game_player_is_null(owner) {
+		return true
+	}
+	rt := game_data_get_relationship_tracker(game_player_get_data(player))
+	return relationship_tracker_rockets_can_fly_over(rt, player, owner)
+}
+
+// lambda$territoryDoesNotCostMoneyToEnter$145(GameProperties, Territory)
+matches_lambda_territory_does_not_cost_money_to_enter_145 :: proc(
+	properties: ^Game_Properties,
+	t: ^Territory,
+) -> bool {
+	if territory_is_water(t) {
+		return true
+	}
+	if !game_player_is_null(territory_get_owner(t)) {
+		return true
+	}
+	return properties_get_neutral_charge(properties) <= 0
+}
+
+// lambda$territoryHasOwnedAtBeginningOfTurnIsFactoryOrCanProduceUnits$110(GamePlayer, Territory)
+matches_lambda_territory_has_owned_at_beginning_of_turn_is_factory_or_can_produce_units_110 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	data := game_player_get_data(player)
+	combined := game_step_properties_helper_get_combined_turns(data, player)
+	t_owner := territory_get_owner(t)
+	found := false
+	for p in combined {
+		if p == t_owner {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return false
+	}
+	cpu_p, cpu_c := matches_unit_can_produce_units()
+	any_match := false
+	for u in t.unit_collection.units {
+		if cpu_p(cpu_c, u) {
+			any_match = true
+			break
+		}
+	}
+	if !any_match {
+		return false
+	}
+	bt := abstract_move_delegate_get_battle_tracker(data)
+	if bt == nil {
+		return false
+	}
+	return !battle_tracker_was_conquered(bt, t)
+}
+
+// lambda$territoryIsBlitzable$143(GamePlayer, Territory)
+matches_lambda_territory_is_blitzable_143 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_water(t) {
+		return false
+	}
+	data := game_player_get_data(player)
+	props := game_data_get_properties(data)
+	t_owner := territory_get_owner(t)
+	if game_player_is_null(t_owner) && !properties_get_neutrals_blitzable(props) {
+		return false
+	}
+	bt := abstract_move_delegate_get_battle_tracker(data)
+	if battle_tracker_was_conquered(bt, t) && !battle_tracker_was_blitzed(bt, t) {
+		return false
+	}
+	// blitzableUnits = enemyUnit(player).negate()
+	//                  OR (if !WW2V2 && !blitzThroughFactoriesAndAaRestricted) unitIsInfrastructure
+	include_infra := !properties_get_ww2_v2(props) &&
+		!properties_get_blitz_through_factories_and_aa_restricted(props)
+	ep, ec := matches_enemy_unit(player)
+	ip, ic := matches_unit_is_infrastructure()
+	for u in t.unit_collection.units {
+		ok := !ep(ec, u)
+		if !ok && include_infra {
+			ok = ip(ic, u)
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryIsPassableAndNotRestricted$118(GamePlayer, Territory)
+matches_lambda_territory_is_passable_and_not_restricted_118 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	imp_p, imp_c := matches_territory_is_impassable()
+	if imp_p(imp_c, t) {
+		return false
+	}
+	props := game_data_get_properties(game_player_get_data(player))
+	if !properties_get_movement_by_territory_restricted(props) {
+		return true
+	}
+	ra := game_player_get_rules_attachment(player)
+	if ra == nil {
+		return true
+	}
+	mrt := rules_attachment_get_movement_restriction_territories(ra)
+	if mrt == nil || len(mrt) == 0 {
+		return true
+	}
+	listed := rules_attachment_get_listed_territories(ra, mrt, true, true)
+	contained := false
+	for lt in listed {
+		if lt == t {
+			contained = true
+			break
+		}
+	}
+	return rules_attachment_is_movement_restriction_type_allowed(ra) == contained
+}
+
+// lambda$territoryIsPassableAndNotRestrictedAndOkByRelationships$121
+//   (boolean neutralsPassable, boolean hasAirUnitsNotBeingTransported,
+//    boolean areNeutralsPassableByAir, GameProperties properties,
+//    GamePlayer playerWhoOwnsAllTheUnitsMoving,
+//    boolean hasLandUnitsNotBeingTransportedOrBeingLoaded,
+//    boolean hasSeaUnitsNotBeingTransported, RelationshipTracker rt,
+//    boolean isLandingZoneOnLandForAirUnits, boolean isCombatMovePhase,
+//    Territory t)
+matches_lambda_territory_is_passable_and_not_restricted_and_ok_by_relationships_121 :: proc(
+	neutrals_passable: bool,
+	has_air_units_not_being_transported: bool,
+	are_neutrals_passable_by_air: bool,
+	properties: ^Game_Properties,
+	player_who_owns_all_the_units_moving: ^Game_Player,
+	has_land_units_not_being_transported_or_being_loaded: bool,
+	has_sea_units_not_being_transported: bool,
+	rt: ^Relationship_Tracker,
+	is_landing_zone_on_land_for_air_units: bool,
+	is_combat_move_phase: bool,
+	t: ^Territory,
+) -> bool {
+	imp_p, imp_c := matches_territory_is_impassable()
+	if imp_p(imp_c, t) {
+		return false
+	}
+	if (!neutrals_passable ||
+		   (has_air_units_not_being_transported && !are_neutrals_passable_by_air)) {
+		nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+		if nbnw_p(nbnw_c, t) {
+			return false
+		}
+	}
+	if properties_get_movement_by_territory_restricted(properties) {
+		ra := game_player_get_rules_attachment(player_who_owns_all_the_units_moving)
+		if ra != nil {
+			mrt := rules_attachment_get_movement_restriction_territories(ra)
+			if mrt != nil && len(mrt) > 0 {
+				listed := rules_attachment_get_listed_territories(ra, mrt, true, true)
+				contained := false
+				for lt in listed {
+					if lt == t {
+						contained = true
+						break
+					}
+				}
+				if rules_attachment_is_movement_restriction_type_allowed(ra) != contained {
+					return false
+				}
+			}
+		}
+	}
+	if has_land_units_not_being_transported_or_being_loaded && territory_is_water(t) {
+		return false
+	}
+	if has_sea_units_not_being_transported && !territory_is_water(t) {
+		return false
+	}
+	if !territory_is_water(t) {
+		if has_land_units_not_being_transported_or_being_loaded &&
+		   !relationship_tracker_can_move_land_units_over_owned_land(
+			   rt,
+			   player_who_owns_all_the_units_moving,
+			   territory_get_owner(t),
+		   ) {
+			return false
+		}
+		if has_air_units_not_being_transported &&
+		   !relationship_tracker_can_move_air_units_over_owned_land(
+			   rt,
+			   player_who_owns_all_the_units_moving,
+			   territory_get_owner(t),
+		   ) {
+			return false
+		}
+	}
+	if is_landing_zone_on_land_for_air_units &&
+	   !relationship_tracker_can_land_air_units_on_owned_land(
+		   rt,
+		   player_who_owns_all_the_units_moving,
+		   territory_get_owner(t),
+	   ) {
+		return false
+	}
+	if is_combat_move_phase &&
+	   !relationship_tracker_can_move_into_during_combat_move(
+		   rt,
+		   player_who_owns_all_the_units_moving,
+		   territory_get_owner(t),
+	   ) {
+		return false
+	}
+	return true
+}
+
+// lambda$territoryOwnerRelationshipTypeCanMoveIntoDuringCombatMove$236(GamePlayer, Territory)
+matches_lambda_territory_owner_relationship_type_can_move_into_during_combat_move_236 :: proc(
+	moving_player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_owned_by(t, moving_player) {
+		return true
+	}
+	t_owner := territory_get_owner(t)
+	if game_player_is_null(t_owner) && territory_is_water(t) {
+		return true
+	}
+	rt := game_data_get_relationship_tracker(game_player_get_data(moving_player))
+	return relationship_tracker_can_move_into_during_combat_move(rt, moving_player, t_owner)
+}
+
+// lambda$unitAttackAaIsGreaterThanZeroAndMaxAaAttacksIsNotZero$94(Unit)
+matches_lambda_unit_attack_aa_is_greater_than_zero_and_max_aa_attacks_is_not_zero_94 :: proc(
+	u: ^Unit,
+) -> bool {
+	ua := unit_get_unit_attachment(u)
+	return unit_attachment_get_attack_aa(ua, unit_get_owner(u)) > 0 &&
+		unit_attachment_get_max_aa_attacks(ua) != 0
+}
+
+// lambda$unitCanAttack$19(GamePlayer, Unit)
+matches_lambda_unit_can_attack_19 :: proc(game_player: ^Game_Player, u: ^Unit) -> bool {
+	ua := unit_get_unit_attachment(u)
+	if unit_attachment_get_movement(ua, game_player) <= 0 {
+		return false
+	}
+	return unit_attachment_get_attack(ua, game_player) > 0 ||
+		unit_attachment_get_offensive_attack_aa(ua, game_player) > 0
+}
+
+// lambda$unitCanBeCapturedOnEnteringThisTerritory$32(GamePlayer, Territory, Unit)
+matches_lambda_unit_can_be_captured_on_entering_this_territory_32 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+	unit: ^Unit,
+) -> bool {
+	props := game_data_get_properties(game_player_get_data(player))
+	if !properties_get_capture_units_on_entering_territory(props) {
+		return false
+	}
+	unit_owner := unit_get_owner(unit)
+	ua := unit_get_unit_attachment(unit)
+	uc_list := unit_attachment_get_can_be_captured_on_entering_by(ua)
+	unit_can_be_captured_by_player := false
+	for p in uc_list {
+		if p == player {
+			unit_can_be_captured_by_player = true
+			break
+		}
+	}
+	ta := territory_attachment_get(t)
+	if ta == nil {
+		return false
+	}
+	tc_list := territory_attachment_get_capture_unit_on_entering_by(ta)
+	terr_can_have := false
+	for p in tc_list {
+		if p == player {
+			terr_can_have = true
+			break
+		}
+	}
+	pa := player_attachment_get(unit_owner)
+	if pa == nil {
+		return false
+	}
+	pc_list := player_attachment_get_capture_unit_on_entering_by(pa)
+	owner_lets := false
+	for p in pc_list {
+		if p == player {
+			owner_lets = true
+			break
+		}
+	}
+	return unit_can_be_captured_by_player && terr_can_have && owner_lets
+}
+
+// lambda$unitCanBlitz$50(Unit)
+matches_lambda_unit_can_blitz_50 :: proc(unit: ^Unit) -> bool {
+	return unit_attachment_get_can_blitz(unit_get_unit_attachment(unit), unit_get_owner(unit))
+}
+
+// lambda$unitCanBombard$49(GamePlayer, Unit)
+matches_lambda_unit_can_bombard_49 :: proc(game_player: ^Game_Player, unit: ^Unit) -> bool {
+	return unit_attachment_get_can_bombard(unit_get_unit_attachment(unit), game_player)
+}
+
+// lambda$unitHasAttackValueOfAtLeast$21(int, Unit)
+matches_lambda_unit_has_attack_value_of_at_least_21 :: proc(
+	attack_value: i32,
+	unit: ^Unit,
+) -> bool {
+	return unit_attachment_get_attack(unit_get_unit_attachment(unit), unit_get_owner(unit)) >=
+		attack_value
+}
+
+// lambda$unitIsDisabled$41(Unit)
+matches_lambda_unit_is_disabled_41 :: proc(unit: ^Unit) -> bool {
+	cbd_p, cbd_c := matches_unit_can_be_damaged()
+	if !cbd_p(cbd_c, unit) {
+		return false
+	}
+	props := game_data_get_properties(unit_get_data(unit))
+	if !properties_get_damage_from_bombing_done_to_units_instead_of_territories(props) {
+		return false
+	}
+	ua := unit_get_unit_attachment(unit)
+	if unit_attachment_get_max_operational_damage(ua) < 0 {
+		return false
+	}
+	return unit_get_unit_damage(unit) > unit_attachment_get_max_operational_damage(ua)
+}
+
+// lambda$unitOffensiveAttackAaIsGreaterThanZeroAndMaxAaAttacksIsNotZero$95(Unit)
+matches_lambda_unit_offensive_attack_aa_is_greater_than_zero_and_max_aa_attacks_is_not_zero_95 :: proc(
+	u: ^Unit,
+) -> bool {
+	ua := unit_get_unit_attachment(u)
+	return unit_attachment_get_offensive_attack_aa(ua, unit_get_owner(u)) > 0 &&
+		unit_attachment_get_max_aa_attacks(ua) != 0
+}
+
+// lambda$unitTypeCanBombard$30(GamePlayer, UnitType)
+matches_lambda_unit_type_can_bombard_30 :: proc(
+	game_player: ^Game_Player,
+	type: ^Unit_Type,
+) -> bool {
+	return unit_attachment_get_can_bombard(unit_type_get_unit_attachment(type), game_player)
+}
+
+// lambda$unitTypeCanMove$126(GamePlayer, UnitType)
+matches_lambda_unit_type_can_move_126 :: proc(
+	player: ^Game_Player,
+	unit_type: ^Unit_Type,
+) -> bool {
+	return unit_attachment_get_movement(unit_type_get_unit_attachment(unit_type), player) > 0
+}
+
+// territoryCanCollectIncomeFrom(GamePlayer)
+//   See Java Matches.territoryCanCollectIncomeFrom — checks for water/CC, convoy
+//   routes/attached, and contested-territories-do-not-produce.
+Matches_Ctx_territory_can_collect_income_from :: struct {
+	player:                  ^Game_Player,
+	contested_do_not_produce: bool,
+}
+
+matches_pred_territory_can_collect_income_from :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Matches_Ctx_territory_can_collect_income_from)ctx_ptr
+	ta := territory_attachment_get(t)
+	if ta == nil {
+		return false
+	}
+	original_owner := original_owner_tracker_get_original_owner(t)
+	// Convoy Center handling
+	if territory_is_water(t) &&
+	   !(original_owner == nil ||
+			   game_player_is_null(original_owner) ||
+			   original_owner == c.player) {
+		return false
+	}
+	if territory_attachment_get_convoy_route(ta) {
+		convoy_attached := territory_attachment_get_convoy_attached(ta)
+		if len(convoy_attached) > 0 {
+			at_least_one := false
+			for convoy in convoy_attached {
+				if game_player_is_allied(c.player, territory_get_owner(convoy)) &&
+				   territory_attachment_get_convoy_route(territory_attachment_get_or_throw(convoy)) {
+					at_least_one = true
+					break
+				}
+			}
+			if !at_least_one {
+				return false
+			}
+		}
+	}
+	if c.contested_do_not_produce {
+		hne_p, hne_c := matches_territory_has_no_enemy_units(c.player)
+		if !hne_p(hne_c, t) {
+			return false
+		}
+	}
+	return true
+}
+
+matches_territory_can_collect_income_from :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_territory_can_collect_income_from)
+	ctx.player = player
+	ctx.contested_do_not_produce = properties_get_contested_territories_produce_no_income(
+		game_data_get_properties(game_player_get_data(player)),
+	)
+	return matches_pred_territory_can_collect_income_from, rawptr(ctx)
+}
+
+// territoryIsPassableAndNotRestrictedAndOkByRelationships(
+//   GamePlayer, isCombatMovePhase, hasLandUnits..., hasSeaUnits..., hasAirUnits...,
+//   isLandingZoneOnLandForAirUnits)
+Matches_Ctx_territory_is_passable_and_not_restricted_and_ok_by_relationships :: struct {
+	player_who_owns_all_the_units_moving:                 ^Game_Player,
+	is_combat_move_phase:                                 bool,
+	has_land_units_not_being_transported_or_being_loaded: bool,
+	has_sea_units_not_being_transported:                  bool,
+	has_air_units_not_being_transported:                  bool,
+	is_landing_zone_on_land_for_air_units:                bool,
+	properties:                                           ^Game_Properties,
+	rt:                                                   ^Relationship_Tracker,
+	neutrals_passable:                                    bool,
+	are_neutrals_passable_by_air:                         bool,
+}
+
+matches_pred_territory_is_passable_and_not_restricted_and_ok_by_relationships :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Matches_Ctx_territory_is_passable_and_not_restricted_and_ok_by_relationships)ctx_ptr
+	return matches_lambda_territory_is_passable_and_not_restricted_and_ok_by_relationships_121(
+		c.neutrals_passable,
+		c.has_air_units_not_being_transported,
+		c.are_neutrals_passable_by_air,
+		c.properties,
+		c.player_who_owns_all_the_units_moving,
+		c.has_land_units_not_being_transported_or_being_loaded,
+		c.has_sea_units_not_being_transported,
+		c.rt,
+		c.is_landing_zone_on_land_for_air_units,
+		c.is_combat_move_phase,
+		t,
+	)
+}
+
+matches_territory_is_passable_and_not_restricted_and_ok_by_relationships :: proc(
+	player_who_owns_all_the_units_moving: ^Game_Player,
+	is_combat_move_phase: bool,
+	has_land_units_not_being_transported_or_being_loaded: bool,
+	has_sea_units_not_being_transported: bool,
+	has_air_units_not_being_transported: bool,
+	is_landing_zone_on_land_for_air_units: bool,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_territory_is_passable_and_not_restricted_and_ok_by_relationships)
+	ctx.player_who_owns_all_the_units_moving = player_who_owns_all_the_units_moving
+	ctx.is_combat_move_phase = is_combat_move_phase
+	ctx.has_land_units_not_being_transported_or_being_loaded = has_land_units_not_being_transported_or_being_loaded
+	ctx.has_sea_units_not_being_transported = has_sea_units_not_being_transported
+	ctx.has_air_units_not_being_transported = has_air_units_not_being_transported
+	ctx.is_landing_zone_on_land_for_air_units = is_landing_zone_on_land_for_air_units
+	data := game_player_get_data(player_who_owns_all_the_units_moving)
+	ctx.properties = game_data_get_properties(data)
+	ctx.rt = game_data_get_relationship_tracker(data)
+	ctx.neutrals_passable = !properties_get_neutrals_impassable(ctx.properties)
+	ctx.are_neutrals_passable_by_air = ctx.neutrals_passable &&
+		properties_get_neutral_flyover_allowed(ctx.properties)
+	return matches_pred_territory_is_passable_and_not_restricted_and_ok_by_relationships, rawptr(ctx)
+}
+
+// unitIsFirstStrikeOnDefense(GameProperties)
+//   Predicate<Unit> matcher = unitIsFirstStrike();
+//   if (Properties.getDefendingSuicideAndMunitionUnitsDoNotFire(properties))
+//     matcher = matcher.and(not(unitIsSuicideOnAttack()).or(unitIsSuicideOnDefense()));
+Matches_Ctx_unit_is_first_strike_on_defense :: struct {
+	defending_suicide_do_not_fire: bool,
+}
+
+matches_pred_unit_is_first_strike_on_defense :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
+	c := cast(^Matches_Ctx_unit_is_first_strike_on_defense)ctx_ptr
+	fp, fc := matches_unit_is_first_strike()
+	if !fp(fc, u) {
+		return false
+	}
+	if !c.defending_suicide_do_not_fire {
+		return true
+	}
+	soa_p, soa_c := matches_unit_is_suicide_on_attack()
+	if !soa_p(soa_c, u) {
+		return true
+	}
+	sod_p, sod_c := matches_unit_is_suicide_on_defense()
+	return sod_p(sod_c, u)
+}
+
+matches_unit_is_first_strike_on_defense :: proc(
+	properties: ^Game_Properties,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_is_first_strike_on_defense)
+	ctx.defending_suicide_do_not_fire = properties_get_defending_suicide_and_munition_units_do_not_fire(
+		properties,
+	)
+	return matches_pred_unit_is_first_strike_on_defense, rawptr(ctx)
+}
