@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math"
 import "core:slice"
 
 Route :: struct {
@@ -325,4 +326,47 @@ route_has_neutral_before_end :: proc(self: ^Route) -> bool {
 		}
 	}
 	return false
+}
+
+// Mirrors Java Route#getFuelCostsAndIfChargedFlatFuelCost(Unit, GameData,
+// boolean) (private). Returns the per-unit fuel resource charge and a
+// boolean indicating whether the flat fuel cost was applied. Java:
+//   final ResourceCollection resources = new ResourceCollection(data);
+//   if (Matches.unitIsBeingTransported().test(unit)) return Tuple.of(resources, false);
+//   final UnitAttachment ua = unit.getUnitAttachment();
+//   resources.add(ua.getFuelCost());
+//   resources.multiply(getMovementCost(unit).setScale(0, CEILING).intValue());
+//   boolean chargedFlatFuelCost = false;
+//   if (!ignoreFlat && Matches.unitHasNotBeenChargedFlatFuelCost().test(unit)) {
+//     resources.add(ua.getFuelFlatCost());
+//     chargedFlatFuelCost = true;
+//   }
+//   return Tuple.of(resources, chargedFlatFuelCost);
+// BigDecimal#setScale(0, CEILING).intValue() → i32(math.ceil(f64)).
+route_get_fuel_costs_and_if_charged_flat_fuel_cost :: proc(
+	self: ^Route,
+	unit: ^Unit,
+	data: ^Game_Data,
+	ignore_flat: bool,
+) -> (
+	^Resource_Collection,
+	bool,
+) {
+	resources := resource_collection_new(data)
+	transported_pred, transported_ctx := matches_unit_is_being_transported()
+	if transported_pred(transported_ctx, unit) {
+		return resources, false
+	}
+	ua := unit_get_unit_attachment(unit)
+	fuel_cost := unit_attachment_get_fuel_cost(ua)
+	resource_collection_add_integer_map(resources, &fuel_cost)
+	resource_collection_multiply(resources, i32(math.ceil(route_get_movement_cost(self, unit))))
+	charged_flat_fuel_cost := false
+	flat_pred, flat_ctx := matches_unit_has_not_been_charged_flat_fuel_cost()
+	if !ignore_flat && flat_pred(flat_ctx, unit) {
+		fuel_flat_cost := unit_attachment_get_fuel_flat_cost(ua)
+		resource_collection_add_integer_map(resources, &fuel_flat_cost)
+		charged_flat_fuel_cost = true
+	}
+	return resources, charged_flat_fuel_cost
 }

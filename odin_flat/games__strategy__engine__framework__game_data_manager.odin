@@ -102,3 +102,21 @@ game_data_manager_save_game_uncompressed :: proc(sink: ^Output_Stream, data: ^Ga
 	}
 	_ = sink
 }
+
+// games.strategy.engine.framework.GameDataManager#saveGame(OutputStream, GameData)
+// Java creates a temp file, writes the GameData through
+// BufferedOutputStream→GZIPOutputStream→saveGameUncompressed, then
+// IOUtils.copy's the temp file back into the supplied sink and
+// deletes the temp file. The temp-file dance, buffered/gzip wrappers,
+// and IOUtils.copy are all opaque IO under the snapshot harness's
+// opaque-IO regime (mirrors load_delegates / write_delegates above):
+// no bytes actually flow into the sink. The observable side effects
+// of the save live entirely inside saveGameUncompressed — write-lock
+// acquire, optional history/attachment-order mutation and restore,
+// and the writeDelegates call graph — all of which are preserved by
+// delegating directly to save_game_uncompressed with for_save_game
+// options. The sink is referenced so the parameter is not unused.
+game_data_manager_save_game :: proc(out: ^Output_Stream, game_data: ^Game_Data) {
+	_ = out
+	game_data_manager_save_game_uncompressed(out, game_data, game_data_manager_options_for_save_game())
+}

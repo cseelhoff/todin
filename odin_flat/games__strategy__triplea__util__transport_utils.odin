@@ -215,3 +215,129 @@ transport_utils_load_unit_into_first_available_transport :: proc(
 	return nil
 }
 
+// Java: TransportUtils.mapTransportsToLoad(Collection<Unit> units, Collection<Unit> transports)
+//   -> Map<Unit, Unit>
+// Returns a map of unit -> transport. Tries to load units evenly across all
+// transports by walking units in descending transport-cost order and
+// rotating each used transport to the end of the candidate list.
+transport_utils_map_transports_to_load :: proc(
+	units: [dynamic]^Unit,
+	transports: [dynamic]^Unit,
+) -> map[^Unit]^Unit {
+	cb_p, cb_c := matches_unit_can_be_transported()
+	cb_filtered := make([dynamic]^Unit, 0, len(units))
+	for u in units {
+		if cb_p(cb_c, u) {
+			append(&cb_filtered, u)
+		}
+	}
+	can_be_transported := transport_utils_sort_by_transport_cost_descending(cb_filtered)
+
+	ct_p, ct_c := matches_unit_can_transport()
+	ct_filtered := make([dynamic]^Unit, 0, len(transports))
+	for t in transports {
+		if ct_p(ct_c, t) {
+			append(&ct_filtered, t)
+		}
+	}
+	can_transport :=
+		transport_utils_sort_by_transport_capacity_descending_then_moves_descending(ct_filtered)
+
+	mapping: map[^Unit]^Unit
+	added_load := integer_map_new()
+	for unit in can_be_transported {
+		transport := transport_utils_load_unit_into_first_available_transport(
+			unit,
+			can_transport,
+			&mapping,
+			added_load,
+		)
+		// Java: if (transport.isPresent()) { canTransport.remove(t); canTransport.add(t); }
+		if transport != nil {
+			for i := 0; i < len(can_transport); i += 1 {
+				if can_transport[i] == transport {
+					ordered_remove(&can_transport, i)
+					break
+				}
+			}
+			append(&can_transport, transport)
+		}
+	}
+	return mapping
+}
+
+// Java: TransportUtils.findUnitsToLoadOnAirTransports(Collection<Unit> units,
+//     Collection<Unit> transports) -> List<Unit>
+// Returns the subset of `units` that can be transported by any air transport
+// in `transports`. Uses UnitSeparator categories (transportCost=true for the
+// loaded units, defaults for the transports) and CollectionUtils.getNMatches
+// to bound the per-category load by the total available air-transport
+// capacity for that unit type.
+transport_utils_find_units_to_load_on_air_transports :: proc(
+	units: [dynamic]^Unit,
+	transports: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	air_p, air_c := matches_unit_is_air_transport()
+	air_transports := make([dynamic]^Unit, 0, len(transports))
+	for t in transports {
+		if air_p(air_c, t) {
+			append(&air_transports, t)
+		}
+	}
+
+	cb_p, cb_c := matches_unit_can_be_transported()
+	cb_filtered := make([dynamic]^Unit, 0, len(units))
+	for u in units {
+		if cb_p(cb_c, u) {
+			append(&cb_filtered, u)
+		}
+	}
+	can_be_transported := transport_utils_sort_by_transport_cost_descending(cb_filtered)
+
+	total_load: [dynamic]^Unit
+
+	// Java: UnitSeparator.SeparatorCategories.builder().transportCost(true).build()
+	builder := unit_separator_separator_categories_separator_categories_builder_new()
+	unit_separator_separator_categories_separator_categories_builder_transport_cost(builder, true)
+	sep_categories := unit_separator_separator_categories_separator_categories_builder_build(
+		builder,
+	)
+	unit_types := unit_separator_categorize(can_be_transported, sep_categories)
+	transport_types := unit_separator_categorize(air_transports)
+
+	for unit_type in unit_types {
+		transport_cost := unit_category_get_transport_cost(unit_type)
+		for transport_type in transport_types {
+			transport_capacity := unit_attachment_get_transport_capacity(
+				unit_category_get_unit_attachment(transport_type),
+			)
+			if transport_cost > 0 && transport_capacity >= transport_cost {
+				tt_p, tt_c := matches_unit_is_of_type(
+					unit_category_get_type(transport_type),
+				)
+				transport_count: i32 = 0
+				for at in air_transports {
+					if tt_p(tt_c, at) {
+						transport_count += 1
+					}
+				}
+				ttl_transport_capacity :=
+					transport_count * (transport_capacity / transport_cost)
+
+				ut_p, ut_c := matches_unit_is_of_type(unit_category_get_type(unit_type))
+				count: i32 = 0
+				for u in can_be_transported {
+					if count >= ttl_transport_capacity {
+						break
+					}
+					if ut_p(ut_c, u) {
+						append(&total_load, u)
+						count += 1
+					}
+				}
+			}
+		}
+	}
+	return total_load
+}
+

@@ -465,3 +465,132 @@ pro_purchase_option_calculate_support_factor :: proc(
 	)
 	return total_support_factor
 }
+
+pro_purchase_option_get_fodder_efficiency :: proc(
+	self: ^Pro_Purchase_Option,
+	enemy_distance: i32,
+	data: ^Game_Data,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+) -> f64 {
+	support_attack_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, false,
+	)
+	support_defense_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, true,
+	)
+	distance_factor := math.sqrt(
+		pro_purchase_option_calculate_land_distance_factor(self, enemy_distance),
+	)
+	return pro_purchase_option_calculate_efficiency_no_sea(
+		self, 0.25, 0.25, support_attack_factor, support_defense_factor, distance_factor, data,
+	)
+}
+
+pro_purchase_option_get_attack_efficiency_with_args :: proc(
+	self: ^Pro_Purchase_Option,
+	enemy_distance: i32,
+	data: ^Game_Data,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+) -> f64 {
+	support_attack_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, false,
+	)
+	support_defense_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, true,
+	)
+	distance_factor := pro_purchase_option_calculate_land_distance_factor(self, enemy_distance)
+	return pro_purchase_option_calculate_efficiency_no_sea(
+		self, 1.25, 0.75, support_attack_factor, support_defense_factor, distance_factor, data,
+	)
+}
+
+pro_purchase_option_get_defense_efficiency_with_args :: proc(
+	self: ^Pro_Purchase_Option,
+	enemy_distance: i32,
+	data: ^Game_Data,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+) -> f64 {
+	support_attack_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, false,
+	)
+	support_defense_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, true,
+	)
+	distance_factor := pro_purchase_option_calculate_land_distance_factor(self, enemy_distance)
+	return pro_purchase_option_calculate_efficiency_no_sea(
+		self, 0.75, 1.25, support_attack_factor, support_defense_factor, distance_factor, data,
+	)
+}
+
+// Returns the sea defense efficiency for the specified units if this purchase option is selected.
+pro_purchase_option_get_sea_defense_efficiency :: proc(
+	self: ^Pro_Purchase_Option,
+	data: ^Game_Data,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+	need_destroyer: bool,
+	unused_carrier_capacity: i32,
+	unused_local_carrier_capacity: i32,
+) -> f64 {
+	if self.is_air &&
+	   (self.carrier_cost <= 0 ||
+		   self.carrier_cost > unused_carrier_capacity ||
+		   !properties_get_produce_fighters_on_carriers(game_data_get_properties(data))) {
+		return 0
+	}
+	support_attack_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, false,
+	)
+	support_defense_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, true,
+	)
+	sea_factor: f64 = 1
+	if need_destroyer && self.is_destroyer {
+		sea_factor = 8
+	}
+	if self.is_air || (self.carrier_capacity > 0 && unused_local_carrier_capacity <= 0) {
+		sea_factor = 4
+	}
+	return pro_purchase_option_calculate_efficiency(
+		self,
+		0.75,
+		1,
+		support_attack_factor,
+		support_defense_factor,
+		f64(self.movement),
+		sea_factor,
+		data,
+	)
+}
+
+// Calculates amphibious assault efficiency coefficient.
+pro_purchase_option_get_amphib_efficiency :: proc(
+	self: ^Pro_Purchase_Option,
+	data: ^Game_Data,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+) -> f64 {
+	support_attack_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, false,
+	)
+	support_defense_factor := pro_purchase_option_calculate_support_factor(
+		self, owned_local_units, units_to_place, data, true,
+	)
+	hit_point_per_unit_factor := 3.0 + f64(self.hit_points) / f64(self.quantity)
+	transport_cost_factor := math.pow(1.0 / f64(self.transport_cost), 0.2)
+	dice_sides := f64(data.dice_sides)
+	attack_value :=
+		(self.amphib_attack + support_attack_factor * f64(self.quantity)) * 6.0 / dice_sides
+	defense_value :=
+		(self.defense + support_defense_factor * f64(self.quantity)) * 6.0 / dice_sides
+	return math.pow(
+		((2.0 * f64(self.hit_points)) + attack_value + defense_value) *
+		hit_point_per_unit_factor *
+		transport_cost_factor /
+		f64(self.cost),
+		30,
+	) / f64(self.quantity)
+}

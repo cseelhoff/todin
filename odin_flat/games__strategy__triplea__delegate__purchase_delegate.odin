@@ -457,6 +457,98 @@ purchase_delegate_get_repair_costs :: proc(
 	return costs
 }
 
+// games.strategy.triplea.delegate.PurchaseDelegate#purchaseRepair(java.util.Map)
+// Java: `public @Nullable String purchaseRepair(Map<Unit, IntegerMap<RepairRule>>)`.
+// Validates affordability via `getRepairCosts`, short-circuits when the
+// `damageFromBombingDoneToUnitsInsteadOfTerritories` property is off, builds a
+// damage_map of `max(0, currentDamage - repairCount)` per repaired factory,
+// emits a CompositeChange holding `bombingUnitDamage(damageMap, affectedTerritories)`
+// where the territories are those still containing any damaged unit, charges
+// the player via `removeFromPlayer`, writes a "<player> repair damage of <list>;
+// <remaining>" / "<player> repair nothing; <remaining>" history event whose
+// rendering data is the damage_map's key set, and finally commits the change
+// when non-empty. Returns "" on success (Java's null) and "Not enough resources"
+// on rejection.
+purchase_delegate_purchase_repair :: proc(
+	self:         ^Purchase_Delegate,
+	repair_rules: map[^Unit]^Integer_Map,
+) -> string {
+	costs := purchase_delegate_get_repair_costs(self, repair_rules, self.player)
+	if !purchase_delegate_can_afford(self, costs, self.player) {
+		return "Not enough resources"
+	}
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if !properties_get_damage_from_bombing_done_to_units_instead_of_territories(
+		game_data_get_properties(data),
+	) {
+		return ""
+	}
+	// Get the map of the factories that were repaired and how much for each
+	repair_map := purchase_delegate_get_unit_repairs(repair_rules)
+	if integer_map_is_empty(repair_map) {
+		return ""
+	}
+	// remove first, since add logs PUs remaining
+	changes := composite_change_new()
+	damage_map := integer_map_new()
+	for k, _ in repair_map.map_values {
+		unit := cast(^Unit)k
+		repair_count := integer_map_get_int(repair_map, k)
+		// Display appropriate damaged/repaired factory and factory damage totals
+		if repair_count > 0 {
+			current := unit_get_unit_damage(unit)
+			new_damage_total := max(i32(0), current - repair_count)
+			if new_damage_total != current {
+				integer_map_put(damage_map, k, new_damage_total)
+			}
+		}
+	}
+	if !integer_map_is_empty(damage_map) {
+		typed := new(Integer_Map_Unit)
+		typed.entries = make(map[^Unit]i32)
+		for k, v in damage_map.map_values {
+			typed.entries[cast(^Unit)k] = v
+		}
+		territories: [dynamic]^Territory
+		for t in game_map_get_territories(game_data_get_map(data)) {
+			if purchase_delegate_lambda_purchase_repair_1(damage_map, t) {
+				append(&territories, t)
+			}
+		}
+		composite_change_add(changes, change_factory_bombing_unit_damage(typed, territories))
+	}
+	// add changes for spent resources
+	remaining := purchase_delegate_remove_from_player(self, costs, changes)
+	// add history event
+	transcript_text: string
+	player_name := self.player.named.base.name
+	if !integer_map_is_empty(damage_map) {
+		transcript_text = fmt.aprintf(
+			"%s repair damage of %s; %s",
+			player_name,
+			my_formatter_integer_unit_map_to_string(repair_map, ", ", "x ", true),
+			remaining,
+		)
+	} else {
+		transcript_text = fmt.aprintf("%s repair nothing; %s", player_name, remaining)
+	}
+	// rendering data is `new HashSet<>(damageMap.keySet())`
+	damaged_keys: [dynamic]^Unit
+	for k, _ in damage_map.map_values {
+		append(&damaged_keys, cast(^Unit)k)
+	}
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(self.bridge),
+		transcript_text,
+		rawptr(&damaged_keys),
+	)
+	// commit changes
+	if !composite_change_is_empty(changes) {
+		i_delegate_bridge_add_change(self.bridge, cast(^Change)changes)
+	}
+	return ""
+}
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.PurchaseDelegate
 

@@ -1,5 +1,7 @@
 package game
 
+import "core:slice"
+
 // Port of games.strategy.triplea.delegate.power.calculator.PowerStrengthAndRolls.
 // Computes total power, strength, and roll for a collection of units.
 Power_Strength_And_Rolls :: struct {
@@ -194,4 +196,58 @@ power_strength_and_rolls_new :: proc(
 	}
 	power_strength_and_rolls_add_units(self, units)
 	return self
+}
+
+// Java: public static PowerStrengthAndRolls buildWithPreSortedUnits(
+//     final Collection<Unit> unitsGettingPowerFor, final CombatValue calculator)
+//   if (unitsGettingPowerFor == null || unitsGettingPowerFor.isEmpty()) {
+//     return new PowerStrengthAndRolls(List.of(), calculator);
+//   }
+//   return new PowerStrengthAndRolls(unitsGettingPowerFor, calculator);
+power_strength_and_rolls_build_with_pre_sorted_units :: proc(
+	units_getting_power_for: [dynamic]^Unit,
+	calculator: ^Combat_Value,
+) -> ^Power_Strength_And_Rolls {
+	if len(units_getting_power_for) == 0 {
+		return power_strength_and_rolls_new(make([dynamic]^Unit), calculator)
+	}
+	return power_strength_and_rolls_new(units_getting_power_for, calculator)
+}
+
+// Comparator returned by combat_value_unit_comparator has signature
+// proc(^Unit, ^Unit) -> i32 (Java Comparator semantics). slice.sort_by
+// wants a strict less-than predicate, so we route the active comparator
+// through a file-private slot and adapt it here.
+@(private="file")
+power_strength_and_rolls_build_cmp_: proc(^Unit, ^Unit) -> i32
+
+@(private="file")
+power_strength_and_rolls_build_less_ :: proc(a: ^Unit, b: ^Unit) -> bool {
+	return power_strength_and_rolls_build_cmp_(a, b) < 0
+}
+
+// Java: public static PowerStrengthAndRolls build(
+//     final Collection<Unit> unitsGettingPowerFor, final CombatValue calculator)
+//   if (unitsGettingPowerFor == null || unitsGettingPowerFor.isEmpty()) {
+//     return new PowerStrengthAndRolls(List.of(), calculator);
+//   }
+//   return new PowerStrengthAndRolls(
+//       unitsGettingPowerFor.stream()
+//           .sorted(calculator.unitComparator())
+//           .collect(Collectors.toList()),
+//       calculator);
+power_strength_and_rolls_build :: proc(
+	units_getting_power_for: [dynamic]^Unit,
+	calculator: ^Combat_Value,
+) -> ^Power_Strength_And_Rolls {
+	if len(units_getting_power_for) == 0 {
+		return power_strength_and_rolls_new(make([dynamic]^Unit), calculator)
+	}
+	sorted := make([dynamic]^Unit, 0, len(units_getting_power_for))
+	for u in units_getting_power_for {
+		append(&sorted, u)
+	}
+	power_strength_and_rolls_build_cmp_ = combat_value_unit_comparator(calculator)
+	slice.sort_by(sorted[:], power_strength_and_rolls_build_less_)
+	return power_strength_and_rolls_new(sorted, calculator)
 }

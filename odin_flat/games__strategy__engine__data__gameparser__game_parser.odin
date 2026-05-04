@@ -18,6 +18,21 @@ Game_Parser :: struct {
 // Java owners covered by this file:
 //   - games.strategy.engine.data.gameparser.GameParser
 
+game_parser_new :: proc(
+	xml_uri: string,
+	xml_game_element_mapper: ^Xml_Game_Element_Mapper,
+	engine_version: ^Version,
+	collect_attachment_order_and_values: bool,
+) -> ^Game_Parser {
+	self := new(Game_Parser)
+	self.data = game_data_new()
+	self.xml_uri = xml_uri
+	self.xml_game_element_mapper = xml_game_element_mapper
+	self.engine_version = engine_version
+	self.collect_attachment_order_and_values = collect_attachment_order_and_values
+	return self
+}
+
 // Synthetic lambda from GameParser.parseProperties (#18):
 //   () -> Optional.ofNullable(current.getNumberProperty())
 //             .map(PropertyList.Property.XmlNumberTag::getMin)

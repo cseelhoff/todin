@@ -240,3 +240,20 @@ unit_stacking_limit_filter_filter_units :: proc(
 	return result
 }
 
+// games.strategy.triplea.delegate.move.validation.UnitStackingLimitFilter#filterUnits(Collection<Unit>, String, GamePlayer, Territory)
+// Java:
+//   public static List<Unit> filterUnits(
+//       Collection<Unit> units, String limitType, GamePlayer owner, Territory t) {
+//     return filterUnits(units, limitType, owner, t, List.of());
+//   }
+unit_stacking_limit_filter_filter_units_4 :: proc(
+	units: [dynamic]^Unit,
+	limit_type: string,
+	owner: ^Game_Player,
+	t: ^Territory,
+) -> [dynamic]^Unit {
+	empty := make([dynamic]^Unit)
+	defer delete(empty)
+	return unit_stacking_limit_filter_filter_units(units, limit_type, owner, t, empty)
+}
+

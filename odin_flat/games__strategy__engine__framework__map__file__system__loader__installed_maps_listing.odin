@@ -145,6 +145,14 @@ installed_maps_listing_parse_map_files_noargs :: proc() -> ^Installed_Maps_Listi
 	return installed_maps_listing_parse_map_files(client_file_system_helper_get_user_maps_folder_noargs())
 }
 
+// Java: public static Optional<Path> searchAllMapsForMapName(String mapName) {
+//   return parseMapFiles().findContentRootForMapName(mapName);
+// }
+installed_maps_listing_search_all_maps_for_map_name :: proc(map_name: string) -> (Path, bool) {
+	listing := installed_maps_listing_parse_map_files_noargs()
+	return installed_maps_listing_find_content_root_for_map_name(listing, map_name)
+}
+
 installed_maps_listing_normalize_name :: proc(map_name: string) -> string {
 	lower := strings.to_lower(map_name)
 	defer delete(lower)

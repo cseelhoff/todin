@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 Remove_Units_History_Change :: struct {
 	change:                                 ^Composite_Change,
 	location:                               ^Territory,
@@ -159,5 +161,63 @@ remove_units_history_change_lambda_perform_3 :: proc(
 		append(all_killed_units, u)
 	}
 	composite_change_add(change, change_factory_remove_units(cast(^Unit_Holder)territory, units))
+}
+
+// Java: public void perform(final IDelegateBridge bridge)
+// Mirrors the Java body one-to-one: first delegate to the queued
+// `TransformDamagedUnitsHistoryChange.perform`, then build a fresh
+// `CompositeChange` containing a remove-units change for the primary
+// `location/killedUnits` pair plus per-territory remove-units changes
+// for any combat-phase unloads. If the composite ends up empty,
+// bail out without touching `this.change` (matching Java). Otherwise
+// fold the composite into `this.change`, hand the cumulative
+// `this.change` to the bridge, then format the message template by
+// substituting `${units}` and `${territory}` (StringSubstitutor with
+// the default `${...}` syntax) and emit a child history event
+// referencing every unit that was killed.
+remove_units_history_change_perform :: proc(
+	self: ^Remove_Units_History_Change,
+	bridge: ^I_Delegate_Bridge,
+) {
+	transform_damaged_units_history_change_perform(
+		self.transform_damaged_units_history_change,
+		bridge,
+	)
+
+	all_killed_units := make([dynamic]^Unit)
+
+	change := composite_change_new()
+	if len(self.killed_units) != 0 {
+		for u in self.killed_units {
+			append(&all_killed_units, u)
+		}
+		composite_change_add(
+			change,
+			change_factory_remove_units(cast(^Unit_Holder)self.location, self.killed_units),
+		)
+	}
+	if len(self.unloaded_units) != 0 {
+		for territory, units in self.unloaded_units {
+			remove_units_history_change_lambda_perform_3(
+				&all_killed_units,
+				change,
+				territory,
+				units,
+			)
+		}
+	}
+	if composite_change_is_empty(change) {
+		return
+	}
+	composite_change_add(self.change, cast(^Change)change)
+	i_delegate_bridge_add_change(bridge, cast(^Change)self.change)
+
+	units_text := my_formatter_units_to_text(all_killed_units)
+	territory_name := default_named_get_name(&self.location.named_attachable.default_named)
+	text, _ := strings.replace_all(self.message_template, "${units}", units_text)
+	text, _ = strings.replace_all(text, "${territory}", territory_name)
+
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	history_writer_add_child_to_event(writer, text, all_killed_units)
 }
 

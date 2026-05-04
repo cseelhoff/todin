@@ -24,6 +24,15 @@ game_data_utils_lambda_translate_into_other_game_data_3 :: proc(object: rawptr, 
 	output_stream_flush(os)
 }
 
+// proc:games.strategy.engine.framework.GameDataUtils#lambda$gameDataToBytes$2
+// Java: os -> GameDataManager.saveGameUncompressed(os, data, options)
+// Captures `data` and `options`; receives the IoUtils.writeToMemory
+// output stream as its argument. Direct delegation to the static
+// save proc — the lambda has no body of its own beyond the call.
+game_data_utils_lambda_game_data_to_bytes_2 :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options, os: ^Output_Stream) {
+	game_data_manager_save_game_uncompressed(os, data, options)
+}
+
 // proc:games.strategy.engine.framework.GameDataUtils#gameDataToBytes
 // Java: return Optional.of(IoUtils.writeToMemory(
 //             os -> GameDataManager.saveGameUncompressed(os, data, options)));

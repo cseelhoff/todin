@@ -666,3 +666,93 @@ tech_tracker_get_current_tech_advances_1 :: proc(
 	)
 }
 
+// Java: public static void addAdvance(
+//     GamePlayer player, IDelegateBridge bridge, TechAdvance advance) {
+//   bridge.addChange(createTechChange(advance, player, true));
+//   advance.perform(player, bridge);
+// }
+tech_tracker_add_advance :: proc(
+	player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	advance: ^Tech_Advance,
+) {
+	i_delegate_bridge_add_change(bridge, tech_tracker_create_tech_change(advance, player, true))
+	tech_advance_perform(advance, player, bridge)
+}
+
+// Java: private int getSumOfBonuses(
+//     Function<TechAbilityAttachment, IntegerMap<UnitType>> mapper,
+//     UnitType type, GamePlayer player) {
+//   return sumIntegerMap(mapper, type, getCurrentTechAdvances(player));
+// }
+tech_tracker_get_sum_of_bonuses :: proc(
+	self: ^Tech_Tracker,
+	mapper: proc(taa: ^Tech_Ability_Attachment) -> ^Integer_Map,
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	advances := tech_tracker_get_current_tech_advances_1(self, player)
+	defer delete(advances)
+	return tech_tracker_sum_integer_map(mapper, type, advances)
+}
+
+// Java: private boolean getUnitAbilitiesGained(
+//     String filterForAbility, UnitType unitType, GamePlayer player) {
+//   return getCurrentTechAdvances(player).stream()
+//       .map(TAA::get).filter(nonNull)
+//       .map(TAA::getUnitAbilitiesGained)
+//       .map(m -> m.get(unitType)).filter(nonNull)
+//       .flatMap(Collection::stream)
+//       .anyMatch(filterForAbility::equals);
+// }
+tech_tracker_get_unit_abilities_gained :: proc(
+	self: ^Tech_Tracker,
+	filter_for_ability: string,
+	unit_type: ^Unit_Type,
+	player: ^Game_Player,
+) -> bool {
+	advances := tech_tracker_get_current_tech_advances_1(self, player)
+	defer delete(advances)
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil {
+			continue
+		}
+		set, ok := taa.unit_abilities_gained[unit_type]
+		if !ok {
+			continue
+		}
+		if _, present := set[filter_for_ability]; present {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: lambda$getMinimumTerritoryValueForProductionBonus$14(GamePlayer)
+//   The Supplier<Integer> body of getMinimumTerritoryValueForProductionBonus:
+//   `() -> Math.max(0, currentTechAdvances.stream()...orElse(-1))`. Captures
+//   `this` and `player`; method_key only records the declared parameter. The
+//   public static-port proc already inlines the same pipeline, so the lambda
+//   delegates to it.
+tech_tracker_lambda_get_minimum_territory_value_for_production_bonus_14 :: proc(
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_minimum_territory_value_for_production_bonus(player)
+}
+
+// Java: lambda$getRocketNumberPerTerritory$15(GamePlayer)
+//   `() -> sumNumbers(TAA::getRocketNumberPerTerritory, TECH_NAME_ROCKETS,
+//                     getCurrentTechAdvances(player))`. Same delegate-to-port
+//   shape as lambda 14.
+tech_tracker_lambda_get_rocket_number_per_territory_15 :: proc(player: ^Game_Player) -> i32 {
+	return tech_tracker_get_rocket_number_per_territory(player)
+}
+
+// Java: lambda$getRocketDistance$16(GamePlayer)
+//   `() -> sumNumbers(TAA::getRocketDistance, TECH_NAME_ROCKETS,
+//                     getCurrentTechAdvances(player))`.
+tech_tracker_lambda_get_rocket_distance_16 :: proc(player: ^Game_Player) -> i32 {
+	return tech_tracker_get_rocket_distance(player)
+}
+

@@ -54,6 +54,42 @@ main_defense_combat_value_main_defense_strength_is_first_turn_limited_roll :: pr
 		main_defense_combat_value_main_defense_strength_is_dominating_first_round_attack(self, game_step_get_player_id(game_sequence_get_step(self.game_sequence)))
 }
 
+// Java: MainDefenseStrength.getStrength(Unit)
+main_defense_combat_value_main_defense_strength_get_strength :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Strength,
+	unit: ^Unit,
+) -> ^Strength_Value {
+	ua := unit_get_unit_attachment(unit)
+	owner := unit_get_owner(unit)
+	strength := unit_attachment_get_defense(ua, owner)
+	allow_friendly := true
+	if main_defense_combat_value_main_defense_strength_is_first_turn_limited_roll(self, owner) {
+		// if first turn is limited, the strength is a max of 1 and no friendly support
+		strength = min(i32(1), strength)
+		allow_friendly = false
+	}
+	sv := strength_value_of(self.game_dice_sides, strength)
+	sv = strength_value_add(
+		sv,
+		territory_effect_helper_get_territory_combat_bonus(
+			unit_get_type(unit),
+			self.territory_effects,
+			true,
+		),
+	)
+	if allow_friendly {
+		sv = strength_value_add(
+			sv,
+			available_supports_give_support_to_unit(self.support_from_friends, unit),
+		)
+	}
+	sv = strength_value_add(
+		sv,
+		available_supports_give_support_to_unit(self.support_from_enemies, unit),
+	)
+	return sv
+}
+
 // Java: MainDefenseStrength.getSupportGiven()
 //   return SupportCalculator.getCombinedSupportGiven(supportFromFriends, supportFromEnemies);
 main_defense_combat_value_main_defense_strength_get_support_given :: proc(
