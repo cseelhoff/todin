@@ -336,3 +336,25 @@ remove_unprotected_units_check_undefended_transports :: proc(
 	)
 }
 
+
+// games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits#removeUnprotectedUnits
+// Java:
+//   if (!Properties.getTransportCasualtiesRestricted(battleState.getGameData().getProperties())) return;
+//   if (attackerHasRetreat(side)) return;
+//   checkUndefendedTransports(bridge, side);
+//   checkUnprotectedUnits(bridge, side);
+remove_unprotected_units_remove_unprotected_units :: proc(
+	self: ^Remove_Unprotected_Units,
+	bridge: ^I_Delegate_Bridge,
+	side: Battle_State_Side,
+) {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	if !properties_get_transport_casualties_restricted(props) {
+		return
+	}
+	if remove_unprotected_units_attacker_has_retreat(self, side) {
+		return
+	}
+	remove_unprotected_units_check_undefended_transports(self, bridge, side)
+	remove_unprotected_units_check_unprotected_units(self, bridge, side)
+}

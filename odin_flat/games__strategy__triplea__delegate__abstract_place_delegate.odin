@@ -1716,3 +1716,289 @@ abstract_place_delegate_perform_place_from :: proc(
 	i_delegate_bridge_add_change(bridge, &change.change)
 	abstract_place_delegate_update_produced_map(self, producer, placeable_units)
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#removeAirThatCantLand()
+// LHTR-style cleanup at the end of the place phase. The current player's air is
+// removed first; then the same removal runs against every other player to clean
+// up after edit-mode side-effects.
+abstract_place_delegate_remove_air_that_cant_land :: proc(self: ^Abstract_Place_Delegate) {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	bridge := abstract_delegate_get_bridge(&self.abstract_delegate)
+	util := air_that_cant_land_util_new(bridge)
+	air_that_cant_land_util_remove_air_that_cant_land(util, self.player, false)
+	players := player_list_get_players(game_data_get_player_list(data))
+	defer delete(players)
+	for player in players {
+		if player != self.player {
+			air_that_cant_land_util_remove_air_that_cant_land(util, player, false)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getMaxUnitsToBePlacedMap(Collection,Territory,GamePlayer)
+// Returns an IntegerMap keyed by each producer Territory; -1 anywhere in the
+// map means "unlimited" for that producer. Producers are visited in
+// best-producer order so the recursive accounting in
+// getMaxUnitsToBePlacedFrom_full sees neighbors consistently.
+abstract_place_delegate_get_max_units_to_be_placed_map :: proc(
+	self:   ^Abstract_Place_Delegate,
+	units:  [dynamic]^Unit,
+	to:     ^Territory,
+	player: ^Game_Player,
+) -> ^Integer_Map {
+	max_units_to_be_placed_map := integer_map_new()
+	producers := abstract_place_delegate_get_all_producers(self, to, player, units, true)
+	defer delete(producers)
+	if len(producers) == 0 {
+		return max_units_to_be_placed_map
+	}
+	cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(self, to, units, player)
+	for i := 1; i < len(producers); i += 1 {
+		j := i
+		for j > 0 && cmp_fn(cmp_ctx, producers[j], producers[j - 1]) < 0 {
+			tmp := producers[j]
+			producers[j] = producers[j - 1]
+			producers[j - 1] = tmp
+			j -= 1
+		}
+	}
+	free(cmp_ctx)
+	not_usable_as_other_producers := make([dynamic]^Territory)
+	defer delete(not_usable_as_other_producers)
+	for p in producers {
+		append(&not_usable_as_other_producers, p)
+	}
+	current_available_placement_for_other_producers := make(map[^Territory]i32)
+	defer delete(current_available_placement_for_other_producers)
+	for producer_territory in producers {
+		prod_t := abstract_place_delegate_get_max_units_to_be_placed_from_full(
+			self,
+			producer_territory,
+			units,
+			to,
+			player,
+			true,
+			&not_usable_as_other_producers,
+			&current_available_placement_for_other_producers,
+		)
+		integer_map_put(max_units_to_be_placed_map, rawptr(producer_territory), prod_t)
+	}
+	return max_units_to_be_placed_map
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#lambda$getBestProducerComparator$4(Territory,Collection,GamePlayer,Territory,Territory)
+// Synthetic body of the (t1, t2) -> ... lambda inside getBestProducerComparator.
+// The reusable implementation lives in abstract_place_delegate_best_producer_compare,
+// which is keyed off a heap-allocated ctx; this proc mirrors javac's flat
+// arg list (captured locals followed by lambda params) by stack-allocating
+// an equivalent ctx and dispatching to the shared body.
+abstract_place_delegate_lambda__get_best_producer_comparator__4 :: proc(
+	self: ^Abstract_Place_Delegate,
+	at: ^Territory,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+	t1: ^Territory,
+	t2: ^Territory,
+) -> i32 {
+	ctx := Abstract_Place_Delegate_Best_Producer_Comparator_Ctx{
+		self   = self,
+		to     = at,
+		units  = units,
+		player = player,
+	}
+	return abstract_place_delegate_best_producer_compare(rawptr(&ctx), t1, t2)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#freePlacementCapacity(Territory,int,Collection,Territory,GamePlayer)
+// Frees `freeSize` slots on `producer` by trying to hand off existing sea-zone
+// placements (whose units don't have requiresUnits) to other adjacent
+// producers. Whole placements migrate intact when possible; otherwise we
+// remember (placement, newProducer) splits and, after the first pass, undo
+// each split-target placement once and re-perform it as two: one through the
+// new producer and one through the original. Recurses (once at most) when the
+// requested capacity is still short and unused split candidates remain.
+abstract_place_delegate_free_placement_capacity :: proc(
+	self:               ^Abstract_Place_Delegate,
+	producer:           ^Territory,
+	free_size:          i32,
+	units_left_to_place: [dynamic]^Unit,
+	at:                 ^Territory,
+	player:             ^Game_Player,
+) {
+	redo_placements := make([dynamic]^Undoable_Placement)
+	defer delete(redo_placements)
+	redo_placements_count := make(map[^Territory]i32)
+	defer delete(redo_placements_count)
+	req_p, req_c := matches_unit_requires_units_on_creation()
+	for placement in self.placements {
+		if undoable_placement_get_producer_territory(placement) != producer {
+			continue
+		}
+		place_territory := undoable_placement_get_place_territory(placement)
+		if !territory_is_water(place_territory) || place_territory == producer {
+			continue
+		}
+		placement_units := abstract_undoable_move_get_units(&placement.abstract_undoable_move)
+		any_requires := false
+		if abstract_place_delegate_has_unit_placement_restrictions(self) {
+			for u in placement_units {
+				if req_p(req_c, u) {
+					any_requires = true
+					break
+				}
+			}
+		}
+		if any_requires {
+			continue
+		}
+		append(&redo_placements, placement)
+		add := i32(len(placement_units))
+		if existing, ok := redo_placements_count[place_territory]; ok {
+			redo_placements_count[place_territory] = existing + add
+		} else {
+			redo_placements_count[place_territory] = add
+		}
+	}
+
+	split_placements := make([dynamic]^Tuple(^Undoable_Placement, ^Territory))
+	defer {
+		for t in split_placements {
+			free(t)
+		}
+		delete(split_placements)
+	}
+	found_space_total: i32 = 0
+
+	outer_loop: for place_territory, max_production_that_can_be_taken_over_from_this_placement in redo_placements_count {
+		potential_new_producers := abstract_place_delegate_get_all_producers_3(
+			self, place_territory, player, units_left_to_place,
+		)
+		// remove `producer` from the candidate list
+		for i := len(potential_new_producers) - 1; i >= 0; i -= 1 {
+			if potential_new_producers[i] == producer {
+				ordered_remove(&potential_new_producers, i)
+			}
+		}
+		// stable insertion sort by best-producer comparator
+		cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(
+			self, place_territory, units_left_to_place, player,
+		)
+		for i := 1; i < len(potential_new_producers); i += 1 {
+			j := i
+			for j > 0 && cmp_fn(cmp_ctx, potential_new_producers[j], potential_new_producers[j - 1]) < 0 {
+				tmp := potential_new_producers[j]
+				potential_new_producers[j] = potential_new_producers[j - 1]
+				potential_new_producers[j - 1] = tmp
+				j -= 1
+			}
+		}
+		free(cmp_ctx)
+
+		max_space_to_be_free := max_production_that_can_be_taken_over_from_this_placement
+		remaining_to_find := free_size - found_space_total
+		if remaining_to_find < max_space_to_be_free {
+			max_space_to_be_free = remaining_to_find
+		}
+		space_already_free: i32 = 0
+		producer_loop: for potential_new_producer_territory in potential_new_producers {
+			units_placed_so_far := abstract_place_delegate_units_placed_in_territory_so_far(self, place_territory)
+			left_to_place := abstract_place_delegate_get_max_units_to_be_placed_from(
+				self, potential_new_producer_territory, units_placed_so_far, place_territory, player,
+			)
+			delete(units_placed_so_far)
+			if left_to_place == -1 {
+				left_to_place = max_production_that_can_be_taken_over_from_this_placement
+			}
+			for placement in redo_placements {
+				if undoable_placement_get_place_territory(placement) != place_territory {
+					continue
+				}
+				placed_units := abstract_undoable_move_get_units(&placement.abstract_undoable_move)
+				placement_size := i32(len(placed_units))
+				if placement_size <= left_to_place {
+					// potentialNewProducerTerritory can take over the entire production
+					undoable_placement_set_producer_territory(placement, potential_new_producer_territory)
+					abstract_place_delegate_remove_from_produced_map(self, producer, placed_units)
+					abstract_place_delegate_update_produced_map(self, potential_new_producer_territory, placed_units)
+					space_already_free += placement_size
+				} else {
+					// Only part of the production can move; remember it for the split pass
+					append(
+						&split_placements,
+						tuple_new(^Undoable_Placement, ^Territory, placement, potential_new_producer_territory),
+					)
+				}
+				if space_already_free >= max_space_to_be_free {
+					break producer_loop
+				}
+			}
+			if space_already_free >= max_space_to_be_free {
+				break producer_loop
+			}
+		}
+		delete(potential_new_producers)
+		found_space_total += space_already_free
+		if found_space_total >= free_size {
+			break outer_loop
+		}
+	}
+
+	// Java guards against splitting the same UndoablePlacement twice (it can only
+	// be undone once); track the placements we've already used.
+	unused_split_placements := false
+	if found_space_total < free_size {
+		used_undoable_placements := make(map[^Undoable_Placement]struct{})
+		defer delete(used_undoable_placements)
+		for tuple in split_placements {
+			placement := tuple.first
+			if _, already := used_undoable_placements[placement]; already {
+				unused_split_placements = true
+				continue
+			}
+			new_producer := tuple.second
+			left_to_place := abstract_place_delegate_get_max_units_to_be_placed_from(
+				self, new_producer, units_left_to_place, at, player,
+			)
+			found_space_total += left_to_place
+			placement_units := abstract_undoable_move_get_units(&placement.abstract_undoable_move)
+			units_for_old_producer := make([dynamic]^Unit)
+			for u in placement_units {
+				append(&units_for_old_producer, u)
+			}
+			units_for_new_producer := make([dynamic]^Unit)
+			for unit in placement_units {
+				if left_to_place == 0 {
+					break
+				}
+				append(&units_for_new_producer, unit)
+				left_to_place -= 1
+			}
+			// removeAll(units_for_new_producer) from units_for_old_producer
+			for moved in units_for_new_producer {
+				for i := len(units_for_old_producer) - 1; i >= 0; i -= 1 {
+					if units_for_old_producer[i] == moved {
+						ordered_remove(&units_for_old_producer, i)
+					}
+				}
+			}
+			if len(units_for_new_producer) > 0 {
+				used_undoable_placements[placement] = struct{}{}
+				abstract_place_delegate_undo_move(self, abstract_undoable_move_get_index(&placement.abstract_undoable_move))
+				abstract_place_delegate_perform_place_from(
+					self, new_producer, units_for_new_producer, undoable_placement_get_place_territory(placement), player,
+				)
+				abstract_place_delegate_perform_place_from(
+					self, producer, units_for_old_producer, undoable_placement_get_place_territory(placement), player,
+				)
+			} else {
+				delete(units_for_new_producer)
+				delete(units_for_old_producer)
+			}
+		}
+	}
+	if found_space_total < free_size && unused_split_placements {
+		abstract_place_delegate_free_placement_capacity(
+			self, producer, free_size - found_space_total, units_left_to_place, at, player,
+		)
+	}
+}

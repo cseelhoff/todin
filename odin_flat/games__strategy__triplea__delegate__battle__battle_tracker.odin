@@ -1306,3 +1306,384 @@ battle_tracker_capture_or_destroy_units :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#addAirBattle(Route, Collection<Unit>, GamePlayer, GameData, IBattle$BattleType)
+//
+// Java:
+//   if (units.isEmpty()) return;
+//   IBattle battle = getPendingBattle(route.getEnd(), battleType);
+//   if (battle == null) {
+//     battle = new AirBattle(route.getEnd(), battleType, data, attacker, this);
+//     pendingBattles.add(battle);
+//     getBattleRecords().addBattle(attacker, battle.getBattleId(), route.getEnd(), battle.getBattleType());
+//   }
+//   final Change change = battle.addAttackChange(route, units, null);
+//   if (!change.isEmpty()) throw new IllegalStateException("Non empty change");
+//   if (battleType.isBombingRun()) {
+//     final IBattle dependentAirBattle = getPendingBattle(route.getEnd(), AIR_BATTLE);
+//     if (dependentAirBattle != null) addDependency(dependentAirBattle, battle);
+//   } else {
+//     final IBattle airRaid = getPendingBattle(route.getEnd(), AIR_RAID);
+//     if (airRaid != null) addDependency(battle, airRaid);
+//     final IBattle raid = getPendingBattle(route.getEnd(), BOMBING_RAID);
+//     if (raid != null) addDependency(battle, raid);
+//   }
+//   final IBattle dependent = getPendingBattle(route.getEnd(), NORMAL);
+//   if (dependent != null) addDependency(dependent, battle);
+battle_tracker_add_air_battle :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	attacker: ^Game_Player,
+	data: ^Game_Data,
+	battle_type: I_Battle_Battle_Type,
+) {
+	if len(units) == 0 {
+		return
+	}
+	end := route_get_end(route)
+	battle := battle_tracker_get_pending_battle(self, end, battle_type)
+	if battle == nil {
+		new_air := air_battle_new(end, battle_type, data, attacker, self)
+		battle = cast(^I_Battle)new_air
+		self.pending_battles[battle] = {}
+		battle_records_add_battle(
+			battle_tracker_get_battle_records(self),
+			attacker,
+			i_battle_get_battle_id(battle),
+			end,
+			i_battle_get_battle_type(battle),
+		)
+	}
+	change := air_battle_add_attack_change(cast(^Air_Battle)battle, route, units, nil)
+	if !change_is_empty(change) {
+		panic("Non empty change")
+	}
+	if i_battle_battle_type_is_bombing_run(battle_type) {
+		dependent_air_battle := battle_tracker_get_pending_battle(self, end, .AIR_BATTLE)
+		if dependent_air_battle != nil {
+			battle_tracker_add_dependency(self, dependent_air_battle, battle)
+		}
+	} else {
+		air_raid := battle_tracker_get_pending_battle(self, end, .AIR_RAID)
+		if air_raid != nil {
+			battle_tracker_add_dependency(self, battle, air_raid)
+		}
+		raid := battle_tracker_get_pending_battle(self, end, .BOMBING_RAID)
+		if raid != nil {
+			battle_tracker_add_dependency(self, battle, raid)
+		}
+	}
+	dependent := battle_tracker_get_pending_battle(self, end, .NORMAL)
+	if dependent != nil {
+		battle_tracker_add_dependency(self, dependent, battle)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#addBombingBattle(Route, Collection<Unit>, GamePlayer, GameData, Map<Unit,Set<Unit>>)
+//
+// Java:
+//   IBattle battle = getPendingBattle(route.getEnd(), BOMBING_RAID);
+//   if (battle == null) {
+//     battle = new StrategicBombingRaidBattle(route.getEnd(), data, attacker, this);
+//     pendingBattles.add(battle);
+//     getBattleRecords().addBattle(attacker, battle.getBattleId(), route.getEnd(), battle.getBattleType());
+//   }
+//   final Change change = battle.addAttackChange(route, units, targets);
+//   if (!change.isEmpty()) throw new IllegalStateException("Non empty change");
+//   final IBattle dependent = getPendingBattle(route.getEnd(), NORMAL);
+//   if (dependent != null) addDependency(dependent, battle);
+//   final IBattle dependentAirBattle = getPendingBattle(route.getEnd(), AIR_BATTLE);
+//   if (dependentAirBattle != null) addDependency(dependentAirBattle, battle);
+battle_tracker_add_bombing_battle :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	attacker: ^Game_Player,
+	data: ^Game_Data,
+	targets: ^map[^Unit]map[^Unit]struct{},
+) {
+	end := route_get_end(route)
+	battle := battle_tracker_get_pending_battle(self, end, .BOMBING_RAID)
+	if battle == nil {
+		new_sbr := strategic_bombing_raid_battle_new(end, data, attacker, self)
+		battle = cast(^I_Battle)new_sbr
+		self.pending_battles[battle] = {}
+		battle_records_add_battle(
+			battle_tracker_get_battle_records(self),
+			attacker,
+			i_battle_get_battle_id(battle),
+			end,
+			i_battle_get_battle_type(battle),
+		)
+	}
+	change := strategic_bombing_raid_battle_add_attack_change(
+		cast(^Strategic_Bombing_Raid_Battle)battle,
+		route,
+		units,
+		targets,
+	)
+	if !change_is_empty(change) {
+		panic("Non empty change")
+	}
+	dependent := battle_tracker_get_pending_battle(self, end, .NORMAL)
+	if dependent != nil {
+		battle_tracker_add_dependency(self, dependent, battle)
+	}
+	dependent_air_battle := battle_tracker_get_pending_battle(self, end, .AIR_BATTLE)
+	if dependent_air_battle != nil {
+		battle_tracker_add_dependency(self, dependent_air_battle, battle)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#fightDefenselessBattles(IDelegateBridge)
+//
+// Java: walk every pending NORMAL battle whose dependencies are clear and
+// whose defenders have zero total power; auto-fight each. Then auto-fight
+// every NonFightingBattle whose dependencies are clear. Java distinguishes
+// NonFightingBattle via runtime class identity; the Odin port discriminates
+// by `is_must_fight_battle == false && is_finished_battle == false` on the
+// embedded Abstract_Battle (the only NORMAL pending battles that are
+// neither MustFightBattle nor FinishedBattle are NonFightingBattles —
+// FinishedBattles are removed earlier by clearFinishedBattles).
+battle_tracker_fight_defenseless_battles :: proc(self: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	properties := game_data_get_properties(data)
+	support_rules_map := unit_type_list_get_support_rules(game_data_get_unit_type_list(data))
+	support_attachments: [dynamic]^Unit_Support_Attachment
+	defer delete(support_attachments)
+	for usa, _ in support_rules_map {
+		append(&support_attachments, usa)
+	}
+	normals := battle_tracker_get_pending_battles_of_type(self, .NORMAL)
+	defer delete(normals)
+	for battle in normals {
+		territory := i_battle_get_territory(battle)
+		defenders := i_battle_get_defending_units(battle)
+		possible_defenders := battle_tracker_get_possible_defending_units(territory, defenders)
+		deps := battle_tracker_get_dependent_on(self, battle)
+		if len(deps) == 0 {
+			cv := combat_value_builder_main_builder_build(
+				combat_value_builder_main_builder_territory_effects(
+					combat_value_builder_main_builder_game_dice_sides(
+						combat_value_builder_main_builder_lhtr_heavy_bombers(
+							combat_value_builder_main_builder_support_attachments(
+								combat_value_builder_main_builder_game_sequence(
+									combat_value_builder_main_builder_side(
+										combat_value_builder_main_builder_friendly_units(
+											combat_value_builder_main_builder_enemy_units(
+												combat_value_builder_main_combat_value(),
+												defenders,
+											),
+											possible_defenders,
+										),
+										.DEFENSE,
+									),
+									game_data_get_sequence(data),
+								),
+								support_attachments,
+							),
+							properties_get_lhtr_heavy_bombers(properties),
+						),
+						int(game_data_get_dice_sides(data)),
+					),
+					territory_effect_helper_get_effects(territory),
+				),
+			)
+			psar := power_strength_and_rolls_build(possible_defenders, cv)
+			if power_strength_and_rolls_calculate_total_power(psar) == 0 {
+				i_battle_fight(battle, bridge)
+			}
+		}
+		delete(deps)
+		delete(possible_defenders)
+	}
+	normals2 := battle_tracker_get_pending_battles_of_type(self, .NORMAL)
+	defer delete(normals2)
+	for battle in normals2 {
+		ab := cast(^Abstract_Battle)battle
+		if ab.is_must_fight_battle || ab.is_finished_battle {
+			continue
+		}
+		deps := battle_tracker_get_dependent_on(self, battle)
+		if len(deps) == 0 {
+			i_battle_fight(battle, bridge)
+		}
+		delete(deps)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#takeOver(Territory, GamePlayer, IDelegateBridge, UndoableMove, Collection<Unit>)
+//
+// Faithful port of the Java method. Optional<TerritoryAttachment> is mirrored
+// by a nil-check on territory_attachment_get; Optional<GamePlayer> from
+// OriginalOwnerTracker.getOriginalOwner is similarly nil-vs-non-nil.
+battle_tracker_take_over :: proc(
+	self: ^Battle_Tracker,
+	territory: ^Territory,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+	arriving_units: [dynamic]^Unit,
+) {
+	territory_attachment := territory_attachment_get(territory)
+	if territory_attachment == nil {
+		// TODO: allow capture/destroy of infrastructure on unowned water (Java comment)
+		return
+	}
+	data := i_delegate_bridge_get_data(bridge)
+	arrived_units: [dynamic]^Unit
+	arrived_present := arriving_units != nil
+	if arrived_present {
+		arrived_units = make([dynamic]^Unit, 0, len(arriving_units))
+		for u in arriving_units {
+			append(&arrived_units, u)
+		}
+	}
+	defer if arrived_present {
+		delete(arrived_units)
+	}
+	relationship_tracker := game_data_get_relationship_tracker(data)
+	is_territory_owner_an_enemy := relationship_tracker_can_take_over_owned_territory(
+		relationship_tracker,
+		game_player,
+		territory_get_owner(territory),
+	)
+	// If this is a convoy (we wouldn't be in this method otherwise) check that
+	// attackers have more than just transports. If they don't, exit here.
+	if territory_is_water(territory) &&
+	   arrived_present &&
+	   battle_tracker_get_all_attaching_sea_units(arrived_units, data) == 0 {
+		return
+	}
+	// If it was a Convoy Route - write history.
+	if territory_attachment_get_convoy_route(territory_attachment) {
+		battle_tracker_write_history_on_take_over_for_convoy_route(territory, game_player, bridge)
+	}
+	// If neutral, we may charge money to enter.
+	if game_player_is_null(territory_get_owner(territory)) &&
+	   !territory_is_water(territory) &&
+	   properties_get_neutral_charge(game_data_get_properties(data)) >= 0 {
+		battle_tracker_add_change_charge_for_entering_neutrals(
+			territory,
+			game_player,
+			bridge,
+			change_tracker,
+		)
+	}
+	// If it's a capital we take the money.
+	if is_territory_owner_an_enemy && territory_attachment_is_capital(territory_attachment) {
+		battle_tracker_add_changes_on_take_over_capitol(
+			territory,
+			territory_attachment,
+			game_player,
+			bridge,
+			change_tracker,
+		)
+	}
+	// Is this an allied territory? Revert to original owner if it is.
+	terr_orig_owner := original_owner_tracker_get_original_owner(territory)
+	is_territory_orig_owner_allied :=
+		terr_orig_owner != nil &&
+		relationship_tracker_is_allied(relationship_tracker, terr_orig_owner, game_player)
+	new_owner: ^Game_Player
+	if is_territory_owner_an_enemy &&
+	   is_territory_orig_owner_allied &&
+	   terr_orig_owner != territory_get_owner(territory) {
+		new_owner = battle_tracker_get_new_owner_for_take_over(
+			territory,
+			game_player,
+			terr_orig_owner,
+			data,
+		)
+	} else {
+		new_owner = game_player
+	}
+	// whenCapturedByGoesTo override.
+	{
+		coc_pred, coc_ctx := matches_territory_has_capture_ownership_changes()
+		if is_territory_owner_an_enemy && new_owner == game_player && coc_pred(coc_ctx, territory) {
+			changes := territory_attachment_get_capture_ownership_changes(territory_attachment)
+			defer delete(changes)
+			for co in changes {
+				if co.capturing_player == co.receiving_player {
+					continue
+				}
+				if co.capturing_player != game_player {
+					continue
+				}
+				new_owner = co.receiving_player
+				break
+			}
+		}
+	}
+	if is_territory_owner_an_enemy {
+		battle_tracker_add_change_change_ownership(
+			self,
+			territory,
+			new_owner,
+			territory_attachment,
+			game_player,
+			bridge,
+			change_tracker,
+			arrived_units,
+		)
+	}
+	// Remove any bombing raids against captured territory: error if non-empty.
+	{
+		uc := territory_get_unit_collection(territory)
+		eu_p, eu_c := matches_unit_is_enemy_of(game_player)
+		dmg_p, dmg_c := matches_unit_can_be_damaged()
+		any_match := false
+		for u in uc.units {
+			if eu_p(eu_c, u) && dmg_p(dmg_c, u) {
+				any_match = true
+				break
+			}
+		}
+		if any_match {
+			bombing_battle := battle_tracker_get_pending_bombing_battle(self, territory)
+			if bombing_battle != nil && !i_battle_is_empty(bombing_battle) {
+				panic(BOMBING_DEPENDENCY_ERROR)
+			}
+		}
+	}
+	battle_tracker_capture_or_destroy_units(territory, game_player, new_owner, bridge, change_tracker)
+	// Is this our capitol or a capitol of our ally?
+	if is_territory_owner_an_enemy &&
+	   is_territory_orig_owner_allied &&
+	   territory_attachment_is_capital(territory_attachment) {
+		all_caps := territory_attachment_get_all_capitals(terr_orig_owner, game_data_get_map(data))
+		defer delete(all_caps)
+		contains := false
+		for capital in all_caps {
+			if capital == territory {
+				contains = true
+				break
+			}
+		}
+		if contains {
+			battle_tracker_add_changes_on_take_over_allied_capitol(
+				terr_orig_owner,
+				bridge,
+				change_tracker,
+			)
+		}
+	}
+	// say they were in combat — if water territory, drop land units first.
+	if arrived_present && territory_is_water(territory) {
+		lp, lc := matches_unit_is_land()
+		filtered: [dynamic]^Unit
+		for u in arrived_units {
+			if !lp(lc, u) {
+				append(&filtered, u)
+			}
+		}
+		clear(&arrived_units)
+		for u in filtered {
+			append(&arrived_units, u)
+		}
+		delete(filtered)
+	}
+	battle_tracker_mark_was_in_combat(arrived_units, bridge, change_tracker)
+}
+

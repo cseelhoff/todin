@@ -139,8 +139,27 @@ evader_retreat_retreat_units :: proc(
 	}
 
 	if optional_retreat_to != nil {
-		evader_retreat_retreat_units_to_territory(parameters, step, optional_retreat_to)
+		evader_retreat_lambda_retreat_units_0(parameters, step, optional_retreat_to)
 	}
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#lambda$retreatUnits$0(
+//   games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat$Parameters,
+//   java.lang.String,
+//   games.strategy.engine.data.Territory)
+//
+// Java (synthetic lambda body for
+//   optionalRetreatTo.ifPresent(retreatTo -> retreatUnits(parameters, step, retreatTo)) ):
+//   javac lifts the captured `parameters` and `step` to explicit
+//   parameters of the synthetic lambda$retreatUnits$0 method; its body
+//   is just the private retreatUnits(Parameters, String, Territory)
+//   overload invocation.
+evader_retreat_lambda_retreat_units_0 :: proc(
+	parameters: ^Evader_Retreat_Parameters,
+	step: string,
+	retreat_to: ^Territory,
+) {
+	evader_retreat_retreat_units_to_territory(parameters, step, retreat_to)
 }
 
 // games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#submergeEvaders(

@@ -199,3 +199,31 @@ retreater_general_retreat_combat_transported_items :: proc(
 	return &change.change
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#computeDependentUnitChanges(games.strategy.engine.data.Territory,java.util.Collection)
+// Java:
+//   final Collection<IBattle> dependentBattles = battleState.getDependentBattles();
+//   if (dependentBattles.isEmpty()) {
+//     return retreatNonCombatTransportedItems(retreatUnits, retreatTo);
+//   } else {
+//     return retreatCombatTransportedItems(retreatUnits, retreatTo, dependentBattles);
+//   }
+retreater_general_compute_dependent_unit_changes :: proc(
+	self: ^Retreater_General,
+	retreat_to: ^Territory,
+	retreat_units: [dynamic]^Unit,
+) -> ^Change {
+	dependent_battles := battle_state_get_dependent_battles(self.battle_state)
+	if len(dependent_battles) == 0 {
+		delete(dependent_battles)
+		return retreater_general_retreat_non_combat_transported_items(self, retreat_units, retreat_to)
+	}
+	list: [dynamic]^I_Battle
+	for b, _ in dependent_battles {
+		append(&list, b)
+	}
+	delete(dependent_battles)
+	result := retreater_general_retreat_combat_transported_items(self, retreat_units, retreat_to, list)
+	delete(list)
+	return result
+}
+

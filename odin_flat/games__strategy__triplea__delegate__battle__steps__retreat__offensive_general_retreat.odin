@@ -411,3 +411,27 @@ offensive_general_retreat_retreat_units :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#getAllStepDetails()
+//
+// Java:
+//   return isRetreatPossible() ? List.of(new StepDetails(getName(), this)) : List.of();
+offensive_general_retreat_get_all_step_details :: proc(self: ^Offensive_General_Retreat) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	if !offensive_general_retreat_is_retreat_possible(self) {
+		return out
+	}
+	append(&out, battle_step_step_details_new(offensive_general_retreat_get_name(self), &self.battle_step))
+	return out
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#execute(
+//   games.strategy.triplea.delegate.ExecutionStack,
+//   games.strategy.engine.delegate.IDelegateBridge)
+//
+// Java:
+//   retreatUnits(bridge);
+offensive_general_retreat_execute :: proc(self: ^Offensive_General_Retreat, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	offensive_general_retreat_retreat_units(self, bridge)
+}
+
+

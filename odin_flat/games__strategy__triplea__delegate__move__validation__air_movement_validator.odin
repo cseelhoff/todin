@@ -740,3 +740,98 @@ air_movement_validator_populate_static_allied_and_building_carrier_capacity :: p
 	return starting_space
 }
 
+// Java: private static BigDecimal getMovementLeftForAirUnitNotMovedYet(
+//     final Unit airBeingValidated, final Route route) {
+//   return route.getEnd().getUnits().contains(airBeingValidated)
+//       // they are not being moved, they are already at the end
+//       ? airBeingValidated.getMovementLeft()
+//       // they are being moved (they are still at the start location)
+//       : airBeingValidated.getMovementLeft()
+//             .subtract(route.getMovementCost(airBeingValidated));
+// }
+// BigDecimal → f64 per llm-instructions.md.
+air_movement_validator_get_movement_left_for_air_unit_not_moved_yet :: proc(
+	air_being_validated: ^Unit,
+	route:               ^Route,
+) -> f64 {
+	end := route_get_end(route)
+	if unit_collection_contains(territory_get_unit_collection(end), air_being_validated) {
+		return unit_get_movement_left(air_being_validated)
+	}
+	return unit_get_movement_left(air_being_validated) -
+		route_get_movement_cost(route, air_being_validated)
+}
+
+// File-scope holder bridging the ctx-form Predicate<Territory> produced by
+// `matches_air_can_fly_over` into the bare `proc(^Territory) -> bool`
+// signature consumed by `game_map_get_route_for_unit`. Mirrors the holder
+// pattern used by `pro_non_combat_move_ai.odin` and
+// `pro_territory_manager.odin`. The holder is set immediately before each
+// route lookup and the lookups are synchronous within
+// `air_movement_validator_can_air_reach_this_spot`.
+@(private = "file")
+air_movement_validator_active_can_fly_over: proc(rawptr, ^Territory) -> bool
+
+@(private = "file")
+air_movement_validator_active_can_fly_over_ctx: rawptr
+
+@(private = "file")
+air_movement_validator_can_fly_over_trampoline :: proc(t: ^Territory) -> bool {
+	return air_movement_validator_active_can_fly_over(
+		air_movement_validator_active_can_fly_over_ctx,
+		t,
+	)
+}
+
+// Java: private static boolean canAirReachThisSpot(
+//     final Unit unit, final GameState data, final GamePlayer player,
+//     final Territory currentSpot, final BigDecimal movementLeft,
+//     final Territory landingSpot, final boolean areNeutralsPassableByAir) {
+//   final Optional<Route> optionalRoute = data.getMap().getRouteForUnit(
+//       currentSpot, landingSpot,
+//       Matches.airCanFlyOver(player, areNeutralsPassableByAir),
+//       unit, player);
+//   return optionalRoute.isPresent()
+//       && optionalRoute.get().getMovementCost(unit).compareTo(movementLeft) <= 0
+//       && (!areNeutralsPassableByAir
+//           || getNeutralCharge(data, optionalRoute.get())
+//               <= player.getResources().getQuantity(Constants.PUS));
+// }
+// BigDecimal → f64. Constants.PUS == "PUs".
+air_movement_validator_can_air_reach_this_spot :: proc(
+	unit:                          ^Unit,
+	data:                          ^Game_State,
+	player:                        ^Game_Player,
+	current_spot:                  ^Territory,
+	movement_left:                 f64,
+	landing_spot:                  ^Territory,
+	are_neutrals_passable_by_air:  bool,
+) -> bool {
+	fly_p, fly_c := matches_air_can_fly_over(player, are_neutrals_passable_by_air)
+	air_movement_validator_active_can_fly_over = fly_p
+	air_movement_validator_active_can_fly_over_ctx = fly_c
+	optional_route := game_map_get_route_for_unit(
+		game_state_get_map(data),
+		current_spot,
+		landing_spot,
+		air_movement_validator_can_fly_over_trampoline,
+		unit,
+		player,
+	)
+	if optional_route == nil {
+		return false
+	}
+	if route_get_movement_cost(optional_route, unit) > movement_left {
+		return false
+	}
+	if !are_neutrals_passable_by_air {
+		return true
+	}
+	pus := resource_list_get_resource_or_throw(
+		game_state_get_resource_list(data),
+		"PUs",
+	)
+	return air_movement_validator_get_neutral_charge_route(data, optional_route) <=
+		resource_collection_get_quantity(game_player_get_resources(player), pus)
+}
+

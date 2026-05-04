@@ -36,6 +36,12 @@ Player :: struct {
                 fighters_that_can_be_moved: [dynamic]^Unit,
                 from: ^Territory,
         ) -> [dynamic]^Unit,
+        select_territory_for_air_to_land: proc(
+                self: ^Player,
+                candidates: [dynamic]^Territory,
+                current_territory: ^Territory,
+                unit_message: string,
+        ) -> ^Territory,
 }
 
 // games.strategy.engine.player.Player#getNumberOfFightersToMoveToNewCarrier(Collection, Territory)
@@ -125,5 +131,27 @@ player_select_fixed_dice :: proc(
 	}
 	out := make([dynamic]i32, num_dice)
 	return out
+}
+
+// games.strategy.engine.player.Player#selectTerritoryForAirToLand(java.util.Collection,games.strategy.engine.data.Territory,java.lang.String)
+//   Vtable dispatch through the proc field. AI/snapshot harness
+//   implementations may leave the field nil; mirroring Java's
+//   "deterministic non-null fallback" for headless runs we return the
+//   first candidate (or nil if there are none) so the caller's null-fallback
+//   in BattleDelegate#checkDefendingPlanesCanLand still has well-defined
+//   behaviour.
+player_select_territory_for_air_to_land :: proc(
+	self: ^Player,
+	candidates: [dynamic]^Territory,
+	current_territory: ^Territory,
+	unit_message: string,
+) -> ^Territory {
+	if self != nil && self.select_territory_for_air_to_land != nil {
+		return self.select_territory_for_air_to_land(self, candidates, current_territory, unit_message)
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return nil
 }
 

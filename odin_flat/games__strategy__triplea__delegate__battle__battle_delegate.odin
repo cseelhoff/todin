@@ -812,3 +812,466 @@ battle_delegate_land_planes_on_carriers :: proc(
 	}
 }
 
+// File-private trampoline used to feed our rawptr-ctx Predicate<Territory>
+// instances through `game_map_get_route_for_unit`, which takes a non-ctx
+// `proc(^Territory) -> bool`. Same pattern as `pro_move_utils_active_cond`
+// in pro_move_utils.odin: each `whereCanAirLand` call sets the holders,
+// performs the synchronous route lookup, then proceeds. Single-threaded.
+@(private = "file")
+battle_delegate_active_route_cond: proc(rawptr, ^Territory) -> bool
+
+@(private = "file")
+battle_delegate_active_route_cond_ctx: rawptr
+
+@(private = "file")
+battle_delegate_route_cond_trampoline :: proc(t: ^Territory) -> bool {
+	return battle_delegate_active_route_cond(battle_delegate_active_route_cond_ctx, t)
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#whereCanAirLand(Unit, Territory, GamePlayer, GameState, BattleTracker, int)
+//   Java: private static. Returns the set of allied land/sea territories
+//   into which `strandedAir` can fly, given its scramble distance, the
+//   current set of pending battle sites, and the carrier capacity already
+//   consumed in `currentTerr`. Mirrors the Java line-by-line:
+//     - maxDistance == 0 ⇒ {currentTerr}
+//     - candidate territories = neighbors-by-movement-cost(currentTerr,
+//       maxDistance, airCanFlyOver)
+//     - filter candidates by an actual route existing within maxDistance
+//     - + currentTerr
+//     - keep allied-land minus pending-battle-or-enemy-units sites
+//     - if strandedAir can land on a carrier, additionally union sea
+//       territories whose carrier capacity (after subtracting allied air
+//       already there, or carrierCostForCurrentTerr at currentTerr) is
+//       large enough to receive `strandedAir`'s carrierCost
+//   `Set<Territory>` is rendered as `[dynamic]^Territory` with explicit
+//   no-duplicate insertion (matches HashSet semantics observed by callers
+//   that only use size()/contains()/getAny()).
+battle_delegate_where_can_air_land :: proc(
+	stranded_air: ^Unit,
+	current_terr: ^Territory,
+	allied_player: ^Game_Player,
+	data: ^Game_State,
+	battle_tracker: ^Battle_Tracker,
+	carrier_cost_for_current_terr: i32,
+) -> [dynamic]^Territory {
+	assert(stranded_air != nil)
+	max_distance := unit_attachment_get_max_scramble_distance(unit_get_unit_attachment(stranded_air))
+	if max_distance <= 0 {
+		out := make([dynamic]^Territory)
+		append(&out, current_terr)
+		return out
+	}
+	props := game_state_get_properties(data)
+	are_neutrals_passable_by_air :=
+		properties_get_neutral_flyover_allowed(props) &&
+		!properties_get_neutrals_impassable(props)
+	// canNotLand = pendingBattleSitesWithoutBombing ∪ territoriesWithEnemyUnits(alliedPlayer)
+	can_not_land := make(map[^Territory]struct{})
+	for t in battle_tracker_get_pending_battle_sites_without_bombing(battle_tracker) {
+		can_not_land[t] = {}
+	}
+	{
+		enemy_p, enemy_c := matches_territory_has_enemy_units(allied_player)
+		for t in game_map_get_territories(game_state_get_map(data)) {
+			if enemy_p(enemy_c, t) {
+				can_not_land[t] = {}
+			}
+		}
+	}
+	gm := game_state_get_map(data)
+	fly_p, fly_c := matches_air_can_fly_over(allied_player, are_neutrals_passable_by_air)
+	possible_set := game_map_get_neighbors_by_movement_cost(
+		gm,
+		current_terr,
+		f64(max_distance),
+		fly_p,
+		fly_c,
+	)
+	// Materialise to a [dynamic] so we can drop entries while iterating
+	// (Java uses an Iterator with .remove()).
+	possible_terrs := make([dynamic]^Territory)
+	for t in possible_set {
+		append(&possible_terrs, t)
+	}
+	// Filter by route existence and total movement cost ≤ maxDistance.
+	battle_delegate_active_route_cond = fly_p
+	battle_delegate_active_route_cond_ctx = fly_c
+	max_cost_f := f64(max_distance)
+	kept := make([dynamic]^Territory)
+	for candidate in possible_terrs {
+		route := game_map_get_route_for_unit(
+			gm,
+			current_terr,
+			candidate,
+			battle_delegate_route_cond_trampoline,
+			stranded_air,
+			allied_player,
+		)
+		if route == nil {
+			continue
+		}
+		if route_get_movement_cost(route, stranded_air) > max_cost_f {
+			continue
+		}
+		append(&kept, candidate)
+	}
+	delete(possible_terrs)
+	possible_terrs = kept
+	// possibleTerrs.add(currentTerr)
+	already_has_current := false
+	for t in possible_terrs {
+		if t == current_terr {
+			already_has_current = true
+			break
+		}
+	}
+	if !already_has_current {
+		append(&possible_terrs, current_terr)
+	}
+	// availableLand = possibleTerrs ∩ (alliedLand) − canNotLand
+	allied_p, allied_c := matches_is_territory_allied(allied_player)
+	land_p, land_c := matches_territory_is_land()
+	where_can_land := make([dynamic]^Territory)
+	seen := make(map[^Territory]struct{})
+	defer delete(seen)
+	for t in possible_terrs {
+		if !allied_p(allied_c, t) {
+			continue
+		}
+		if !land_p(land_c, t) {
+			continue
+		}
+		if _, blocked := can_not_land[t]; blocked {
+			continue
+		}
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = {}
+		append(&where_can_land, t)
+	}
+	// Carrier-air-landing branch: only for units that can land on carriers.
+	can_land_carrier_p, can_land_carrier_c := matches_unit_can_land_on_carrier()
+	if can_land_carrier_p(can_land_carrier_c, stranded_air) {
+		allied_carrier_p, allied_carrier_c := matches_unit_is_allied_carrier(allied_player)
+		water_p, water_c := matches_territory_is_water()
+		// availableWater = territories that have allied carriers and are water
+		available_water := make([dynamic]^Territory)
+		water_seen := make(map[^Territory]struct{})
+		defer delete(water_seen)
+		for t in possible_terrs {
+			if !water_p(water_c, t) {
+				continue
+			}
+			has_allied_carrier := false
+			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+				if allied_carrier_p(allied_carrier_c, u) {
+					has_allied_carrier = true
+					break
+				}
+			}
+			if !has_allied_carrier {
+				continue
+			}
+			if _, dup := water_seen[t]; dup {
+				continue
+			}
+			water_seen[t] = {}
+			append(&available_water, t)
+		}
+		// availableWater.removeAll(pendingBattleSitesWithoutBombing)
+		pending := battle_tracker_get_pending_battle_sites_without_bombing(battle_tracker)
+		filtered_water := make([dynamic]^Territory)
+		for t in available_water {
+			if _, in_pending := pending[t]; in_pending {
+				continue
+			}
+			append(&filtered_water, t)
+		}
+		delete(available_water)
+		available_water = filtered_water
+		// Carrier-capacity feasibility per water territory.
+		carrier_cost := air_movement_validator_carrier_cost_unit(stranded_air)
+		ally_unit_p, ally_unit_c := matches_allied_unit(allied_player)
+		final_water := make([dynamic]^Territory)
+		for t in available_water {
+			uc := territory_get_unit_collection(t)
+			carriers_here := make([dynamic]^Unit)
+			for u in unit_collection_get_units(uc) {
+				if allied_carrier_p(allied_carrier_c, u) {
+					append(&carriers_here, u)
+				}
+			}
+			carrier_capacity := air_movement_validator_carrier_capacity(carriers_here[:], t)
+			delete(carriers_here)
+			if t != current_terr {
+				existing_air := make([dynamic]^Unit)
+				for u in unit_collection_get_units(uc) {
+					if can_land_carrier_p(can_land_carrier_c, u) && ally_unit_p(ally_unit_c, u) {
+						append(&existing_air, u)
+					}
+				}
+				carrier_capacity -= air_movement_validator_carrier_cost(existing_air[:])
+				delete(existing_air)
+			} else {
+				carrier_capacity -= carrier_cost_for_current_terr
+			}
+			if carrier_capacity < carrier_cost {
+				continue
+			}
+			append(&final_water, t)
+		}
+		delete(available_water)
+		// whereCanLand.addAll(availableWater)
+		for t in final_water {
+			if _, dup := seen[t]; dup {
+				continue
+			}
+			seen[t] = {}
+			append(&where_can_land, t)
+		}
+		delete(final_water)
+	}
+	delete(possible_terrs)
+	delete(can_not_land)
+	return where_can_land
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#checkDefendingPlanesCanLand()
+//   Java: private. For every battle site whose defending air "could not
+//   land" (recorded by BattleTracker during the resolved battle), tries
+//   to relocate the survivors to an adjacent allied land territory or a
+//   sea zone with free carrier capacity. WW2v2 / "surviving air may move
+//   to land" rules let the human/AI player choose; otherwise we only
+//   move air onto single-hex islands. Anything still stranded at the end
+//   is destroyed and a history child records the loss.
+//
+//   The Java code mutates `defendingAir` in-place via Iterator.remove
+//   inside `moveAirAndLand` and shared-Collection retainAll; we mirror
+//   that with `^[dynamic]^Unit` parameters and an explicit retain-pass
+//   against `battleSite.getUnitCollection()`.
+//
+//   landPlanesOnCarriers is intentionally inlined here: the existing
+//   `battle_delegate_land_planes_on_carriers` helper consumes non-ctx
+//   `proc(^Unit) -> bool` predicates, but the predicates needed here
+//   (`alliedDefendingAir`, `alliedCarrier`, `alliedPlane`) all capture
+//   `defender`, so they are constructed fresh per battle-site and the
+//   capacity / cost calculation is performed in line.
+battle_delegate_check_defending_planes_can_land :: proc(self: ^Battle_Delegate) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	defending_air_that_can_not_land := battle_tracker_get_defending_air_that_can_not_land(self.battle_tracker)
+	props := game_data_get_properties(data)
+	is_ww2v2_or_surviving_air :=
+		properties_get_ww2_v2(props) || properties_get_surviving_air_move_to_land(props)
+	air_p, air_c := matches_unit_is_air()
+	scrambled_p, scrambled_c := matches_unit_was_scrambled()
+	for battle_site, defending_air_orig in defending_air_that_can_not_land {
+		if defending_air_orig == nil || len(defending_air_orig) == 0 {
+			continue
+		}
+		// retainAll(battleSite.getUnitCollection())
+		bs_uc := territory_get_unit_collection(battle_site)
+		bs_units := unit_collection_get_units(bs_uc)
+		defending_air := make([dynamic]^Unit)
+		for u in defending_air_orig {
+			if slice.contains(bs_units[:], u) {
+				append(&defending_air, u)
+			}
+		}
+		if len(defending_air) == 0 {
+			continue
+		}
+		defender := abstract_battle_find_defender(battle_site, self.player, &data.game_state)
+		neighbors := game_map_get_neighbors(game_state_get_map(&data.game_state), battle_site)
+		// canLandHere = neighbors filtered by airCanLandOnThisAlliedNonConqueredLandTerritory(defender)
+		ald_p, ald_c := matches_air_can_land_on_this_allied_non_conquered_land_territory(defender)
+		can_land_here := make([dynamic]^Territory)
+		for t in neighbors {
+			if ald_p(ald_c, t) {
+				append(&can_land_here, t)
+			}
+		}
+		// areSeaNeighbors = neighbors filtered by water AND territoryHasAlliedUnits(defender)
+		water_p, water_c := matches_territory_is_water()
+		has_allied_p, has_allied_c := matches_territory_has_allied_units(defender)
+		are_sea_neighbors := make([dynamic]^Territory)
+		for t in neighbors {
+			if water_p(water_c, t) && has_allied_p(has_allied_c, t) {
+				append(&are_sea_neighbors, t)
+			}
+		}
+		// alliedCarrier = unitIsCarrier ∧ alliedUnit(defender)
+		// alliedPlane   = unitIsAir     ∧ alliedUnit(defender)
+		carrier_p, carrier_c := matches_unit_is_carrier()
+		ally_unit_p, ally_unit_c := matches_allied_unit(defender)
+		// Augment canLandHere with sea zones that have free carrier capacity.
+		for current_territory in are_sea_neighbors {
+			uc := territory_get_unit_collection(current_territory)
+			allied_carriers := make([dynamic]^Unit)
+			allied_planes := make([dynamic]^Unit)
+			for u in unit_collection_get_units(uc) {
+				if carrier_p(carrier_c, u) && ally_unit_p(ally_unit_c, u) {
+					append(&allied_carriers, u)
+				}
+				if air_p(air_c, u) && ally_unit_p(ally_unit_c, u) {
+					append(&allied_planes, u)
+				}
+			}
+			capacity := air_movement_validator_carrier_capacity(allied_carriers[:], current_territory)
+			cost := air_movement_validator_carrier_cost(allied_planes[:])
+			delete(allied_carriers)
+			delete(allied_planes)
+			if capacity - cost >= 1 {
+				append(&can_land_here, current_territory)
+			}
+		}
+		delete(are_sea_neighbors)
+		if is_ww2v2_or_surviving_air {
+			for len(can_land_here) > 1 && len(defending_air) > 0 {
+				remote := i_delegate_bridge_get_remote_player(self.bridge, defender)
+				prompt := fmt.aprintf(
+					"Select territory for air units to land. (Current territory is %s): %s",
+					default_named_get_name(&battle_site.named_attachable.default_named),
+					my_formatter_units_to_text(defending_air),
+				)
+				territory := player_select_territory_for_air_to_land(
+					remote,
+					can_land_here,
+					battle_site,
+					prompt,
+				)
+				if territory == nil {
+					territory = can_land_here[0]
+				}
+				if territory_is_water(territory) {
+					battle_delegate_check_defending_planes_land_on_carriers(
+						self.bridge,
+						defender,
+						&defending_air,
+						territory,
+						battle_site,
+					)
+				} else {
+					battle_delegate_move_air_and_land(
+						self.bridge,
+						&defending_air,
+						&defending_air,
+						territory,
+						battle_site,
+					)
+					continue
+				}
+				// canLandHere.remove(territory)
+				for i in 0 ..< len(can_land_here) {
+					if can_land_here[i] == territory {
+						ordered_remove(&can_land_here, i)
+						break
+					}
+				}
+			}
+			// Land in the last remaining territory.
+			if len(can_land_here) > 0 && len(defending_air) > 0 {
+				territory := can_land_here[0]
+				if territory_is_water(territory) {
+					battle_delegate_check_defending_planes_land_on_carriers(
+						self.bridge,
+						defender,
+						&defending_air,
+						territory,
+						battle_site,
+					)
+				} else {
+					battle_delegate_move_air_and_land(
+						self.bridge,
+						&defending_air,
+						&defending_air,
+						territory,
+						battle_site,
+					)
+				}
+			}
+		} else if len(can_land_here) > 0 {
+			// Look for an island in this sea zone (single-neighbor land).
+			for current_territory in can_land_here {
+				if len(game_map_get_neighbors(game_state_get_map(&data.game_state), current_territory)) == 1 {
+					battle_delegate_move_air_and_land(
+						self.bridge,
+						&defending_air,
+						&defending_air,
+						current_territory,
+						battle_site,
+					)
+				}
+			}
+		}
+		delete(can_land_here)
+		if len(defending_air) > 0 {
+			// Nowhere to go, they must die.
+			history_writer := i_delegate_bridge_get_history_writer(self.bridge)
+			msg := fmt.aprintf(
+				"%s could not land and were killed",
+				my_formatter_units_to_text(defending_air),
+			)
+			i_delegate_history_writer_start_event(history_writer, msg)
+			change := change_factory_remove_units(cast(^Unit_Holder)battle_site, defending_air)
+			i_delegate_bridge_add_change(self.bridge, change)
+		}
+	}
+}
+
+// File-private helper invoked from `battle_delegate_check_defending_planes_can_land`
+// to land planes on allied carriers in `new_territory`. Mirrors Java's
+// `landPlanesOnCarriers` but the predicates close over `defender`, so we
+// build them here from the `matches_*` factories rather than reusing
+// `battle_delegate_land_planes_on_carriers` (which takes non-ctx procs).
+@(private = "file")
+battle_delegate_check_defending_planes_land_on_carriers :: proc(
+	bridge: ^I_Delegate_Bridge,
+	defender: ^Game_Player,
+	defending_air: ^[dynamic]^Unit,
+	new_territory: ^Territory,
+	battle_site: ^Territory,
+) {
+	air_p, air_c := matches_unit_is_air()
+	scrambled_p, scrambled_c := matches_unit_was_scrambled()
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	ally_unit_p, ally_unit_c := matches_allied_unit(defender)
+	new_uc := territory_get_unit_collection(new_territory)
+	allied_carriers := make([dynamic]^Unit)
+	allied_planes := make([dynamic]^Unit)
+	for u in unit_collection_get_units(new_uc) {
+		if carrier_p(carrier_c, u) && ally_unit_p(ally_unit_c, u) {
+			append(&allied_carriers, u)
+		}
+		if air_p(air_c, u) && ally_unit_p(ally_unit_c, u) {
+			append(&allied_planes, u)
+		}
+	}
+	capacity := air_movement_validator_carrier_capacity(allied_carriers[:], new_territory)
+	cost := air_movement_validator_carrier_cost(allied_planes[:])
+	delete(allied_carriers)
+	delete(allied_planes)
+	territory_capacity := capacity - cost
+	if territory_capacity > 0 {
+		// CollectionUtils.getNMatches(defendingAir, territoryCapacity, alliedDefendingAir)
+		moving_air := make([dynamic]^Unit)
+		count: i32 = 0
+		for u in defending_air {
+			if count >= territory_capacity {
+				break
+			}
+			if air_p(air_c, u) && !scrambled_p(scrambled_c, u) {
+				append(&moving_air, u)
+				count += 1
+			}
+		}
+		battle_delegate_move_air_and_land(
+			bridge,
+			&moving_air,
+			defending_air,
+			new_territory,
+			battle_site,
+		)
+	}
+}
+

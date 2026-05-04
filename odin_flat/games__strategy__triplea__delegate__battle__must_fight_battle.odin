@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 
 Must_Fight_Battle :: struct {
@@ -1394,6 +1395,423 @@ must_fight_battle_check_defending_planes_can_land :: proc(self: ^Must_Fight_Batt
 		remaining,
 		self.battle_site,
 	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#<init>(
+//     Territory, GamePlayer, GameData, BattleTracker)
+//
+// Java:
+//   super(battleSite, attacker, battleTracker, data);
+//   defendingUnits.addAll(this.battleSite.getMatches(Matches.enemyUnit(attacker)));
+//   maxRounds = battleSite.isWater()
+//       ? Properties.getSeaBattleRounds(data.getProperties())
+//       : Properties.getLandBattleRounds(data.getProperties());
+//
+// The non-final field initializers from the Java class
+// (`attackingWaitingToDie = new ArrayList<>()`, etc., plus the
+// `stack = new ExecutionStack()` field initializer) run before the
+// constructor body in Java; we mirror them here right after the
+// embedded base is set up.
+must_fight_battle_new :: proc(
+	battle_site: ^Territory,
+	attacker: ^Game_Player,
+	data: ^Game_Data,
+	battle_tracker: ^Battle_Tracker,
+) -> ^Must_Fight_Battle {
+	base := dependent_battle_new(battle_site, attacker, battle_tracker, data)
+	self := new(Must_Fight_Battle)
+	self.dependent_battle = base^
+	free(base)
+
+	// Java field initializers (run before the constructor body in Java).
+	self.attacking_waiting_to_die = make([dynamic]^Unit)
+	self.defending_waiting_to_die = make([dynamic]^Unit)
+	self.killed = make([dynamic]^Unit)
+	self.killed_during_current_round = make([dynamic]^Unit)
+	self.stack = execution_stack_new()
+	self.step_strings = make([dynamic]string)
+	self.step_firing_units = make(map[string][dynamic]^Unit)
+	self.defending_aa = make([dynamic]^Unit)
+	self.offensive_aa = make([dynamic]^Unit)
+	self.defending_aa_types = make([dynamic]string)
+	self.offensive_aa_types = make([dynamic]string)
+	self.attacking_units_retreated = make([dynamic]^Unit)
+	self.defending_units_retreated = make([dynamic]^Unit)
+
+	// defendingUnits.addAll(this.battleSite.getMatches(Matches.enemyUnit(attacker)));
+	en_p, en_c := matches_enemy_unit(attacker)
+	uc := territory_get_unit_collection(battle_site)
+	if uc != nil {
+		for u in uc.units {
+			if en_p(en_c, u) {
+				append(&self.defending_units, u)
+			}
+		}
+	}
+
+	// maxRounds = battleSite.isWater() ? sea : land battle rounds
+	props := game_data_get_properties(data)
+	if territory_is_water(battle_site) {
+		self.max_rounds = properties_get_sea_battle_rounds(props)
+	} else {
+		self.max_rounds = properties_get_land_battle_rounds(props)
+	}
+	return self
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#damagedChangeInto(
+//     GamePlayer, Collection<Unit>, Collection<Unit>, IDelegateBridge, Side)
+//
+// Java:
+//   final List<Unit> unitsThatMightTransform =
+//       CollectionUtils.getMatches(units,
+//           Matches.unitWhenHitPointsDamagedChangesInto().and(
+//               Matches.unitHasTakenSomeDamage()));
+//   unitsThatMightTransform.addAll(
+//       CollectionUtils.getMatches(unitsKilledDuringRound,
+//           Matches.unitAtMaxHitPointDamageChangesInto()));
+//   final var change =
+//       HistoryChangeFactory.transformDamagedUnits(
+//           battleSite, unitsThatMightTransform, true);
+//   change.perform(bridge);
+//   final var oldUnits = List.copyOf(change.getOldUnits());
+//   final var newUnits = List.copyOf(change.getNewUnits());
+//   cleanupKilledUnits(bridge, side, oldUnits, newUnits);
+//   bridge.getDisplayChannelBroadcaster()
+//       .changedUnitsNotification(battleId, player, oldUnits, newUnits, null);
+must_fight_battle_damaged_change_into :: proc(
+	self: ^Must_Fight_Battle,
+	player: ^Game_Player,
+	units: [dynamic]^Unit,
+	units_killed_during_round: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	side: Battle_State_Side,
+) {
+	dmg_p, dmg_c := matches_unit_when_hit_points_damaged_changes_into()
+	taken_p, taken_c := matches_unit_has_taken_some_damage()
+	max_p, max_c := matches_unit_at_max_hit_point_damage_changes_into()
+
+	units_that_might_transform: [dynamic]^Unit
+	for u in units {
+		if dmg_p(dmg_c, u) && taken_p(taken_c, u) {
+			append(&units_that_might_transform, u)
+		}
+	}
+	for u in units_killed_during_round {
+		if max_p(max_c, u) {
+			append(&units_that_might_transform, u)
+		}
+	}
+
+	change := history_change_factory_transform_damaged_units(
+		self.battle_site,
+		units_that_might_transform,
+		true,
+	)
+	transform_damaged_units_history_change_perform(change, bridge)
+
+	old_units := transform_damaged_units_history_change_get_old_units(change)
+	new_units := transform_damaged_units_history_change_get_new_units(change)
+
+	must_fight_battle_cleanup_killed_units(self, bridge, side, old_units, new_units)
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_changed_units_notification(
+		display,
+		self.battle_id,
+		player,
+		old_units,
+		new_units,
+		nil,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#getBattleExecutables()
+//
+// Java:
+//   final List<IExecutable> steps =
+//       BattleStep.getAll(this, this).stream()
+//           .sorted(Comparator.comparing(BattleStep::getOrder))
+//           .collect(Collectors.toList());
+//   addRoundResetStep(steps);
+//   return steps;
+//
+// `Battle_Step` does not carry a virtual `order` field in the Odin
+// port (compare `Battle_Steps_Step_Entry` in battle_steps.odin), so we
+// pair each freshly built step with its concrete `*_get_order` value,
+// sort the pairs by the underlying `Battle_Step_Order` ordinal, then
+// flatten back into the [dynamic]^I_Executable result that
+// `addRoundResetStep` expects.
+Must_Fight_Battle_Executable_Entry :: struct {
+	order:      Battle_Step_Order,
+	executable: ^I_Executable,
+}
+
+must_fight_battle_executable_entry_less :: proc(
+	a, b: Must_Fight_Battle_Executable_Entry,
+) -> bool {
+	return int(a.order) < int(b.order)
+}
+
+must_fight_battle_get_battle_executables :: proc(
+	self: ^Must_Fight_Battle,
+) -> [dynamic]^I_Executable {
+	bs := cast(^Battle_State)self
+	ba := cast(^Battle_Actions)self
+
+	entries := make([dynamic]Must_Fight_Battle_Executable_Entry, 0, 24)
+
+	{
+		s := offensive_aa_fire_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = offensive_aa_fire_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := defensive_aa_fire_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = defensive_aa_fire_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := submerge_subs_vs_only_air_step_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = submerge_subs_vs_only_air_step_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := remove_unprotected_units_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = remove_unprotected_units_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := naval_bombardment_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = naval_bombardment_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := clear_bombardment_casualties_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = clear_bombardment_casualties_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := land_paratroopers_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = land_paratroopers_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := offensive_subs_retreat_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = offensive_subs_retreat_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := defensive_subs_retreat_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = defensive_subs_retreat_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := offensive_first_strike_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = offensive_first_strike_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := defensive_first_strike_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = defensive_first_strike_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := clear_first_strike_casualties_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = clear_first_strike_casualties_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := offensive_general_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = offensive_general_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := defensive_general_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = defensive_general_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := clear_aa_casualties_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = clear_aa_casualties_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := remove_non_combatants_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = remove_non_combatants_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := mark_no_movement_left_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = mark_no_movement_left_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := remove_first_strike_suicide_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = remove_first_strike_suicide_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := remove_general_suicide_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = remove_general_suicide_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := offensive_general_retreat_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = offensive_general_retreat_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := clear_general_casualties_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = clear_general_casualties_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := remove_unprotected_units_general_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = remove_unprotected_units_general_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := check_general_battle_end_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = check_general_battle_end_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+	{
+		s := check_stalemate_battle_end_new(bs, ba)
+		append(
+			&entries,
+			Must_Fight_Battle_Executable_Entry{
+				order = check_stalemate_battle_end_get_order(s),
+				executable = &s.battle_step.i_executable,
+			},
+		)
+	}
+
+	slice.sort_by(entries[:], must_fight_battle_executable_entry_less)
+
+	out := make([dynamic]^I_Executable, 0, len(entries))
+	for e in entries {
+		append(&out, e.executable)
+	}
+	delete(entries)
+
+	must_fight_battle_add_round_reset_step(self, &out)
+	return out
 }
 
 

@@ -175,3 +175,56 @@ check_general_battle_end_get_firing_group :: proc(
 	return firing_group_splitter_general_apply(splitter, self.battle_state)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#getAllFiringGroups
+// Java: Iterables.concat(getFiringGroup(side, NORMAL), getFiringGroup(side, FIRST_STRIKE)).
+// Odin: materialize the concatenation as a single [dynamic]^Firing_Group;
+// the only callers iterate it once or pass it to inAnyFiringGroup / hasNoTargets.
+check_general_battle_end_get_all_firing_groups :: proc(
+	self: ^Check_General_Battle_End,
+	side: Battle_State_Side,
+) -> [dynamic]^Firing_Group {
+	normal := check_general_battle_end_get_firing_group(self, side, .NORMAL)
+	first_strike := check_general_battle_end_get_firing_group(self, side, .FIRST_STRIKE)
+	result := make([dynamic]^Firing_Group, 0, len(normal) + len(first_strike))
+	for fg in normal {
+		append(&result, fg)
+	}
+	for fg in first_strike {
+		append(&result, fg)
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#hasNoStrengthOrRolls
+// Java: !PowerStrengthAndRolls.buildWithPreSortedUnits(
+//           myUnits,
+//           CombatValueBuilder.mainCombatValue()
+//               .enemyUnits(enemyUnits).friendlyUnits(myUnits).side(side)
+//               .gameSequence(battleState.getGameData().getSequence())
+//               .supportAttachments(battleState.getGameData().getUnitTypeList().getSupportRules())
+//               .lhtrHeavyBombers(Properties.getLhtrHeavyBombers(battleState.getGameData().getProperties()))
+//               .gameDiceSides(battleState.getGameData().getDiceSides())
+//               .territoryEffects(battleState.getTerritoryEffects())
+//               .build())
+//       .hasStrengthOrRolls();
+check_general_battle_end_has_no_strength_or_rolls :: proc(
+	self: ^Check_General_Battle_End,
+	side: Battle_State_Side,
+	my_units: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+) -> bool {
+	game_data := battle_state_get_game_data(self.battle_state)
+	cv := combat_value_builder_build_main_combat_value(
+		enemy_units,
+		my_units,
+		side,
+		game_data_get_sequence(game_data),
+		unit_type_list_get_support_rules(game_data_get_unit_type_list(game_data)),
+		properties_get_lhtr_heavy_bombers(game_data_get_properties(game_data)),
+		int(game_data_get_dice_sides(game_data)),
+		battle_state_get_territory_effects(self.battle_state),
+	)
+	psar := power_strength_and_rolls_build_with_pre_sorted_units(my_units, cv)
+	return !power_strength_and_rolls_has_strength_or_rolls(psar)
+}
+

@@ -553,3 +553,24 @@ initialization_delegate_init_original_owner :: proc(bridge: ^I_Delegate_Bridge) 
 	i_delegate_bridge_add_change(bridge, &changes.change)
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#init(games.strategy.engine.delegate.IDelegateBridge)
+// Instance method (protected). Sequentially fires the per-feature
+// initialization helpers. `initSkipUnusedBids` takes the engine
+// `GameState` rather than the bridge, hence the embedded-base address-of
+// (`Game_Data` embeds `Game_State` via `using game_state`).
+// `resetUnitState` is the only call that takes no bridge argument — the
+// Java side uses `this.bridge`, which on the Odin side is the field
+// stored on the embedded Abstract_Delegate.
+initialization_delegate_init :: proc(self: ^Initialization_Delegate, bridge: ^I_Delegate_Bridge) {
+	initialization_delegate_init_destroyer_artillery(bridge)
+	initialization_delegate_init_shipyards(bridge)
+	initialization_delegate_init_two_hit_battleship(bridge)
+	initialization_delegate_init_original_owner(bridge)
+	initialization_delegate_init_tech(bridge)
+	initialization_delegate_init_skip_unused_bids(&i_delegate_bridge_get_data(bridge).game_state)
+	initialization_delegate_init_ai_starting_bonus_income(bridge)
+	initialization_delegate_init_delete_assets_of_disabled_players(bridge)
+	initialization_delegate_init_transported_land_units(bridge)
+	initialization_delegate_reset_unit_state(self)
+}
+

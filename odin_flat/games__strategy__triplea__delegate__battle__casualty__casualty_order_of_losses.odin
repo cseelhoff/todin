@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 
 Casualty_Order_Of_Losses :: struct {}
 
@@ -66,4 +67,232 @@ casualty_order_of_losses_compute_ool_cache_key :: proc(
 		rawptr(parameters.combat_value),
 		list_hash,
 	)
+}
+
+// Java: CasualtyOrderOfLosses#sortUnitsForCasualtiesWithSupportImpl(Parameters)
+//
+// Sorts a copy of `parameters.targetsToPickFrom` ascending by combat value
+// (after a descending sort + reverse), then iteratively pulls the unit
+// whose loss costs the battle the least power — accounting for support
+// power and support-rolls that the unit grants to others — into the
+// result list. After roughly half of the input has been picked, any
+// remaining units are appended in their (ascending) order.
+//
+// Java's `new UnitBattleComparator(...).reversed()` is realized with a
+// file-private comparator slot and a less-than predicate that flips the
+// sign. Java's `Map<Unit, IntegerMap<Unit>>` getters return the
+// PowerStrengthAndRolls's underlying maps; Odin maps share backing
+// storage on assignment, so mutations done through these locals are
+// observed by the source struct (matching Java reference semantics).
+// Java's `Map.put(supportedUnit, strengthAndRollsWithoutSupport)` reads
+// as a value-overwrite in Odin: we deref the new heap-allocated
+// `^Unit_Power_Strength_And_Rolls` and store the value back into the
+// map.
+@(private="file")
+casualty_order_of_losses_sort_impl_cmp_: ^Unit_Battle_Comparator
+
+@(private="file")
+casualty_order_of_losses_sort_impl_reversed_less_ :: proc(a: ^Unit, b: ^Unit) -> bool {
+	// reversed comparator: a < b iff cmp(a, b) > 0.
+	return unit_battle_comparator_compare(casualty_order_of_losses_sort_impl_cmp_, a, b) > 0
+}
+
+@(private="file")
+casualty_order_of_losses_remove_first_match_ :: proc(list: ^[dynamic]^Unit, target: ^Unit) -> bool {
+	for j := 0; j < len(list^); j += 1 {
+		if list^[j] == target {
+			ordered_remove(list, j)
+			return true
+		}
+	}
+	return false
+}
+
+casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
+	parameters: ^Casualty_Order_Of_Losses_Parameters,
+) -> [dynamic]^Unit {
+	// Sort enough units to kill off (descending by combat value).
+	sorted_units_list := make([dynamic]^Unit, 0, len(parameters.targets_to_pick_from))
+	for u in parameters.targets_to_pick_from {
+		append(&sorted_units_list, u)
+	}
+
+	data := cast(^Game_Data)parameters.data
+
+	cmp1 := unit_battle_comparator_new(
+		parameters.costs,
+		data,
+		combat_value_build_with_no_unit_supports(parameters.combat_value),
+		true,
+		false,
+	)
+	casualty_order_of_losses_sort_impl_cmp_ = cmp1
+	slice.sort_by(sorted_units_list[:], casualty_order_of_losses_sort_impl_reversed_less_)
+
+	// Sort units starting with the strongest so that support gets added to them first.
+	unit_comparator_without_primary_power := unit_battle_comparator_new(
+		parameters.costs,
+		data,
+		combat_value_build_with_no_unit_supports(parameters.combat_value),
+		true,
+		true,
+	)
+
+	unit_power_and_rolls := power_strength_and_rolls_build_with_pre_sorted_units(
+		sorted_units_list,
+		parameters.combat_value,
+	)
+
+	unit_support_power_map := power_strength_and_rolls_get_unit_support_power_map(unit_power_and_rolls)
+	unit_support_rolls_map := power_strength_and_rolls_get_unit_support_rolls_map(unit_power_and_rolls)
+	unit_power_and_rolls_map := power_strength_and_rolls_get_total_strength_and_total_rolls_by_unit(unit_power_and_rolls)
+
+	// Sort units starting with weakest for finding the worst units.
+	slice.reverse(sorted_units_list[:])
+
+	sorted_well_enough_units_list := make([dynamic]^Unit)
+
+	original_unit_power_and_rolls_map := make(map[^Unit]Unit_Power_Strength_And_Rolls)
+	for k, v in unit_power_and_rolls_map {
+		original_unit_power_and_rolls_map[k] = v
+	}
+
+	for i := 0; i < len(sorted_units_list); i += 1 {
+		// Loop through all target units to find the best unit to take as casualty.
+		worst_unit: ^Unit = nil
+		min_power: i32 = max(i32)
+		unit_types := make(map[^Unit_Type]struct{})
+		for u in sorted_units_list {
+			ut := unit_get_type(u)
+			if ut in unit_types {
+				continue
+			}
+			unit_types[ut] = {}
+			// Find unit power.
+			orig_entry := original_unit_power_and_rolls_map[u]
+			power := unit_power_strength_and_rolls_get_power(&orig_entry)
+			// Add any support power that it provides to other units.
+			if u in unit_support_power_map {
+				support_power_for_unit := unit_support_power_map[u]
+				keys := integer_map_key_set(&support_power_for_unit)
+				for sk in keys {
+					supported_unit := cast(^Unit)sk
+					strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
+					if !ok {
+						continue
+					}
+					// Remove any rolls provided by this support, so they aren't counted twice.
+					if u in unit_support_rolls_map {
+						support_rolls_for_unit := unit_support_rolls_map[u]
+						rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+						adjusted := unit_power_strength_and_rolls_subtract_rolls(&strength_and_rolls, rolls)
+						strength_and_rolls = adjusted^
+					}
+					// If one roll then just add the power.
+					if unit_power_strength_and_rolls_get_rolls(&strength_and_rolls) == 1 {
+						power += integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+						continue
+					}
+					// Find supported unit power with support.
+					power_with_support := unit_power_strength_and_rolls_get_power(&strength_and_rolls)
+					// Find supported unit power without support.
+					strength := integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+					adjusted_no_support := unit_power_strength_and_rolls_subtract_strength(
+						&strength_and_rolls,
+						strength,
+					)
+					power_without_support := unit_power_strength_and_rolls_get_power(adjusted_no_support)
+					// Add the actual power provided by the support.
+					added_power := power_with_support - power_without_support
+					power += added_power
+				}
+				delete(keys)
+			}
+			// Add any power from support rolls that it provides to other units.
+			if u in unit_support_rolls_map {
+				support_rolls_for_unit := unit_support_rolls_map[u]
+				keys := integer_map_key_set(&support_rolls_for_unit)
+				for sk in keys {
+					supported_unit := cast(^Unit)sk
+					strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
+					if !ok {
+						continue
+					}
+					// Find supported unit power with support.
+					power_with_support := unit_power_strength_and_rolls_get_power(&strength_and_rolls)
+					// Find supported unit power without support.
+					rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+					adjusted_no_support := unit_power_strength_and_rolls_subtract_rolls(
+						&strength_and_rolls,
+						rolls,
+					)
+					power_without_support := unit_power_strength_and_rolls_get_power(adjusted_no_support)
+					// Add the actual power provided by the support.
+					added_power := power_with_support - power_without_support
+					power += added_power
+				}
+				delete(keys)
+			}
+			// Check if unit has lower power.
+			if power < min_power ||
+			   (power == min_power &&
+					   unit_battle_comparator_compare(unit_comparator_without_primary_power, u, worst_unit) < 0) {
+				worst_unit = u
+				min_power = power
+			}
+		}
+		delete(unit_types)
+
+		// Add the worst unit to sorted list, update any units it supported, and remove from
+		// other collections.
+		if worst_unit in unit_support_power_map {
+			support_power_for_unit := unit_support_power_map[worst_unit]
+			keys := integer_map_key_set(&support_power_for_unit)
+			for sk in keys {
+				supported_unit := cast(^Unit)sk
+				strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
+				if !ok {
+					continue
+				}
+				strength := integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+				without_support := unit_power_strength_and_rolls_subtract_strength(
+					&strength_and_rolls,
+					strength,
+				)
+				unit_power_and_rolls_map[supported_unit] = without_support^
+				casualty_order_of_losses_remove_first_match_(&sorted_units_list, supported_unit)
+				inject_at(&sorted_units_list, 0, supported_unit)
+			}
+			delete(keys)
+		}
+		if worst_unit in unit_support_rolls_map {
+			support_rolls_for_unit := unit_support_rolls_map[worst_unit]
+			keys := integer_map_key_set(&support_rolls_for_unit)
+			for sk in keys {
+				supported_unit := cast(^Unit)sk
+				strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
+				if !ok {
+					continue
+				}
+				rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+				without_support := unit_power_strength_and_rolls_subtract_rolls(
+					&strength_and_rolls,
+					rolls,
+				)
+				unit_power_and_rolls_map[supported_unit] = without_support^
+				casualty_order_of_losses_remove_first_match_(&sorted_units_list, supported_unit)
+				inject_at(&sorted_units_list, 0, supported_unit)
+			}
+			delete(keys)
+		}
+		append(&sorted_well_enough_units_list, worst_unit)
+		casualty_order_of_losses_remove_first_match_(&sorted_units_list, worst_unit)
+		delete_key(&unit_power_and_rolls_map, worst_unit)
+		delete_key(&unit_support_power_map, worst_unit)
+		delete_key(&unit_support_rolls_map, worst_unit)
+	}
+	for u in sorted_units_list {
+		append(&sorted_well_enough_units_list, u)
+	}
+	return sorted_well_enough_units_list
 }
