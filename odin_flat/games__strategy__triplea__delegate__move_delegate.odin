@@ -715,3 +715,267 @@ move_delegate_reset_unit_state_and_delegate_state :: proc(self: ^Move_Delegate) 
 		i_delegate_bridge_add_change(self.bridge, change)
 	}
 }
+
+// games.strategy.triplea.delegate.MoveDelegate#removeMovementFromAirOnDamagedAlliedCarriers(
+//     IDelegateBridge, GamePlayer)
+// Java:
+//   crippledAlliedCarriersMatch =
+//     isUnitAllied(player).and(unitIsOwnedBy(player).negate())
+//                         .and(unitIsCarrier())
+//                         .and(unitHasWhenCombatDamagedEffect(UNITS_MAY_NOT_LEAVE_ALLIED_CARRIER))
+//   ownedFightersMatch =
+//     unitIsOwnedBy(player).and(unitIsAir()).and(unitCanLandOnCarrier())
+//                          .and(unitHasMovementLeft())
+//   For each territory: skip if no owned fighters, then for each fighter
+//   whose `transportedBy` is one of the crippled allied carriers in that
+//   territory, mark its movement as exhausted via `markNoMovementChange`.
+// Static method.
+move_delegate_remove_movement_from_air_on_damaged_allied_carriers :: proc(
+	bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	allied_p, allied_c := matches_is_unit_allied(player)
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	leave_filter_p, leave_filter_c := matches_unit_has_when_combat_damaged_effect_filter(
+		"unitsMayNotLeaveAlliedCarrier",
+	)
+	air_p, air_c := matches_unit_is_air()
+	land_on_carrier_p, land_on_carrier_c := matches_unit_can_land_on_carrier()
+	has_movement_p, has_movement_c := matches_unit_has_movement_left()
+	change := composite_change_new()
+	for t in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		owned_fighters: [dynamic]^Unit
+		for u in t.unit_collection.units {
+			if owned_p(owned_c, u) &&
+			   air_p(air_c, u) &&
+			   land_on_carrier_p(land_on_carrier_c, u) &&
+			   has_movement_p(has_movement_c, u) {
+				append(&owned_fighters, u)
+			}
+		}
+		if len(owned_fighters) == 0 {
+			continue
+		}
+		crippled_allied_carriers: map[^Unit]struct {}
+		for u in t.unit_collection.units {
+			if allied_p(allied_c, u) &&
+			   !owned_p(owned_c, u) &&
+			   carrier_p(carrier_c, u) &&
+			   leave_filter_p(leave_filter_c, u) {
+				crippled_allied_carriers[u] = {}
+			}
+		}
+		if len(crippled_allied_carriers) == 0 {
+			continue
+		}
+		for fighter in owned_fighters {
+			tb := unit_get_transported_by(fighter)
+			if tb != nil {
+				if _, in_set := crippled_allied_carriers[tb]; in_set {
+					composite_change_add(
+						change,
+						change_factory_mark_no_movement_change(fighter),
+					)
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, &change.change)
+	}
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#repairMultipleHitPointUnits(
+//     IDelegateBridge, GamePlayer)
+// Java: scan every territory for damaged multi-HP units (filtered by
+// owner / repair-facility properties), compute each unit's repair amount
+// via getLargestRepairRateForThisUnit, build an Integer_Map<Unit> of new
+// hit values plus a set of affected territories, emit a single
+// "N unit(s) repaired." history event, then unitsHit change. Carriers
+// that become fully repaired and bear UNITS_MAY_NOT_LEAVE_ALLIED_CARRIER
+// have their dependent allied air cleared via TransportTracker, and any
+// repaired unit that should change into a different unit type is run
+// through repairedChangeInto. Static method.
+move_delegate_repair_multiple_hit_point_units :: proc(
+	bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	repair_only_own := properties_get_battleships_repair_at_beginning_of_round(
+		game_state_get_properties(&data.game_state),
+	)
+	multi_hp_p, multi_hp_c := matches_unit_has_more_than_one_hit_point_total()
+	taken_dmg_p, taken_dmg_c := matches_unit_has_taken_some_damage()
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	require_facilities := properties_get_two_hit_point_units_require_repair_facilities(
+		game_state_get_properties(&data.game_state),
+	)
+	damaged_map: map[^Territory]map[^Unit]struct {}
+	for current in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		damaged: map[^Unit]struct {}
+		if !require_facilities {
+			for u in current.unit_collection.units {
+				if !(multi_hp_p(multi_hp_c, u) && taken_dmg_p(taken_dmg_c, u)) {
+					continue
+				}
+				if repair_only_own && !owned_p(owned_c, u) {
+					continue
+				}
+				damaged[u] = {}
+			}
+		} else {
+			repair_here_p, repair_here_c :=
+				matches_unit_can_be_repaired_by_facilities_in_its_territory(current, player)
+			for u in current.unit_collection.units {
+				if multi_hp_p(multi_hp_c, u) &&
+				   taken_dmg_p(taken_dmg_c, u) &&
+				   owned_p(owned_c, u) &&
+				   repair_here_p(repair_here_c, u) {
+					damaged[u] = {}
+				}
+			}
+		}
+		if len(damaged) > 0 {
+			damaged_map[current] = damaged
+		}
+	}
+	if len(damaged_map) == 0 {
+		return
+	}
+	fully_repaired: map[^Unit]^Territory
+	new_hits_map := new(Integer_Map_Unit)
+	new_hits_map.entries = make(map[^Unit]i32)
+	territories_to_notify_set: map[^Territory]struct {}
+	for territory, units in damaged_map {
+		for u, _ in units {
+			repair_amount := move_delegate_get_largest_repair_rate_for_this_unit(
+				u,
+				territory,
+				&data.game_state,
+			)
+			current_hits := unit_get_hits(u)
+			candidate := current_hits - repair_amount
+			new_hits: i32 = 0
+			if candidate < current_hits {
+				new_hits = candidate
+			} else {
+				new_hits = current_hits
+			}
+			if new_hits < 0 {
+				new_hits = 0
+			}
+			if new_hits != current_hits {
+				new_hits_map.entries[u] = new_hits
+				territories_to_notify_set[territory] = {}
+			}
+			if new_hits <= 0 {
+				fully_repaired[u] = territory
+			}
+		}
+	}
+	repaired_keys: [dynamic]^Unit
+	for u, _ in new_hits_map.entries {
+		append(&repaired_keys, u)
+	}
+	territories_to_notify: [dynamic]^Territory
+	for t, _ in territories_to_notify_set {
+		append(&territories_to_notify, t)
+	}
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(bridge),
+		fmt.aprintf(
+			"%d %s repaired.",
+			len(new_hits_map.entries),
+			my_formatter_pluralize("unit"),
+		),
+		rawptr(&repaired_keys),
+	)
+	i_delegate_bridge_add_change(
+		bridge,
+		change_factory_units_hit(new_hits_map, territories_to_notify),
+	)
+
+	// Carriers that just got fully repaired and bear the
+	// UNITS_MAY_NOT_LEAVE_ALLIED_CARRIER effect: clear their allied air's
+	// transportedBy so the air can leave on its own.
+	leave_filter_p, leave_filter_c := matches_unit_has_when_combat_damaged_effect_filter(
+		"unitsMayNotLeaveAlliedCarrier",
+	)
+	damaged_carriers: [dynamic]^Unit
+	for u, _ in fully_repaired {
+		if leave_filter_p(leave_filter_c, u) {
+			append(&damaged_carriers, u)
+		}
+	}
+	clear_allied_air := composite_change_new()
+	for carrier in damaged_carriers {
+		one_carrier: [dynamic]^Unit
+		append(&one_carrier, carrier)
+		change := transport_tracker_clear_transported_by_for_allied_air_on_carrier(
+			one_carrier,
+			fully_repaired[carrier],
+			unit_get_owner(carrier),
+			&data.game_state,
+		)
+		if !composite_change_is_empty(change) {
+			composite_change_add(clear_allied_air, &change.change)
+		}
+	}
+	if !composite_change_is_empty(clear_allied_air) {
+		i_delegate_bridge_add_change(bridge, &clear_allied_air.change)
+	}
+
+	// Any repaired unit that should change unit type when its hit-points
+	// recover.
+	for territory, units in damaged_map {
+		move_delegate_repaired_change_into(units, territory, bridge)
+	}
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#resetAndGiveBonusMovement()
+// Java:
+//   addedHistoryEvent = false
+//   changeReset = resetBonusMovement()
+//   if (!changeReset.isEmpty()) {
+//     bridge.getHistoryWriter().startEvent("Resetting and Giving Bonus Movement to Units")
+//     bridge.addChange(changeReset)
+//     addedHistoryEvent = true
+//   }
+//   if (Properties.getUnitsMayGiveBonusMovement(getData().getProperties())) {
+//     changeBonus = giveBonusMovement(bridge, player)
+//   }
+//   if (changeBonus != null && !changeBonus.isEmpty()) {
+//     if (!addedHistoryEvent) bridge.getHistoryWriter().startEvent(...)
+//     bridge.addChange(changeBonus)
+//   }
+// Private instance method.
+move_delegate_reset_and_give_bonus_movement :: proc(self: ^Move_Delegate) {
+	added_history_event := false
+	change_reset := move_delegate_reset_bonus_movement(self)
+	if !change_is_empty(change_reset) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			"Resetting and Giving Bonus Movement to Units",
+		)
+		i_delegate_bridge_add_change(self.bridge, change_reset)
+		added_history_event = true
+	}
+	change_bonus: ^Change = nil
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if properties_get_units_may_give_bonus_movement(
+		game_state_get_properties(&data.game_state),
+	) {
+		change_bonus = move_delegate_give_bonus_movement(self.bridge, self.player)
+	}
+	if change_bonus != nil && !change_is_empty(change_bonus) {
+		if !added_history_event {
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(self.bridge),
+				"Resetting and Giving Bonus Movement to Units",
+			)
+		}
+		i_delegate_bridge_add_change(self.bridge, change_bonus)
+	}
+}

@@ -69,6 +69,22 @@ concurrent_battle_calculator_lambda_create_workers_2 :: proc(ctx: rawptr, j: i32
 	return battle_calculator_new(cap_ctx.serialized_data)
 }
 
+// Closure-capture context for `lambda$setGameData$0`: the Supplier body
+// `() -> setGameDataInternal(data)` captures the enclosing instance
+// (`this`) and the `data` argument from `setGameData`'s frame.
+Concurrent_Battle_Calculator_Lambda_Set_Game_Data_0_Ctx :: struct {
+	self: ^Concurrent_Battle_Calculator,
+	data: ^Game_Data,
+}
+
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#lambda$setGameData$0(GameData)
+// Java body (Supplier<Boolean>): `() -> setGameDataInternal(data)`. The
+// captured `this` and `data` are supplied via the rawptr ctx convention.
+concurrent_battle_calculator_lambda_set_game_data_0 :: proc(ctx: rawptr) -> bool {
+	cap_ctx := cast(^Concurrent_Battle_Calculator_Lambda_Set_Game_Data_0_Ctx)ctx
+	return concurrent_battle_calculator_set_game_data_internal(cap_ctx.self, cap_ctx.data)
+}
+
 // games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#lambda$setGameData$1(Throwable)
 // Java body: `throwable -> { log.error("Error while trying to set GameData", throwable); return false; }`.
 concurrent_battle_calculator_lambda_set_game_data_1 :: proc(throwable: ^Throwable) -> bool {

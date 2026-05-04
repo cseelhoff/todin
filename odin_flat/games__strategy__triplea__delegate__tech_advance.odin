@@ -382,3 +382,50 @@ tech_advance_create_ww2_v3_advances :: proc(tf: ^Technology_Frontier) {
 	technology_frontier_add_advance(tf, make_mechanized_infantry_advance(data))
 }
 
+// Java: TechAdvance.createDefaultTechAdvances(GameData) — public static.
+// "For the game parser only." Picks the WW2v1/v2/v3 set based on the
+// game properties, populates the master technology frontier, then builds
+// per-player tech frontiers (split into Air/Naval and Land/Production for
+// WW2v3, or a single "Technology Advances" frontier otherwise) and clones
+// them onto every GamePlayer's technology frontier list. The clones use
+// TechnologyFrontier's copy constructor (technology_frontier_new_copy) so
+// each player owns its own frontier instance, matching Java.
+tech_advance_create_default_tech_advances :: proc(data: ^Game_Data) {
+	tf := game_data_get_technology_frontier(data)
+	ww2v2 := properties_get_ww2_v2(game_data_get_properties(data))
+	ww2v3 := properties_get_ww2_v3(game_data_get_properties(data))
+	if ww2v2 {
+		tech_advance_create_ww2_v2_advances(tf)
+	} else if ww2v3 {
+		tech_advance_create_ww2_v3_advances(tf)
+	} else {
+		tech_advance_create_ww2_v1_advances(tf)
+	}
+	frontiers := make([dynamic]^Technology_Frontier, 0)
+	if ww2v3 {
+		an := technology_frontier_new("Air and Naval Advances", data)
+		lp := technology_frontier_new("Land and Production Advances", data)
+		ww2v3advances := tech_advance_get_ww2v3_categories_with_their_advances(data)
+		technology_frontier_add_advance_list(an, tuple_get_first(ww2v3advances))
+		technology_frontier_add_advance_list(lp, tuple_get_second(ww2v3advances))
+		append(&frontiers, an)
+		append(&frontiers, lp)
+	} else {
+		tas := technology_frontier_new("Technology Advances", data)
+		techs_copy := make([dynamic]^Tech_Advance, 0)
+		for t in technology_frontier_get_techs(tf) {
+			append(&techs_copy, t)
+		}
+		technology_frontier_add_advance_list(tas, techs_copy)
+		append(&frontiers, tas)
+	}
+	for player in player_list_get_players(game_data_get_player_list(data)) {
+		for frontier in frontiers {
+			technology_frontier_list_add_technology_frontier(
+				game_player_get_technology_frontier_list(player),
+				technology_frontier_new_copy(frontier),
+			)
+		}
+	}
+}
+

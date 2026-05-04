@@ -47,6 +47,75 @@ Game_Data :: struct {
 // Nested interface GameData.Unlocker (extends java.io.Closeable; no fields).
 Unlocker :: struct {}
 
+// games.strategy.engine.data.GameData#<init>()
+//
+// Java's implicit default constructor runs all in-line field initializers
+// in declaration order:
+//   alliances           = new AllianceTracker()
+//   relationships       = new RelationshipTracker(this)
+//   map                 = new GameMap(this)
+//   playerList          = new PlayerList(this)
+//   productionFrontierList = new ProductionFrontierList(this)
+//   productionRuleList  = new ProductionRuleList(this)
+//   repairFrontierList  = new RepairFrontierList(this)
+//   repairRules         = new RepairRules(this)
+//   resourceList        = new ResourceList(this)
+//   sequence            = new GameSequence(this)
+//   unitTypeList        = new UnitTypeList(this)
+//   relationshipTypeList= new RelationshipTypeList(this)
+//   properties          = new GameProperties(this)
+//   unitsList           = new UnitsList()
+//   technologyFrontier  = new TechnologyFrontier("allTechsForGame", this)
+//   loader              = new TripleA()
+//   territoryEffectList = new HashMap<>()
+//   battleRecordsList   = new BattleRecordsList(this)
+//   territoryListeners  = new CopyOnWriteArrayList<>()
+//   dataChangeListeners = new CopyOnWriteArrayList<>()
+//   delegates           = new HashMap<>()
+//   gameHistory         = new History(this)
+//   state               = new GameDataState(this)
+//   attachmentOrderAndValues = new ArrayList<>()
+//   gameDataEventListeners = new GameDataEventListeners()
+//
+// The single-threaded snapshot port drops the ReadWriteLock and transient
+// flags Java initializes from defaults. AllianceTracker's no-arg form
+// builds an empty alliances map; the Odin equivalent is
+// alliance_tracker_new_empty. TripleA implements IGameLoader, so the
+// concrete pointer is reinterpreted as ^I_Game_Loader (Triple_A embeds
+// I_Game_Loader at offset 0, so the cast is layout-safe).
+game_data_new :: proc() -> ^Game_Data {
+	self := new(Game_Data)
+	self.alliances = alliance_tracker_new_empty()
+	self.relationships = relationship_tracker_new(self)
+	self.game_map = game_map_new(self)
+	self.player_list = player_list_new(self)
+	self.production_frontier_list = production_frontier_list_new(self)
+	self.production_rule_list = production_rule_list_new(self)
+	self.repair_frontier_list = repair_frontier_list_new(self)
+	self.repair_rules = repair_rules_new(self)
+	self.resource_list = resource_list_new(self)
+	self.sequence = game_sequence_new(self)
+	self.unit_type_list = unit_type_list_new(self)
+	self.relationship_type_list = relationship_type_list_new(self)
+	self.properties = game_properties_new(self)
+	self.units_list = make_Units_List()
+	self.technology_frontier = technology_frontier_new("allTechsForGame", self)
+	self.loader = cast(^I_Game_Loader)triple_a_new()
+	self.territory_effect_list = make(map[string]^Territory_Effect)
+	self.battle_records_list = battle_records_list_new(self)
+	self.force_in_swing_event_thread = false
+	self.territory_listeners = make([dynamic]^Territory_Listener)
+	self.data_change_listeners = make([dynamic]^Game_Data_Change_Listener)
+	self.delegates = make(map[string]^I_Delegate)
+	self.game_history = history_new(self)
+	self.state = game_data_state_new(self)
+	self.attachment_order_and_values = make([dynamic]^Tuple(^I_Attachment, [dynamic]^Tuple(string, string)))
+	listeners := new(Game_Data_Event_Listeners)
+	listeners^ = make_Game_Data_Event_Listeners()
+	self.game_data_event_listeners = listeners
+	return self
+}
+
 // games.strategy.engine.data.GameData#acquireWriteLock()
 //
 // Java acquires the write side of a ReentrantReadWriteLock and returns an

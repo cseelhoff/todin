@@ -172,3 +172,26 @@ power_strength_and_rolls_add_units :: proc(
 		power_strength_and_rolls_lambda_add_units_3(self, supporter, supported_units)
 	}
 }
+
+// Java: private PowerStrengthAndRolls(final Collection<Unit> units, final CombatValue calculator)
+//   this.calculator = calculator;
+//   this.diceSides = units.isEmpty() ? 0 : calculator.getDiceSides(CollectionUtils.getAny(units));
+//   addUnits(units);
+power_strength_and_rolls_new :: proc(
+	units: [dynamic]^Unit,
+	calculator: ^Combat_Value,
+) -> ^Power_Strength_And_Rolls {
+	self := new(Power_Strength_And_Rolls)
+	self.calculator = calculator^
+	self.total_strength_and_total_rolls_by_unit = make(map[^Unit]Unit_Power_Strength_And_Rolls)
+	self.sorted_strength_and_rolls = make([dynamic]Unit_Power_Strength_And_Rolls)
+	self.unit_support_power_map = make(map[^Unit]Integer_Map)
+	self.unit_support_rolls_map = make(map[^Unit]Integer_Map)
+	if len(units) == 0 {
+		self.dice_sides = 0
+	} else {
+		self.dice_sides = combat_value_get_dice_sides(&self.calculator, units[0])
+	}
+	power_strength_and_rolls_add_units(self, units)
+	return self
+}

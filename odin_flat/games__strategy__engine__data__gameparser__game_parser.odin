@@ -1586,3 +1586,165 @@ game_parser_parse_2 :: proc(
 	}
 	return game_data
 }
+
+// Java:
+//   @Nonnull
+//   private GameData parse(final Path xmlFile, final InputStream stream)
+//       throws XmlParsingException, GameParseException, EngineVersionException
+//
+// Deep-parses the game XML into the parser's `data` field and returns it.
+// The Java `throws` triple becomes a leading `^Game_Data` plus trailing
+// `^Xml_Parsing_Exception, ^Engine_Version_Exception` return values
+// (matching the rest of the package's checked-exception idiom). The
+// `GameParseException` arm is mirrored as panics inside the helper procs
+// (`get_player_id`, `get_relationship_type`, etc. — see this file), so
+// it does not appear in the tuple.
+//
+// Modeling pragmas:
+//   * Java's `Optional.ofNullable(game.getInfo()).map(Info::getName)
+//     .ifPresent(data::setGameName)` only fires when both the Info
+//     element and its `name` attribute are present. Odin `string` is
+//     non-nullable; we mirror "name attribute present" with `len(name)
+//     > 0` and skip the empty-attribute case (the harness's snapshot
+//     XMLs always supply Info/@name when they ship an <info> tag).
+//   * `parseRelationshipTypes`, `parseTerritoryEffects`, and
+//     `parseOffset` are not part of the AI-test reachable set
+//     (`actually_called_in_ai_test = 0`); per the porting rules they
+//     are intentionally not invoked here even though Java calls them.
+//   * `Optional.ofNullable(game.getPropertyList()).ifPresent(...)`
+//     and the other ifPresent guards become straightforward
+//     `if x != nil` blocks.
+game_parser_parse :: proc(
+	self: ^Game_Parser,
+	xml_file: Path,
+	stream: ^Input_Stream,
+) -> (
+	result: ^Game_Data,
+	xml_err: ^Xml_Parsing_Exception,
+	engine_err: ^Engine_Version_Exception,
+) {
+	// final Game game = new XmlMapper(stream).mapXmlToObject(Game.class);
+	mapper, mapper_err := xml_mapper_new(stream)
+	if mapper_err != nil {
+		return nil, mapper_err, nil
+	}
+	game_class := class_new("org.triplea.map.data.elements.Game", "Game")
+	game_raw, map_err := xml_mapper_map_xml_to_object_root(mapper, game_class)
+	if map_err != nil {
+		return nil, map_err, nil
+	}
+	game := cast(^Game)game_raw
+
+	// test minimum engine version first
+	triplea := game_get_triplea(game)
+	if !game_parser_is_engine_compatible_with_map(self, triplea) {
+		return nil, nil, engine_version_exception_new(
+			triplea_get_minimum_version(triplea),
+			xml_file,
+		)
+	}
+
+	// Optional.ofNullable(game.getInfo()).map(Info::getName).ifPresent(data::setGameName)
+	if info := game_get_info(game); info != nil && len(info.name) > 0 {
+		game_data_set_game_name(self.data, info.name)
+	}
+
+	game_parser_parse_dice_sides(self, game_get_dice_sides(game))
+	game_parser_parse_player_list(self, game_get_player_list(game))
+	game_parser_parse_alliances(self, game)
+
+	// Optional.ofNullable(game.getPropertyList()).ifPresent(this::parseProperties)
+	if property_list := game_get_property_list(game); property_list != nil {
+		game_parser_parse_properties(self, property_list)
+	}
+
+	game_map := game_get_map(game)
+	game_parser_parse_territories(self, map_get_territories(game_map))
+	game_parser_parse_connections(self, map_get_connections(game_map))
+
+	resource_list := game_get_resource_list(game)
+	if resource_list != nil {
+		game_parser_parse_resources(self, resource_list)
+	}
+
+	// Optional.ofNullable(game.getUnitList()).ifPresent(this::parseUnits)
+	if unit_list := game_get_unit_list(game); unit_list != nil {
+		game_parser_parse_units(self, unit_list)
+	}
+
+	// parseRelationshipTypes / parseTerritoryEffects / parseOffset:
+	// not part of the AI-test reachable set; intentionally omitted.
+
+	game_play := game_get_game_play(game)
+	game_parser_parse_delegates(self, game_play_get_delegates(game_play))
+
+	self.variables = game_data_variables_parse(game_get_variable_list(game))
+	game_parser_parse_steps(
+		self,
+		game_play_sequence_get_steps(game_play_get_sequence(game_play)),
+	)
+
+	if production := game_get_production(game); production != nil {
+		game_parser_parse_production_rules(
+			self,
+			production_get_production_rules(production),
+		)
+		game_parser_parse_production_frontiers(
+			self,
+			production_get_production_frontiers(production),
+		)
+		game_parser_parse_player_production(
+			self,
+			production_get_player_productions(production),
+		)
+		game_parser_parse_repair_rules(self, production_get_repair_rules(production))
+		game_parser_parse_repair_frontiers(
+			self,
+			production_get_repair_frontiers(production),
+		)
+		game_parser_parse_player_repair(
+			self,
+			production_get_player_repairs(production),
+		)
+	}
+
+	if technology := game_get_technology(game); technology != nil {
+		game_parser_parse_technologies(self, technology_get_technologies(technology))
+		game_parser_parse_player_tech(self, technology_get_player_techs(technology))
+	} else {
+		tech_advance_create_default_tech_advances(self.data)
+	}
+
+	game_parser_parse_attachments(self, game_get_attachment_list(game))
+
+	if initialize := game_get_initialize(game); initialize != nil {
+		if owner_init := initialize_get_owner_initialize(initialize); owner_init != nil {
+			game_parser_parse_owner(self, owner_init)
+		}
+		if unit_init := initialize_get_unit_initialize(initialize); unit_init != nil {
+			game_parser_parse_unit_placement(
+				self,
+				initialize_unit_initialize_get_unit_placements(unit_init),
+			)
+			game_parser_parse_held_units(
+				self,
+				initialize_unit_initialize_get_held_units(unit_init),
+			)
+		}
+		if resource_init := initialize_get_resource_initialize(initialize); resource_init != nil {
+			game_parser_parse_resource_initialization(self, resource_init)
+		}
+		if relationship_init := initialize_get_relationship_initialize(initialize); relationship_init != nil {
+			game_parser_parse_relation_initialize(self, relationship_init)
+		}
+	}
+
+	// set & override default relationships
+	tracker := game_data_get_relationship_tracker(self.data)
+	relationship_tracker_set_null_player_relations(tracker)
+	relationship_tracker_set_self_relations(tracker)
+	// set default tech attachments (after technologies, attachments, and properties)
+	tech_ability_attachment_set_default_technology_attachments(self.data)
+
+	return self.data, nil, nil
+}

@@ -188,3 +188,30 @@ transport_utils_map_transports_already_loaded :: proc(
 	return mapping
 }
 
+// Java: TransportUtils.loadUnitIntoFirstAvailableTransport(Unit unit,
+//     List<Unit> canTransport, Map<Unit,Unit> mapping, IntegerMap<Unit> addedLoad)
+//   -> Optional<Unit>  (private static)
+// Walks `canTransport` in order; for the first transport whose remaining
+// capacity (TransportTracker.getAvailableCapacity - addedLoad) is at least
+// the unit's transport cost, records the load and returns that transport.
+// Returns nil if no transport had room (Java's Optional.empty()).
+transport_utils_load_unit_into_first_available_transport :: proc(
+	unit: ^Unit,
+	can_transport: [dynamic]^Unit,
+	mapping: ^map[^Unit]^Unit,
+	added_load: ^Integer_Map,
+) -> ^Unit {
+	cost := unit_attachment_get_transport_cost(unit_get_unit_attachment(unit))
+	for transport in can_transport {
+		capacity :=
+			transport_tracker_get_available_capacity(transport) -
+			integer_map_get_int(added_load, rawptr(transport))
+		if capacity >= cost {
+			integer_map_add(added_load, rawptr(transport), cost)
+			mapping^[unit] = transport
+			return transport
+		}
+	}
+	return nil
+}
+

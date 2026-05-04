@@ -152,6 +152,20 @@ route_get_movement_cost :: proc(self: ^Route, unit: ^Unit) -> f64 {
 	return route_find_movement_cost(unit, self.steps[:])
 }
 
+// Mirrors Java Route#getMovementCostIgnoreEnd(Unit): delegates to the private
+// static findMovementCost helper, but excludes the final step territory (the
+// route's end). When `steps` is empty, the full (empty) slice is used so the
+// result is BigDecimal.ZERO → 0.
+route_get_movement_cost_ignore_end :: proc(self: ^Route, unit: ^Unit) -> f64 {
+	territories: []^Territory
+	if len(self.steps) > 0 {
+		territories = self.steps[:len(self.steps) - 1]
+	} else {
+		territories = self.steps[:]
+	}
+	return route_find_movement_cost(unit, territories)
+}
+
 // Mirrors Java Route#findMovementCost(Unit, Collection<Territory>) (private
 // static). Sums TerritoryEffectHelper.getMovementCost(t, unit) over each
 // territory in the collection. BigDecimal → f64; BigDecimal.ZERO → 0.

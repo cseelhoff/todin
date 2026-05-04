@@ -78,3 +78,23 @@ aa_defense_combat_value_build_with_no_unit_supports :: proc(self: ^Aa_Defense_Co
 	aa_defense_combat_value_builder_enemy_units(b, make([dynamic]^Unit))
 	return aa_defense_combat_value_builder_build(b)
 }
+
+// Java: AaDefenseCombatValue.getRoll()
+//   return new AaRoll(rollSupportFromFriends.copy(), rollSupportFromEnemies.copy());
+aa_defense_combat_value_get_roll :: proc(self: ^Aa_Defense_Combat_Value) -> ^Aa_Roll {
+	return aa_roll_new(
+		available_supports_copy(self.roll_support_from_friends),
+		available_supports_copy(self.roll_support_from_enemies),
+	)
+}
+
+// Java: AaDefenseCombatValue.getStrength()
+//   return new AaDefenseStrength(
+//       this, strengthSupportFromFriends.copy(), strengthSupportFromEnemies.copy());
+aa_defense_combat_value_get_strength :: proc(self: ^Aa_Defense_Combat_Value) -> ^Aa_Defense_Combat_Value_Aa_Defense_Strength {
+	return aa_defense_strength_new(
+		self,
+		available_supports_copy(self.strength_support_from_friends),
+		available_supports_copy(self.strength_support_from_enemies),
+	)
+}

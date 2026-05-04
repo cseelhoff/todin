@@ -743,3 +743,37 @@ transport_tracker_unload_transport_change :: proc(
 	return &change.change
 }
 
+// games.strategy.triplea.delegate.TransportTracker#reloadTransports(
+//     java.util.Collection, games.strategy.engine.data.CompositeChange)
+//
+// Java:
+//   Collection<Unit> transports =
+//       CollectionUtils.getMatches(units, Matches.unitCanTransport());
+//   for (Unit transport : transports) {
+//     for (Unit load : transport.getUnloaded()) {
+//       Change loadChange = TransportTracker.loadTransportChange(transport, load);
+//       change.add(loadChange);
+//     }
+//   }
+// `Matches.unitCanTransport()` is a closure-style predicate (proc + ctx),
+// so we filter inline rather than via `collection_utils_get_matches`
+// (which only accepts plain `proc(rawptr) -> bool`).
+transport_tracker_reload_transports :: proc(
+	units: [dynamic]^Unit,
+	change: ^Composite_Change,
+) {
+	can_transport_p, can_transport_c := matches_unit_can_transport()
+	for transport in units {
+		if transport == nil {
+			continue
+		}
+		if !can_transport_p(can_transport_c, transport) {
+			continue
+		}
+		for load in unit_get_unloaded(transport) {
+			load_change := transport_tracker_load_transport_change(transport, load)
+			composite_change_add(change, load_change)
+		}
+	}
+}
+

@@ -26,6 +26,19 @@ original_owner_tracker_add_original_owner_change_unit :: proc(unit: ^Unit, playe
 	return change_factory_unit_property_change(unit, rawptr(player), "originalOwner")
 }
 
+// Java: public static Change addOriginalOwnerChange(final Territory t, final GamePlayer player) {
+//   return ChangeFactory.attachmentPropertyChange(
+//       TerritoryAttachment.getOrThrow(t), player, Constants.ORIGINAL_OWNER);
+// }
+original_owner_tracker_add_original_owner_change_territory :: proc(t: ^Territory, player: ^Game_Player) -> ^Change {
+	ta := territory_attachment_get_or_throw(t)
+	return change_factory_attachment_property_change(
+		cast(^I_Attachment)rawptr(ta),
+		rawptr(player),
+		"originalOwner",
+	)
+}
+
 // Java: public static Optional<GamePlayer> getOriginalOwner(final Territory t) {
 //   return TerritoryAttachment.get(t).flatMap(TerritoryAttachment::getOriginalOwner);
 // }

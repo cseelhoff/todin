@@ -29,6 +29,18 @@ server_game_1_start_history_event :: proc(self: ^Server_Game_1, event: string) {
 	history_writer_start_event(self.history_writer, event)
 }
 
+// games.strategy.engine.framework.ServerGame$1#startHistoryEvent(java.lang.String,java.lang.Object)
+server_game_1_start_history_event_with_data :: proc(
+	self: ^Server_Game_1,
+	event: string,
+	rendering_data: any,
+) {
+	server_game_1_start_history_event(self, event)
+	if rendering_data.data != nil {
+		server_game_1_set_rendering_data(self, rendering_data)
+	}
+}
+
 // games.strategy.engine.framework.ServerGame$1#gameDataChanged(games.strategy.engine.data.Change)
 server_game_1_game_data_changed :: proc(self: ^Server_Game_1, change: ^Change) {
 	server_game_1_assert_correct_caller(self)

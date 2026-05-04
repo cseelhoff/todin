@@ -184,7 +184,23 @@ unit_separator_lambda_categorize_sort :: proc(a, b: ^Unit_Category) -> bool {
 	return unit_category_compare_to(a, b) < 0
 }
 
-unit_separator_categorize :: proc(
+// Java:
+//   public static Set<UnitCategory> categorize(final Collection<Unit> units) {
+//     return categorize(units, SeparatorCategories.builder().build());
+//   }
+unit_separator_categorize_default :: proc(units: [dynamic]^Unit) -> [dynamic]^Unit_Category {
+	defaults := unit_separator_separator_categories_separator_categories_builder_build(
+		unit_separator_separator_categories_builder(),
+	)
+	return unit_separator_categorize_with_options(units, defaults)
+}
+
+unit_separator_categorize :: proc {
+	unit_separator_categorize_default,
+	unit_separator_categorize_with_options,
+}
+
+unit_separator_categorize_with_options :: proc(
 	units: [dynamic]^Unit,
 	separator_categories: ^Unit_Separator_Separator_Categories,
 ) -> [dynamic]^Unit_Category {

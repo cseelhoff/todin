@@ -99,3 +99,36 @@ unit_power_strength_and_rolls_to_zero :: proc(
 	)
 	return unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
 }
+
+// Java: UnitPowerStrengthAndRolls#subtractStrength(int)
+unit_power_strength_and_rolls_subtract_strength :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+	strength_to_subtract: i32,
+) -> ^Unit_Power_Strength_And_Rolls {
+	cur_strength := strength_value_of(self.dice_sides, self.strength_and_rolls.strength)
+	cur_rolls := roll_value_of(self.strength_and_rolls.rolls)
+	new_strength := strength_value_add(cur_strength, -1 * strength_to_subtract)
+	return unit_power_strength_and_rolls_update(self, new_strength, cur_rolls)
+}
+
+// Java: UnitPowerStrengthAndRolls#subtractRolls(int)
+unit_power_strength_and_rolls_subtract_rolls :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+	rolls_to_subtract: i32,
+) -> ^Unit_Power_Strength_And_Rolls {
+	cur_strength := strength_value_of(self.dice_sides, self.strength_and_rolls.strength)
+	cur_rolls := roll_value_of(self.strength_and_rolls.rolls)
+	new_rolls := roll_value_add(cur_rolls, -1 * rolls_to_subtract)
+	return unit_power_strength_and_rolls_update(self, cur_strength, new_rolls)
+}
+
+// Java: UnitPowerStrengthAndRolls#updateRolls(int)
+unit_power_strength_and_rolls_update_rolls :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+	new_rolls_value: i32,
+) -> ^Unit_Power_Strength_And_Rolls {
+	cur_strength := strength_value_of(self.dice_sides, self.strength_and_rolls.strength)
+	cur_rolls := roll_value_of(self.strength_and_rolls.rolls)
+	new_rolls := roll_value_to_value(cur_rolls, new_rolls_value)
+	return unit_power_strength_and_rolls_update(self, cur_strength, new_rolls)
+}

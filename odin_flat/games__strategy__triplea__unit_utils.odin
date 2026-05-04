@@ -345,3 +345,66 @@ unit_utils_get_biggest_producer :: proc(
 	return highest_unit
 }
 
+// games.strategy.triplea.UnitUtils#getProductionPotentialOfTerritory(
+//   Collection<Unit>, Territory, GamePlayer, boolean accountForDamage,
+//   boolean mathMaxZero) -> int
+//
+// Returns the production capacity of `producer` for `player`, computed
+// from the biggest producing unit (if any) at start of step. Mirrors
+// Java's `Optional.orElse(null)` by passing the possibly-nil result of
+// `getBiggestProducer` straight to `getHowMuchCanUnitProduce`, which
+// returns 0 when its unit argument is nil.
+unit_utils_get_production_potential_of_territory :: proc(
+	units_at_start_of_step_in_territory: [dynamic]^Unit,
+	producer: ^Territory,
+	player: ^Game_Player,
+	account_for_damage: bool,
+	math_max_zero: bool,
+) -> i32 {
+	biggest := unit_utils_get_biggest_producer(
+		units_at_start_of_step_in_territory,
+		producer,
+		player,
+		account_for_damage,
+	)
+	return unit_utils_get_how_much_can_unit_produce(
+		biggest,
+		producer,
+		account_for_damage,
+		math_max_zero,
+	)
+}
+
+// Synthetic Java lambda inside `translateAttributesToOtherUnits`:
+//   receivingUnit -> translateDependentUnitsToOtherUnit(
+//                        unitGivingAttributes, receivingUnit)
+// Applied to the `Optional<Unit>` from `stream().findFirst()`. The
+// lambda captures `unitGivingAttributes`; we pass it explicitly here.
+unit_utils_lambda_translate_attributes_to_other_units_0 :: proc(
+	unit_giving_attributes: ^Unit,
+	receiving_unit: ^Unit,
+) -> ^Composite_Change {
+	return unit_utils_translate_dependent_units_to_other_unit(
+		unit_giving_attributes,
+		receiving_unit,
+	)
+}
+
+// Synthetic Java lambda inside `translateAttributesToOtherUnits`:
+//   receivingUnit -> translateHitPointsAndDamageToOtherUnit(
+//                        unitGivingAttributes, territory, receivingUnit)
+// The mapping step of the second `stream().map(...).reduce(...)` over
+// every receiving unit. The lambda captures `unitGivingAttributes` and
+// `territory`; we pass them explicitly here.
+unit_utils_lambda_translate_attributes_to_other_units_1 :: proc(
+	unit_giving_attributes: ^Unit,
+	territory: ^Territory,
+	receiving_unit: ^Unit,
+) -> ^Composite_Change {
+	return unit_utils_translate_hit_points_and_damage_to_other_unit(
+		unit_giving_attributes,
+		territory,
+		receiving_unit,
+	)
+}
+

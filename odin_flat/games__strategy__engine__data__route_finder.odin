@@ -160,14 +160,48 @@ Route_Finder_Get_Neighbors_Validating_Canals_And_Ctx :: struct {
 	player:              ^Game_Player,
 }
 
+// Captures for the synthetic Java lambda
+// RouteFinder#lambda$getNeighborsValidatingCanals$1, namely
+// `t -> moveValidator.canAnyUnitsPassCanal(territory, t, units, player)`
+// inside the `Predicate.and(...)` call in getNeighborsValidatingCanals.
+// The lambda closes over the enclosing RouteFinder's MoveValidator, the
+// outer per-call `territory`, the unit collection, and the GamePlayer.
+@(private="file")
+Route_Finder_Lambda_Get_Neighbors_Validating_Canals_1_Ctx :: struct {
+	move_validator: ^Move_Validator,
+	territory:      ^Territory,
+	units:          [dynamic]^Unit,
+	player:         ^Game_Player,
+}
+
+// Mirrors the synthetic Java lambda
+// RouteFinder#lambda$getNeighborsValidatingCanals$1:
+//     t -> moveValidator.canAnyUnitsPassCanal(territory, t, units, player)
+// Used as the right-hand side of `neighborFilter.and(...)` inside
+// getNeighborsValidatingCanals. Per llm-instructions.md the Java
+// Predicate becomes a `proc(rawptr, ^Territory) -> bool` paired with
+// its userdata. The MoveValidator proc is a forward reference (layer
+// 6) — package-level proc resolution in Odin makes this safe.
+@(private="file")
+route_finder_lambda_get_neighbors_validating_canals_1 :: proc(
+	ctx: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Route_Finder_Lambda_Get_Neighbors_Validating_Canals_1_Ctx)ctx
+	return move_validator_can_any_units_pass_canal(
+		c.move_validator,
+		c.territory,
+		t,
+		c.units,
+		c.player,
+	)
+}
+
 // Implements the `Predicate.and` combination of the caller-supplied
 // neighborFilter with the canal-check lambda from the Java
 // getNeighborsValidatingCanals body. Java short-circuits via `&&` inside
 // Predicate.and, so we evaluate neighborFilter first and only consult the
-// MoveValidator on a non-null GamePlayer when that succeeds. The canal
-// proc `move_validator_can_any_units_pass_canal` is a forward reference
-// (layer 6) — Odin resolves procs at the package level, so emitting the
-// call here is fine even though it isn't yet implemented.
+// canal-check lambda on success.
 @(private="file")
 route_finder_get_neighbors_validating_canals_and_proc :: proc(
 	ctx: rawptr,
@@ -177,13 +211,13 @@ route_finder_get_neighbors_validating_canals_and_proc :: proc(
 	if c.neighbor_filter != nil && !c.neighbor_filter(c.neighbor_filter_ctx, t) {
 		return false
 	}
-	return move_validator_can_any_units_pass_canal(
-		c.self.move_validator,
-		c.territory,
-		t,
-		c.units,
-		c.player,
-	)
+	lambda_ctx := Route_Finder_Lambda_Get_Neighbors_Validating_Canals_1_Ctx{
+		move_validator = c.self.move_validator,
+		territory      = c.territory,
+		units          = c.units,
+		player         = c.player,
+	}
+	return route_finder_lambda_get_neighbors_validating_canals_1(rawptr(&lambda_ctx), t)
 }
 
 // Mirrors private RouteFinder#getNeighborsValidatingCanals(Territory,

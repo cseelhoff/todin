@@ -958,3 +958,56 @@ politics_delegate_change_relationships :: proc(
 	politics_delegate_chain_alliances_together(self.bridge)
 }
 
+// games.strategy.triplea.delegate.PoliticsDelegate#attemptAction(PoliticalActionAttachment)
+// Java: gates the action on the use-politics property, validates conditions,
+// then either pays + rolls (success → changeRelationships+notifySuccess,
+// failed accept / failed roll → notifyFailure) or notifies the player about
+// missing money / no-longer-valid action. The Java `paa.useAttempt(bridge)`
+// step (decrement attemptsLeftThisTurn) is inlined here because that
+// helper is not in the AI-test-flagged port surface.
+politics_delegate_attempt_action :: proc(
+	self: ^Politics_Delegate,
+	paa: ^Political_Action_Attachment,
+) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	if !properties_get_use_politics(game_data_get_properties(data)) {
+		politics_delegate_notify_politics_turned_off(self)
+		return
+	}
+	if abstract_user_action_attachment_can_perform(
+		&paa.abstract_user_action_attachment,
+		politics_delegate_get_tested_conditions(self),
+	) {
+		if politics_delegate_check_enough_money(self, paa) {
+			politics_delegate_charge_for_action(self, paa)
+			// Inlined PoliticalActionAttachment.useAttempt(bridge):
+			//   bridge.addChange(ChangeFactory.attachmentPropertyChange(
+			//       this, attemptsLeftThisTurn - 1, ATTEMPTS_LEFT_THIS_TURN));
+			new_attempts_left := new(i32)
+			new_attempts_left^ = paa.attempts_left_this_turn - 1
+			i_delegate_bridge_add_change(
+				self.bridge,
+				change_factory_attachment_property_change(
+					cast(^I_Attachment)rawptr(paa),
+					rawptr(new_attempts_left),
+					"attemptsLeftThisTurn",
+				),
+			)
+			if politics_delegate_action_roll_succeeds(self, paa) {
+				if politics_delegate_action_is_accepted(self, paa) {
+					politics_delegate_change_relationships(self, paa)
+					politics_delegate_notify_success(self, paa)
+				} else {
+					politics_delegate_notify_failure(self, paa)
+				}
+			} else {
+				politics_delegate_notify_failure(self, paa)
+			}
+		} else {
+			politics_delegate_notify_money(self, paa)
+		}
+	} else {
+		politics_delegate_notify_no_valid_action(self)
+	}
+}
+

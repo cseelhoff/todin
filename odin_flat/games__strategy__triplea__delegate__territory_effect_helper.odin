@@ -243,3 +243,14 @@ territory_effect_helper_unit_type_keeps_blitz :: proc(
 ) -> bool {
 	return !territory_effect_helper_unit_type_looses_blitz(type, location)
 }
+
+// games.strategy.triplea.delegate.TerritoryEffectHelper#unitKeepsBlitz(Unit, Territory)
+//   public static boolean unitKeepsBlitz(final Unit unit, final Territory location) {
+//     return unitTypeKeepsBlitz(unit.getType(), location);
+//   }
+territory_effect_helper_unit_keeps_blitz :: proc(
+	unit: ^Unit,
+	location: ^Territory,
+) -> bool {
+	return territory_effect_helper_unit_type_keeps_blitz(unit_get_type(unit), location)
+}

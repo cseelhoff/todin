@@ -130,3 +130,31 @@ main_offense_combat_value_build_opposite_combat_value :: proc(self: ^Main_Offens
 main_offense_combat_value_choose_best_roll :: proc(self: ^Main_Offense_Combat_Value, unit: ^Unit) -> bool {
 	return self.lhtr_heavy_bombers || unit_attachment_get_choose_best_roll(unit_get_unit_attachment(unit))
 }
+
+// Java: public RollCalculator getRoll() {
+//   return new MainOffenseRoll(rollSupportFromFriends.copy(), rollSupportFromEnemies.copy());
+// }
+main_offense_combat_value_get_roll :: proc(
+	self: ^Main_Offense_Combat_Value,
+) -> ^Main_Offense_Combat_Value_Main_Offense_Roll {
+	return main_offense_combat_value_main_offense_roll_new(
+		available_supports_copy(self.roll_support_from_friends),
+		available_supports_copy(self.roll_support_from_enemies),
+	)
+}
+
+// Java: public StrengthCalculator getStrength() {
+//   return new MainOffenseStrength(
+//       gameDiceSides, territoryEffects,
+//       strengthSupportFromFriends.copy(), strengthSupportFromEnemies.copy());
+// }
+main_offense_combat_value_get_strength :: proc(
+	self: ^Main_Offense_Combat_Value,
+) -> ^Main_Offense_Combat_Value_Main_Offense_Strength {
+	return main_offense_combat_value_main_offense_strength_new(
+		int(self.game_dice_sides),
+		self.territory_effects,
+		available_supports_copy(self.strength_support_from_friends),
+		available_supports_copy(self.strength_support_from_enemies),
+	)
+}

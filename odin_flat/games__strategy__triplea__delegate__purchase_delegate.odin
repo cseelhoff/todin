@@ -419,6 +419,44 @@ purchase_delegate_purchase :: proc(
 	return ""
 }
 
+// games.strategy.triplea.delegate.PurchaseDelegate#getRepairCosts(java.util.Map, GamePlayer)
+// Java: `private IntegerMap<Resource> getRepairCosts(
+//   Map<Unit, IntegerMap<RepairRule>> repairRules, GamePlayer player)`.
+// Sums `rule.getCosts() * map.getInt(rule)` over every (unit -> rule -> count)
+// entry into a fresh Integer_Map<Resource>, then applies the player's
+// repair-tech discount (1.0 means no discount). The discount is
+// TechAbilityAttachment.getRepairDiscount over the player's current tech
+// advances drawn from `getData().getTechnologyFrontier()`.
+purchase_delegate_get_repair_costs :: proc(
+	self:         ^Purchase_Delegate,
+	repair_rules: map[^Unit]^Integer_Map,
+	player:       ^Game_Player,
+) -> ^Integer_Map {
+	costs := integer_map_new()
+	for _, rules in repair_rules {
+		if rules == nil {
+			continue
+		}
+		for k, count in rules.map_values {
+			rule := cast(^Repair_Rule)k
+			rule_costs := repair_rule_get_costs(rule)
+			integer_map_add_multiple(costs, &rule_costs, count)
+			delete(rule_costs.map_values)
+		}
+	}
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	advances := tech_tracker_get_current_tech_advances(
+		player,
+		game_data_get_technology_frontier(data),
+	)
+	defer delete(advances)
+	discount := tech_ability_attachment_get_repair_discount_with_techs(advances)
+	if discount != 1.0 {
+		integer_map_multiply_all_values_by(costs, discount)
+	}
+	return costs
+}
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.PurchaseDelegate
 

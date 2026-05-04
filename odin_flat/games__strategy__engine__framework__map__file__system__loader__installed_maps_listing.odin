@@ -137,6 +137,14 @@ installed_maps_listing_parse_map_files :: proc(folder: Path) -> ^Installed_Maps_
 	return installed_maps_listing_new(path_to_string(folder))
 }
 
+// Java: public static synchronized InstalledMapsListing parseMapFiles() {
+//   return parseMapFiles(ClientFileSystemHelper.getUserMapsFolder());
+// }
+// No-arg overload. Synchronization is dropped (single-threaded port).
+installed_maps_listing_parse_map_files_noargs :: proc() -> ^Installed_Maps_Listing {
+	return installed_maps_listing_parse_map_files(client_file_system_helper_get_user_maps_folder_noargs())
+}
+
 installed_maps_listing_normalize_name :: proc(map_name: string) -> string {
 	lower := strings.to_lower(map_name)
 	defer delete(lower)

@@ -89,3 +89,101 @@ technology_delegate_load_state :: proc(
 	self.techs = state.techs
 }
 
+// games.strategy.triplea.delegate.TechnologyDelegate#delegateCurrentlyRequiresUserInput()
+// Mirrors the Java guard chain: tech development must be enabled, the
+// player must hold enough capitals to produce, then either the WW2v3 tech
+// token branch (if any tokens are held) or the PUs-vs-techCost check —
+// possibly summing in PUs from helpPayTechCost players when the player
+// alone cannot afford a roll. Constants.TECH_TOKENS / Constants.PUS
+// resolve to the literals "techTokens" / "PUs" (see battle_tracker.odin
+// and resource_collection.odin for the same convention).
+technology_delegate_delegate_currently_requires_user_input :: proc(
+	self: ^Technology_Delegate,
+) -> bool {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if !properties_get_tech_development(game_data_get_properties(data)) {
+		return false
+	}
+	if !territory_attachment_do_we_have_enough_capitals_to_produce(
+		self.player,
+		game_data_get_map(data),
+	) {
+		return false
+	}
+	if properties_get_ww2_v3_tech_model(game_data_get_properties(data)) {
+		tech_tokens := resource_list_get_resource_optional(
+			game_data_get_resource_list(data),
+			"techTokens",
+		)
+		if tech_tokens != nil &&
+		   resource_collection_get_quantity(game_player_get_resources(self.player), tech_tokens) >
+			   0 {
+			return true
+		}
+	}
+	tech_cost := tech_tracker_get_tech_cost(self.player)
+	money := resource_collection_get_quantity_by_name(
+		game_player_get_resources(self.player),
+		"PUs",
+	)
+	if money < tech_cost {
+		pa := player_attachment_get(self.player)
+		if pa == nil {
+			return false
+		}
+		help_pay := player_attachment_get_help_pay_tech_cost(pa)
+		if len(help_pay) == 0 {
+			return false
+		}
+		for p in help_pay {
+			money += resource_collection_get_quantity_by_name(
+				game_player_get_resources(p),
+				"PUs",
+			)
+		}
+		return money >= tech_cost
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.TechnologyDelegate#getAvailableTechs(GamePlayer, TechnologyFrontier)
+// Java: CollectionUtils.difference(allAdvances, currentAdvances) where
+// allAdvances = TechAdvance.getTechAdvances(frontier, player) and
+// currentAdvances = TechTracker.getCurrentTechAdvances(player, frontier).
+// Inlined as a typed difference (collection_utils_difference is rawptr-only)
+// to keep ^Tech_Advance throughout. The result is a fresh dynamic array; the
+// two source lists are owned and freed here.
+technology_delegate_get_available_techs :: proc(
+	player: ^Game_Player,
+	technology_frontier: ^Technology_Frontier,
+) -> [dynamic]^Tech_Advance {
+	current_advances := tech_tracker_get_current_tech_advances(player, technology_frontier)
+	defer delete(current_advances)
+	all_advances := tech_advance_get_tech_advances(technology_frontier, player)
+	defer delete(all_advances)
+	result := make([dynamic]^Tech_Advance, 0)
+	for ta in all_advances {
+		in_current := false
+		for c in current_advances {
+			if c == ta {
+				in_current = true
+				break
+			}
+		}
+		if in_current {
+			continue
+		}
+		already := false
+		for r in result {
+			if r == ta {
+				already = true
+				break
+			}
+		}
+		if !already {
+			append(&result, ta)
+		}
+	}
+	return result
+}
+

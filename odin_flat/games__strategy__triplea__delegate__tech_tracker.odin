@@ -608,3 +608,61 @@ tech_tracker_has_paratroopers :: proc(player: ^Game_Player) -> bool {
 	return tech_attachment_get_paratroopers(game_player_get_tech_attachment(player))
 }
 
+// Java: private static Change createTechChange(
+//     final TechAdvance advance, final GamePlayer player, final boolean value) {
+//   final TechAttachment attachment = player.getTechAttachment();
+//   if (advance instanceof GenericTechAdvance
+//       && ((GenericTechAdvance) advance).getAdvance() == null) {
+//     return ChangeFactory.genericTechChange(attachment, value, advance.getProperty());
+//   }
+//   return ChangeFactory.attachmentPropertyChange(
+//       attachment, String.valueOf(value), advance.getProperty());
+// }
+// `instanceof GenericTechAdvance` is encoded by the `is_generic` discriminator
+// flag on Tech_Advance (see tech_advance.odin); when true the pointer can be
+// safely cast to ^Generic_Tech_Advance to read the wrapped advance. The
+// String.valueOf(boolean) branch heap-allocates the literal "true"/"false"
+// per the change_factory_attachment_property_change rawptr convention used
+// throughout the port (cf. trigger_attachment.odin "uses" change emission).
+tech_tracker_create_tech_change :: proc(
+	advance: ^Tech_Advance,
+	player: ^Game_Player,
+	value: bool,
+) -> ^Change {
+	attachment := game_player_get_tech_attachment(player)
+	if advance != nil && advance.is_generic {
+		generic := cast(^Generic_Tech_Advance)advance
+		if generic_tech_advance_get_advance(generic) == nil {
+			return change_factory_generic_tech_change(
+				attachment,
+				value,
+				tech_advance_get_property(advance),
+			)
+		}
+	}
+	new_value := new(string)
+	new_value^ = value ? "true" : "false"
+	return change_factory_attachment_property_change(
+		cast(^I_Attachment)rawptr(attachment),
+		rawptr(new_value),
+		tech_advance_get_property(advance),
+	)
+}
+
+// Java: private Collection<TechAdvance> getCurrentTechAdvances(GamePlayer player) {
+//   return getCurrentTechAdvances(player, data.getTechnologyFrontier());
+// }
+// Instance overload that thunks to the static two-arg sibling already
+// defined as tech_tracker_get_current_tech_advances. Suffix `_1` follows
+// the project's arity-based overload-disambiguation convention
+// (cf. territory_effect_attachment.odin).
+tech_tracker_get_current_tech_advances_1 :: proc(
+	self: ^Tech_Tracker,
+	player: ^Game_Player,
+) -> [dynamic]^Tech_Advance {
+	return tech_tracker_get_current_tech_advances(
+		player,
+		game_data_get_technology_frontier(self.data),
+	)
+}
+

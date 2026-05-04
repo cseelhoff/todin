@@ -130,3 +130,32 @@ bombardment_combat_value_build_opposite_combat_value :: proc(
 	return bombardment_combat_value_bombardment_combat_value_builder_build(b)
 }
 
+// Java: public RollCalculator getRoll() {
+//   return new MainOffenseCombatValue.MainOffenseRoll(
+//       rollSupportFromFriends.copy(), rollSupportFromEnemies.copy());
+// }
+bombardment_combat_value_get_roll :: proc(
+	self: ^Bombardment_Combat_Value,
+) -> ^Main_Offense_Combat_Value_Main_Offense_Roll {
+	return main_offense_combat_value_main_offense_roll_new(
+		available_supports_copy(self.roll_support_from_friends),
+		available_supports_copy(self.roll_support_from_enemies),
+	)
+}
+
+// Java: public StrengthCalculator getStrength() {
+//   return new BombardmentStrength(
+//       gameDiceSides, territoryEffects,
+//       strengthSupportFromFriends.copy(), strengthSupportFromEnemies.copy());
+// }
+bombardment_combat_value_get_strength :: proc(
+	self: ^Bombardment_Combat_Value,
+) -> ^Bombardment_Combat_Value_Bombardment_Strength {
+	return bombardment_strength_new(
+		int(self.game_dice_sides),
+		self.territory_effects,
+		available_supports_copy(self.strength_support_from_friends),
+		available_supports_copy(self.strength_support_from_enemies),
+	)
+}
+

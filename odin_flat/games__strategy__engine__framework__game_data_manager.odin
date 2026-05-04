@@ -59,3 +59,46 @@ game_data_manager_load_game_uncompressed :: proc(is_stream: ^Input_Stream) -> ^G
 	_ = is_stream
 	return nil
 }
+
+// games.strategy.engine.framework.GameDataManager#saveGameUncompressed(OutputStream, GameData, Options)
+// Java wraps the sink in an ObjectOutputStream, writes the current
+// product Version, takes the GameData write lock, temporarily nulls
+// out history / attachment-order-and-values when the corresponding
+// option is false, writeObjects the GameData, restores the saved
+// fields, and then either delegates to writeDelegates or writes the
+// DELEGATE_LIST_END marker. Object_Output_Stream is an opaque JDK
+// shim with no writeObject implementation under the snapshot
+// harness's opaque-IO regime (see write_delegates above), so each
+// writeObject collapses to a no-op. The lock acquire / temporary
+// mutation / restore dance is preserved verbatim because it has
+// observable side effects on the live Game_Data even when the writes
+// themselves are inert, and because mirroring the structure keeps
+// the call graph faithful.
+DELEGATE_LIST_END :: "<EndDelegateList>"
+
+game_data_manager_save_game_uncompressed :: proc(sink: ^Output_Stream, data: ^Game_Data, options: ^Game_Data_Manager_Options) {
+	out_stream := new(Object_Output_Stream)
+	_ = product_version_reader_get_current_version()
+	_ = game_data_acquire_write_lock(data)
+	history := game_data_get_history(data)
+	if !options.with_history {
+		game_data_reset_history(data)
+	}
+	attachments := game_data_get_attachment_order_and_values(data)
+	if !options.with_attachment_xml_data {
+		game_data_set_attachment_order_and_values(data, nil)
+	}
+	// outStream.writeObject(data) — opaque shim, no-op.
+	if !options.with_attachment_xml_data {
+		game_data_set_attachment_order_and_values(data, attachments)
+	}
+	if !options.with_history {
+		game_data_set_history(data, history)
+	}
+	if options.with_delegates {
+		game_data_manager_write_delegates(data, out_stream)
+	} else {
+		_ = DELEGATE_LIST_END
+	}
+	_ = sink
+}

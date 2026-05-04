@@ -485,3 +485,31 @@ initialization_delegate_init_two_hit_battleship :: proc(bridge: ^I_Delegate_Brid
 	}
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#initTech(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. For each player, fetch their currently-owned tech
+// advances against the global technology frontier; if any, emit a
+// history event and call advance.perform(player, bridge) for each.
+initialization_delegate_init_tech :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	players := player_list_get_players(game_data_get_player_list(data))
+	for player in players {
+		advances := tech_tracker_get_current_tech_advances(
+			player,
+			game_data_get_technology_frontier(data),
+		)
+		defer delete(advances)
+		if len(advances) > 0 {
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(bridge),
+				fmt.aprintf(
+					"Initializing %s with tech advances",
+					default_named_get_name(&player.named_attachable.default_named),
+				),
+			)
+			for advance in advances {
+				tech_advance_perform(advance, player, bridge)
+			}
+		}
+	}
+}
+
