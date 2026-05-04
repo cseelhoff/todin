@@ -264,3 +264,147 @@ firing_group_splitter_general_generate_named_groups :: proc(
 	}
 }
 
+// ---------------------------------------------------------------------------
+// apply(BattleState) -> List<FiringGroup>
+//
+// Implements the Function<BattleState, Collection<FiringGroup>> entry point:
+//   1. Collect ourUnits (ACTIVE on side) and enemyUnits (ALIVE on opposite).
+//   2. enemyCombatants = combat participants on opposite side, filtered by
+//      Matches.unitIsNotInfrastructure() AND (side == DEFENSE ?
+//      !suicideOnAttack : true) AND (side == OFFENSE ? !suicideOnDefense :
+//      true).
+//   3. canFire = combat participants on side, filtered by
+//      getFiringUnitPredicate(battleState), additionally restricted to
+//      battleState.getPlayer(side)'s own units when side == OFFENSE and
+//      Properties.getAlliedAirIndependent(...) is false.
+//   4. Build TargetGroup list. If size 1, just buildFiringGroups; else split
+//      out the air-vs-sub groups (named AIR_FIRE_NON_SUBS) from the rest
+//      (named groupName) via generateNamedGroups.
+//
+// BattleState.UnitBattleFilter.ACTIVE corresponds to {ALIVE, CASUALTY} per
+// the Java enum definition; ALIVE corresponds to {ALIVE}.
+// ---------------------------------------------------------------------------
+
+firing_group_splitter_general_apply :: proc(
+	self: ^Firing_Group_Splitter_General,
+	battle_state: ^Battle_State,
+) -> [dynamic]^Firing_Group {
+	active_filter := battle_state_unit_battle_filter_new(.Alive, .Casualty)
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	opposite := battle_state_side_get_opposite(self.side)
+
+	our_units := battle_state_filter_units(battle_state, active_filter, self.side)
+	enemy_units := battle_state_filter_units(battle_state, alive_filter, opposite)
+
+	// enemyCombatants: getCombatParticipants(battleState, opposite, enemyUnits, ourUnits)
+	// then keep iff unitIsNotInfrastructure AND (side==DEFENSE → !suicideOnAttack)
+	// AND (side==OFFENSE → !suicideOnDefense).
+	enemy_participants := firing_group_splitter_general_get_combat_participants(
+		self,
+		battle_state,
+		opposite,
+		enemy_units,
+		our_units,
+	)
+	ni_p, ni_c := matches_unit_is_not_infrastructure()
+	soa_p, soa_c := matches_unit_is_suicide_on_attack()
+	sod_p, sod_c := matches_unit_is_suicide_on_defense()
+	enemy_combatants: [dynamic]^Unit
+	for u in enemy_participants {
+		if !ni_p(ni_c, u) {
+			continue
+		}
+		if self.side == .DEFENSE && soa_p(soa_c, u) {
+			continue
+		}
+		if self.side == .OFFENSE && sod_p(sod_c, u) {
+			continue
+		}
+		append(&enemy_combatants, u)
+	}
+
+	// canFire: getCombatParticipants(battleState, side, ourUnits, enemyUnits)
+	// then keep iff getFiringUnitPredicate(battleState) AND (when side==OFFENSE
+	// and !alliedAirIndependent → unitIsOwnedBy(battleState.getPlayer(side))).
+	our_participants := firing_group_splitter_general_get_combat_participants(
+		self,
+		battle_state,
+		self.side,
+		our_units,
+		enemy_units,
+	)
+	fp_p, fp_c := firing_group_splitter_general_get_firing_unit_predicate(self, battle_state)
+	restrict_to_owned :=
+		self.side == .OFFENSE &&
+		!properties_get_allied_air_independent(
+			game_data_get_properties(battle_state_get_game_data(battle_state)),
+		)
+	owned_p: proc(rawptr, ^Unit) -> bool
+	owned_c: rawptr
+	if restrict_to_owned {
+		owned_p, owned_c = matches_unit_is_owned_by(battle_state_get_player(battle_state, self.side))
+	}
+	can_fire: [dynamic]^Unit
+	for u in our_participants {
+		if !fp_p(fp_c, u) {
+			continue
+		}
+		if restrict_to_owned && !owned_p(owned_c, u) {
+			continue
+		}
+		append(&can_fire, u)
+	}
+
+	firing_groups: [dynamic]^Firing_Group
+	target_groups := target_group_new_target_groups(can_fire, enemy_combatants)
+	if len(target_groups) == 1 {
+		built := firing_group_splitter_general_build_firing_groups(
+			self,
+			self.group_name,
+			can_fire,
+			enemy_combatants,
+			target_groups[0],
+		)
+		for g in built {
+			append(&firing_groups, g)
+		}
+	} else {
+		// Split off air-vs-sub TargetGroups; name them AIR_FIRE_NON_SUBS.
+		// generateNamedGroups handles size-1 vs size-N internally.
+		air_pred, air_ctx := firing_group_splitter_general_filter_air_vs_sub_target_groups(
+			self,
+			enemy_units,
+		)
+		air_vs_sub_groups: [dynamic]^Target_Group
+		remaining: [dynamic]^Target_Group
+		for tg in target_groups {
+			if air_pred(air_ctx, tg) {
+				append(&air_vs_sub_groups, tg)
+			} else {
+				append(&remaining, tg)
+			}
+		}
+		if len(air_vs_sub_groups) > 0 {
+			firing_group_splitter_general_generate_named_groups(
+				self,
+				BATTLE_STEP_AIR_FIRE_NON_SUBS,
+				&firing_groups,
+				air_vs_sub_groups,
+				can_fire,
+				enemy_combatants,
+			)
+		}
+		if len(remaining) > 0 {
+			firing_group_splitter_general_generate_named_groups(
+				self,
+				self.group_name,
+				&firing_groups,
+				remaining,
+				can_fire,
+				enemy_combatants,
+			)
+		}
+	}
+	return firing_groups
+}
+

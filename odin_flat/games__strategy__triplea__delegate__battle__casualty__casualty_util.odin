@@ -21,3 +21,13 @@ casualty_util_get_total_hitpoints_left :: proc(units: [dynamic]^Unit) -> i32 {
     return total_hit_points
 }
 
+// Java: static Map<Unit, Collection<Unit>> CasualtyUtil.getDependents(Collection<Unit>)
+casualty_util_get_dependents :: proc(targets: [dynamic]^Unit) -> map[^Unit][dynamic]^Unit {
+    // just worry about transports
+    dependents := make(map[^Unit][dynamic]^Unit)
+    for target in targets {
+        dependents[target] = transport_tracker_transporting_and_unloaded(target)
+    }
+    return dependents
+}
+

@@ -665,3 +665,101 @@ battle_delegate_add_bombardment_sources :: proc(self: ^Battle_Delegate) {
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#lambda$doScrambling$4(GameData, Territory)
+// Body of `from -> AbstractBattle.findDefender(from, player, data)` inside doScrambling
+// (the `.map(...)` over the scramble-from territories used to determine the defender).
+// `data` is captured locally, `player` is captured via `this`. Synthetic javac signature
+// enumerates `(GameData, Territory)`; the implicit receiver is the Battle_Delegate.
+battle_delegate_lambda_do_scrambling_4 :: proc(
+	self: ^Battle_Delegate,
+	data: ^Game_Data,
+	from: ^Territory,
+) -> ^Game_Player {
+	return abstract_battle_find_defender(from, self.player, &data.game_state)
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#landParatroopers(GamePlayer, Territory, IDelegateBridge)
+// Java: private static. If the player has paratroopers tech, gather all air-transports
+// and air-transportable units in the battle site; for every paratroop carried by one of
+// those air transports, emit a TransportTracker.unloadAirTransportChange. Commit and
+// log the resulting CompositeChange when non-empty.
+battle_delegate_land_paratroopers :: proc(
+	player: ^Game_Player,
+	battle_site: ^Territory,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if !tech_tracker_has_paratroopers(player) {
+		return
+	}
+	site_units := unit_collection_get_units(territory_get_unit_collection(battle_site))
+	air_transports := make([dynamic]^Unit)
+	paratroops := make([dynamic]^Unit)
+	air_pred, air_ctx := matches_unit_is_air_transport()
+	para_pred, para_ctx := matches_unit_is_air_transportable()
+	for u in site_units {
+		if air_pred(air_ctx, u) {
+			append(&air_transports, u)
+		}
+		if para_pred(para_ctx, u) {
+			append(&paratroops, u)
+		}
+	}
+	if len(air_transports) == 0 || len(paratroops) == 0 {
+		return
+	}
+	change := composite_change_new()
+	for paratroop in paratroops {
+		transport := unit_get_transported_by(paratroop)
+		if transport == nil || !slice.contains(air_transports[:], transport) {
+			continue
+		}
+		composite_change_add(
+			change,
+			transport_tracker_unload_air_transport_change(paratroop, battle_site, false),
+		)
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			fmt.aprintf(
+				"%s lands units in %s",
+				default_named_get_name(&player.named_attachable.default_named),
+				default_named_get_name(&battle_site.named_attachable.default_named),
+			),
+		)
+		i_delegate_bridge_add_change(bridge, &change.change)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#moveAirAndLand(IDelegateBridge, Collection<Unit>, Collection<Unit>, Territory, Territory)
+// Java: private static. Records a "<units> forced to land in <newTerritory>" history
+// child, applies a ChangeFactory.moveUnits(battleSite -> newTerritory) for the moved
+// air, and removes those units from defendingAirTotal so successive callers see only
+// the still-undecided survivors.
+battle_delegate_move_air_and_land :: proc(
+	bridge: ^I_Delegate_Bridge,
+	defending_air_being_moved: ^[dynamic]^Unit,
+	defending_air_total: ^[dynamic]^Unit,
+	new_territory: ^Territory,
+	battle_site: ^Territory,
+) {
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	msg := fmt.aprintf(
+		"%s forced to land in %s",
+		my_formatter_units_to_text(defending_air_being_moved^),
+		default_named_get_name(&new_territory.named_attachable.default_named),
+	)
+	history_writer_add_child_to_event(history_writer, msg)
+	change := change_factory_move_units(battle_site, new_territory, defending_air_being_moved^)
+	i_delegate_bridge_add_change(bridge, change)
+	// removeAll(defendingAirBeingMoved): rebuild defendingAirTotal without those units.
+	keep := make([dynamic]^Unit)
+	for u in defending_air_total {
+		if !slice.contains(defending_air_being_moved[:], u) {
+			append(&keep, u)
+		}
+	}
+	delete(defending_air_total^)
+	defending_air_total^ = keep
+}
+

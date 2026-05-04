@@ -14,6 +14,7 @@ I_Delegate_Bridge :: struct {
         get_data:                 proc(self: ^I_Delegate_Bridge) -> ^Game_Data,
         get_remote_player:        proc(self: ^I_Delegate_Bridge, player: ^Game_Player) -> ^Player,
         get_sound_channel_broadcaster: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel,
+        send_message:             proc(self: ^I_Delegate_Bridge, msg: ^Web_Socket_Message),
 }
 
 // Java owners covered by this file:
@@ -37,6 +38,18 @@ i_delegate_bridge_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Pla
 
 i_delegate_bridge_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
         return self.get_data(self)
+}
+
+// games.strategy.engine.delegate.IDelegateBridge#sendMessage(WebSocketMessage)
+//   Vtable dispatch through the proc field. AI snapshot harness bridges
+//   leave this field nil — websocket I/O is not modeled — and we treat
+//   a nil dispatch as a no-op (Java sends to the websocket; the
+//   in-memory snapshot path simply drops the message, equivalent to
+//   running with `useWebsocketNetwork = false`).
+i_delegate_bridge_send_message :: proc(self: ^I_Delegate_Bridge, msg: ^Web_Socket_Message) {
+        if self != nil && self.send_message != nil {
+                self.send_message(self, msg)
+        }
 }
 
 // Java has both `getRemotePlayer()` and `getRemotePlayer(GamePlayer)`. The

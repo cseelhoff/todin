@@ -274,3 +274,30 @@ offensive_general_retreat_get_amphibious_retreater :: proc(self: ^Offensive_Gene
 	return nil
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#canAttackerRetreat()
+//
+// Java:
+//   return RetreatChecks.canAttackerRetreat(
+//       battleState.filterUnits(ALIVE, DEFENSE),
+//       battleState.getGameData(),
+//       battleState::getAttackerRetreatTerritories,
+//       battleState.getStatus().isAmphibious());
+//
+// Odin's plain proc-pointers cannot capture battle_state, so we inline
+// the body of retreat_checks_can_attacker_retreat instead of passing a
+// supplier. Logic is identical: amphibious short-circuits to false,
+// defenseless-transports check delegates to retreat_checks, otherwise
+// we check that there is at least one attacker retreat territory.
+offensive_general_retreat_can_attacker_retreat :: proc(self: ^Offensive_General_Retreat) -> bool {
+	if battle_status_is_amphibious(battle_state_get_status(self.battle_state)) {
+		return false
+	}
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	defending_units := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	game_data := battle_state_get_game_data(self.battle_state)
+	if retreat_checks_only_defenseless_transports_left(defending_units, game_data) {
+		return false
+	}
+	return len(battle_state_get_attacker_retreat_territories(self.battle_state)) > 0
+}
+

@@ -305,3 +305,15 @@ client_setting_reset_value :: proc(self: ^Client_Setting) {
 	client_setting_set_value_and_flush(self, nil, false)
 }
 
+// Java: public static final ClientSetting<Boolean> useWebsocketNetwork
+//   = new BooleanClientSetting("USE_WEBSOCKET_NETWORK", false);
+//   ... callers do `useWebsocketNetwork.getValue().orElse(false)`.
+// The snapshot harness has no preference store, so the boolean always
+// resolves to its default (false). Expose the collapsed
+// `getValue().orElse(false)` form directly — that's the only way Java
+// callers consume this setting (see e.g. ConductBombing.findCost,
+// SelectCasualties.firstStrikeUnits, EvaderRetreat).
+client_setting_use_websocket_network :: proc() -> bool {
+	return false
+}
+

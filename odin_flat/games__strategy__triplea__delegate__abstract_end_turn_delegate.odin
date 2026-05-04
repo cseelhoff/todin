@@ -502,3 +502,146 @@ abstract_end_turn_delegate_get_production :: proc(
 	}
 	return value
 }
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#getProduction(Collection<Territory>)
+// Java:
+//   protected int getProduction(final Collection<Territory> territories) {
+//     return getProduction(territories, getData());
+//   }
+abstract_end_turn_delegate_get_production_instance :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	territories: [dynamic]^Territory,
+) -> i32 {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	return abstract_end_turn_delegate_get_production(territories, cast(^Game_State)data)
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#rollWarBonds(IDelegateBridge, GamePlayer, TechnologyFrontier)
+// Mirrors the Java private method: roll N S-sided dice for the player's
+// War Bonds tech and return the summed proceeds (each die contributes
+// face_value + 1, matching Java's `getDie(i).getValue() + 1`). Returns 0
+// when either count or sides is non-positive (player has no War Bonds
+// tech).
+abstract_end_turn_delegate_roll_war_bonds :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	delegate_bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+	technology_frontier: ^Technology_Frontier,
+) -> i32 {
+	_ = self
+	techs := tech_tracker_get_current_tech_advances(player, technology_frontier)
+	count := tech_ability_attachment_get_war_bond_dice_number_with_techs(techs)
+	sides := tech_ability_attachment_get_war_bond_dice_sides_with_techs(techs)
+	if sides <= 0 || count <= 0 {
+		return 0
+	}
+	player_name := default_named_get_name(&player.named_attachable.default_named)
+	annotation := fmt.aprintf("%s rolling to resolve War Bonds: ", player_name)
+	dice := roll_dice_factory_roll_n_sided_dice_x_times(
+		delegate_bridge,
+		count,
+		sides,
+		player,
+		I_Random_Stats_Dice_Type.NONCOMBAT,
+		annotation,
+	)
+	total: i32 = 0
+	n := dice_roll_size(dice)
+	for i: i32 = 0; i < n; i += 1 {
+		total += die_get_value(dice_roll_get_die(dice, i)) + 1
+	}
+	remote := i_delegate_bridge_get_remote_player(delegate_bridge, player)
+	msg := fmt.aprintf("%s%s", annotation, my_formatter_as_dice(dice))
+	i_remote_player_report_message(remote, msg, msg)
+	return total
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#rollWarBondsForFriends(IDelegateBridge, GamePlayer, TechnologyFrontier, GameMap, ResourceList)
+// Java private method: when the player shares War Bonds technology with
+// an ally that itself has no War Bonds tech (Global 1940 mechanic), roll
+// the player's War Bonds and credit the proceeds to the first eligible
+// ally. Returns the transcript text (with a trailing "<br />") or "" if
+// no roll happens.
+abstract_end_turn_delegate_roll_war_bonds_for_friends :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	delegate_bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+	technology_frontier: ^Technology_Frontier,
+	game_map: ^Game_Map,
+	resource_list: ^Resource_List,
+) -> string {
+	_ = self
+	techs := tech_tracker_get_current_tech_advances(player, technology_frontier)
+	count := tech_ability_attachment_get_war_bond_dice_number_with_techs(techs)
+	sides := tech_ability_attachment_get_war_bond_dice_sides_with_techs(techs)
+	if sides <= 0 || count <= 0 {
+		return ""
+	}
+	playerattachment := player_attachment_get(player)
+	if playerattachment == nil {
+		return ""
+	}
+	share_with := player_attachment_get_share_technology(playerattachment)
+	if share_with == nil || len(share_with) == 0 {
+		return ""
+	}
+	give_war_bonds_to: ^Game_Player = nil
+	for p in share_with {
+		p_techs := tech_tracker_get_current_tech_advances(p, technology_frontier)
+		dice_count := tech_ability_attachment_get_war_bond_dice_number_with_techs(p_techs)
+		dice_sides := tech_ability_attachment_get_war_bond_dice_sides_with_techs(p_techs)
+		if dice_sides <= 0 &&
+		   dice_count <= 0 &&
+		   abstract_end_turn_delegate_can_player_collect_income(p, game_map) {
+			give_war_bonds_to = p
+			break
+		}
+	}
+	if give_war_bonds_to == nil {
+		return ""
+	}
+	player_name := default_named_get_name(&player.named_attachable.default_named)
+	target_name := default_named_get_name(
+		&give_war_bonds_to.named_attachable.default_named,
+	)
+	annotation := fmt.aprintf(
+		"%s rolling to resolve War Bonds, and giving results to %s: ",
+		player_name,
+		target_name,
+	)
+	dice := roll_dice_factory_roll_n_sided_dice_x_times(
+		delegate_bridge,
+		count,
+		sides,
+		player,
+		I_Random_Stats_Dice_Type.NONCOMBAT,
+		annotation,
+	)
+	total_war_bonds: i32 = 0
+	n := dice_roll_size(dice)
+	for i: i32 = 0; i < n; i += 1 {
+		total_war_bonds += die_get_value(dice_roll_get_die(dice, i)) + 1
+	}
+	pus := resource_list_get_resource_or_throw(resource_list, "PUs")
+	current_pus := resource_collection_get_quantity(
+		game_player_get_resources(give_war_bonds_to),
+		pus,
+	)
+	transcript_text := fmt.aprintf(
+		"%s rolls %d%s from War Bonds, giving the total to %s, who ends with %d%s total",
+		player_name,
+		total_war_bonds,
+		my_formatter_pluralize_quantity(" PU", total_war_bonds),
+		target_name,
+		current_pus + total_war_bonds,
+		my_formatter_pluralize_quantity(" PU", current_pus + total_war_bonds),
+	)
+	history_writer := i_delegate_bridge_get_history_writer(delegate_bridge)
+	i_delegate_history_writer_start_event(history_writer, transcript_text)
+	change := change_factory_change_resources_change(give_war_bonds_to, pus, total_war_bonds)
+	i_delegate_bridge_add_change(delegate_bridge, change)
+	remote := i_delegate_bridge_get_remote_player(delegate_bridge, player)
+	msg := fmt.aprintf("%s%s", annotation, my_formatter_as_dice(dice))
+	i_remote_player_report_message(remote, msg, msg)
+	return fmt.aprintf("%s<br />", transcript_text)
+}

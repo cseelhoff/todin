@@ -1109,7 +1109,7 @@ unit_attachment_get_attack_rolls_with_player :: proc(self: ^Unit_Attachment, pla
 //     defenseValue += superSubBonus;
 //   }
 //   return Math.min(getData().getDiceSides(), Math.max(0, defenseValue));
-unit_attachment_get_defense_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+unit_attachment_get_defense :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
 	bonus := tech_tracker_get_defense_bonus(player, unit_attachment_get_unit_type(self))
 	defense_value := self.defense + bonus
 	data := game_data_component_get_data(&self.default_attachment.game_data_component)

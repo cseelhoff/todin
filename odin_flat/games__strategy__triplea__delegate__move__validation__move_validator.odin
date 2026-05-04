@@ -1284,3 +1284,186 @@ move_validator_lambda_validate_first_route_is_land :: proc(t: ^Territory) -> boo
 	return matches_pred_territory_is_land(nil, t)
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#canAnyUnitsPassCanal
+// Java:
+//   public boolean canAnyUnitsPassCanal(
+//       final Territory start, final Territory end,
+//       final Collection<Unit> units, final GamePlayer player) {
+//     boolean canPass = true;
+//     final Route route = new Route(start, end);
+//     for (final CanalAttachment canalAttachment : CanalAttachment.get(start, route)) {
+//       final Collection<Unit> unitsWithoutDependents = findNonDependentUnits(units, route, Map.of());
+//       canPass = canAnyPassThroughCanal(canalAttachment, unitsWithoutDependents, player).isEmpty();
+//       final boolean mustControlAllCanals =
+//           Properties.getControlAllCanalsBetweenTerritoriesToPass(data.getProperties());
+//       if (mustControlAllCanals != canPass) { break; }
+//     }
+//     return canPass;
+//   }
+// canAnyPassThroughCanal in Odin returns (string, bool); bool=true means
+// Optional.present, so isEmpty() <=> !ok.
+move_validator_can_any_units_pass_canal :: proc(
+	self: ^Move_Validator,
+	start: ^Territory,
+	end: ^Territory,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> bool {
+	can_pass := true
+	route := route_new_from_start_and_steps(start, end)
+	canals := canal_attachment_get(start, route)
+	defer delete(canals)
+	empty_deps: map[^Unit][dynamic]^Unit
+	defer delete(empty_deps)
+	for canal_attachment in canals {
+		units_without_dependents := move_validator_find_non_dependent_units(
+			units,
+			route,
+			empty_deps,
+		)
+		_, ok := move_validator_can_any_pass_through_canal(
+			self,
+			canal_attachment,
+			units_without_dependents,
+			player,
+		)
+		delete(units_without_dependents)
+		can_pass = !ok
+		must_control_all_canals := properties_get_control_all_canals_between_territories_to_pass(
+			game_data_get_properties(self.data),
+		)
+		if must_control_all_canals != can_pass {
+			break
+		}
+	}
+	return can_pass
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#checkLandTransports
+// Java:
+//   private Set<Unit> checkLandTransports(
+//       final GamePlayer player,
+//       final Collection<Unit> possibleLandTransports,
+//       final Collection<Unit> unitsToLandTransport) {
+//     final Set<Unit> disallowedUnits = new HashSet<>();
+//     try (GameData.Unlocker ignored = data.acquireReadLock()) {
+//       int numLandTransportsWithoutCapacity =
+//           getNumLandTransportsWithoutCapacity(possibleLandTransports, player);
+//       final IntegerMap<Unit> landTransportsWithCapacity =
+//           getLandTransportsWithCapacity(possibleLandTransports, player);
+//       for (final Unit unit : TransportUtils.sortByTransportCostDescending(unitsToLandTransport)) {
+//         boolean unitOk = false;
+//         if (Matches.unitHasNotMoved().test(unit) && Matches.unitIsLandTransportable().test(unit)) {
+//           if (numLandTransportsWithoutCapacity > 0) {
+//             numLandTransportsWithoutCapacity--;
+//             unitOk = true;
+//           } else {
+//             for (final Unit transport : landTransportsWithCapacity.keySet()) {
+//               final int cost = unit.getUnitAttachment().getTransportCost();
+//               if (cost <= landTransportsWithCapacity.getInt(transport)) {
+//                 landTransportsWithCapacity.add(transport, -cost);
+//                 unitOk = true;
+//                 break;
+//               }
+//             }
+//           }
+//         }
+//         if (!unitOk) { disallowedUnits.add(unit); }
+//       }
+//     }
+//     return disallowedUnits;
+//   }
+// Set<Unit> -> map[^Unit]struct{}. acquireReadLock is a no-op in the
+// single-threaded port.
+move_validator_check_land_transports :: proc(
+	self: ^Move_Validator,
+	player: ^Game_Player,
+	possible_land_transports: [dynamic]^Unit,
+	units_to_land_transport: [dynamic]^Unit,
+) -> map[^Unit]struct {} {
+	disallowed_units: map[^Unit]struct {}
+	game_data_acquire_read_lock(self.data)
+	num_land_transports_without_capacity := move_validator_get_num_land_transports_without_capacity(
+		possible_land_transports,
+		player,
+	)
+	land_transports_with_capacity := move_validator_get_land_transports_with_capacity(
+		possible_land_transports,
+		player,
+	)
+	sorted := transport_utils_sort_by_transport_cost_descending(units_to_land_transport)
+	defer delete(sorted)
+	for unit in sorted {
+		unit_ok := false
+		hnm_p, hnm_c := matches_unit_has_not_moved()
+		lt_p, lt_c := matches_unit_is_land_transportable()
+		if hnm_p(hnm_c, unit) && lt_p(lt_c, unit) {
+			if num_land_transports_without_capacity > 0 {
+				num_land_transports_without_capacity -= 1
+				unit_ok = true
+			} else {
+				for transport, capacity in land_transports_with_capacity.entries {
+					cost := unit_attachment_get_transport_cost(unit_get_unit_attachment(unit))
+					if cost <= capacity {
+						land_transports_with_capacity.entries[transport] = capacity - cost
+						unit_ok = true
+						break
+					}
+				}
+			}
+		}
+		if !unit_ok {
+			disallowed_units[unit] = struct {}{}
+		}
+	}
+	return disallowed_units
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#convertTransportKeyedMapToLoadedUnitKeyedMap
+// Java:
+//   private Map<Unit, Unit> convertTransportKeyedMapToLoadedUnitKeyedMap(
+//       final Map<Unit, Collection<Unit>> airTransportDependents,
+//       final MoveValidationResult result) {
+//     Map<Unit, Unit> unitsToTransport = new HashMap<>();
+//     for (Unit transport : airTransportDependents.keySet()) {
+//       int capacity = TransportTracker.getAvailableCapacity(transport);
+//       for (Unit beingTransported : airTransportDependents.get(transport)) {
+//         int cost = beingTransported.getUnitAttachment().getTransportCost();
+//         if (capacity < cost) {
+//           result.setError("Not all units could be air transported");
+//           return Map.of();
+//         }
+//         unitsToTransport.put(beingTransported, transport);
+//         capacity -= cost;
+//       }
+//     }
+//     return unitsToTransport;
+//   }
+move_validator_convert_transport_keyed_map_to_loaded_unit_keyed_map :: proc(
+	self: ^Move_Validator,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	result: ^Move_Validation_Result,
+) -> map[^Unit]^Unit {
+	_ = self
+	units_to_transport: map[^Unit]^Unit
+	for transport, dependents in air_transport_dependents {
+		capacity := transport_tracker_get_available_capacity(transport)
+		for being_transported in dependents {
+			cost := unit_attachment_get_transport_cost(
+				unit_get_unit_attachment(being_transported),
+			)
+			if capacity < cost {
+				move_validation_result_set_error(
+					result,
+					"Not all units could be air transported",
+				)
+				clear(&units_to_transport)
+				return units_to_transport
+			}
+			units_to_transport[being_transported] = transport
+			capacity -= cost
+		}
+	}
+	return units_to_transport
+}
+

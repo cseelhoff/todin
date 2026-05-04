@@ -4038,6 +4038,15 @@ matches_lambda_battle_is_amphibious_with_units_attacking_from_122 :: proc(
 	return false
 }
 
+// lambda$hasNeighboringAlliedNavalBase$124 —
+//   t2 -> hasAlliedNavalBase(t2, player)
+matches_lambda_has_neighboring_allied_naval_base_124 :: proc(
+	player: ^Game_Player,
+	t2: ^Territory,
+) -> bool {
+	return matches_has_allied_naval_base(t2, player)
+}
+
 // lambda$isTerritoryNeutral$134 — t -> t.getOwner().isNull()
 matches_lambda_is_territory_neutral_134 :: proc(t: ^Territory) -> bool {
 	return game_player_is_null(t.owner)
@@ -4449,6 +4458,12 @@ matches_lambda_unit_is_supporter_or_has_combat_ability_45 :: proc(
 ) -> bool {
 	p, c := matches_unit_type_is_supporter_or_has_combat_ability(attack, unit_get_owner(u))
 	return p(c, unit_get_type(u))
+}
+
+// lambda$unitOwnerHasImprovedArtillerySupportTech$171 —
+//   u -> TechTracker.hasImprovedArtillerySupport(u.getOwner())
+matches_lambda_unit_owner_has_improved_artillery_support_tech_171 :: proc(u: ^Unit) -> bool {
+	return tech_tracker_has_improved_artillery_support(unit_get_owner(u))
 }
 
 // lambda$unitSupportAttachmentCanBeUsedByPlayer$47 —

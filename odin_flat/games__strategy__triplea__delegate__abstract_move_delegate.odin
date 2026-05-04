@@ -6,6 +6,10 @@ Abstract_Move_Delegate :: struct {
 	using base_triple_a_delegate: Base_Triple_A_Delegate,
 	moves_to_undo: [dynamic]^Undoable_Move,
 	temp_move_performer: ^Move_Performer,
+	// Vtable slot for the abstract `int pusAlreadyLost(Territory)`.
+	// MoveDelegate wires this to its IntegerMap-backed lookup;
+	// SpecialMoveDelegate wires it to a constant-zero proc.
+	pus_already_lost: proc(self: ^Abstract_Move_Delegate, t: ^Territory) -> i32,
 }
 
 Abstract_Move_Delegate_Move_Type :: enum {
@@ -22,6 +26,18 @@ abstract_move_delegate_new :: proc() -> ^Abstract_Move_Delegate {
 	self := new(Abstract_Move_Delegate)
 	self.moves_to_undo = make([dynamic]^Undoable_Move)
 	return self
+}
+
+// games.strategy.triplea.delegate.AbstractMoveDelegate#pusAlreadyLost(Territory)
+//   Vtable dispatch through the proc field. A nil slot models the
+//   abstract default (no PU losses recorded), which matches
+//   SpecialMoveDelegate's `return 0;` and any harness/stub path that
+//   never installed a delegate.
+abstract_move_delegate_pus_already_lost :: proc(self: ^Abstract_Move_Delegate, t: ^Territory) -> i32 {
+	if self != nil && self.pus_already_lost != nil {
+		return self.pus_already_lost(self, t)
+	}
+	return 0
 }
 
 // games.strategy.triplea.delegate.AbstractMoveDelegate#getRouteUsedToMoveInto(games.strategy.engine.data.Unit,games.strategy.engine.data.Territory)

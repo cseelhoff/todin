@@ -984,3 +984,83 @@ battle_tracker_clear_finished_battles :: proc(self: ^Battle_Tracker, bridge: ^I_
 	}
 }
 
+// Java: private static void addChangesOnTakeOverCapitol(
+//   Territory, TerritoryAttachment, GamePlayer, IDelegateBridge, @Nullable UndoableMove)
+battle_tracker_add_changes_on_take_over_capitol :: proc(
+	territory: ^Territory,
+	territory_attachment: ^Territory_Attachment,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	whose_capital := player_list_get_player_id(
+		game_data_get_player_list(data),
+		territory_attachment_get_capital_or_throw(territory_attachment),
+	)
+	pa := player_attachment_get(game_player)
+	pa_whose_capital := player_attachment_get(whose_capital)
+	capitals_list := territory_attachment_get_all_currently_owned_capitals(
+		whose_capital,
+		game_data_get_map(data),
+	)
+	if pa_whose_capital != nil &&
+	   player_attachment_get_retain_capital_number(pa_whose_capital) < i32(len(capitals_list)) {
+		msg := fmt.aprintf(
+			"%s captures one of %s capitals",
+			game_player.name,
+			whose_capital.name,
+		)
+		history_writer_add_child_to_event(history_writer, msg)
+	} else if whose_capital == territory_get_owner(territory) {
+		pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
+		captured_pu_count := resource_collection_get_quantity(
+			game_player_get_resources(whose_capital),
+			pus,
+		)
+		if pa != nil && properties_get_pacific_theater(game_data_get_properties(data)) {
+			new_value := new(i32)
+			new_value^ = captured_pu_count + player_attachment_get_capture_vps(pa)
+			change_vp := change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(pa),
+				rawptr(new_value),
+				"captureVps",
+			)
+			battle_tracker_add_change(bridge, change_tracker, change_vp)
+		}
+		remove := change_factory_change_resources_change(whose_capital, pus, -captured_pu_count)
+		battle_tracker_add_change(bridge, change_tracker, remove)
+		if pa_whose_capital != nil && player_attachment_get_destroys_pus(pa_whose_capital) {
+			msg := fmt.aprintf(
+				"%s destroys %d%s while taking %s capital",
+				game_player.name,
+				captured_pu_count,
+				my_formatter_pluralize_quantity("PU", captured_pu_count),
+				whose_capital.name,
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+		} else {
+			msg := fmt.aprintf(
+				"%s captures %d%s while taking %s capital",
+				game_player.name,
+				captured_pu_count,
+				my_formatter_pluralize_quantity("PU", captured_pu_count),
+				whose_capital.name,
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+			add := change_factory_change_resources_change(game_player, pus, captured_pu_count)
+			battle_tracker_add_change(bridge, change_tracker, add)
+		}
+		if resource_list_get_resource_optional(game_data_get_resource_list(data), "techTokens") != nil {
+			tokens := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "techTokens")
+			curr_tokens := resource_collection_get_quantity_by_name(
+				game_player_get_resources(whose_capital),
+				"techTokens",
+			)
+			remove_tokens := change_factory_change_resources_change(whose_capital, tokens, -curr_tokens)
+			battle_tracker_add_change(bridge, change_tracker, remove_tokens)
+		}
+	}
+}
+

@@ -126,3 +126,26 @@ naval_bombardment_get_steps :: proc(self: ^Naval_Bombardment) -> [dynamic]^Battl
 	factory := fire_round_steps_factory_builder_build(builder)
 	return fire_round_steps_factory_create_steps(factory)
 }
+
+// Java: public List<StepDetails> getAllStepDetails()
+//   return !valid()
+//       ? List.of()
+//       : getSteps().stream()
+//           .flatMap(step -> step.getAllStepDetails().stream())
+//           .collect(Collectors.toList());
+naval_bombardment_get_all_step_details :: proc(
+	self: ^Naval_Bombardment,
+) -> [dynamic]^Battle_Step_Step_Details {
+	result := make([dynamic]^Battle_Step_Step_Details)
+	if !naval_bombardment_valid(self) {
+		return result
+	}
+	steps := naval_bombardment_get_steps(self)
+	for step in steps {
+		details := naval_bombardment_lambda__get_all_step_details__0(step)
+		for d in details {
+			append(&result, d)
+		}
+	}
+	return result
+}

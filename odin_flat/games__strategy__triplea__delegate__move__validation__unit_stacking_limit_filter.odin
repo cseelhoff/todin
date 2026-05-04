@@ -140,3 +140,103 @@ unit_stacking_limit_filter_get_maximum_number_of_this_unit_type_to_reach_stackin
 	return max_val
 }
 
+// games.strategy.triplea.delegate.move.validation.UnitStackingLimitFilter#filterUnits(Collection<Unit>, String, GamePlayer, Territory, Collection<Unit>)
+// Java:
+//   public static List<Unit> filterUnits(
+//       Collection<Unit> units, String limitType, GamePlayer owner,
+//       Territory t, Collection<Unit> existingUnitsToBePlaced) {
+//     PlayerAttachment pa = PlayerAttachment.get(owner);
+//     Function<UnitAttachment, Optional<Tuple<Integer, String>>> stackingLimitGetter;
+//     Set<Triple<Integer, String, Set<UnitType>>> playerStackingLimits;
+//     switch (limitType) {
+//       case MOVEMENT_LIMIT:  stackingLimitGetter = UnitAttachment::getMovementLimit;  ...
+//       case ATTACKING_LIMIT: stackingLimitGetter = UnitAttachment::getAttackingLimit; ...
+//       case PLACEMENT_LIMIT: stackingLimitGetter = UnitAttachment::getPlacementLimit; ...
+//       default: throw new IllegalArgumentException(...);
+//     }
+//     var unitsAllowedSoFar = new ArrayList<>(existingUnitsToBePlaced);
+//     var forbiddenTypes = TerritoryEffectHelper.getUnitTypesForUnitsNotAllowedIntoTerritory(t);
+//     for (Unit unit : units) {
+//       UnitType ut = unit.getType();
+//       if (forbiddenTypes.contains(ut)) continue;
+//       int maxAllowed = getMaximumNumberOfThisUnitTypeToReachStackingLimit(
+//           ut, t, owner, stackingLimitGetter.apply(ut.getUnitAttachment()).orElse(null),
+//           playerStackingLimits, unitsAllowedSoFar);
+//       if (maxAllowed > 0) unitsAllowedSoFar.add(unit);
+//     }
+//     unitsAllowedSoFar.subList(0, existingUnitsToBePlaced.size()).clear();
+//     return unitsAllowedSoFar;
+//   }
+unit_stacking_limit_filter_filter_units :: proc(
+	units: [dynamic]^Unit,
+	limit_type: string,
+	owner: ^Game_Player,
+	t: ^Territory,
+	existing_units_to_be_placed: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	pa := player_attachment_get(owner)
+
+	stacking_limit_getter: proc(^Unit_Attachment) -> ^Tuple(i32, string)
+	player_stacking_limits: map[^Triple(i32, string, map[^Unit_Type]struct {})]struct {}
+
+	switch limit_type {
+	case UNIT_STACKING_LIMIT_FILTER_MOVEMENT_LIMIT:
+		stacking_limit_getter = unit_attachment_get_movement_limit
+		if pa != nil {
+			player_stacking_limits = player_attachment_get_movement_limit(pa)
+		}
+	case UNIT_STACKING_LIMIT_FILTER_ATTACKING_LIMIT:
+		stacking_limit_getter = unit_attachment_get_attacking_limit
+		if pa != nil {
+			player_stacking_limits = player_attachment_get_attacking_limit(pa)
+		}
+	case UNIT_STACKING_LIMIT_FILTER_PLACEMENT_LIMIT:
+		stacking_limit_getter = unit_attachment_get_placement_limit
+		if pa != nil {
+			player_stacking_limits = player_attachment_get_placement_limit(pa)
+		}
+	case:
+		panic("Invalid limitType")
+	}
+
+	// Note: This must check each unit individually and track the ones that
+	// passed in order to correctly handle stacking limits that apply to
+	// multiple unit types.
+	units_allowed_so_far := make([dynamic]^Unit)
+	for u in existing_units_to_be_placed {
+		append(&units_allowed_so_far, u)
+	}
+	forbidden_types := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory(t)
+	defer delete(forbidden_types)
+
+	for unit in units {
+		ut := unit_get_type(unit)
+		if _, ok := forbidden_types[ut]; ok {
+			continue
+		}
+		stacking_limit := stacking_limit_getter(unit_type_get_unit_attachment(ut))
+		max_allowed := unit_stacking_limit_filter_get_maximum_number_of_this_unit_type_to_reach_stacking_limit(
+			ut,
+			t,
+			owner,
+			stacking_limit,
+			player_stacking_limits,
+			units_allowed_so_far,
+		)
+		if max_allowed > 0 {
+			append(&units_allowed_so_far, unit)
+		}
+	}
+
+	// Remove the existing units from the front of the list before returning.
+	// Don't return a sublist as it's not serializable in Java; in Odin we
+	// return a freshly-allocated [dynamic]^Unit so callers can safely free it.
+	n := len(existing_units_to_be_placed)
+	result := make([dynamic]^Unit)
+	for i := n; i < len(units_allowed_so_far); i += 1 {
+		append(&result, units_allowed_so_far[i])
+	}
+	delete(units_allowed_so_far)
+	return result
+}
+

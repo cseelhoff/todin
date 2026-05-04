@@ -17,6 +17,13 @@ Player :: struct {
 	start:            proc(self: ^Player, step_name: string),
 	stop_game:        proc(self: ^Player),
 	select_shore_bombard: proc(self: ^Player, unit_territory: ^Territory) -> bool,
+	select_fixed_dice: proc(
+		self: ^Player,
+		num_dice: i32,
+		hit_at: i32,
+		title: string,
+		dice_sides: i32,
+	) -> [dynamic]i32,
 	select_bombarding_territory: proc(
 		self: ^Player,
 		unit: ^Unit,
@@ -24,13 +31,27 @@ Player :: struct {
 		territories: [dynamic]^Territory,
 		none_available: bool,
 	) -> ^Territory,
+        get_number_of_fighters_to_move_to_new_carrier: proc(
+                self: ^Player,
+                fighters_that_can_be_moved: [dynamic]^Unit,
+                from: ^Territory,
+        ) -> [dynamic]^Unit,
 }
 
-// games.strategy.engine.player.Player#selectBombardingTerritory(Unit, Territory, Collection, boolean)
-player_select_bombarding_territory :: proc(
-	self: ^Player,
-	unit: ^Unit,
-	unit_territory: ^Territory,
+// games.strategy.engine.player.Player#getNumberOfFightersToMoveToNewCarrier(Collection, Territory)
+//   Vtable dispatch through the proc field. AI implementations
+//   (AbstractAi, AbstractProAi, DummyPlayer) all default to returning
+//   null in Java; absent dispatch (nil field) is treated as such and
+//   yields an empty list — the caller checks "null or empty" anyway.
+player_get_number_of_fighters_to_move_to_new_carrier :: proc(
+        self: ^Player,
+        fighters_that_can_be_moved: [dynamic]^Unit,
+        from: ^Territory,
+) -> [dynamic]^Unit {
+        if self != nil && self.get_number_of_fighters_to_move_to_new_carrier != nil {
+                return self.get_number_of_fighters_to_move_to_new_carrier(self, fighters_that_can_be_moved, from)
+        }
+        return make([dynamic]^Unit)
 	territories: [dynamic]^Territory,
 	none_available: bool,
 ) -> ^Territory {
@@ -85,5 +106,24 @@ player_stop_game :: proc(self: ^Player) {
 //   bombardment salvo from the given territory. Vtable dispatch.
 player_select_shore_bombard :: proc(self: ^Player, unit_territory: ^Territory) -> bool {
 	return self.select_shore_bombard(self, unit_territory)
+}
+
+// games.strategy.engine.player.Player#selectFixedDice(int,int,String,int)
+//   Vtable dispatch. AI/snapshot harness implementations may leave
+//   the field nil; the Java contract on those impls returns an empty
+//   array (or a deterministic array of zeros) — we mirror the latter
+//   so callers iterating `dice[i]` get well-defined zero rolls.
+player_select_fixed_dice :: proc(
+	self: ^Player,
+	num_dice: i32,
+	hit_at: i32,
+	title: string,
+	dice_sides: i32,
+) -> [dynamic]i32 {
+	if self != nil && self.select_fixed_dice != nil {
+		return self.select_fixed_dice(self, num_dice, hit_at, title, dice_sides)
+	}
+	out := make([dynamic]i32, num_dice)
+	return out
 }
 

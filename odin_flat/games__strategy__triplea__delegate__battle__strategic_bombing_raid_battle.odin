@@ -498,3 +498,76 @@ strategic_bombing_raid_battle_notify_aa_hits :: proc(
 		)
 	}
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#updateDefendingUnits
+//
+//   final Map<String, Set<UnitType>> airborneTechTargetsAllowed =
+//       TechAbilityAttachment.getAirborneTargettedByAa(
+//           TechTracker.getCurrentTechAdvances(attacker, gameData.getTechnologyFrontier()));
+//   final Predicate<Unit> defenders =
+//       Matches.enemyUnit(attacker)
+//           .and(Matches.unitCanBeDamaged()
+//               .or(Matches.unitIsAaThatCanFire(
+//                   attackingUnits, airborneTechTargetsAllowed, attacker,
+//                   Matches.unitIsAaForBombingThisUnitOnly(), round, true)));
+//   if (targets.isEmpty()) {
+//     defendingUnits = CollectionUtils.getMatches(battleSite.getUnits(), defenders);
+//   } else {
+//     final List<Unit> targetsForAaFire = CollectionUtils.getMatches(
+//         battleSite.getUnits(),
+//         Matches.unitIsAaThatCanFire(...));
+//     targetsForAaFire.addAll(this.targets.keySet());
+//     defendingUnits = targetsForAaFire;
+//   }
+strategic_bombing_raid_battle_update_defending_units :: proc(self: ^Strategic_Bombing_Raid_Battle) {
+	tech_advances := tech_tracker_get_current_tech_advances(
+		self.attacker,
+		game_data_get_technology_frontier(self.game_data),
+	)
+	defer delete(tech_advances)
+	airborne_tech_targets_allowed :=
+		tech_ability_attachment_get_airborne_targetted_by_aa_with_techs(tech_advances)
+
+	enemy_p, enemy_c := matches_enemy_unit(self.attacker)
+	can_be_damaged_p, can_be_damaged_c := matches_unit_can_be_damaged()
+	aa_only_p, aa_only_c := matches_unit_is_aa_for_bombing_this_unit_only()
+	aa_can_fire_p, aa_can_fire_c := matches_unit_is_aa_that_can_fire(
+		self.attacking_units,
+		airborne_tech_targets_allowed,
+		self.attacker,
+		aa_only_p,
+		aa_only_c,
+		self.round,
+		true,
+	)
+
+	site_units := unit_collection_get_units(self.battle_site.unit_collection)
+	defer delete(site_units)
+
+	if len(self.targets) == 0 {
+		new_defenders: [dynamic]^Unit
+		for u in site_units {
+			if !enemy_p(enemy_c, u) {
+				continue
+			}
+			if can_be_damaged_p(can_be_damaged_c, u) ||
+			   aa_can_fire_p(aa_can_fire_c, u) {
+				append(&new_defenders, u)
+			}
+		}
+		delete(self.defending_units)
+		self.defending_units = new_defenders
+	} else {
+		targets_for_aa_fire: [dynamic]^Unit
+		for u in site_units {
+			if aa_can_fire_p(aa_can_fire_c, u) {
+				append(&targets_for_aa_fire, u)
+			}
+		}
+		for key, _ in self.targets {
+			append(&targets_for_aa_fire, key)
+		}
+		delete(self.defending_units)
+		self.defending_units = targets_for_aa_fire
+	}
+}

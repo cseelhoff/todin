@@ -11,6 +11,25 @@ Tech_Advance :: struct {
 	// calls the concrete `<subtype>_has_tech`. Default is a "no" so
 	// callers always get a sane answer for the abstract base.
 	has_tech: proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool,
+	// Polymorphic dispatch field for `void perform(GamePlayer, IDelegateBridge)`.
+	// 12 of 14 predefined subtypes have empty `perform` bodies in Java
+	// and therefore leave this field nil (the dispatcher treats nil as
+	// no-op). Improved_Shipyards_Advance and Industrial_Technology_Advance
+	// wire substantive impls; Generic_Tech_Advance forwards to its
+	// wrapped advance.
+	perform: proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge),
+}
+
+// Public dispatch wrapper. Java: ta.perform(player, bridge).
+//   Nil slot models the empty-body subclasses (SuperSubs, JetPower,
+//   AaRadar, LongRangeAircraft, HeavyBomber, ImprovedArtillerySupport,
+//   Rockets, Paratroopers, IncreasedFactoryProduction, WarBonds,
+//   MechanizedInfantry, DestroyerBombardTech).
+tech_advance_perform :: proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge) {
+	if self == nil || self.perform == nil {
+		return
+	}
+	self.perform(self, player, bridge)
 }
 
 // Public dispatch wrapper. Java: ta.hasTech(attachment).
@@ -60,6 +79,9 @@ make_improved_shipyards_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return improved_shipyards_advance_has_tech(transmute(^Improved_Shipyards_Advance)self, ta)
+	}
+	s.tech_advance.perform = proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge) {
+		improved_shipyards_advance_perform(transmute(^Improved_Shipyards_Advance)self, player, bridge)
 	}
 	return &s.tech_advance
 }
@@ -168,6 +190,9 @@ make_industrial_technology_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Industrial_Technology_Advance)
 	s.named.base.name = "Industrial Technology"
 	s.game_data = data
+	s.tech_advance.perform = proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge) {
+		industrial_technology_advance_perform(transmute(^Industrial_Technology_Advance)self, player, bridge)
+	}
 	return &s.tech_advance
 }
 

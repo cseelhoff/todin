@@ -182,3 +182,48 @@ evader_retreat_submerge_evaders :: proc(parameters: ^Evader_Retreat_Parameters) 
 		parameters.bridge,
 	)
 }
+
+// games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#retreatEvaders(
+//   games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat$Parameters,
+//   games.strategy.engine.data.Territory)
+//
+// Java:
+//   final CompositeChange change = new CompositeChange();
+//   change.add(ChangeFactory.moveUnits(
+//       parameters.battleState.getBattleSite(), retreatTo, parameters.units));
+//   parameters.bridge.addChange(change);
+//   parameters.battleState.retreatUnits(parameters.side, parameters.units);
+//   addHistoryRetreat(parameters.bridge, parameters.units,
+//       " retreated to " + retreatTo.getName());
+//   notifyRetreat(parameters.battleState, parameters.battleActions,
+//                 parameters.units, parameters.side, parameters.bridge);
+evader_retreat_retreat_evaders :: proc(
+	parameters: ^Evader_Retreat_Parameters,
+	retreat_to: ^Territory,
+) {
+	change := composite_change_new()
+	composite_change_add(
+		change,
+		change_factory_move_units(
+			battle_state_get_battle_site(parameters.battle_state),
+			retreat_to,
+			parameters.units,
+		),
+	)
+	i_delegate_bridge_add_change(parameters.bridge, &change.change)
+	battle_state_retreat_units(parameters.battle_state, parameters.side, parameters.units)
+
+	retreat_to_name := default_named_get_name(&retreat_to.named_attachable.default_named)
+	evader_retreat_add_history_retreat(
+		parameters.bridge,
+		parameters.units,
+		fmt.aprintf(" retreated to %s", retreat_to_name),
+	)
+	evader_retreat_notify_retreat(
+		parameters.battle_state,
+		parameters.battle_actions,
+		parameters.units,
+		parameters.side,
+		parameters.bridge,
+	)
+}

@@ -71,3 +71,43 @@ select_casualties_get_all_step_details :: proc(self: ^Select_Casualties) -> [dyn
 	return out
 }
 
+// Java: public void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   final DiceRoll diceRoll = fireRoundState.getDice();
+//   final String stepName = MarkCasualties.getPossibleOldNameForNotifyingBattleDisplay(
+//       battleState, firingGroup, side, getName());
+//   if (ClientSetting.useWebsocketNetwork.getValue().orElse(false)) {
+//     bridge.sendMessage(new IDisplay.NotifyDiceMessage(diceRoll, stepName, diceRoll.getPlayerName()));
+//   } else {
+//     bridge.getDisplayChannelBroadcaster().notifyDice(diceRoll, stepName);
+//   }
+//   final CasualtyDetails details = selectCasualties.apply(bridge, this);
+//   fireRoundState.setCasualties(details);
+//   BattleDelegate.markDamaged(details.getDamaged(), bridge, battleState.getBattleSite());
+//
+// The websocket branch is dormant for snapshot runs (the setting defaults
+// to false); we always take the broadcaster path, mirroring the convention
+// used in evader_retreat.odin and remove_non_combatants.odin.
+select_casualties_execute :: proc(
+	self: ^Select_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	dice_roll := fire_round_state_get_dice(self.fire_round_state)
+	step_name := mark_casualties_get_possible_old_name_for_notifying_battle_display(
+		self.battle_state,
+		self.firing_group,
+		self.side,
+		select_casualties_get_name(self),
+	)
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_notify_dice(display, dice_roll, step_name)
+
+	details := self.select_casualties(bridge, self)
+	fire_round_state_set_casualties(self.fire_round_state, details)
+	battle_delegate_mark_damaged(
+		casualty_list_get_damaged(&details.casualty_list),
+		bridge,
+		battle_state_get_battle_site(self.battle_state),
+	)
+}
+

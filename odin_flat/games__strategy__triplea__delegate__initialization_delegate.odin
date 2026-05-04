@@ -371,3 +371,117 @@ initialization_delegate_init_delete_assets_of_disabled_players :: proc(bridge: ^
 	}
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#initTransportedLandUnits(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. Walks every water territory and, for each land unit
+// present, finds the first sea transport with enough free capacity and
+// queues a load-transport change. Java's IllegalStateException becomes
+// `panic` here; the catch around loadTransportChange (which only logged
+// in Java) is dropped since Odin has no exceptions and the per-call
+// success/failure branching of the original is preserved by Java setting
+// `found = true` regardless of the catch.
+initialization_delegate_init_transported_land_units :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	history_item_created := false
+	land_pred, land_ctx := matches_unit_is_land()
+	transport_pred, transport_ctx := matches_unit_is_sea_transport()
+	for current in game_map_get_territories(game_data_get_map(data)) {
+		if !territory_is_water(current) {
+			continue
+		}
+		units := unit_holder_get_units(cast(^Unit_Holder)current)
+		defer delete(units)
+		if len(units) == 0 {
+			continue
+		}
+		any_land := false
+		for u in units {
+			if land_pred(land_ctx, u) {
+				any_land = true
+				break
+			}
+		}
+		if !any_land {
+			continue
+		}
+		transports := make([dynamic]^Unit, 0)
+		defer delete(transports)
+		land := make([dynamic]^Unit, 0)
+		defer delete(land)
+		for u in units {
+			if transport_pred(transport_ctx, u) {
+				append(&transports, u)
+			}
+			if land_pred(land_ctx, u) {
+				append(&land, u)
+			}
+		}
+		for to_load in land {
+			ua := unit_get_unit_attachment(to_load)
+			cost := unit_attachment_get_transport_cost(ua)
+			if cost == -1 {
+				panic("Non transportable unit in sea")
+			}
+			found := false
+			for transport in transports {
+				capacity := transport_tracker_get_available_capacity(transport)
+				if capacity >= cost {
+					if !history_item_created {
+						i_delegate_history_writer_start_event(
+							i_delegate_bridge_get_history_writer(bridge),
+							"Initializing Units in Transports",
+						)
+						history_item_created = true
+					}
+					i_delegate_bridge_add_change(
+						bridge,
+						transport_tracker_load_transport_change(transport, to_load),
+					)
+					found = true
+					break
+				}
+			}
+			if !found {
+				panic(
+					"Cannot load all land units in sea transports. Please make sure you have enough transports. You may need to re-order the xml's placement of transports and land units, as the engine will try to fill them in the order they are given.",
+				)
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#initTwoHitBattleship(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. Reconciles the user-selected "two hit battleships" game
+// property with the battleship unit type's hit-point default by emitting a
+// hitPoints attachment-property change (1 or 2) and a history event when
+// the two disagree. No-op when no battleship unit type is defined.
+initialization_delegate_init_two_hit_battleship :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	user_enabled := properties_get_two_hit_battleships(game_data_get_properties(data))
+	battleship_unit_type := unit_type_list_get_unit_type(
+		game_data_get_unit_type_list(data),
+		"battleship",
+	)
+	if battleship_unit_type == nil {
+		return
+	}
+	battleship_attachment := unit_type_get_unit_attachment(battleship_unit_type)
+	default_enabled := unit_attachment_get_hit_points(battleship_attachment) > 1
+	if user_enabled != default_enabled {
+		msg := fmt.aprintf("TwoHitBattleships: %v", user_enabled)
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			msg,
+		)
+		new_value := new(i32)
+		new_value^ = user_enabled ? 2 : 1
+		i_delegate_bridge_add_change(
+			bridge,
+			change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(battleship_attachment),
+				rawptr(new_value),
+				"hitPoints",
+			),
+		)
+	}
+}
+

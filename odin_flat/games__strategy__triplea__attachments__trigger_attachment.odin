@@ -2008,4 +2008,348 @@ trigger_attachment_trigger_resource_change_simple :: proc(
 	return strings.to_string(end_of_turn_report)
 }
 
+// ---------------------------------------------------------------------------
+// protected static void setUsesForWhenTriggers(
+//     Set<TriggerAttachment> triggersToBeFired, IDelegateBridge bridge)
+//
+// For each trigger with `uses > 0` AND a non-empty `when` list, decrement
+// `uses` by one (as a stringified integer property change) and clear
+// `usedThisRound` if it was set. Emits a single history event and applies
+// the composite change only when at least one property change was queued.
+// ---------------------------------------------------------------------------
+trigger_attachment_set_uses_for_when_triggers :: proc(
+	triggers_to_be_fired: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+) {
+	change := composite_change_new()
+	for trig in triggers_to_be_fired {
+		current_uses := trig.uses
+		if current_uses > 0 && len(trig.when_triggers) > 0 {
+			uses_value := new(string)
+			uses_value^ = fmt.aprintf("%d", current_uses - 1)
+			composite_change_add(
+				change,
+				change_factory_attachment_property_change(
+					cast(^I_Attachment)rawptr(trig),
+					rawptr(uses_value),
+					"uses",
+				),
+			)
+			if trig.used_this_round {
+				used_value := new(bool)
+				used_value^ = false
+				composite_change_add(
+					change,
+					change_factory_attachment_property_change(
+						cast(^I_Attachment)rawptr(trig),
+						rawptr(used_value),
+						"usedThisRound",
+					),
+				)
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		writer := i_delegate_bridge_get_history_writer(bridge)
+		i_delegate_history_writer_start_event(
+			writer,
+			"Setting uses for triggers used this phase.",
+		)
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// private static void placeUnits(
+//     TriggerAttachment t, Territory terr, IntegerMap<UnitType> utMap,
+//     GamePlayer player, IDelegateBridge bridge)
+//
+// Instantiate fresh units for each (unitType, qty) entry in `utMap`,
+// mark them no-movement, and (for infrastructure) record the original
+// owner. Then add the units to `terr` via ChangeFactory.addUnits and
+// emit a history event listing the placement.
+// ---------------------------------------------------------------------------
+trigger_attachment_place_units :: proc(
+	t: ^Trigger_Attachment,
+	terr: ^Territory,
+	ut_map: ^Integer_Map,
+	player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+) {
+	units: [dynamic]^Unit
+	for ut_raw in integer_map_key_set(ut_map) {
+		ut := cast(^Unit_Type)ut_raw
+		qty := integer_map_get_int(ut_map, ut_raw)
+		created := unit_type_create_2(ut, qty, player)
+		for u in created {
+			append(&units, u)
+		}
+		delete(created)
+	}
+	change := composite_change_new()
+	infra_pred, infra_ctx := matches_unit_is_infrastructure()
+	for unit in units {
+		composite_change_add(change, change_factory_mark_no_movement_change(unit))
+		if infra_pred(infra_ctx, unit) {
+			composite_change_add(
+				change,
+				original_owner_tracker_add_original_owner_change_unit(unit, player),
+			)
+		}
+	}
+	composite_change_add(change, change_factory_add_units(cast(^Unit_Holder)terr, units))
+	i_delegate_bridge_add_change(bridge, change)
+	attachment_text := my_formatter_attachment_name_to_text(t.name)
+	player_name := default_named_get_name(&player.named_attachable.default_named)
+	units_text := my_formatter_units_to_text_no_owner(units, nil)
+	terr_name := default_named_get_name(&terr.named_attachable.default_named)
+	transcript := strings.concatenate(
+		{
+			attachment_text,
+			": ",
+			player_name,
+			" has ",
+			units_text,
+			" placed in ",
+			terr_name,
+		},
+	)
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	i_delegate_history_writer_start_event(writer, transcript, rawptr(&units))
+	delete(transcript)
+}
+
+// ---------------------------------------------------------------------------
+// @VisibleForTesting
+// static Optional<Tuple<Change, String>> getPropertyChangeHistoryStartEvent(
+//     TriggerAttachment triggerAttachment,
+//     DefaultAttachment propertyAttachment,
+//     String propertyName,
+//     Tuple<Boolean, String> clearFirstNewValue,
+//     String propertyAttachmentName,
+//     Named attachedTo)
+//
+// Returns the (Change, history-event) tuple that records `propertyName`
+// being set to `clearFirstNewValue.second` on `propertyAttachment`, or
+// nil when the new value matches the current raw-property string.
+// `clearFirstNewValue.first == true` AND `newValue.isEmpty()` resolves
+// to a `attachmentPropertyReset` change; otherwise the change carries
+// the new value with `clearFirst` semantics passed through.
+//
+// Optional<...> is mirrored as a raw pointer with nil = absent, per
+// the file-level convention.
+// ---------------------------------------------------------------------------
+trigger_attachment_get_property_change_history_start_event :: proc(
+	trigger_attachment: ^Trigger_Attachment,
+	property_attachment: ^Default_Attachment,
+	property_name: string,
+	clear_first_new_value: ^Tuple(bool, string),
+	property_attachment_name: string,
+	attached_to: ^Named,
+) -> ^Tuple(^Change, string) {
+	clear_first := clear_first_new_value.first
+	new_value := clear_first_new_value.second
+
+	current := default_attachment_get_raw_property_string(property_attachment, property_name)
+	if new_value == current {
+		return nil
+	}
+
+	change: ^Change
+	if clear_first && new_value == "" {
+		change = change_factory_attachment_property_reset(
+			cast(^I_Attachment)rawptr(property_attachment),
+			property_name,
+		)
+	} else {
+		boxed := new(string)
+		boxed^ = new_value
+		change = change_factory_attachment_property_change_with_reset_first(
+			cast(^I_Attachment)rawptr(property_attachment),
+			rawptr(boxed),
+			property_name,
+			clear_first,
+		)
+	}
+
+	value_clause: string
+	if new_value == "" {
+		value_clause = "cleared"
+	} else {
+		value_clause = strings.concatenate({"to ", new_value})
+	}
+	start_event := fmt.aprintf(
+		"%s: Setting %s %s for %s attached to %s",
+		my_formatter_attachment_name_to_text(trigger_attachment.name),
+		property_name,
+		value_clause,
+		property_attachment_name,
+		named_get_name(attached_to),
+	)
+	return tuple_new(^Change, string, change, start_event)
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerSupportChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For every satisfied trigger filtered by supportMatch(): for each
+// (player, supportName -> add?) entry in t.support, locate the matching
+// UnitSupportAttachment by name, build a new players list with
+// `player` added or removed accordingly, and queue a property change
+// on the USA's "players" field plus a history event. Apply the
+// composite change at the end if non-empty.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_support_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_support_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	all_usas := unit_support_attachment_get_for_unit_type_list(
+		game_data_get_unit_type_list(data),
+	)
+	defer delete(all_usas)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		players := trigger_attachment_get_players(t)
+		support := trigger_attachment_get_support(t)
+		for player in players {
+			for support_name, add_player in support {
+				usa: ^Unit_Support_Attachment
+				for candidate in all_usas {
+					if candidate.name == support_name {
+						usa = candidate
+						break
+					}
+				}
+				if usa == nil {
+					panic(
+						strings.concatenate(
+							{
+								"Could not find unitSupportAttachment. name: ",
+								support_name,
+							},
+						),
+					)
+				}
+				existing := unit_support_attachment_get_players(usa)
+				contains := false
+				for gp in existing {
+					if gp == player {
+						contains = true
+						break
+					}
+				}
+				if contains == add_player {
+					continue
+				}
+				new_players := new([dynamic]^Game_Player)
+				for gp in existing {
+					append(new_players, gp)
+				}
+				if add_player {
+					append(new_players, player)
+				} else {
+					for i := 0; i < len(new_players); i += 1 {
+						if new_players[i] == player {
+							ordered_remove(new_players, i)
+							break
+						}
+					}
+				}
+				composite_change_add(
+					change,
+					change_factory_attachment_property_change(
+						cast(^I_Attachment)rawptr(usa),
+						rawptr(new_players),
+						"players",
+					),
+				)
+				attachment_text := my_formatter_attachment_name_to_text(t.name)
+				player_name := default_named_get_name(
+					&player.named_attachable.default_named,
+				)
+				verb := " is added to "
+				if !add_player {
+					verb = " is removed from "
+				}
+				event := strings.concatenate(
+					{
+						attachment_text,
+						": ",
+						player_name,
+						verb,
+						usa.name,
+					},
+				)
+				writer := i_delegate_bridge_get_history_writer(bridge)
+				i_delegate_history_writer_start_event(writer, event)
+				delete(event)
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerUnitRemoval(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For every satisfied trigger filtered by removeUnitsMatch(): roll
+// testChance / consume uses, and for each (player, territory) pair
+// repeated `eachMultiple` times, dispatch into
+// `trigger_attachment_remove_units` with the territory's IntegerMap.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_unit_removal :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_remove_units_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		each_multiple := abstract_trigger_attachment_get_each_multiple(
+			&t.abstract_trigger_attachment,
+		)
+		players := trigger_attachment_get_players(t)
+		remove := trigger_attachment_get_remove_units(t)
+		for player in players {
+			for ter, ut_map in remove {
+				for i: i32 = 0; i < each_multiple; i += 1 {
+					trigger_attachment_remove_units(t, ter, ut_map, player, bridge)
+				}
+			}
+		}
+	}
+}
+
 

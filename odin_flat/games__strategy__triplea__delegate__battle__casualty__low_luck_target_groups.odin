@@ -7,6 +7,72 @@ Low_Luck_Target_Groups :: struct {
 	remainder_units:       [dynamic]^Unit,
 }
 
+low_luck_target_groups_new :: proc(
+	targets: [dynamic]^Unit,
+	dice_roll: ^Dice_Roll,
+	unit_power_and_rolls_map: ^Aa_Power_Strength_And_Rolls,
+) -> ^Low_Luck_Target_Groups {
+	self := new(Low_Luck_Target_Groups)
+	self.guaranteed_hit_groups = make([dynamic][dynamic]^Unit)
+	self.remainder_units = make([dynamic]^Unit)
+
+	guarantee_hit_group_size := low_luck_target_groups_calculate_guarantee_low_luck_hit_group_size(
+		targets,
+		dice_roll,
+		unit_power_and_rolls_map,
+	)
+	if guarantee_hit_group_size == 0 {
+		for u in targets {
+			append(&self.remainder_units, u)
+		}
+		return self
+	}
+
+	builder := unit_separator_separator_categories_separator_categories_builder_new()
+	unit_separator_separator_categories_separator_categories_builder_transport_cost(builder, true)
+	separator_categories := unit_separator_separator_categories_separator_categories_builder_build(builder)
+	grouped_targets := unit_separator_categorize(targets, separator_categories)
+
+	for uc in grouped_targets {
+		uc_units := unit_category_get_units(uc)
+		uc_count := i32(len(uc_units))
+		if uc_count == 0 {
+			continue
+		}
+		// Lists.partition: split into consecutive sub-lists of size guarantee_hit_group_size,
+		// the final partition may be smaller.
+		guaranteed_groups := make([dynamic][dynamic]^Unit)
+		i: i32 = 0
+		for i < uc_count {
+			end := i + guarantee_hit_group_size
+			if end > uc_count {
+				end = uc_count
+			}
+			part := make([dynamic]^Unit)
+			for j := i; j < end; j += 1 {
+				append(&part, uc_units[j])
+			}
+			append(&guaranteed_groups, part)
+			i = end
+		}
+		if len(guaranteed_groups) == 0 {
+			continue
+		}
+		last_group := guaranteed_groups[len(guaranteed_groups) - 1]
+		if i32(len(last_group)) != guarantee_hit_group_size {
+			group_of_remainder_units := guaranteed_groups[len(guaranteed_groups) - 1]
+			ordered_remove(&guaranteed_groups, len(guaranteed_groups) - 1)
+			for u in group_of_remainder_units {
+				append(&self.remainder_units, u)
+			}
+		}
+		for g in guaranteed_groups {
+			append(&self.guaranteed_hit_groups, g)
+		}
+	}
+	return self
+}
+
 low_luck_target_groups_get_guaranteed_hit_groups :: proc(self: ^Low_Luck_Target_Groups) -> [dynamic][dynamic]^Unit {
 	return self.guaranteed_hit_groups
 }

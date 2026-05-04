@@ -979,3 +979,355 @@ abstract_place_delegate_how_many_of_each_construction_can_place :: proc(
 	}
 	return units_allowed
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getAllProducers(Territory,GamePlayer,Collection)
+// Java: return getAllProducers(to, player, unitsToPlace, false);
+abstract_place_delegate_get_all_producers_3 :: proc(
+	self:           ^Abstract_Place_Delegate,
+	to:             ^Territory,
+	player:         ^Game_Player,
+	units_to_place: [dynamic]^Unit,
+) -> [dynamic]^Territory {
+	return abstract_place_delegate_get_all_producers(self, to, player, units_to_place, false)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#canProduce(Territory,Territory,Collection,GamePlayer)
+// Java: return canProduce(producer, to, units, player, false);
+abstract_place_delegate_can_produce_4 :: proc(
+	self:     ^Abstract_Place_Delegate,
+	producer: ^Territory,
+	to:       ^Territory,
+	units:    [dynamic]^Unit,
+	player:   ^Game_Player,
+) -> Maybe(string) {
+	return abstract_place_delegate_can_produce(self, producer, to, units, player, false)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#canProduce(Territory,Collection,GamePlayer)
+// Java body translated 1:1.
+abstract_place_delegate_can_produce_to :: proc(
+	self:   ^Abstract_Place_Delegate,
+	to:     ^Territory,
+	units:  [dynamic]^Unit,
+	player: ^Game_Player,
+) -> Maybe(string) {
+	producers := abstract_place_delegate_get_all_producers(self, to, player, units, true)
+	defer delete(producers)
+	if len(producers) == 0 {
+		return fmt.aprintf("No factory in or adjacent to %s", territory_to_string(to))
+	}
+	if len(producers) == 1 {
+		return abstract_place_delegate_can_produce_4(self, producers[0], to, units, player)
+	}
+	failing_count := 0
+	error_buf := strings.builder_make()
+	defer strings.builder_destroy(&error_buf)
+	for producer in producers {
+		err_p := abstract_place_delegate_can_produce_4(self, producer, to, units, player)
+		if msg, has := err_p.?; has {
+			failing_count += 1
+			// do not include the error for same territory, if water
+			if !(producer == to && territory_is_water(producer)) {
+				strings.write_string(&error_buf, msg)
+				strings.write_string(&error_buf, ".\n")
+			}
+		}
+	}
+	if len(producers) == failing_count {
+		return fmt.aprintf(
+			"Adjacent territories to %s cannot produce because:\n\n%s",
+			territory_to_string(to),
+			strings.to_string(error_buf),
+		)
+	}
+	return nil
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#unitsPlacedInTerritorySoFar(Territory)
+// Java:
+//   final Collection<Unit> unitsInTo = new ArrayList<>(to.getUnits());
+//   final Collection<Unit> unitsAtStartOfStep = unitsAtStartOfStepInTerritory(to);
+//   unitsInTo.removeAll(unitsAtStartOfStep);
+//   return unitsInTo;
+abstract_place_delegate_units_placed_in_territory_so_far :: proc(
+	self: ^Abstract_Place_Delegate,
+	to:   ^Territory,
+) -> [dynamic]^Unit {
+	units_at_start_of_step := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start_of_step)
+	result := make([dynamic]^Unit)
+	for u in to.unit_collection.units {
+		in_start := false
+		for s in units_at_start_of_step {
+			if u == s {
+				in_start = true
+				break
+			}
+		}
+		if !in_start {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#lambda$unitWhichRequiresUnitsHasRequiredUnits$2(Territory,boolean,Unit)
+// Synthetic body of the inner Predicate<Unit> lambda. Captures `to`,
+// `countNeighbors`, and `self` (for unitsAtStartOfStepInTerritory /
+// getAllProducers / self.player). Mirrors the per-call behaviour of
+// abstract_place_delegate_unit_which_requires_units_has_required_units_test
+// without requiring a heap-allocated ctx, since this is the canonically
+// named lambda entry point referenced by the methods table.
+abstract_place_delegate_lambda_unit_which_requires_units_has_required_units_2 :: proc(
+	self:                       ^Abstract_Place_Delegate,
+	to:                         ^Territory,
+	count_neighbors:            bool,
+	unit_which_requires_units:  ^Unit,
+) -> bool {
+	if !matches_unit_requires_units_on_creation(unit_which_requires_units) {
+		return true
+	}
+	units_at_start_of_turn_in_producer := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start_of_turn_in_producer)
+	if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_producer) {
+		return true
+	}
+	if count_neighbors && territory_is_water(to) {
+		single := make([dynamic]^Unit)
+		defer delete(single)
+		append(&single, unit_which_requires_units)
+		producers := abstract_place_delegate_get_all_producers(self, to, self.player, single, true)
+		defer delete(producers)
+		for current in producers {
+			units_at_start_of_turn_in_current := abstract_place_delegate_units_at_start_of_step_in_territory(self, current)
+			defer delete(units_at_start_of_turn_in_current)
+			if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_current) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#addConstructionUnits(Collection,Territory,Collection)
+// Java filters `units` to constructions, then for each UnitType present
+// appends up to `howManyOfConstructionUnit(...)` of-type units to
+// `placeableUnits`.
+abstract_place_delegate_add_construction_units :: proc(
+	self:           ^Abstract_Place_Delegate,
+	units:          [dynamic]^Unit,
+	to:             ^Territory,
+	placeable_units: ^[dynamic]^Unit,
+) {
+	con_p, con_c := matches_unit_is_construction()
+	construction_units := make([dynamic]^Unit)
+	defer delete(construction_units)
+	for u in units {
+		if con_p(con_c, u) {
+			append(&construction_units, u)
+		}
+	}
+	if len(construction_units) == 0 {
+		return
+	}
+	constructions_map := abstract_place_delegate_how_many_of_each_construction_can_place(self, to, to, construction_units, self.player)
+	defer delete(constructions_map)
+	unit_types := unit_utils_get_unit_types_from_unit_list(construction_units)
+	defer delete(unit_types)
+	for ut in unit_types {
+		max_count := abstract_place_delegate_how_many_of_construction_unit(ut, constructions_map)
+		taken: i32 = 0
+		for u in construction_units {
+			if taken >= max_count {
+				break
+			}
+			if unit_get_type(u) == ut {
+				append(placeable_units, u)
+				taken += 1
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#canWeConsumeUnits(Collection,Territory,CompositeChange)
+// Java body translated 1:1. When `change` is nil this is a pure test;
+// otherwise the consumed units are removed from `to` via change adds and
+// a history event is appended.
+abstract_place_delegate_can_we_consume_units :: proc(
+	self:   ^Abstract_Place_Delegate,
+	units:  [dynamic]^Unit,
+	to:     ^Territory,
+	change: ^Composite_Change,
+) -> bool {
+	units_at_start_of_turn_in_to := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start_of_turn_in_to)
+	removed_units := make([dynamic]^Unit)
+	defer delete(removed_units)
+
+	consume_p, consume_c := matches_unit_consumes_units_on_creation()
+	units_which_consume := make([dynamic]^Unit)
+	defer delete(units_which_consume)
+	for u in units {
+		if consume_p(consume_c, u) {
+			append(&units_which_consume, u)
+		}
+	}
+	for unit in units_which_consume {
+		req_p, req_c := matches_unit_which_consumes_units_has_required_units(units_at_start_of_turn_in_to)
+		if !req_p(req_c, unit) {
+			return false
+		}
+		required_units_map := unit_attachment_get_consumes_units(unit_get_unit_attachment(unit))
+		owner := unit_get_owner(unit)
+		owned_p, owned_c := matches_unit_is_owned_by(owner)
+		not_bombed_p, not_bombed_c := matches_unit_has_not_taken_any_bombing_unit_damage()
+		not_dmg_p, not_dmg_c := matches_unit_has_not_taken_any_damage()
+		not_dis_p, not_dis_c := matches_unit_is_not_disabled()
+		for ut, required_number in required_units_map {
+			of_type_p, of_type_c := matches_unit_is_of_type(ut)
+			units_being_removed := make([dynamic]^Unit)
+			taken: i32 = 0
+			for candidate in units_at_start_of_turn_in_to {
+				if taken >= required_number {
+					break
+				}
+				if owned_p(owned_c, candidate) &&
+				   of_type_p(of_type_c, candidate) &&
+				   not_bombed_p(not_bombed_c, candidate) &&
+				   not_dmg_p(not_dmg_c, candidate) &&
+				   not_dis_p(not_dis_c, candidate) {
+					append(&units_being_removed, candidate)
+					taken += 1
+				}
+			}
+			// removeAll from unitsAtStartOfTurnInTo
+			for r in units_being_removed {
+				for i := len(units_at_start_of_turn_in_to) - 1; i >= 0; i -= 1 {
+					if units_at_start_of_turn_in_to[i] == r {
+						ordered_remove(&units_at_start_of_turn_in_to, i)
+						break
+					}
+				}
+			}
+			if change != nil {
+				composite_change_add(change, change_factory_remove_units(cast(^Unit_Holder)to, units_being_removed))
+				for r in units_being_removed {
+					append(&removed_units, r)
+				}
+			}
+			delete(units_being_removed)
+		}
+	}
+	if change != nil && !composite_change_is_empty(change) {
+		message := fmt.aprintf(
+			"Units in %s being upgraded or consumed: %s",
+			territory_to_string(to),
+			my_formatter_units_to_text_no_owner(removed_units, nil),
+		)
+		bridge := abstract_delegate_get_bridge(&self.abstract_delegate)
+		writer := i_delegate_bridge_get_history_writer(bridge)
+		dyn_copy := make([dynamic]^Unit)
+		for r in removed_units {
+			append(&dyn_copy, r)
+		}
+		i_delegate_history_writer_start_event(writer, message, rawptr(&dyn_copy))
+	}
+	return true
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#moveAirOntoNewCarriers(Territory,Territory,Collection,GamePlayer,CompositeChange)
+// Java body translated 1:1. Returns Maybe(string): the history message
+// describing the move when it actually happened, or nil if the rules /
+// state did not trigger one.
+abstract_place_delegate_move_air_onto_new_carriers :: proc(
+	self:         ^Abstract_Place_Delegate,
+	at:           ^Territory,
+	producer:     ^Territory,
+	units:        [dynamic]^Unit,
+	player:       ^Game_Player,
+	place_change: ^Composite_Change,
+) -> Maybe(string) {
+	if !territory_is_water(at) {
+		return nil
+	}
+	props := abstract_delegate_get_properties(&self.abstract_delegate)
+	if !properties_get_move_existing_fighters_to_new_carriers(props) ||
+	   properties_get_lhtr_carrier_production_rules(props) {
+		return nil
+	}
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	any_carrier := false
+	for u in units {
+		if carrier_p(carrier_c, u) {
+			any_carrier = true
+			break
+		}
+	}
+	if !any_carrier {
+		return nil
+	}
+	capacity := air_movement_validator_carrier_capacity(units[:], at)
+	capacity -= air_movement_validator_carrier_cost(units[:])
+	if capacity <= 0 {
+		return nil
+	}
+	land_p, land_c := matches_territory_is_land()
+	if !land_p(land_c, producer) {
+		return nil
+	}
+	can_produce_p, can_produce_c := matches_unit_can_produce_units()
+	any_producer := false
+	for u in producer.unit_collection.units {
+		if can_produce_p(can_produce_c, u) {
+			any_producer = true
+			break
+		}
+	}
+	if !any_producer {
+		return nil
+	}
+	can_land_p, can_land_c := matches_unit_can_land_on_carrier()
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	any_owned_fighter := false
+	for u in producer.unit_collection.units {
+		if can_land_p(can_land_c, u) && owned_p(owned_c, u) {
+			any_owned_fighter = true
+			break
+		}
+	}
+	if !any_owned_fighter {
+		return nil
+	}
+	if abstract_place_delegate_was_conquered(self, producer) {
+		return nil
+	}
+	already_in_producer := abstract_place_delegate_get_already_produced(self, producer)
+	defer delete(already_in_producer)
+	for u in already_in_producer {
+		if can_produce_p(can_produce_c, u) {
+			return nil
+		}
+	}
+	fighters := make([dynamic]^Unit)
+	defer delete(fighters)
+	for u in producer.unit_collection.units {
+		if can_land_p(can_land_c, u) && owned_p(owned_c, u) {
+			append(&fighters, u)
+		}
+	}
+	bridge := abstract_delegate_get_bridge(&self.abstract_delegate)
+	remote := i_delegate_bridge_get_remote_player(bridge)
+	moved_fighters := player_get_number_of_fighters_to_move_to_new_carrier(remote, fighters, producer)
+	defer delete(moved_fighters)
+	if len(moved_fighters) == 0 {
+		return nil
+	}
+	change := change_factory_move_units(producer, at, moved_fighters)
+	composite_change_add(place_change, change)
+	return fmt.aprintf(
+		"%s moved from %s to %s",
+		my_formatter_units_to_text_no_owner(moved_fighters, nil),
+		territory_to_string(producer),
+		territory_to_string(at),
+	)
+}

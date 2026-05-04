@@ -8,6 +8,23 @@ Clear_First_Strike_Casualties :: struct {
 	defense_state:  Clear_First_Strike_Casualties_State,
 }
 
+// Java: ClearFirstStrikeCasualties#<init>(BattleState, BattleActions)
+//   this.battleState = battleState;
+//   this.battleActions = battleActions;
+//   this.offenseState = calculateOffenseState();
+//   this.defenseState = calculateDefenseState();
+clear_first_strike_casualties_new :: proc(
+	battle_state: ^Battle_State,
+	battle_actions: ^Battle_Actions,
+) -> ^Clear_First_Strike_Casualties {
+	self := new(Clear_First_Strike_Casualties)
+	self.battle_state = battle_state
+	self.battle_actions = battle_actions
+	self.offense_state = clear_first_strike_casualties_calculate_offense_state(self)
+	self.defense_state = clear_first_strike_casualties_calculate_defense_state(self)
+	return self
+}
+
 clear_first_strike_casualties_get_order :: proc(self: ^Clear_First_Strike_Casualties) -> Battle_Step_Order {
 	return .FIRST_STRIKE_REMOVE_CASUALTIES
 }

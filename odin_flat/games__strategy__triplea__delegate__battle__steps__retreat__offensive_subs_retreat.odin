@@ -83,3 +83,32 @@ offensive_subs_retreat_is_auto_win_scenario :: proc(self: ^Offensive_Subs_Retrea
 	return retreat_checks_only_defenseless_transports_left(defense_units, game_data)
 }
 
+// Java: OffensiveSubsRetreat#isRetreatNotPossible
+//   return !Properties.getSubmersibleSubs(battleState.getGameData().getProperties())
+//       && !RetreatChecks.canAttackerRetreat(
+//           battleState.filterUnits(ALIVE, DEFENSE),
+//           battleState.getGameData(),
+//           battleState::getAttackerRetreatTerritories,
+//           battleState.getStatus().isAmphibious());
+// RetreatChecks.canAttackerRetreat is inlined here because Odin has no closures
+// and the existing retreat_checks_can_attacker_retreat takes a parameterless proc
+// that cannot capture self.battle_state.
+offensive_subs_retreat_is_retreat_not_possible :: proc(self: ^Offensive_Subs_Retreat) -> bool {
+	game_data := battle_state_get_game_data(self.battle_state)
+	props := game_data_get_properties(game_data)
+	if properties_get_submersible_subs(props) {
+		return false
+	}
+	is_amphibious := battle_status_is_amphibious(battle_state_get_status(self.battle_state))
+	if is_amphibious {
+		return true
+	}
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	defense_units := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	if retreat_checks_only_defenseless_transports_left(defense_units, game_data) {
+		return true
+	}
+	territories := battle_state_get_attacker_retreat_territories(self.battle_state)
+	return len(territories) == 0
+}
+

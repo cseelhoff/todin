@@ -129,3 +129,39 @@ check_general_battle_end_transports_vs_transports :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#canAttackerRetreatInStalemate
+check_general_battle_end_can_attacker_retreat_in_stalemate :: proc(
+	self: ^Check_General_Battle_End,
+) -> bool {
+	// Collect all of the non-null 'can retreat on stalemate' option values.
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	offense_units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	can_retreat_options := make(map[bool]struct {})
+	defer delete(can_retreat_options)
+	for u in offense_units {
+		ua := unit_get_unit_attachment(u)
+		opt := unit_attachment_get_can_retreat_on_stalemate(ua)
+		if opt == nil {
+			continue
+		}
+		can_retreat_options[opt^] = struct {}{}
+	}
+
+	property_is_set_at_least_once := len(can_retreat_options) > 0
+
+	// Check if all of the non-null properties are set to true.
+	allow_retreat_from_property := true
+	for b in can_retreat_options {
+		if !check_general_battle_end_lambda_can_attacker_retreat_in_stalemate_2(b) {
+			allow_retreat_from_property = false
+			break
+		}
+	}
+
+	return(
+		(property_is_set_at_least_once && allow_retreat_from_property) ||
+		(!property_is_set_at_least_once &&
+				check_general_battle_end_transports_vs_transports(self)) \
+	)
+}
+

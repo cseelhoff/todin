@@ -8,6 +8,18 @@ I_Display_Bombing_Results_Message :: struct {
 	cost:      i32,
 }
 
+// games.strategy.engine.display.IDisplay$BombingResultsMessage(UUID, List<Die>, int)
+//   Snake-case ctor alias matching the project's `<owner>_new` convention.
+//   Forwards to the existing `make_I_Display_Bombing_Results_Message`
+//   impl (which builds the wire-format string id + dice-data list).
+i_display_bombing_results_message_new :: proc(
+	battle_id: Uuid,
+	dice: [dynamic]^Die,
+	total: i32,
+) -> ^I_Display_Bombing_Results_Message {
+	return make_I_Display_Bombing_Results_Message(battle_id, dice, total)
+}
+
 make_I_Display_Bombing_Results_Message :: proc(
 	battle_id: Uuid,
 	dice: [dynamic]^Die,

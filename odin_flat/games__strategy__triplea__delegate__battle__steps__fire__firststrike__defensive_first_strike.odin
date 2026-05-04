@@ -129,3 +129,20 @@ defensive_first_strike_calculate_state :: proc(
 	}
 	return .REGULAR
 }
+
+// Java: public DefensiveFirstStrike(BattleState battleState, BattleActions battleActions)
+//   this.battleState = battleState;
+//   this.battleActions = battleActions;
+//   this.state = calculateState();
+// (returnFire defaults to ReturnFire.ALL per the field initializer.)
+defensive_first_strike_new :: proc(
+	battle_state: ^Battle_State,
+	battle_actions: ^Battle_Actions,
+) -> ^Defensive_First_Strike {
+	self := new(Defensive_First_Strike)
+	self.battle_state = battle_state
+	self.battle_actions = battle_actions
+	self.return_fire = .ALL
+	self.state = defensive_first_strike_calculate_state(self)
+	return self
+}

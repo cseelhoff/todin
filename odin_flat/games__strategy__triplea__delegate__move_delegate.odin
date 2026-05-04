@@ -71,7 +71,24 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 	self.need_to_initialize = true
 	self.need_to_do_rockets = true
 	self.pus_lost = make(map[^Territory]i32)
+	// Wire the Abstract_Move_Delegate vtable slot for `pusAlreadyLost`
+	// (Java: `return pusLost.getInt(t);`). Forwards to the per-type
+	// `move_delegate_pus_already_lost` body via the embedded layout.
+	self.abstract_move_delegate.pus_already_lost = proc(amd: ^Abstract_Move_Delegate, t: ^Territory) -> i32 {
+		md := cast(^Move_Delegate)amd
+		return move_delegate_pus_already_lost(md, t)
+	}
 	return self
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#pusAlreadyLost(Territory)
+// Direct concrete-typed lookup — Java: `return pusLost.getInt(t);`.
+// Odin map lookup defaults to zero when absent, mirroring IntegerMap.getInt.
+move_delegate_pus_already_lost :: proc(self: ^Move_Delegate, t: ^Territory) -> i32 {
+	if v, ok := self.pus_lost[t]; ok {
+		return v
+	}
+	return 0
 }
 
 // games.strategy.triplea.delegate.MoveDelegate#getEmptyNeutral(games.strategy.engine.data.Route)
