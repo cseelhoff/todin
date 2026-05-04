@@ -110,3 +110,56 @@ strategic_bombing_raid_battle_conduct_bombing_add_to_target_dice_map :: proc(
 	append(&list, roll)
 	m[target] = list
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$ConductBombing#rollDiceComplex(IDelegateBridge,boolean,boolean,String)
+//
+// Java: per-attacker dice roll path used when low-luck or bombing-bonus is
+// active. Walks attacking_units, computes maxDice/bonus per unit (subject
+// to lowLuck reduction), and delegates to rollDie which writes into
+// `dice[nextDieIndex]`.
+strategic_bombing_raid_battle_conduct_bombing_roll_dice_complex :: proc(
+	self:              ^Strategic_Bombing_Raid_Battle_Conduct_Bombing,
+	bridge:            ^I_Delegate_Bridge,
+	use_bombing_bonus: bool,
+	low_luck:          bool,
+	annotation:        string,
+) {
+	next_die_index: i32 = 0
+	for u in self.outer.attacking_units {
+		rolls := strategic_bombing_raid_battle_get_sbr_rolls_unit(u, self.outer.attacker)
+		if rolls < 1 {
+			continue
+		}
+
+		ua := unit_get_unit_attachment(u)
+		max_dice := unit_attachment_get_bombing_max_die_sides(ua)
+		// both could be -1, meaning they were not set. if they were not set, then we use
+		// default dice sides for the map, and zero for the bonus.
+		if max_dice < 0 || !use_bombing_bonus {
+			max_dice = self.outer.game_data.dice_sides
+		}
+		bonus: i32 = 0
+		if use_bombing_bonus {
+			bonus = unit_attachment_get_bombing_bonus(ua)
+		}
+
+		// now, regardless of whether they were set or not, we have to apply "low luck" to them,
+		// meaning in this case that we reduce the luck by 2/3.
+		if low_luck && max_dice >= 5 {
+			bonus += (max_dice + 1) / 3
+			max_dice = (max_dice + 1) / 3
+		}
+
+		// now we roll, or don't if there is nothing to roll.
+		strategic_bombing_raid_battle_conduct_bombing_roll_die(
+			self,
+			bridge,
+			annotation,
+			max_dice,
+			rolls,
+			next_die_index,
+			bonus,
+		)
+		next_die_index += 1
+	}
+}

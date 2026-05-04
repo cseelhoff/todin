@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Move_Delegate :: struct {
 	using abstract_move_delegate: Abstract_Move_Delegate,
 	need_to_initialize: bool,
@@ -495,4 +497,204 @@ move_delegate_get_largest_repair_rate_for_this_unit :: proc(
 		}
 	}
 	return largest
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#delegateCurrentlyRequiresUserInput()
+// Java:
+//   final Predicate<Unit> moveableUnitOwnedByMe =
+//       PredicateBuilder.of(Matches.unitIsOwnedBy(player))
+//           .and(Matches.unitHasMovementLeft()
+//                .or(Matches.unitIsLand().and(Matches.unitIsBeingTransported())))
+//           .andIf(GameStepPropertiesHelper.isCombatMove(getData()),
+//                  Matches.unitCanNotMoveDuringCombatMove().negate())
+//           .build();
+//   return !getData().getMap().getTerritories().isEmpty()
+//       && getData().getMap().getTerritories().stream()
+//             .anyMatch(t -> t.anyUnitsMatch(moveableUnitOwnedByMe));
+// The Java predicate captures `player` (and conditionally the combat-move
+// flag) so we materialize it as a (proc, ctx) pair following the rawptr
+// convention; the territory-stream lambda is the existing
+// `move_delegate_lambda_delegate_currently_requires_user_input_0`.
+Move_Delegate_Moveable_Unit_Owned_By_Me_Ctx :: struct {
+	owned_p:                proc(rawptr, ^Unit) -> bool,
+	owned_c:                rawptr,
+	has_movement_p:         proc(rawptr, ^Unit) -> bool,
+	has_movement_c:         rawptr,
+	is_land_p:              proc(rawptr, ^Unit) -> bool,
+	is_land_c:              rawptr,
+	is_being_transported_p: proc(rawptr, ^Unit) -> bool,
+	is_being_transported_c: rawptr,
+	is_combat_move:         bool,
+	cannot_move_combat_p:   proc(rawptr, ^Unit) -> bool,
+	cannot_move_combat_c:   rawptr,
+}
+
+move_delegate_moveable_unit_owned_by_me_pred :: proc(ctx: rawptr, u: ^Unit) -> bool {
+	c := cast(^Move_Delegate_Moveable_Unit_Owned_By_Me_Ctx)ctx
+	if !c.owned_p(c.owned_c, u) {
+		return false
+	}
+	// hasMovementLeft OR (isLand AND isBeingTransported)
+	if !(c.has_movement_p(c.has_movement_c, u) ||
+		   (c.is_land_p(c.is_land_c, u) &&
+			   c.is_being_transported_p(c.is_being_transported_c, u))) {
+		return false
+	}
+	// .andIf(isCombatMove, unitCanNotMoveDuringCombatMove().negate())
+	if c.is_combat_move {
+		if c.cannot_move_combat_p(c.cannot_move_combat_c, u) {
+			return false
+		}
+	}
+	return true
+}
+
+move_delegate_delegate_currently_requires_user_input :: proc(self: ^Move_Delegate) -> bool {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	inner := new(Move_Delegate_Moveable_Unit_Owned_By_Me_Ctx)
+	inner.owned_p, inner.owned_c = matches_unit_is_owned_by(self.player)
+	inner.has_movement_p, inner.has_movement_c = matches_unit_has_movement_left()
+	inner.is_land_p, inner.is_land_c = matches_unit_is_land()
+	inner.is_being_transported_p, inner.is_being_transported_c =
+		matches_unit_is_being_transported()
+	inner.is_combat_move = game_step_properties_helper_is_combat_move(data)
+	inner.cannot_move_combat_p, inner.cannot_move_combat_c =
+		matches_unit_can_not_move_during_combat_move()
+
+	outer := new(Move_Delegate_Delegate_Currently_Requires_User_Input_0_Ctx)
+	outer.moveable_unit_owned_by_me = move_delegate_moveable_unit_owned_by_me_pred
+	outer.moveable_unit_owned_by_me_ctx = rawptr(inner)
+
+	territories := game_map_get_territories(game_state_get_map(&data.game_state))
+	if len(territories) == 0 {
+		return false
+	}
+	for t in territories {
+		if move_delegate_lambda_delegate_currently_requires_user_input_0(rawptr(outer), t) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#giveBonusMovement(IDelegateBridge, GamePlayer)
+// Java:
+//   final GameState data = bridge.getData();
+//   final CompositeChange change = new CompositeChange();
+//   for (final Territory t : data.getMap().getTerritories()) {
+//     change.add(giveBonusMovementToUnits(player, data, t));
+//   }
+//   return change;
+// Static; bridge.getData() returns ^Game_Data which embeds Game_State.
+move_delegate_give_bonus_movement :: proc(
+	bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+) -> ^Change {
+	data := i_delegate_bridge_get_data(bridge)
+	change := composite_change_new()
+	for t in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		composite_change_add(
+			change,
+			move_delegate_give_bonus_movement_to_units(player, &data.game_state, t),
+		)
+	}
+	return &change.change
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#repairedChangeInto(
+//     java.util.Set, games.strategy.engine.data.Territory,
+//     games.strategy.engine.delegate.IDelegateBridge)
+// Java:
+//   final List<Unit> changesIntoUnits =
+//       CollectionUtils.getMatches(units,
+//           Matches.unitWhenHitPointsRepairedChangesInto());
+//   ... walk each, look up tuple in unitAttachment.whenHitPointsRepairedChangesInto,
+//       optionally translate attributes, accumulate add/remove lists.
+// Static; receives a `Set<Unit>` which Odin renders as `map[^Unit]struct{}`.
+move_delegate_repaired_change_into :: proc(
+	units: map[^Unit]struct {},
+	territory: ^Territory,
+	bridge: ^I_Delegate_Bridge,
+) {
+	changes_into_p, changes_into_c := matches_unit_when_hit_points_repaired_changes_into()
+	changes_into_units: [dynamic]^Unit
+	for u, _ in units {
+		if changes_into_p(changes_into_c, u) {
+			append(&changes_into_units, u)
+		}
+	}
+	changes := composite_change_new()
+	units_to_remove: [dynamic]^Unit
+	units_to_add: [dynamic]^Unit
+	for unit in changes_into_units {
+		m := unit_attachment_get_when_hit_points_repaired_changes_into(
+			unit_get_unit_attachment(unit),
+		)
+		hits := unit_get_hits(unit)
+		tup, ok := m[hits]
+		if !ok {
+			continue
+		}
+		translate_attributes := tuple_get_first(tup)
+		unit_type := tuple_get_second(tup)
+		to_add := unit_type_create_2(unit_type, 1, unit_get_owner(unit))
+		if translate_attributes {
+			translate := unit_utils_translate_attributes_to_other_units(
+				unit,
+				to_add,
+				territory,
+			)
+			composite_change_add(changes, translate)
+		}
+		append(&units_to_remove, unit)
+		for u in to_add {
+			append(&units_to_add, u)
+		}
+	}
+	if len(units_to_remove) > 0 {
+		i_delegate_bridge_add_change(bridge, &changes.change)
+		writer := i_delegate_bridge_get_history_writer(bridge)
+		remove_text := fmt.aprintf(
+			"%s removed in %s",
+			my_formatter_units_to_text(units_to_remove),
+			territory.named.base.name,
+		)
+		history_writer_add_child_to_event(writer, remove_text, rawptr(&units_to_remove))
+		i_delegate_bridge_add_change(
+			bridge,
+			change_factory_remove_units(cast(^Unit_Holder)territory, units_to_remove),
+		)
+		add_text := fmt.aprintf(
+			"%s added in %s",
+			my_formatter_units_to_text(units_to_add),
+			territory.named.base.name,
+		)
+		history_writer_add_child_to_event(writer, add_text, rawptr(&units_to_add))
+		i_delegate_bridge_add_change(
+			bridge,
+			change_factory_add_units(cast(^Unit_Holder)territory, units_to_add),
+		)
+	}
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#resetUnitStateAndDelegateState()
+// Java:
+//   pusLost.clear();
+//   final Change change = getResetUnitStateChange(getData());
+//   if (!change.isEmpty()) {
+//     bridge.getHistoryWriter().startEvent(CLEANING_UP_DURING_MOVEMENT_PHASE);
+//     bridge.addChange(change);
+//   }
+// CLEANING_UP_DURING_MOVEMENT_PHASE = "Cleaning up during movement phase".
+move_delegate_reset_unit_state_and_delegate_state :: proc(self: ^Move_Delegate) {
+	clear(&self.pus_lost)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	change := move_delegate_get_reset_unit_state_change(&data.game_state)
+	if !change_is_empty(change) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			"Cleaning up during movement phase",
+		)
+		i_delegate_bridge_add_change(self.bridge, change)
+	}
 }

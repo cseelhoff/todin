@@ -293,3 +293,62 @@ mark_casualties_notify_casualties :: proc(
 	mark_casualties_lambda_notify_casualties_0(self, bridge)
 }
 
+// Java: public void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   if (!battleState.getStatus().isHeadless()) notifyCasualties(bridge);
+//   battleState.markCasualties(killed, side.getOpposite());
+//   if (returnFire == ReturnFire.SUBS) {
+//     battleActions.removeUnits(
+//         CollectionUtils.getMatches(killed, Matches.unitIsFirstStrike().negate()),
+//         bridge, battleState.getBattleSite(), side.getOpposite());
+//   } else if (returnFire == ReturnFire.NONE) {
+//     battleActions.removeUnits(killed, bridge, battleState.getBattleSite(), side.getOpposite());
+//   }
+//   if (firingGroup.isSuicideOnHit()) removeSuicideOnHitUnits(bridge);
+mark_casualties_execute :: proc(
+	self: ^Mark_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if !battle_status_is_headless(battle_state_get_status(self.battle_state)) {
+		mark_casualties_notify_casualties(self, bridge)
+	}
+
+	opposite := battle_state_side_get_opposite(self.side)
+	casualties := fire_round_state_get_casualties(self.fire_round_state)
+	killed := casualty_list_get_killed(&casualties.casualty_list)
+	battle_state_mark_casualties(self.battle_state, killed, opposite)
+
+	battle_site := battle_state_get_battle_site(self.battle_state)
+	if self.return_fire == .SUBS {
+		// CollectionUtils.getMatches(killed, unitIsFirstStrike().negate())
+		fs_pred, fs_ctx := matches_unit_is_first_strike()
+		filtered := make([dynamic]^Unit)
+		for u in killed {
+			if !fs_pred(fs_ctx, u) {
+				append(&filtered, u)
+			}
+		}
+		battle_actions_remove_units(
+			self.battle_actions,
+			filtered,
+			bridge,
+			battle_site,
+			opposite,
+		)
+	} else if self.return_fire == .NONE {
+		killed_copy := make([dynamic]^Unit)
+		for u in killed do append(&killed_copy, u)
+		battle_actions_remove_units(
+			self.battle_actions,
+			killed_copy,
+			bridge,
+			battle_site,
+			opposite,
+		)
+	}
+
+	if firing_group_is_suicide_on_hit(self.firing_group) {
+		mark_casualties_remove_suicide_on_hit_units(self, bridge)
+	}
+}
+

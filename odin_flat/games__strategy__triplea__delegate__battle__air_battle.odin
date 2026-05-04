@@ -199,3 +199,84 @@ air_battle_record_units_were_in_air_battle :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.AirBattle#updateDefendingUnits
+//
+// Java:
+//   if (isBombingRun) {
+//     defendingUnits = battleSite.getMatches(
+//         defendingBombingRaidInterceptors(battleSite, attacker, gameData));
+//   } else {
+//     defendingUnits = battleSite.getMatches(
+//         defendingGroundSeaBattleInterceptors(attacker, gameData));
+//   }
+air_battle_update_defending_units :: proc(self: ^Air_Battle) {
+	if self.is_bombing_run {
+		pred, ctx := air_battle_defending_bombing_raid_interceptors(
+			self.battle_site,
+			self.attacker,
+			&self.game_data.game_state,
+		)
+		self.defending_units = territory_get_matches(self.battle_site, pred, ctx)
+	} else {
+		pred, ctx := air_battle_defending_ground_sea_battle_interceptors(
+			self.attacker,
+			&self.game_data.game_state,
+		)
+		self.defending_units = territory_get_matches(self.battle_site, pred, ctx)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.AirBattle#territoryCouldPossiblyHaveAirBattleDefenders
+//
+// Java: see source — determines if `territory` could possibly host air-battle
+// defenders for `attacker`, taking into account scrambling distance from
+// neighbouring territories when air-battle scrambling is enabled.
+air_battle_territory_could_possibly_have_air_battle_defenders :: proc(
+	territory: ^Territory,
+	attacker: ^Game_Player,
+	data: ^Game_State,
+	bombing: bool,
+) -> bool {
+	can_scramble_to_air_battle := properties_get_can_scramble_into_air_battles(
+		game_state_get_properties(data),
+	)
+	defending_air_match:     proc(rawptr, ^Unit) -> bool
+	defending_air_match_ctx: rawptr
+	if bombing {
+		defending_air_match, defending_air_match_ctx =
+			air_battle_defending_bombing_raid_interceptors(territory, attacker, data)
+	} else {
+		defending_air_match, defending_air_match_ctx =
+			air_battle_defending_ground_sea_battle_interceptors(attacker, data)
+	}
+	max_scramble_distance: i32 = 0
+	if can_scramble_to_air_battle {
+		for ut, _ in unit_type_list_get_all_unit_types(game_state_get_unit_type_list(data)) {
+			ua := unit_type_get_unit_attachment(ut)
+			if unit_attachment_can_scramble(ua) &&
+				max_scramble_distance < unit_attachment_get_max_scramble_distance(ua) {
+				max_scramble_distance = unit_attachment_get_max_scramble_distance(ua)
+			}
+		}
+	} else {
+		return territory_any_units_match(territory, defending_air_match, defending_air_match_ctx)
+	}
+	if territory_any_units_match(territory, defending_air_match, defending_air_match_ctx) {
+		return true
+	}
+	thm_pred, thm_ctx := matches_territory_has_units_that_match(
+		defending_air_match,
+		defending_air_match_ctx,
+	)
+	for n, _ in game_map_get_neighbors_distance(
+		game_state_get_map(data),
+		territory,
+		max_scramble_distance,
+	) {
+		if thm_pred(thm_ctx, n) {
+			return true
+		}
+	}
+	return false
+}
+

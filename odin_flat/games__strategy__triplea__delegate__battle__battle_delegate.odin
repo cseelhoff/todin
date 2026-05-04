@@ -551,3 +551,30 @@ battle_delegate_select_bombarding_battle :: proc(
 	return nil
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#markDamaged(Collection, IDelegateBridge, Territory)
+//   public static void markDamaged(
+//       final Collection<Unit> damaged, final IDelegateBridge bridge, final Territory territory) {
+//     if (damaged.isEmpty()) return;
+//     final IntegerMap<Unit> damagedMap = new IntegerMap<>();
+//     for (final Unit u : damaged) damagedMap.add(u, 1);
+//     HistoryChangeFactory.damageUnits(territory, damagedMap).perform(bridge);
+//   }
+battle_delegate_mark_damaged :: proc(
+	damaged: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	territory: ^Territory,
+) {
+	if len(damaged) == 0 {
+		return
+	}
+	damaged_map := new(Integer_Map_Unit)
+	damaged_map.entries = make(map[^Unit]i32)
+	for u in damaged {
+		damaged_map.entries[u] = damaged_map.entries[u] + 1
+	}
+	damage_units_history_change_perform(
+		history_change_factory_damage_units(territory, damaged_map),
+		bridge,
+	)
+}
+

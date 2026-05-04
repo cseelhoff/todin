@@ -70,3 +70,62 @@ defensive_first_strike_execute :: proc(
 		execution_stack_push_one(stack, cast(^I_Executable)step)
 	}
 }
+
+// Java: private State calculateState()
+//   if (battleState.filterUnits(ALIVE, side).stream()
+//           .noneMatch(Matches.unitIsFirstStrikeOnDefense(
+//               battleState.getGameData().getProperties()))) {
+//     return State.NOT_APPLICABLE;
+//   }
+//   if (Properties.getWW2V2(battleState.getGameData().getProperties())) {
+//     return State.FIRST_STRIKE;
+//   }
+//   final boolean canSneakAttack =
+//       battleState.filterUnits(ALIVE, side.getOpposite()).stream()
+//               .noneMatch(Matches.unitIsDestroyer())
+//           && Properties.getDefendingSubsSneakAttack(
+//               battleState.getGameData().getProperties());
+//   if (canSneakAttack) { return State.FIRST_STRIKE; }
+//   return State.REGULAR;
+defensive_first_strike_calculate_state :: proc(
+	self: ^Defensive_First_Strike,
+) -> Defensive_First_Strike_State {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+
+	game_data := battle_state_get_game_data(self.battle_state)
+	properties := game_data_get_properties(game_data)
+
+	defense_alive := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	first_strike_p, first_strike_c := matches_unit_is_first_strike_on_defense(properties)
+	any_first_strike := false
+	for u in defense_alive {
+		if first_strike_p(first_strike_c, u) {
+			any_first_strike = true
+			break
+		}
+	}
+	if !any_first_strike {
+		return .NOT_APPLICABLE
+	}
+
+	// ww2v2 rules require subs to always fire in a sub phase
+	if properties_get_ww2_v2(properties) {
+		return .FIRST_STRIKE
+	}
+
+	opposite := battle_state_side_get_opposite(.DEFENSE)
+	offense_alive := battle_state_filter_units(self.battle_state, alive_filter, opposite)
+	destroyer_p, destroyer_c := matches_unit_is_destroyer()
+	none_destroyer := true
+	for u in offense_alive {
+		if destroyer_p(destroyer_c, u) {
+			none_destroyer = false
+			break
+		}
+	}
+	can_sneak_attack := none_destroyer && properties_get_defending_subs_sneak_attack(properties)
+	if can_sneak_attack {
+		return .FIRST_STRIKE
+	}
+	return .REGULAR
+}

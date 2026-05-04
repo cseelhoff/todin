@@ -53,3 +53,42 @@ clear_bombardment_casualties_clear_casualties :: proc(
 	)
 }
 
+// Java: return canBombardmentOccur() && clearCasualties()
+//          ? List.of(new StepDetails(REMOVE_BOMBARDMENT_CASUALTIES, this))
+//          : List.of();
+clear_bombardment_casualties_get_all_step_details :: proc(
+	self: ^Clear_Bombardment_Casualties,
+) -> [dynamic]^Battle_Step_Step_Details {
+	out := make([dynamic]^Battle_Step_Step_Details)
+	if clear_bombardment_casualties_can_bombardment_occur(self) &&
+	   clear_bombardment_casualties_clear_casualties(self) {
+		append(
+			&out,
+			battle_step_step_details_new(
+				BATTLE_STEP_REMOVE_BOMBARDMENT_CASUALTIES,
+				&self.battle_step,
+			),
+		)
+	}
+	return out
+}
+
+// Java: if (canBombardmentOccur() && clearCasualties()) {
+//           battleActions.clearWaitingToDieAndDamagedChangesInto(
+//               bridge, BattleState.Side.DEFENSE);
+//       }
+clear_bombardment_casualties_execute :: proc(
+	self: ^Clear_Bombardment_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if clear_bombardment_casualties_can_bombardment_occur(self) &&
+	   clear_bombardment_casualties_clear_casualties(self) {
+		battle_actions_clear_waiting_to_die_and_damaged_changes_into(
+			self.battle_actions,
+			bridge,
+			.DEFENSE,
+		)
+	}
+}
+

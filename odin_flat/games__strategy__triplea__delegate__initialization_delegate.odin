@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Java owner: games.strategy.triplea.delegate.InitializationDelegate
 
 Initialization_Delegate :: struct {
@@ -239,6 +241,133 @@ initialization_delegate_init_shipyards :: proc(bridge: ^I_Delegate_Bridge) {
 			"Adding shipyard production rules - land/air units",
 		)
 		i_delegate_bridge_add_change(bridge, &change.change)
+	}
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#resetUnitState()
+// Instance method. The Java sibling helper initTransportedLandUnits has
+// side effects on unit state; this resets those by applying
+// MoveDelegate.getResetUnitStateChange. Emits a history event and queues
+// the change only when the produced change is non-empty.
+initialization_delegate_reset_unit_state :: proc(self: ^Initialization_Delegate) {
+	change := move_delegate_get_reset_unit_state_change(
+		abstract_delegate_get_data(&self.abstract_delegate),
+	)
+	if !change_is_empty(change) {
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			"Cleaning up unit state.",
+		)
+		i_delegate_bridge_add_change(self.bridge, change)
+	}
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#initSkipUnusedBids(games.strategy.engine.data.GameState)
+// Static helper. Walks every step in the game's sequence and zeroes the
+// max-run-count of bid steps whose owning player has no bid available,
+// avoiding the per-VM UI churn Java's comment calls out.
+//
+// Java's `step.getDelegate() instanceof BidPlaceDelegate
+// || step.getDelegate() instanceof BidPurchaseDelegate` is rendered using
+// the established suffix-matchers on the step's name (see
+// game_step_is_bid_place_step_name / game_step_is_bid_step_name); the
+// codebase consistently identifies bid delegates by step-name suffix
+// rather than by runtime type.
+initialization_delegate_init_skip_unused_bids :: proc(data: ^Game_State) {
+	gd := cast(^Game_Data)data
+	for step in game_data_get_sequence(gd).steps {
+		name := game_step_get_name(step)
+		if (game_step_is_bid_place_step_name(name) || game_step_is_bid_step_name(name)) &&
+			!bid_purchase_delegate_does_player_have_bid(data, game_step_get_player_id(step)) {
+			game_step_set_max_run_count(step, 0)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#lambda$initAiStartingBonusIncome$0(IDelegateBridge, GamePlayer)
+// Synthetic lambda backing the per-player forEach inside
+// initAiStartingBonusIncome:
+//   player -> BonusIncomeUtils.addBonusIncome(
+//                player.getResources().getResourcesCopy(), bridge, player)
+// `bridge` is the captured outer parameter; `player` is the iteration
+// element. The Java return type is void, so the String result of
+// addBonusIncome is discarded.
+initialization_delegate_lambda_init_ai_starting_bonus_income_0 :: proc(
+	bridge: ^I_Delegate_Bridge,
+	player: ^Game_Player,
+) {
+	bonus_income_utils_add_bonus_income(
+		resource_collection_get_resources_copy(game_player_get_resources(player)),
+		bridge,
+		player,
+	)
+}
+
+// games.strategy.triplea.delegate.InitializationDelegate#initDeleteAssetsOfDisabledPlayers(IDelegateBridge)
+// Static helper. When the "delete disabled players' assets" property is
+// on, for every disabled non-null player: zero out every resource they
+// own, remove every unit they hold, and remove every unit they own from
+// every territory. Emit one history event per affected player and apply
+// the composite change via the bridge.
+initialization_delegate_init_delete_assets_of_disabled_players :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	if !properties_get_disabled_players_assets_deleted(game_data_get_properties(data)) {
+		return
+	}
+	for player in player_list_get_players(game_data_get_player_list(data)) {
+		if game_player_is_null(player) || !game_player_get_is_disabled(player) {
+			continue
+		}
+		change := composite_change_new()
+		// Zero every resource the player currently owns.
+		resources_copy := resource_collection_get_resources_copy(game_player_get_resources(player))
+		for r, _ in resources_copy {
+			deleted := resource_collection_get_quantity(game_player_get_resources(player), r)
+			if deleted != 0 {
+				composite_change_add(
+					change,
+					change_factory_change_resources_change(player, r, -deleted),
+				)
+			}
+		}
+		delete(resources_copy)
+		// Remove every unit the player is the holder of.
+		held_units := unit_holder_get_units(cast(^Unit_Holder)player)
+		if len(held_units) > 0 {
+			composite_change_add(
+				change,
+				change_factory_remove_units(cast(^Unit_Holder)player, held_units),
+			)
+		}
+		// For every territory, remove the units owned by this player.
+		owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+		for t in game_map_get_territories(game_data_get_map(data)) {
+			all_units := unit_holder_get_units(cast(^Unit_Holder)t)
+			defer delete(all_units)
+			terr_units := make([dynamic]^Unit, 0, len(all_units))
+			for u in all_units {
+				if owned_pred(owned_ctx, u) {
+					append(&terr_units, u)
+				}
+			}
+			if len(terr_units) > 0 {
+				composite_change_add(
+					change,
+					change_factory_remove_units(cast(^Unit_Holder)t, terr_units),
+				)
+			}
+		}
+		if !composite_change_is_empty(change) {
+			msg := fmt.aprintf(
+				"Remove all resources and units from: %s",
+				default_named_get_name(&player.named_attachable.default_named),
+			)
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(bridge),
+				msg,
+			)
+			i_delegate_bridge_add_change(bridge, &change.change)
+		}
 	}
 }
 

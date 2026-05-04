@@ -407,6 +407,26 @@ strategic_bombing_raid_battle_get_sbr_rolls_unit :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#getSbrRolls(Collection<Unit>, GamePlayer)
+//
+//   private static int getSbrRolls(final Collection<Unit> units, final GamePlayer gamePlayer) {
+//     int count = 0;
+//     for (final Unit unit : units) {
+//       count += getSbrRolls(unit, gamePlayer);
+//     }
+//     return count;
+//   }
+strategic_bombing_raid_battle_get_sbr_rolls :: proc(
+	units:       []^Unit,
+	game_player: ^Game_Player,
+) -> i32 {
+	count: i32 = 0
+	for unit in units {
+		count += strategic_bombing_raid_battle_get_sbr_rolls_unit(unit, game_player)
+	}
+	return count
+}
+
 // games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#notifyAaHits
 //
 //   private void notifyAaHits(IDelegateBridge bridge, DiceRoll dice,

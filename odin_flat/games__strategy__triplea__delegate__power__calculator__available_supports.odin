@@ -243,3 +243,15 @@ available_supports_filter :: proc(
 	return available_supports_available_supports_builder_build(builder)
 }
 
+// Adapter for copy(): rawptr-form predicate that ignores its arg and returns
+// true, matching available_supports_filter's predicate signature.
+available_supports_copy_always_true :: proc(ctx: rawptr, usa: ^Unit_Support_Attachment) -> bool {
+	return true
+}
+
+// AvailableSupports copy()
+//   Constructs a copied version of this via filter(support -> true).
+available_supports_copy :: proc(self: ^Available_Supports) -> ^Available_Supports {
+	return available_supports_filter(self, available_supports_copy_always_true, nil)
+}
+

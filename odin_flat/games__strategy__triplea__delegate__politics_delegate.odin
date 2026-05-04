@@ -62,15 +62,7 @@ politics_delegate_notify_failure :: proc(
 	)
 	resource_loader := i_delegate_bridge_get_resource_loader(self.bridge)
 	if resource_loader != nil {
-		politics_text := politics_text_new(resource_loader)
-		politics_delegate_send_notification(
-			self,
-			politics_text_get_notification_failure(politics_text, paa.text),
-		)
-		politics_delegate_notify_other_players(
-			self,
-			politics_text_get_notification_failure_others(politics_text, paa.text),
-		)
+		politics_delegate_lambda_notify_failure_1(self, paa, resource_loader)
 	}
 }
 
@@ -122,15 +114,7 @@ politics_delegate_notify_success :: proc(
 	headless_sound_channel_play_sound_for_all(sound, "political_action_successful", self.player)
 	resource_loader := i_delegate_bridge_get_resource_loader(self.bridge)
 	if resource_loader != nil {
-		politics_text := politics_text_new(resource_loader)
-		politics_delegate_send_notification(
-			self,
-			politics_text_get_notification_success(politics_text, paa.text),
-		)
-		politics_delegate_notify_other_players(
-			self,
-			politics_text_get_notification_success_others(politics_text, paa.text),
-		)
+		politics_delegate_lambda_notify_success_2(self, paa, resource_loader)
 	}
 }
 
@@ -832,5 +816,145 @@ politics_delegate_get_neutral_out_of_war_with_allies :: proc(
 	if !composite_change_is_empty(change) {
 		i_delegate_bridge_add_change(bridge, change)
 	}
+}
+
+// games.strategy.triplea.delegate.PoliticsDelegate#lambda$notifyFailure$1(
+//     PoliticalActionAttachment, ResourceLoader)
+// Java synthetic instance lambda body:
+//   resourceLoader -> {
+//     PoliticsText politicsText = new PoliticsText(resourceLoader);
+//     sendNotification(politicsText.getNotificationFailure(paa.getText()));
+//     notifyOtherPlayers(politicsText.getNotificationFailureOthers(paa.getText()));
+//   }
+// Captures `this` and `paa`; lambda parameter is the resource loader.
+politics_delegate_lambda_notify_failure_1 :: proc(
+	self: ^Politics_Delegate,
+	paa: ^Political_Action_Attachment,
+	resource_loader: ^Resource_Loader,
+) {
+	politics_text := politics_text_new(resource_loader)
+	politics_delegate_send_notification(
+		self,
+		politics_text_get_notification_failure(politics_text, paa.text),
+	)
+	politics_delegate_notify_other_players(
+		self,
+		politics_text_get_notification_failure_others(politics_text, paa.text),
+	)
+}
+
+// games.strategy.triplea.delegate.PoliticsDelegate#lambda$notifySuccess$2(
+//     PoliticalActionAttachment, ResourceLoader)
+// Java synthetic instance lambda body for notifySuccess (mirrors the
+// failure lambda but with success-text accessors).
+politics_delegate_lambda_notify_success_2 :: proc(
+	self: ^Politics_Delegate,
+	paa: ^Political_Action_Attachment,
+	resource_loader: ^Resource_Loader,
+) {
+	politics_text := politics_text_new(resource_loader)
+	politics_delegate_send_notification(
+		self,
+		politics_text_get_notification_success(politics_text, paa.text),
+	)
+	politics_delegate_notify_other_players(
+		self,
+		politics_text_get_notification_success_others(politics_text, paa.text),
+	)
+}
+
+// games.strategy.triplea.delegate.PoliticsDelegate#chargeForAction(PoliticalActionAttachment)
+// Java: starts a history event describing the action; if the action has a
+// non-empty cost map, charges the player by adding a
+// removeResourceCollection change against a fresh ResourceCollection
+// built from `cost`. Empty cost still emits a "takes Political Action"
+// history event with no change.
+politics_delegate_charge_for_action :: proc(
+	self: ^Politics_Delegate,
+	paa: ^Political_Action_Attachment,
+) {
+	cost := &paa.cost_resources
+	gp := i_delegate_bridge_get_game_player(self.bridge)
+	writer := i_delegate_bridge_get_history_writer(self.bridge)
+	if len(cost^) != 0 {
+		data := i_delegate_bridge_get_data(self.bridge)
+		cost_text := resource_collection_to_string(cost, data)
+		transcript_text := fmt.tprintf(
+			"%s spend %s on Political Action: %s",
+			gp.named.base.name,
+			cost_text,
+			my_formatter_attachment_name_to_text(paa.name),
+		)
+		i_delegate_history_writer_start_event(writer, transcript_text)
+		rc := resource_collection_new_with_resources(data, cost)
+		charge := change_factory_remove_resource_collection(gp, rc)
+		i_delegate_bridge_add_change(self.bridge, charge)
+	} else {
+		transcript_text := fmt.tprintf(
+			"%s takes Political Action: %s",
+			gp.named.base.name,
+			my_formatter_attachment_name_to_text(paa.name),
+		)
+		i_delegate_history_writer_start_event(writer, transcript_text)
+	}
+}
+
+// games.strategy.triplea.delegate.PoliticsDelegate#changeRelationships(PoliticalActionAttachment)
+// Java: applies all relationship changes for `paa`. First adjusts chained
+// alliances/wars on the acting player's side via the two static helpers,
+// then iterates each (player1, player2, newType) edge: if it differs from
+// the current relationship, records a relationshipChange in a composite
+// change, writes a per-edge history child line, and informs the battle
+// tracker. Finally pushes the composite change (if any) through the
+// bridge and re-runs chainAlliancesTogether so any newly-formed alliance
+// propagates to indirect chain members.
+politics_delegate_change_relationships :: proc(
+	self: ^Politics_Delegate,
+	paa: ^Political_Action_Attachment,
+) {
+	politics_delegate_get_myself_out_of_alliance(paa, self.player, self.bridge)
+	politics_delegate_get_neutral_out_of_war_with_allies(paa, self.player, self.bridge)
+	change := composite_change_new()
+	data := i_delegate_bridge_get_data(self.bridge)
+	tracker := game_data_get_relationship_tracker(data)
+	bt := abstract_move_delegate_get_battle_tracker(data)
+	writer := i_delegate_bridge_get_history_writer(self.bridge)
+	gp_name := i_delegate_bridge_get_game_player(self.bridge).named.base.name
+	for relationship_change in political_action_attachment_get_relationship_changes(paa) {
+		player1 := relationship_change.player1
+		player2 := relationship_change.player2
+		old_relation := relationship_tracker_get_relationship_type(tracker, player1, player2)
+		new_relation := relationship_change.relationship_type
+		if old_relation == new_relation {
+			continue
+		}
+		composite_change_add(
+			change,
+			change_factory_relationship_change(player1, player2, old_relation, new_relation),
+		)
+		history_writer_add_child_to_event(
+			writer,
+			fmt.tprintf(
+				"%s succeeds on action: %s: Changing Relationship for %s and %s from %s to %s",
+				gp_name,
+				my_formatter_attachment_name_to_text(paa.name),
+				player1.named.base.name,
+				player2.named.base.name,
+				old_relation.named.base.name,
+				new_relation.named.base.name,
+			),
+		)
+		battle_tracker_add_relationship_changes_this_turn(
+			bt,
+			player1,
+			player2,
+			old_relation,
+			new_relation,
+		)
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(self.bridge, change)
+	}
+	politics_delegate_chain_alliances_together(self.bridge)
 }
 

@@ -16,5 +16,29 @@ fire_aa_3_new :: proc(this_0: ^Fire_Aa, val_current_type_aa: string) -> ^Fire_Aa
 	self := new(Fire_Aa_3)
 	self.this_0 = this_0
 	self.val_current_type_aa = val_current_type_aa
+	self.execute = fire_aa_3_execute
 	return self
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$FireAa$3#execute
+//
+// Java body:
+//   if (!validAttackingUnitsForThisRoll.isEmpty()) {
+//       notifyAaHits(bridge, dice, casualties, currentTypeAa);
+//   }
+// validAttackingUnitsForThisRoll, dice, casualties are fields of the enclosing
+// FireAa instance; notifyAaHits is a method on the outer StrategicBombingRaidBattle.
+fire_aa_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	_ = stack
+	self := cast(^Fire_Aa_3)self_base
+	outer := self.this_0
+	if len(outer.valid_attacking_units_for_this_roll) > 0 {
+		strategic_bombing_raid_battle_notify_aa_hits(
+			outer.this_0,
+			bridge,
+			outer.dice,
+			outer.casualties,
+			self.val_current_type_aa,
+		)
+	}
 }

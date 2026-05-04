@@ -250,3 +250,39 @@ remove_unprotected_units_get_all_step_details :: proc(
 	return out
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits#checkUnprotectedUnits
+// Java:
+//   if (battleState.filterUnits(ALIVE, OFFENSE, DEFENSE).isEmpty()) return;
+//   if (areFightingOrSupportingUnitsLeft(side)) return;
+//   if (!areFightingOrSupportingUnitsLeft(side.getOpposite())) return;
+//   final Collection<Unit> unprotectedUnits = getUnprotectedUnits(side);
+//   battleActions.removeUnits(unprotectedUnits, bridge, battleState.getBattleSite(), side);
+remove_unprotected_units_check_unprotected_units :: proc(
+	self: ^Remove_Unprotected_Units,
+	bridge: ^I_Delegate_Bridge,
+	side: Battle_State_Side,
+) {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	all_units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE, .DEFENSE)
+	if len(all_units) == 0 {
+		return
+	}
+	if remove_unprotected_units_are_fighting_or_supporting_units_left(self, side) {
+		return
+	}
+	if !remove_unprotected_units_are_fighting_or_supporting_units_left(
+		self,
+		battle_state_side_get_opposite(side),
+	) {
+		return
+	}
+	unprotected := remove_unprotected_units_get_unprotected_units(self, side)
+	battle_actions_remove_units(
+		self.battle_actions,
+		unprotected,
+		bridge,
+		battle_state_get_battle_site(self.battle_state),
+		side,
+	)
+}
+

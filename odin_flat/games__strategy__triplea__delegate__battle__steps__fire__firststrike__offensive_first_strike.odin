@@ -173,3 +173,20 @@ offensive_first_strike_execute :: proc(
 		execution_stack_push_one(stack, &s.i_executable)
 	}
 }
+
+// Java: public OffensiveFirstStrike(BattleState battleState, BattleActions battleActions)
+//   this.battleState = battleState;
+//   this.battleActions = battleActions;
+//   this.state = calculateState();
+// (returnFire defaults to ReturnFire.ALL per the field initializer.)
+offensive_first_strike_new :: proc(
+	battle_state: ^Battle_State,
+	battle_actions: ^Battle_Actions,
+) -> ^Offensive_First_Strike {
+	self := new(Offensive_First_Strike)
+	self.battle_state = battle_state
+	self.battle_actions = battle_actions
+	self.return_fire = .ALL
+	self.state = offensive_first_strike_calculate_state(self)
+	return self
+}

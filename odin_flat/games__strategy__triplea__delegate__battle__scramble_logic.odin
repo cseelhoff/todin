@@ -231,3 +231,42 @@ scramble_logic_get_max_scramble_count :: proc(airbases: [dynamic]^Unit) -> i32 {
 	return max_scrambled
 }
 
+// Java:
+//   public ScrambleLogic(
+//       final GameState data,
+//       final GamePlayer player,
+//       final Set<Territory> territoriesWithBattles) {
+//     this(data, player, territoriesWithBattles, new BattleTracker());
+//   }
+scramble_logic_new_with_battles :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	territories_with_battles: map[^Territory]struct{},
+) -> ^Scramble_Logic {
+	return scramble_logic_new(data, player, territories_with_battles, battle_tracker_new())
+}
+
+// Java:
+//   private Collection<Territory> getCanScrambleFromTerritories(final Territory battleTerr) {
+//     return CollectionUtils.getMatches(
+//         data.getMap().getNeighbors(battleTerr, maxScrambleDistance),
+//         canScrambleFromPredicate);
+//   }
+scramble_logic_get_can_scramble_from_territories :: proc(
+	self: ^Scramble_Logic,
+	battle_terr: ^Territory,
+) -> [dynamic]^Territory {
+	neighbors := game_map_get_neighbors_distance(
+		game_state_get_map(self.data),
+		battle_terr,
+		self.max_scramble_distance,
+	)
+	result := make([dynamic]^Territory, 0, len(neighbors))
+	for t, _ in neighbors {
+		if self.can_scramble_from_predicate_fn(self.can_scramble_from_predicate_ctx, t) {
+			append(&result, t)
+		}
+	}
+	return result
+}
+

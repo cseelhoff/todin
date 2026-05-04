@@ -882,3 +882,72 @@ battle_tracker_write_history_on_take_over_for_convoy_route :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#addChangesOnTakeOverAlliedCapitol
+//
+// Java:
+//   private static void addChangesOnTakeOverAlliedCapitol(
+//       GamePlayer terrOrigOwner, IDelegateBridge bridge, @Nullable UndoableMove changeTracker) {
+//     final GameData data = bridge.getData();
+//     final Collection<Territory> originallyOwned =
+//         OriginalOwnerTracker.getOriginallyOwned(data, terrOrigOwner);
+//     final List<Territory> alliedTerritories =
+//         CollectionUtils.getMatches(originallyOwned, Matches.isTerritoryAllied(terrOrigOwner));
+//     for (final Territory alliedTerritory : alliedTerritories) {
+//       if (alliedTerritory.isOwnedBy(terrOrigOwner)) continue;
+//       final Change takeOverFriendlyTerritories =
+//           ChangeFactory.changeOwner(alliedTerritory, terrOrigOwner);
+//       addChange(bridge, changeTracker, takeOverFriendlyTerritories);
+//       bridge.getHistoryWriter().addChildToEvent(takeOverFriendlyTerritories.toString());
+//       final Collection<Unit> infrastructureUnits =
+//           CollectionUtils.getMatches(alliedTerritory.getUnits(), Matches.unitIsInfrastructure());
+//       if (!infrastructureUnits.isEmpty()) {
+//         final Change takeOverNonComUnits =
+//             ChangeFactory.changeOwner(infrastructureUnits, terrOrigOwner, alliedTerritory);
+//         addChange(bridge, changeTracker, takeOverNonComUnits);
+//       }
+//     }
+//   }
+battle_tracker_add_changes_on_take_over_allied_capitol :: proc(
+	terr_orig_owner: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	// give it back to the original owner, if ally
+	originally_owned := original_owner_tracker_get_originally_owned(&data.game_state, terr_orig_owner)
+	allied_pred, allied_ctx := matches_is_territory_allied(terr_orig_owner)
+	allied_territories := make([dynamic]^Territory)
+	for terr in originally_owned {
+		if allied_pred(allied_ctx, terr) {
+			append(&allied_territories, terr)
+		}
+	}
+	infra_pred, infra_ctx := matches_unit_is_infrastructure()
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	for allied_territory in allied_territories {
+		if territory_is_owned_by(allied_territory, terr_orig_owner) {
+			continue
+		}
+		take_over_friendly_territories := change_factory_change_owner(allied_territory, terr_orig_owner)
+		battle_tracker_add_change(bridge, change_tracker, take_over_friendly_territories)
+		oc := cast(^Owner_Change)take_over_friendly_territories
+		history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
+		// give back the factories as well
+		uc := territory_get_unit_collection(allied_territory)
+		infrastructure_units := make([dynamic]^Unit)
+		for u in uc.units {
+			if infra_pred(infra_ctx, u) {
+				append(&infrastructure_units, u)
+			}
+		}
+		if len(infrastructure_units) > 0 {
+			take_over_non_com_units := change_factory_change_owner_3(
+				infrastructure_units,
+				terr_orig_owner,
+				allied_territory,
+			)
+			battle_tracker_add_change(bridge, change_tracker, take_over_non_com_units)
+		}
+	}
+}
+

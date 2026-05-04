@@ -103,6 +103,30 @@ target_group_find_targets :: proc(
 	return result
 }
 
+// lambda$findTargets$0(Set<UnitType> cannotTarget, boolean destroyerPresent,
+//     UnitType unitType, UnitType targetUnitType):
+// the .filter predicate inside findTargets. Returns true iff the candidate
+// targetUnitType is targetable by `unitType` given the captured cannotTarget
+// set and destroyer-presence flag.
+target_group_lambda_find_targets_0 :: proc(
+	cannot_target: map[^Unit_Type]struct{},
+	destroyer_present: bool,
+	unit_type: ^Unit_Type,
+	target_unit_type: ^Unit_Type,
+) -> bool {
+	if _, in_cannot := cannot_target[target_unit_type]; in_cannot {
+		return false
+	}
+	if destroyer_present {
+		return true
+	}
+	cnbt := unit_attachment_get_can_not_be_targeted_by(
+		unit_type_get_unit_attachment(target_unit_type),
+	)
+	_, blocked := cnbt[unit_type]
+	return !blocked
+}
+
 // findTargetsInTargetGroups: find a TargetGroup whose targetUnitTypes equals
 // the given targets set, returning Optional<TargetGroup>. Odin port returns
 // the pointer to the matching Target_Group, or nil for Optional.empty().

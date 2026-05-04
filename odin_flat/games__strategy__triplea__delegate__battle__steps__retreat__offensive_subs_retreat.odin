@@ -73,3 +73,13 @@ offensive_subs_retreat_get_order :: proc(self: ^Offensive_Subs_Retreat) -> Battl
 	return Battle_Step_Order.SUB_OFFENSIVE_RETREAT_AFTER_BATTLE
 }
 
+// Java: OffensiveSubsRetreat#isAutoWinScenario
+//   return RetreatChecks.onlyDefenselessTransportsLeft(
+//       battleState.filterUnits(ALIVE, DEFENSE), battleState.getGameData());
+offensive_subs_retreat_is_auto_win_scenario :: proc(self: ^Offensive_Subs_Retreat) -> bool {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	defense_units := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	game_data := battle_state_get_game_data(self.battle_state)
+	return retreat_checks_only_defenseless_transports_left(defense_units, game_data)
+}
+

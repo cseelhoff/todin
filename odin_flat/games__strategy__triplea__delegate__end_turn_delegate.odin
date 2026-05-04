@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 End_Turn_Delegate :: struct {
 	using abstract_end_turn_delegate: Abstract_End_Turn_Delegate,
 }
@@ -166,4 +168,148 @@ end_turn_delegate_test_national_objectives_and_triggers :: proc(
 		nil,
 		bridge,
 	)
+}
+
+// ---------------------------------------------------------------------------
+// games.strategy.triplea.delegate.EndTurnDelegate#createUnits(
+//     Territory location, Collection<Unit> units,
+//     CompositeChange change, StringBuilder endTurnReport)
+//
+// Java:
+//   final String transcriptText =
+//       player.getName() + " creates " + MyFormatter.unitsToTextNoOwner(units)
+//           + " in " + location.getName();
+//   bridge.getHistoryWriter().startEvent(transcriptText, units);
+//   endTurnReport.append(transcriptText).append("<br />");
+//   final Change place = ChangeFactory.addUnits(location, units);
+//   change.add(place);
+// ---------------------------------------------------------------------------
+end_turn_delegate_create_units :: proc(
+	self: ^End_Turn_Delegate,
+	location: ^Territory,
+	units: [dynamic]^Unit,
+	change: ^Composite_Change,
+	end_turn_report: ^String_Builder,
+) {
+	transcript_text := fmt.aprintf(
+		"%s creates %s in %s",
+		self.player.named.base.name,
+		my_formatter_units_to_text_no_owner(units, nil),
+		location.named.base.name,
+	)
+	writer := i_delegate_bridge_get_history_writer(self.bridge)
+	i_delegate_history_writer_start_event(writer, transcript_text, nil)
+	string_builder_append(end_turn_report, transcript_text)
+	string_builder_append(end_turn_report, "<br />")
+	place := change_factory_add_units(cast(^Unit_Holder)location, units)
+	composite_change_add(change, place)
+}
+
+// ---------------------------------------------------------------------------
+// games.strategy.triplea.delegate.EndTurnDelegate#findUnitCreatedResources(
+//     GamePlayer player, GameData data)
+//
+// Java:
+//   IntegerMap<Resource> resourceTotalsMap = new IntegerMap<>();
+//   Predicate<Unit> myCreatorsMatch =
+//       Matches.unitIsOwnedBy(player).and(Matches.unitCreatesResources());
+//   for (Territory t : data.getMap().getTerritories()) {
+//     for (Unit unit : CollectionUtils.getMatches(t.getUnits(), myCreatorsMatch)) {
+//       resourceTotalsMap.add(
+//           unit.getUnitAttachment().getCreatesResourcesList());
+//     }
+//   }
+//   Resource pus = new Resource(Constants.PUS, data);
+//   if (resourceTotalsMap.containsKey(pus)) {
+//     resourceTotalsMap.put(
+//         pus, resourceTotalsMap.getInt(pus)
+//             * Properties.getPuMultiplier(data.getProperties()));
+//   }
+//   return resourceTotalsMap;
+//
+// Pointer-keyed Odin maps need the canonical PUs Resource pointer; we
+// look it up via game_data.getResourceList().getResourceOrThrow("PUs"),
+// matching the convention used by the rest of the port (see
+// resource_collection.odin, ai_utils.odin).
+// ---------------------------------------------------------------------------
+end_turn_delegate_find_unit_created_resources :: proc(
+	player: ^Game_Player,
+	data: ^Game_Data,
+) -> Integer_Map_Resource {
+	resource_totals_map: Integer_Map_Resource = make(Integer_Map_Resource)
+	owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+	creates_pred, creates_ctx := matches_unit_creates_resources()
+	for t in game_map_get_territories(game_data_get_map(data)) {
+		coll := territory_get_unit_collection(t)
+		units := unit_collection_get_units(coll)
+		for u in units {
+			if !owned_pred(owned_ctx, u) {
+				continue
+			}
+			if !creates_pred(creates_ctx, u) {
+				continue
+			}
+			generated_resources_map := unit_attachment_get_creates_resources_list(
+				unit_get_unit_attachment(u),
+			)
+			for r, qty in generated_resources_map {
+				resource_totals_map[r] = resource_totals_map[r] + qty
+			}
+		}
+		delete(units)
+	}
+	pus := resource_list_get_resource_or_throw(
+		game_data_get_resource_list(data),
+		"PUs",
+	)
+	if pus in resource_totals_map {
+		multiplier := properties_get_pu_multiplier(game_data_get_properties(data))
+		resource_totals_map[pus] = resource_totals_map[pus] * multiplier
+	}
+	return resource_totals_map
+}
+
+// ---------------------------------------------------------------------------
+// games.strategy.triplea.delegate.EndTurnDelegate#getResourceProduction(
+//     Collection<Territory> territories, GameState data)
+//
+// Java:
+//   IntegerMap<Resource> resources = new IntegerMap<>();
+//   for (Territory current : territories) {
+//     TerritoryAttachment attachment = TerritoryAttachment.getOrThrow(current);
+//     Optional<ResourceCollection> optionalToAdd = attachment.getResources();
+//     if (optionalToAdd.isEmpty()) continue;
+//     if (Matches.territoryCanCollectIncomeFrom(current.getOwner()).test(current)) {
+//       resources.add(optionalToAdd.get().getResourcesCopy());
+//     }
+//   }
+//   return resources;
+//
+// `data` is unused in the Java body (it is a leftover required by the
+// public signature) but is kept here to mirror the API.
+// ---------------------------------------------------------------------------
+end_turn_delegate_get_resource_production :: proc(
+	territories: [dynamic]^Territory,
+	data: ^Game_State,
+) -> Integer_Map_Resource {
+	_ = data
+	resources: Integer_Map_Resource = make(Integer_Map_Resource)
+	for current in territories {
+		attachment := territory_attachment_get_or_throw(current)
+		optional_to_add := territory_attachment_get_resources(attachment)
+		if optional_to_add == nil {
+			continue
+		}
+		can_collect_pred, can_collect_ctx := matches_territory_can_collect_income_from(
+			territory_get_owner(current),
+		)
+		if can_collect_pred(can_collect_ctx, current) {
+			to_add := resource_collection_get_resources_copy(optional_to_add)
+			for r, qty in to_add {
+				resources[r] = resources[r] + qty
+			}
+			delete(to_add)
+		}
+	}
+	return resources
 }

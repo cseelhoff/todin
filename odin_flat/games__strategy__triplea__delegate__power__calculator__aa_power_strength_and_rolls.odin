@@ -104,3 +104,51 @@ aa_power_strength_and_rolls_lambda_calculate_active_strength_and_rolls_2 :: proc
 	}
 	return 0
 }
+
+// Java: AaPowerStrengthAndRolls#addUnits(Collection<Unit>) — populates
+// `totalStrengthAndTotalRollsByUnit` with a UnitPowerStrengthAndRolls entry per
+// unit, computed via the calculator's strength/roll/power calculators.
+aa_power_strength_and_rolls_add_units :: proc(
+	self: ^Aa_Power_Strength_And_Rolls,
+	units: [dynamic]^Unit,
+) {
+	if self.total_strength_and_total_rolls_by_unit == nil {
+		self.total_strength_and_total_rolls_by_unit = make(
+			map[^Unit]Unit_Power_Strength_And_Rolls,
+		)
+	}
+	strength_calculator := combat_value_get_strength(self.calculator)
+	roll_calculator := combat_value_get_roll(self.calculator)
+	power_calculator := combat_value_get_power(self.calculator)
+	for unit in units {
+		b := unit_power_strength_and_rolls_builder()
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_unit(b, unit)
+		sar := strength_and_rolls_new(
+			strength_calculator_get_strength(strength_calculator, unit),
+			roll_calculator_get_roll(roll_calculator, unit),
+		)
+		b =
+			unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_strength_and_rolls(
+				b,
+				sar,
+			)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_power(
+			b,
+			power_calculator_get_value_unit(power_calculator, unit),
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_power_calculator(
+			b,
+			power_calculator,
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_dice_sides(
+			b,
+			combat_value_get_dice_sides(self.calculator, unit),
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_choose_best_roll(
+			b,
+			combat_value_choose_best_roll(self.calculator, unit),
+		)
+		built := unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
+		self.total_strength_and_total_rolls_by_unit[unit] = built^
+	}
+}

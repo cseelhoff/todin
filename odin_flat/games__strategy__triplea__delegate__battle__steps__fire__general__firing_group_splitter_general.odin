@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:slice"
+
 Firing_Group_Splitter_General :: struct {
 	side:       Battle_State_Side,
 	type:       Firing_Group_Splitter_General_Type,
@@ -150,5 +153,114 @@ firing_group_splitter_general_build_firing_groups :: proc(
 	firing_units := target_group_get_firing_units(target_group, can_fire)
 	target_units := target_group_get_target_units(target_group, enemy_units)
 	return firing_group_group_by_suicide_on_hit(name, firing_units, target_units)
+}
+
+// ---------------------------------------------------------------------------
+// getFiringUnitPredicate(BattleState) -> Predicate<Unit>
+//
+//   Predicate<Unit> predicate =
+//       (side == OFFENSE) ? Matches.unitIsFirstStrike()
+//                         : Matches.unitIsFirstStrikeOnDefense(properties);
+//   return type == NORMAL ? predicate.negate() : predicate;
+//
+// Returns the project's `(proc(rawptr, ^Unit) -> bool, rawptr)` closure
+// pair so the result can be composed alongside the other Matches.* helpers.
+// ---------------------------------------------------------------------------
+
+Firing_Group_Splitter_General_Ctx_firing_unit_pred :: struct {
+	inner_pred: proc(rawptr, ^Unit) -> bool,
+	inner_ctx:  rawptr,
+	negate:     bool,
+}
+
+firing_group_splitter_general_pred_firing_unit :: proc(
+	ctx_ptr: rawptr,
+	u: ^Unit,
+) -> bool {
+	c := cast(^Firing_Group_Splitter_General_Ctx_firing_unit_pred)ctx_ptr
+	r := c.inner_pred(c.inner_ctx, u)
+	if c.negate {
+		return !r
+	}
+	return r
+}
+
+firing_group_splitter_general_get_firing_unit_predicate :: proc(
+	self: ^Firing_Group_Splitter_General,
+	battle_state: ^Battle_State,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	inner_p: proc(rawptr, ^Unit) -> bool
+	inner_c: rawptr
+	if self.side == .OFFENSE {
+		inner_p, inner_c = matches_unit_is_first_strike()
+	} else {
+		inner_p, inner_c = matches_unit_is_first_strike_on_defense(
+			game_data_get_properties(battle_state_get_game_data(battle_state)),
+		)
+	}
+	ctx := new(Firing_Group_Splitter_General_Ctx_firing_unit_pred)
+	ctx.inner_pred = inner_p
+	ctx.inner_ctx = inner_c
+	ctx.negate = self.type == .NORMAL
+	return firing_group_splitter_general_pred_firing_unit, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// generateNamedGroups(String name, Collection<FiringGroup> firingGroups,
+//                     Collection<TargetGroup> targetGroups,
+//                     Collection<Unit> canFire, Collection<Unit> enemyUnits)
+//
+// Java mutates the passed-in `firingGroups` collection; the Odin port takes
+// it as `^[dynamic]^Firing_Group` so the caller sees the appended entries.
+// ---------------------------------------------------------------------------
+
+firing_group_splitter_general_named_groups_unit_less :: proc(a, b: ^Unit) -> bool {
+	na := default_named_get_name(&unit_get_type(a).named_attachable.default_named)
+	nb := default_named_get_name(&unit_get_type(b).named_attachable.default_named)
+	return na < nb
+}
+
+firing_group_splitter_general_generate_named_groups :: proc(
+	self: ^Firing_Group_Splitter_General,
+	name: string,
+	firing_groups: ^[dynamic]^Firing_Group,
+	target_groups: [dynamic]^Target_Group,
+	can_fire: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+) {
+	if len(target_groups) == 1 {
+		built := firing_group_splitter_general_build_firing_groups(
+			self,
+			name,
+			can_fire,
+			enemy_units,
+			target_groups[0],
+		)
+		for g in built {
+			append(firing_groups, g)
+		}
+		return
+	}
+	// use the first unitType name of each TargetGroup as a suffix for the
+	// FiringGroup name. Sort units first so the chosen name is independent
+	// of input ordering.
+	for tg in target_groups {
+		firing_units := target_group_get_firing_units(tg, can_fire)
+		slice.sort_by(firing_units[:], firing_group_splitter_general_named_groups_unit_less)
+		first := firing_units[0]
+		ut := unit_get_type(first)
+		ut_name := default_named_get_name(&ut.named_attachable.default_named)
+		sub_name := fmt.aprintf("%s %s", name, ut_name)
+		built := firing_group_splitter_general_build_firing_groups(
+			self,
+			sub_name,
+			can_fire,
+			enemy_units,
+			tg,
+		)
+		for g in built {
+			append(firing_groups, g)
+		}
+	}
 }
 

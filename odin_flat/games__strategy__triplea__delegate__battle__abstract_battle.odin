@@ -410,3 +410,43 @@ abstract_battle_clear_transported_by :: proc(
 		i_delegate_bridge_add_change(bridge, &change.change)
 	}
 }
+
+// games.strategy.triplea.delegate.battle.AbstractBattle#findDefender
+abstract_battle_find_defender :: proc(
+	battle_site: ^Territory,
+	attacker: ^Game_Player,
+	data: ^Game_State,
+) -> ^Game_Player {
+	if battle_site == nil {
+		return player_list_get_null_player(game_state_get_player_list(data))
+	}
+	defender: ^Game_Player = nil
+	if !territory_is_water(battle_site) {
+		defender = territory_get_owner(battle_site)
+	}
+	if data == nil || attacker == nil {
+		if defender == nil {
+			return player_list_get_null_player(game_state_get_player_list(data))
+		}
+		return defender
+	}
+	if defender == nil ||
+	   territory_is_water(battle_site) ||
+	   !game_player_is_at_war(attacker, defender) {
+		players := unit_collection_get_player_unit_counts(territory_get_unit_collection(battle_site))
+		max: i32 = -1
+		for current, count in players {
+			if current == attacker || !game_player_is_at_war(attacker, current) {
+				continue
+			}
+			if count > max {
+				max = count
+				defender = current
+			}
+		}
+	}
+	if defender == nil {
+		return player_list_get_null_player(game_state_get_player_list(data))
+	}
+	return defender
+}

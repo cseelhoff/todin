@@ -6,10 +6,16 @@ package game
 // `_to_strength_calculator` adapter proc.
 
 Strength_Calculator :: struct {
-        concrete:     rawptr,
-        get_strength: proc(self: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value,
+        concrete:          rawptr,
+        get_strength:      proc(self: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value,
+        get_support_given: proc(self: ^Strength_Calculator) -> map[^Unit]^Integer_Map,
 }
 
 strength_calculator_get_strength :: proc(self: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value {
         return self.get_strength(self, unit)
+}
+
+// Java: Map<Unit, IntegerMap<Unit>> getSupportGiven();
+strength_calculator_get_support_given :: proc(self: ^Strength_Calculator) -> map[^Unit]^Integer_Map {
+        return self.get_support_given(self)
 }

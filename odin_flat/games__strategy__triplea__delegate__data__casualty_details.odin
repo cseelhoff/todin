@@ -355,6 +355,97 @@ casualty_details_redistribute_hits :: proc(
 	}
 }
 
+// Java: public void ensureUnitsAreDamagedFirst(
+//           Collection<Unit> targets,
+//           Predicate<Unit> matcher,
+//           Comparator<Unit> shouldTakeHitsFirst)
+//
+// Replaces the entries in `damaged` that match `matcher` by the same number
+// of entries in `targets` that match `matcher` and are first according to
+// `shouldTakeHitsFirst`.
+casualty_details_ensure_units_are_damaged_first :: proc(
+	self: ^Casualty_Details,
+	targets: []^Unit,
+	matcher: proc(^Unit) -> bool,
+	should_take_hits_first: proc(^Unit, ^Unit) -> bool,
+) {
+	// targets.stream().collect(Collectors.groupingBy(UnitOwner::new, Collectors.toList()))
+	targets_grouped_by_owner_and_type := make(map[Unit_Owner][dynamic]^Unit)
+	defer {
+		for _, v in &targets_grouped_by_owner_and_type do delete(v)
+		delete(targets_grouped_by_owner_and_type)
+	}
+	for u in targets {
+		key := Unit_Owner{type = unit_get_type(u), owner = unit_get_owner(u)}
+		if _, ok := targets_grouped_by_owner_and_type[key]; !ok {
+			targets_grouped_by_owner_and_type[key] = make([dynamic]^Unit)
+		}
+		bucket := &targets_grouped_by_owner_and_type[key]
+		append(bucket, u)
+	}
+
+	// getDamaged().stream().filter(matcher)
+	//   .collect(Collectors.groupingBy(UnitOwner::new, Collectors.toList()))
+	old_targets_to_take_hits := make(map[Unit_Owner][dynamic]^Unit)
+	defer {
+		for _, v in &old_targets_to_take_hits do delete(v)
+		delete(old_targets_to_take_hits)
+	}
+	for u in self.damaged {
+		if !matcher(u) do continue
+		key := Unit_Owner{type = unit_get_type(u), owner = unit_get_owner(u)}
+		if _, ok := old_targets_to_take_hits[key]; !ok {
+			old_targets_to_take_hits[key] = make([dynamic]^Unit)
+		}
+		bucket := &old_targets_to_take_hits[key]
+		append(bucket, u)
+	}
+
+	targets_hit_with_correct_order := make([dynamic]^Unit)
+	defer delete(targets_hit_with_correct_order)
+
+	for key, value in &old_targets_to_take_hits {
+		// new ArrayList<>(targetsGroupedByOwnerAndType.get(key))
+		src := targets_grouped_by_owner_and_type[key]
+		all_targets_copy := make([dynamic]^Unit, 0, len(src))
+		for u in src do append(&all_targets_copy, u)
+
+		casualty_details_redistribute_hits(
+			&value,
+			&all_targets_copy,
+			should_take_hits_first,
+			&targets_hit_with_correct_order,
+		)
+
+		delete(all_targets_copy)
+
+		// damaged.removeAll(oldTargetsOfOneOwnerAndType.getValue());
+		// removes every occurrence of any unit present in `value` from
+		// self.damaged.
+		write_idx := 0
+		for i := 0; i < len(self.damaged); i += 1 {
+			u := self.damaged[i]
+			in_value := false
+			for v in value {
+				if v == u {
+					in_value = true
+					break
+				}
+			}
+			if !in_value {
+				self.damaged[write_idx] = u
+				write_idx += 1
+			}
+		}
+		resize(&self.damaged, write_idx)
+	}
+
+	// damaged.addAll(targetsHitWithCorrectOrder);
+	for u in targets_hit_with_correct_order {
+		append(&self.damaged, u)
+	}
+}
+
 // Java: public void ensureUnitsWithPositiveMarineBonusAreKilledLast(Collection<Unit> units)
 //
 // Ensures that any killed or damaged units have no better marine effect than

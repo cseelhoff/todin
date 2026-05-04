@@ -75,3 +75,51 @@ submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs :: pro
 	return false
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.sub.SubmergeSubsVsOnlyAirStep#execute
+submerge_subs_vs_only_air_step_execute :: proc(
+	self: ^Submerge_Subs_Vs_Only_Air_Step,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	_ = stack
+	submerging_side: Battle_State_Side
+	if submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs(self, .OFFENSE) {
+		submerging_side = .DEFENSE
+	} else if submerge_subs_vs_only_air_step_side_only_has_air_that_can_not_target_subs(self, .DEFENSE) {
+		submerging_side = .OFFENSE
+	} else {
+		return
+	}
+
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	candidates := battle_state_filter_units(self.battle_state, alive_filter, submerging_side)
+	evade_p, evade_c := matches_unit_can_evade()
+	cnbt_p, cnbt_c := matches_unit_can_not_be_targeted_by_all()
+	matched := make([dynamic]^Unit)
+	for u in candidates {
+		if evade_p(evade_c, u) && cnbt_p(cnbt_c, u) {
+			append(&matched, u)
+		}
+	}
+
+	params := evader_retreat_parameters_parameters_builder_build(
+		evader_retreat_parameters_parameters_builder_units(
+			evader_retreat_parameters_parameters_builder_bridge(
+				evader_retreat_parameters_parameters_builder_side(
+					evader_retreat_parameters_parameters_builder_battle_actions(
+						evader_retreat_parameters_parameters_builder_battle_state(
+							evader_retreat_parameters_builder(),
+							self.battle_state,
+						),
+						self.battle_actions,
+					),
+					submerging_side,
+				),
+				bridge,
+			),
+			matched,
+		),
+	)
+	evader_retreat_submerge_evaders(params)
+}
+

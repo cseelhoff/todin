@@ -243,3 +243,34 @@ offensive_general_retreat_lambda__retreat_units__0 :: proc(
 	offensive_general_retreat_retreat(self, bridge, retreater, retreat_to)
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#getAmphibiousRetreater()
+//
+// Java:
+//   if (canAttackerRetreatPartialAmphib()) {
+//     return new RetreaterPartialAmphibious(battleState);
+//   } else if (canAttackerRetreatAmphibPlanes()) {
+//     return new RetreaterAirAmphibious(battleState);
+//   }
+//   return null;
+//
+// Java returns the Retreater interface; Odin wraps the concrete subtype
+// in a Retreater vtable struct with self_raw pointing at it. The vtable
+// proc-pointers stay nil here, mirroring retreater_general_new (whose
+// embedded Retreater is also unwired): the partial-amphibious and
+// air-amphibious dispatch methods are not flagged
+// actually_called_in_ai_test, so snapshot runs never invoke them.
+offensive_general_retreat_get_amphibious_retreater :: proc(self: ^Offensive_General_Retreat) -> ^Retreater {
+	if offensive_general_retreat_can_attacker_retreat_partial_amphib(self) {
+		concrete := retreater_partial_amphibious_new(self.battle_state)
+		r := new(Retreater)
+		r.self_raw = concrete
+		return r
+	} else if offensive_general_retreat_can_attacker_retreat_amphib_planes(self) {
+		concrete := retreater_air_amphibious_new(self.battle_state)
+		r := new(Retreater)
+		r.self_raw = concrete
+		return r
+	}
+	return nil
+}
+

@@ -1144,4 +1144,145 @@ must_fight_battle_get_attacker_retreat_territories :: proc(
 	return possible
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#writeUnitsToHistory(IDelegateBridge)
+must_fight_battle_write_units_to_history :: proc(
+	self: ^Must_Fight_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if self.headless {
+		return
+	}
+	uc := territory_get_unit_collection(self.battle_site)
+	players_set := unit_collection_get_players_with_units(uc)
+	defer delete(players_set)
+
+	players_with_units: [dynamic]^Game_Player
+	defer delete(players_with_units)
+	for p, _ in players_set {
+		append(&players_with_units, p)
+	}
+
+	relationship_tracker := game_data_get_relationship_tracker(self.game_data)
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+
+	attackers := must_fight_battle_find_allies(
+		players_with_units,
+		self.attacker,
+		relationship_tracker,
+	)
+	defer delete(attackers)
+	must_fight_battle_add_player_combat_history_text(
+		self,
+		attackers,
+		self.attacking_units,
+		true,
+		history_writer,
+	)
+
+	defenders := must_fight_battle_find_allies(
+		players_with_units,
+		self.defender,
+		relationship_tracker,
+	)
+	defer delete(defenders)
+	must_fight_battle_add_player_combat_history_text(
+		self,
+		defenders,
+		self.defending_units,
+		false,
+		history_writer,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#checkDefendingPlanesCanLand()
+must_fight_battle_check_defending_planes_can_land :: proc(self: ^Must_Fight_Battle) {
+	if self.headless {
+		return
+	}
+	if !territory_is_water(self.battle_site) {
+		return
+	}
+	air_p, air_c := matches_unit_is_air()
+	scr_p, scr_c := matches_unit_was_scrambled()
+
+	defending_air: [dynamic]^Unit
+	defer delete(defending_air)
+	for u in self.defending_units {
+		if air_p(air_c, u) && !scr_p(scr_c, u) {
+			append(&defending_air, u)
+		}
+	}
+	if len(defending_air) == 0 {
+		return
+	}
+
+	carrier_cost := air_movement_validator_carrier_cost(defending_air[:])
+	carrier_capacity := air_movement_validator_carrier_capacity(
+		self.defending_units[:],
+		self.battle_site,
+	)
+
+	dependent := abstract_battle_get_dependent_units(&self.abstract_battle, self.defending_units)
+	defer delete(dependent)
+	dependent_air: [dynamic]^Unit
+	defer delete(dependent_air)
+	for u in dependent {
+		if air_p(air_c, u) && !scr_p(scr_c, u) {
+			append(&dependent_air, u)
+		}
+	}
+	carrier_cost += air_movement_validator_carrier_cost(dependent_air[:])
+
+	if carrier_capacity >= carrier_cost {
+		return
+	}
+
+	// recompute carrier_cost from dependent air only, then add cost of each
+	// surviving defending air that fits on the available carrier capacity.
+	carrier_cost = 0
+	carrier_cost += air_movement_validator_carrier_cost(dependent_air[:])
+
+	can_land_p, can_land_c := matches_unit_can_land_on_carrier()
+
+	// iterate over a snapshot of defending_air, modifying defending_air in place
+	original: [dynamic]^Unit
+	defer delete(original)
+	for u in defending_air {
+		append(&original, u)
+	}
+
+	for current_unit in original {
+		if !can_land_p(can_land_c, current_unit) {
+			for i := 0; i < len(defending_air); i += 1 {
+				if defending_air[i] == current_unit {
+					ordered_remove(&defending_air, i)
+					break
+				}
+			}
+			continue
+		}
+		ua := unit_get_unit_attachment(current_unit)
+		carrier_cost += unit_attachment_get_carrier_cost(ua)
+		if carrier_capacity >= carrier_cost {
+			for i := 0; i < len(defending_air); i += 1 {
+				if defending_air[i] == current_unit {
+					ordered_remove(&defending_air, i)
+					break
+				}
+			}
+		}
+	}
+
+	// pass remaining defending_air (those that cannot land) up to the battle tracker
+	remaining: [dynamic]^Unit
+	for u in defending_air {
+		append(&remaining, u)
+	}
+	battle_tracker_add_to_defending_air_that_can_not_land(
+		self.battle_tracker,
+		remaining,
+		self.battle_site,
+	)
+}
+
 

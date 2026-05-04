@@ -107,3 +107,68 @@ power_strength_and_rolls_lambda_add_units_3 :: proc(
 	existing := self.unit_support_rolls_map[supporter]
 	integer_map_add_map(&existing, supported_units)
 }
+
+// Java: private void addUnits(final Collection<Unit> units)
+//   final StrengthCalculator strengthCalculator = calculator.getStrength();
+//   final RollCalculator rollCalculator = calculator.getRoll();
+//   final PowerCalculator powerCalculator = calculator.getPower();
+//   for (final Unit unit : units) {
+//     final UnitPowerStrengthAndRolls data = UnitPowerStrengthAndRolls.builder()
+//         .unit(unit)
+//         .strengthAndRolls(StrengthAndRolls.of(
+//             strengthCalculator.getStrength(unit), rollCalculator.getRoll(unit)))
+//         .power(powerCalculator.getValue(unit))
+//         .powerCalculator(powerCalculator)
+//         .diceSides(calculator.getDiceSides(unit))
+//         .chooseBestRoll(calculator.chooseBestRoll(unit))
+//         .build();
+//     totalStrengthAndTotalRollsByUnit.put(unit, data);
+//     sortedStrengthAndRolls.add(data);
+//   }
+//   strengthCalculator.getSupportGiven().forEach(...unitSupportPowerMap...);
+//   rollCalculator.getSupportGiven().forEach(...unitSupportRollsMap...);
+power_strength_and_rolls_add_units :: proc(
+	self: ^Power_Strength_And_Rolls,
+	units: [dynamic]^Unit,
+) {
+	strength_calculator := combat_value_get_strength(&self.calculator)
+	roll_calculator := combat_value_get_roll(&self.calculator)
+	power_calculator := combat_value_get_power(&self.calculator)
+	for unit in units {
+		b := unit_power_strength_and_rolls_builder()
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_unit(b, unit)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_strength_and_rolls(
+			b,
+			strength_and_rolls_new(
+				strength_calculator_get_strength(strength_calculator, unit),
+				roll_calculator_get_roll(roll_calculator, unit),
+			),
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_power(
+			b,
+			power_calculator_get_value_unit(power_calculator, unit),
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_power_calculator(
+			b,
+			power_calculator,
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_dice_sides(
+			b,
+			combat_value_get_dice_sides(&self.calculator, unit),
+		)
+		b = unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_choose_best_roll(
+			b,
+			combat_value_choose_best_roll(&self.calculator, unit),
+		)
+		data := unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
+		self.total_strength_and_total_rolls_by_unit[unit] = data^
+		append(&self.sorted_strength_and_rolls, data^)
+	}
+
+	for supporter, supported_units in strength_calculator_get_support_given(strength_calculator) {
+		power_strength_and_rolls_lambda_add_units_1(self, supporter, supported_units)
+	}
+	for supporter, supported_units in roll_calculator_get_support_given(roll_calculator) {
+		power_strength_and_rolls_lambda_add_units_3(self, supporter, supported_units)
+	}
+}

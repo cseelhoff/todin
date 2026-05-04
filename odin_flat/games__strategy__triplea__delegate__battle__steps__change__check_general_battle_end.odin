@@ -115,3 +115,17 @@ check_general_battle_end_has_side_lost :: proc(
 	return true
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#transportsVsTransports
+check_general_battle_end_transports_vs_transports :: proc(
+	self: ^Check_General_Battle_End,
+) -> bool {
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	offense_units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	defense_units := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	game_data := battle_state_get_game_data(self.battle_state)
+	return(
+		retreat_checks_only_defenseless_transports_left(offense_units, game_data) &&
+		retreat_checks_only_defenseless_transports_left(defense_units, game_data) \
+	)
+}
+

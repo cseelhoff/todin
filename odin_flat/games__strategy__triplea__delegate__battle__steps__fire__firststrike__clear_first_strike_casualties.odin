@@ -94,3 +94,72 @@ clear_first_strike_casualties_get_sides_to_clear :: proc(
 	return []Battle_State_Side{.OFFENSE, .DEFENSE}
 }
 
+// Java: ClearFirstStrikeCasualties#calculateDefenseState
+//   if (battleState.filterUnits(ALIVE, DEFENSE).stream()
+//       .anyMatch(Matches.unitIsFirstStrikeOnDefense(battleState.getGameData().getProperties()))) {
+//     final GameState gameData = battleState.getGameData();
+//     final boolean canSneakAttack =
+//         battleState.filterUnits(ALIVE, OFFENSE).stream().noneMatch(Matches.unitIsDestroyer())
+//             && (Properties.getWW2V2(gameData.getProperties())
+//                 || Properties.getDefendingSubsSneakAttack(gameData.getProperties()));
+//     if (canSneakAttack) return State.SNEAK_ATTACK;
+//   }
+//   return State.NO_SNEAK_ATTACK;
+clear_first_strike_casualties_calculate_defense_state :: proc(
+	self: ^Clear_First_Strike_Casualties,
+) -> Clear_First_Strike_Casualties_State {
+	game_data := battle_state_get_game_data(self.battle_state)
+	props := game_data_get_properties(game_data)
+
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	defense_units := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	fsod_p, fsod_c := matches_unit_is_first_strike_on_defense(props)
+	any_fs_def := false
+	for u in defense_units {
+		if fsod_p(fsod_c, u) {
+			any_fs_def = true
+			break
+		}
+	}
+	if any_fs_def {
+		alive_filter2 := battle_state_unit_battle_filter_new(.Alive)
+		offense_units := battle_state_filter_units(self.battle_state, alive_filter2, .OFFENSE)
+		destroyer_p, destroyer_c := matches_unit_is_destroyer()
+		no_destroyer := true
+		for u in offense_units {
+			if destroyer_p(destroyer_c, u) {
+				no_destroyer = false
+				break
+			}
+		}
+		can_sneak_attack := no_destroyer &&
+			(properties_get_ww2_v2(props) ||
+			 properties_get_defending_subs_sneak_attack(props))
+		if can_sneak_attack {
+			return .SNEAK_ATTACK
+		}
+	}
+	return .NO_SNEAK_ATTACK
+}
+
+// Java: ClearFirstStrikeCasualties#execute
+//   if (!offenseHasSneakAttack() && !defenseHasSneakAttack()) return;
+//   battleActions.clearWaitingToDieAndDamagedChangesInto(
+//       bridge, getSidesToClear().toArray(new BattleState.Side[0]));
+clear_first_strike_casualties_execute :: proc(
+	self: ^Clear_First_Strike_Casualties,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if !clear_first_strike_casualties_offense_has_sneak_attack(self) &&
+	   !clear_first_strike_casualties_defense_has_sneak_attack(self) {
+		return
+	}
+	sides := clear_first_strike_casualties_get_sides_to_clear(self)
+	battle_actions_clear_waiting_to_die_and_damaged_changes_into(
+		self.battle_actions,
+		bridge,
+		..sides,
+	)
+}
+

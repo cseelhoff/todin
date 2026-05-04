@@ -6225,3 +6225,343 @@ matches_unit_is_first_strike_on_defense :: proc(
 	)
 	return matches_pred_unit_is_first_strike_on_defense, rawptr(ctx)
 }
+
+// =====================================================================
+// Phase B layer-5 lambda bodies (Java javac synthetics).
+// Captured variables come first; the predicate's final argument last.
+// Public matcher procs already exist above; these mirror the raw lambda
+// bodies for callers that reference the lambda symbol directly.
+// =====================================================================
+
+// lambda$alliedUnit$148(GamePlayer, Unit)
+//   unit -> unit.isOwnedBy(player) || player.isAllied(unit.getOwner())
+matches_lambda_allied_unit_148 :: proc(player: ^Game_Player, unit: ^Unit) -> bool {
+	if unit_is_owned_by(unit, player) {
+		return true
+	}
+	return game_player_is_allied(player, unit_get_owner(unit))
+}
+
+// lambda$enemyUnit$146(GamePlayer, Unit)
+//   unit -> player.isAtWar(unit.getOwner())
+matches_lambda_enemy_unit_146 :: proc(player: ^Game_Player, unit: ^Unit) -> bool {
+	return game_player_is_at_war(player, unit_get_owner(unit))
+}
+
+// lambda$isTerritoryAllied$132(GamePlayer, Territory)
+//   t -> player.isAllied(t.getOwner())
+matches_lambda_is_territory_allied_132 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	return game_player_is_allied(player, t.owner)
+}
+
+// lambda$isTerritoryEnemy$139(GamePlayer, Territory)
+//   t -> !t.isOwnedBy(player) && player.isAtWar(t.getOwner())
+matches_lambda_is_territory_enemy_139 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	if territory_is_owned_by(t, player) {
+		return false
+	}
+	return game_player_is_at_war(player, t.owner)
+}
+
+// lambda$isTerritoryEnemyAndNotUnownedWater$140(GamePlayer, Territory)
+//   t -> !t.isOwnedBy(player)
+//        && (!t.getOwner().isNull() || !t.isWater())
+//        && player.isAtWar(t.getOwner())
+matches_lambda_is_territory_enemy_and_not_unowned_water_140 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	if territory_is_owned_by(t, player) {
+		return false
+	}
+	if game_player_is_null(t.owner) && t.water {
+		return false
+	}
+	return game_player_is_at_war(player, t.owner)
+}
+
+// lambda$isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted$141(GamePlayer, Territory)
+//   t -> territoryNotImpassibleOrRestrictedOrNeutralWaterAndNotOwnedBy(player).test(t)
+//        && player.isAtWar(t.getOwner())
+matches_lambda_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted_141 :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> bool {
+	bp, bc := matches_territory_not_impassible_or_restricted_or_neutral_water_and_not_owned_by(player)
+	if !bp(bc, t) {
+		return false
+	}
+	return game_player_is_at_war(player, t.owner)
+}
+
+// lambda$isTerritoryFriendly$137(GamePlayer, Territory)
+//   t -> t.isWater() || t.isOwnedBy(player) || player.isAllied(t.getOwner())
+matches_lambda_is_territory_friendly_137 :: proc(player: ^Game_Player, t: ^Territory) -> bool {
+	if t.water {
+		return true
+	}
+	if territory_is_owned_by(t, player) {
+		return true
+	}
+	return game_player_is_allied(player, t.owner)
+}
+
+// lambda$isUnitAllied$136(GamePlayer, Unit)
+//   u -> player.isAllied(u.getOwner())
+matches_lambda_is_unit_allied_136 :: proc(player: ^Game_Player, u: ^Unit) -> bool {
+	return game_player_is_allied(player, unit_get_owner(u))
+}
+
+// lambda$territoryCanCollectIncomeFrom$104(GamePlayer, boolean, Territory)
+//   See Java Matches.territoryCanCollectIncomeFrom — water/CC, convoy
+//   route/attached, and contested-territories-do-not-produce checks.
+matches_lambda_territory_can_collect_income_from_104 :: proc(
+	player: ^Game_Player,
+	contested_do_not_produce: bool,
+	t: ^Territory,
+) -> bool {
+	ta := territory_attachment_get(t)
+	if ta == nil {
+		return false
+	}
+	original_owner := original_owner_tracker_get_original_owner(t)
+	if territory_is_water(t) &&
+	   !(original_owner == nil ||
+			   game_player_is_null(original_owner) ||
+			   original_owner == player) {
+		return false
+	}
+	if territory_attachment_get_convoy_route(ta) {
+		convoy_attached := territory_attachment_get_convoy_attached(ta)
+		if len(convoy_attached) > 0 {
+			at_least_one := false
+			for convoy in convoy_attached {
+				if game_player_is_allied(player, territory_get_owner(convoy)) &&
+				   territory_attachment_get_convoy_route(territory_attachment_get_or_throw(convoy)) {
+					at_least_one = true
+					break
+				}
+			}
+			if !at_least_one {
+				return false
+			}
+		}
+	}
+	if contested_do_not_produce {
+		hne_p, hne_c := matches_territory_has_no_enemy_units(player)
+		if !hne_p(hne_c, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryEffectsAllowUnits$115(Collection<Unit>, Territory)
+//   t -> { Set<UnitType> types =
+//            TerritoryEffectHelper.getUnitTypesForUnitsNotAllowedIntoTerritory(t);
+//          return units.stream().noneMatch(Matches.unitIsOfTypes(types)); }
+matches_lambda_territory_effects_allow_units_115 :: proc(
+	units: [dynamic]^Unit,
+	t: ^Territory,
+) -> bool {
+	types := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory(t)
+	if len(types) == 0 {
+		return true
+	}
+	for u in units {
+		if _, ok := types[unit_get_type(u)]; ok {
+			return false
+		}
+	}
+	return true
+}
+
+// lambda$territoryIsEnemyNonNeutralAndHasEnemyUnitMatching$112(GamePlayer, Predicate<Unit>, Territory)
+//   t -> { if (!player.isAtWar(t.getOwner())) return false;
+//          return !t.getOwner().isNull()
+//                 && t.anyUnitsMatch(enemyUnit(player).and(unitMatch)); }
+matches_lambda_territory_is_enemy_non_neutral_and_has_enemy_unit_matching_112 :: proc(
+	player: ^Game_Player,
+	unit_match: proc(rawptr, ^Unit) -> bool,
+	unit_match_ctx: rawptr,
+	t: ^Territory,
+) -> bool {
+	if !game_player_is_at_war(player, t.owner) {
+		return false
+	}
+	if game_player_is_null(t.owner) {
+		return false
+	}
+	en_p, en_c := matches_enemy_unit(player)
+	for u in t.unit_collection.units {
+		if en_p(en_c, u) && unit_match(unit_match_ctx, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// lambda$transportCannotUnload$163(Territory, Unit)
+//   transport -> hasTransportUnloadedInPreviousPhase(transport)
+//             || isTransportUnloadRestrictedToAnotherTerritory(transport, territory)
+//             || isTransportUnloadRestrictedInNonCombat(transport)
+matches_lambda_transport_cannot_unload_163 :: proc(territory: ^Territory, transport: ^Unit) -> bool {
+	if transport_tracker_has_transport_unloaded_in_previous_phase(transport) {
+		return true
+	}
+	return transport_tracker_is_transport_unload_restricted_to_another_territory(transport, territory) ||
+		transport_tracker_is_transport_unload_restricted_in_non_combat(transport)
+}
+
+// lambda$unitCanBeMovedThroughByEnemies$7(Unit)
+//   u -> ua.getCanBeMovedThroughByEnemies()
+matches_lambda_unit_can_be_moved_through_by_enemies_7 :: proc(u: ^Unit) -> bool {
+	return unit_attachment_get_can_be_moved_through_by_enemies(unit_get_unit_attachment(u))
+}
+
+// lambda$unitCanMoveThroughEnemies$6(Unit)
+//   u -> ua.getCanMoveThroughEnemies()
+matches_lambda_unit_can_move_through_enemies_6 :: proc(u: ^Unit) -> bool {
+	return unit_attachment_get_can_move_through_enemies(unit_get_unit_attachment(u))
+}
+
+// lambda$unitCanNotBeTargetedByAll$8(Unit)
+//   u -> !ua.getCanNotBeTargetedBy().isEmpty()
+matches_lambda_unit_can_not_be_targeted_by_all_8 :: proc(u: ^Unit) -> bool {
+	return len(unit_attachment_get_can_not_be_targeted_by(unit_get_unit_attachment(u))) > 0
+}
+
+// lambda$unitCanRepairThisUnit$173(Unit, Territory, Unit)
+//   See Java Matches.unitCanRepairThisUnit — combined-turn capital ownership
+//   handling plus repairs-units check.
+matches_lambda_unit_can_repair_this_unit_173 :: proc(
+	damaged_unit: ^Unit,
+	territory_of_repair_unit: ^Territory,
+	unit_can_repair: ^Unit,
+) -> bool {
+	data := game_player_get_data(unit_get_owner(damaged_unit))
+	players := game_step_properties_helper_get_combined_turns(data, unit_get_owner(damaged_unit))
+	gm := game_data_get_map(data)
+	if len(players) > 1 {
+		at_least_one_player_owns_capital := false
+		for player in players {
+			own_capital := territory_attachment_do_we_have_enough_capitals_to_produce(player, gm)
+			if own_capital {
+				at_least_one_player_owns_capital = true
+			}
+			if !own_capital && territory_is_owned_by(territory_of_repair_unit, player) {
+				return false
+			}
+		}
+		if !at_least_one_player_owns_capital {
+			return false
+		}
+	} else {
+		if !territory_attachment_do_we_have_enough_capitals_to_produce(
+			unit_get_owner(damaged_unit),
+			gm,
+		) {
+			return false
+		}
+	}
+	ua := unit_get_unit_attachment(unit_can_repair)
+	repairs := unit_attachment_get_repairs_units(ua)
+	_, ok := repairs[unit_get_type(damaged_unit)]
+	return ok
+}
+
+// lambda$unitIsAirTransport$98(Unit)
+//   u -> { ta = u.getOwner().getTechAttachment();
+//          if (!ta.getParatroopers()) return false;
+//          return ua.isAirTransport(); }
+matches_lambda_unit_is_air_transport_98 :: proc(u: ^Unit) -> bool {
+	ta := game_player_get_tech_attachment(unit_get_owner(u))
+	if !tech_attachment_get_paratroopers(ta) {
+		return false
+	}
+	return unit_attachment_is_air_transport(unit_get_unit_attachment(u))
+}
+
+// lambda$unitIsAirTransportable$97(Unit)
+//   u -> { ta = u.getOwner().getTechAttachment();
+//          if (!ta.getParatroopers()) return false;
+//          return ua.isAirTransportable(); }
+matches_lambda_unit_is_air_transportable_97 :: proc(u: ^Unit) -> bool {
+	ta := game_player_get_tech_attachment(unit_get_owner(u))
+	if !tech_attachment_get_paratroopers(ta) {
+		return false
+	}
+	return unit_attachment_is_air_transportable(unit_get_unit_attachment(u))
+}
+
+// lambda$unitIsAlliedCarrier$66(GamePlayer, Unit)
+//   u -> ua.getCarrierCapacity() != -1 && player.isAllied(u.getOwner())
+matches_lambda_unit_is_allied_carrier_66 :: proc(player: ^Game_Player, u: ^Unit) -> bool {
+	if unit_attachment_get_carrier_capacity(unit_get_unit_attachment(u)) == -1 {
+		return false
+	}
+	return game_player_is_allied(player, unit_get_owner(u))
+}
+
+// lambda$unitIsAtMaxDamageOrNotCanBeDamaged$38(Territory, Unit)
+//   See Java Matches.unitIsAtMaxDamageOrNotCanBeDamaged.
+matches_lambda_unit_is_at_max_damage_or_not_can_be_damaged_38 :: proc(
+	t: ^Territory,
+	unit: ^Unit,
+) -> bool {
+	ua := unit_get_unit_attachment(unit)
+	if !unit_attachment_can_be_damaged(ua) {
+		return true
+	}
+	props := game_data_get_properties(unit_get_data(unit))
+	if properties_get_damage_from_bombing_done_to_units_instead_of_territories(props) {
+		return unit_get_unit_damage(unit) >= unit_how_much_damage_can_this_unit_take_total(unit, t)
+	}
+	return false
+}
+
+// lambda$unitIsBeingTransportedByOrIsDependentOfSomeUnitInThisList$166(Collection<Unit>, GamePlayer, Map<Unit,Unit>, Unit)
+//   See Java Matches.unitIsBeingTransportedByOrIsDependentOfSomeUnitInThisList.
+matches_lambda_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list_166 :: proc(
+	units: [dynamic]^Unit,
+	current_player: ^Game_Player,
+	paratrooper_map: map[^Unit]^Unit,
+	dependent: ^Unit,
+) -> bool {
+	transported_by := unit_get_transported_by(dependent)
+	if transported_by != nil {
+		for u in units {
+			if u == transported_by {
+				return true
+			}
+		}
+	}
+	carrier_must_move_with := move_validator_carrier_must_move_with(units, units, current_player)
+	for _, c in carrier_must_move_with {
+		for x in c {
+			if x == dependent {
+				return true
+			}
+		}
+	}
+	_, ok := paratrooper_map[dependent]
+	return ok
+}
+
+// lambda$unitIsEnemyOf$23(GamePlayer, Unit)
+//   u -> player.isAtWar(u.getOwner())
+matches_lambda_unit_is_enemy_of_23 :: proc(player: ^Game_Player, u: ^Unit) -> bool {
+	return game_player_is_at_war(player, unit_get_owner(u))
+}
+
+// lambda$unitIsSuicideOnDefense$58(Unit)
+//   u -> ua.getIsSuicideOnDefense()
+matches_lambda_unit_is_suicide_on_defense_58 :: proc(u: ^Unit) -> bool {
+	return unit_attachment_get_is_suicide_on_defense(unit_get_unit_attachment(u))
+}
+
+// lambda$unitTypeIsSuicideOnDefense$56(UnitType)
+//   type -> ua.getIsSuicideOnDefense()
+matches_lambda_unit_type_is_suicide_on_defense_56 :: proc(ut: ^Unit_Type) -> bool {
+	return unit_attachment_get_is_suicide_on_defense(unit_type_get_unit_attachment(ut))
+}
