@@ -452,3 +452,183 @@ pro_territory_value_utils_calculate_territory_value_to_targets :: proc(
 	return territory_value
 }
 
+// Wrapper around the non-capturing Java method reference
+// `TerritoryAttachment::getProduction` so it satisfies the
+// `proc(rawptr, ^Territory) -> i32` ctx-form ToIntFunction shape that
+// `pro_territory_value_utils_calculate_territory_value_to_targets`
+// expects (see closure-capture rule in llm-instructions.md).
+pro_territory_value_utils_method_ref_territory_attachment_get_production :: proc(
+	_ctx: rawptr,
+	t: ^Territory,
+) -> i32 {
+	return territory_attachment_static_get_production(t)
+}
+
+// Adapter ctx + trampoline for the Java lambda
+//   targetTerritory ->
+//       targetTerritory.getUnitCollection().countMatches(Matches.unitIsEnemyOf(player))
+// which appears inline as the second `toTargetValueFunction` argument
+// passed to calculateTerritoryValueToTargets in findSeaTerritoryValues.
+// The lambda captures `player`, so under the rawptr-ctx convention we
+// pair the proc with a ctx struct holding the captured GamePlayer and
+// delegate to the already-defined synthetic
+// pro_territory_value_utils_lambda_find_sea_territory_values_0.
+Pro_Territory_Value_Utils_Find_Sea_Territory_Values_0_Ctx :: struct {
+	player: ^Game_Player,
+}
+
+pro_territory_value_utils_lambda_find_sea_territory_values_0_trampoline :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> i32 {
+	c := cast(^Pro_Territory_Value_Utils_Find_Sea_Territory_Values_0_Ctx)ctx_ptr
+	return pro_territory_value_utils_lambda_find_sea_territory_values_0(c.player, t)
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #findSeaTerritoryValues(GamePlayer, List<Territory>, List<Territory>)
+// Java:
+//   final Map<Territory, Double> territoryValueMap = new HashMap<>();
+//   final GameData data = player.getData();
+//   for (final Territory t : territoriesToCheck) {
+//     if (!territoriesThatCantBeHeld.contains(t)
+//         && t.isWater()
+//         && !data.getMap().getNeighbors(t, Matches.territoryIsWater()).isEmpty()) {
+//       double nearbySeaProductionValue = 0;
+//       final Set<Territory> nearbySeaTerritories =
+//           data.getMap().getNeighbors(t, 4,
+//               ProMatches.territoryCanMoveSeaUnits(player, true));
+//       final List<Territory> nearbyEnemySeaTerritories =
+//           CollectionUtils.getMatches(nearbySeaTerritories,
+//               ProMatches.territoryIsEnemyOrCantBeHeld(player, territoriesThatCantBeHeld));
+//       calculateTerritoryValueToTargets(
+//           t, nearbyEnemySeaTerritories, player, data,
+//           TerritoryAttachment::getProduction);
+//
+//       double nearbyEnemySeaUnitValue = 0;
+//       final List<Territory> nearbyEnemySeaUnitTerritories =
+//           CollectionUtils.getMatches(nearbySeaTerritories,
+//               Matches.territoryHasEnemyUnits(player));
+//       calculateTerritoryValueToTargets(
+//           t, nearbyEnemySeaUnitTerritories, player, data,
+//           targetTerritory ->
+//               targetTerritory.getUnitCollection()
+//                   .countMatches(Matches.unitIsEnemyOf(player)));
+//
+//       final double value = 100 * nearbySeaProductionValue + nearbyEnemySeaUnitValue;
+//       territoryValueMap.put(t, value);
+//     } else if (t.isWater()) {
+//       territoryValueMap.put(t, 0.0);
+//     }
+//   }
+//   return territoryValueMap;
+//
+// Notes:
+// - Java's `nearbySeaProductionValue` and `nearbyEnemySeaUnitValue` are
+//   never reassigned: the two `calculateTerritoryValueToTargets` return
+//   values are discarded. The final `value` therefore always evaluates
+//   to `0`. We mirror Java faithfully: we still invoke the helper twice
+//   (it has no observable side effects, but the call must exist for
+//   behavior parity), and we still emit `100 * nearby_sea_production_value
+//   + nearby_enemy_sea_unit_value` over the unmutated zeroed locals.
+// - `Set<Territory>` from `getNeighbors(t, 4, ...)` is mirrored as
+//   `map[^Territory]struct{}`, matching `game_map_get_neighbors_distance_predicate`.
+// - The `CollectionUtils.getMatches(nearbySeaTerritories, predicate)`
+//   calls are inlined as direct loops that filter the neighbor map into
+//   `[dynamic]^Territory`, which is the shape calculate_territory_value_to_targets
+//   already accepts (the orchestrator's sibling sea-target call uses the
+//   same `[dynamic]^Territory` view).
+// - `territoriesThatCantBeHeld.contains(t)` becomes a linear scan; the
+//   typical input is a small List<Territory>, same as the surrounding
+//   Pro AI code.
+pro_territory_value_utils_find_sea_territory_values :: proc(
+	player: ^Game_Player,
+	territories_that_cant_be_held: [dynamic]^Territory,
+	territories_to_check: [dynamic]^Territory,
+) -> map[^Territory]f64 {
+	territory_value_map := make(map[^Territory]f64)
+	data := game_player_get_data(player)
+	game_map := game_data_get_map(data)
+
+	water_pred, water_ctx := matches_territory_is_water()
+	sea_move_pred, sea_move_ctx := pro_matches_territory_can_move_sea_units(player, true)
+	enemy_or_cant_pred, enemy_or_cant_ctx := pro_matches_territory_is_enemy_or_cant_be_held(
+		player,
+		territories_that_cant_be_held,
+	)
+	has_enemy_units_pred, has_enemy_units_ctx := matches_territory_has_enemy_units(player)
+
+	for t in territories_to_check {
+		contained := false
+		for tt in territories_that_cant_be_held {
+			if tt == t {
+				contained = true
+				break
+			}
+		}
+		if !contained && territory_is_water(t) {
+			water_neighbors := game_map_get_neighbors_predicate(
+				game_map,
+				t,
+				water_pred,
+				water_ctx,
+			)
+			defer delete(water_neighbors)
+			if len(water_neighbors) != 0 {
+				nearby_sea_production_value: f64 = 0
+
+				nearby_sea_territories := game_map_get_neighbors_distance_predicate(
+					game_map,
+					t,
+					4,
+					sea_move_pred,
+					sea_move_ctx,
+				)
+				defer delete(nearby_sea_territories)
+
+				nearby_enemy_sea_territories := make([dynamic]^Territory)
+				defer delete(nearby_enemy_sea_territories)
+				for n in nearby_sea_territories {
+					if enemy_or_cant_pred(enemy_or_cant_ctx, n) {
+						append(&nearby_enemy_sea_territories, n)
+					}
+				}
+				_ = pro_territory_value_utils_calculate_territory_value_to_targets(
+					t,
+					nearby_enemy_sea_territories,
+					player,
+					data,
+					pro_territory_value_utils_method_ref_territory_attachment_get_production,
+					nil,
+				)
+
+				nearby_enemy_sea_unit_value: f64 = 0
+				nearby_enemy_sea_unit_territories := make([dynamic]^Territory)
+				defer delete(nearby_enemy_sea_unit_territories)
+				for n in nearby_sea_territories {
+					if has_enemy_units_pred(has_enemy_units_ctx, n) {
+						append(&nearby_enemy_sea_unit_territories, n)
+					}
+				}
+				lambda_ctx := new(Pro_Territory_Value_Utils_Find_Sea_Territory_Values_0_Ctx)
+				lambda_ctx.player = player
+				_ = pro_territory_value_utils_calculate_territory_value_to_targets(
+					t,
+					nearby_enemy_sea_unit_territories,
+					player,
+					data,
+					pro_territory_value_utils_lambda_find_sea_territory_values_0_trampoline,
+					rawptr(lambda_ctx),
+				)
+
+				value := 100.0 * nearby_sea_production_value + nearby_enemy_sea_unit_value
+				territory_value_map[t] = value
+			} else if territory_is_water(t) {
+				territory_value_map[t] = 0.0
+			}
+		} else if territory_is_water(t) {
+			territory_value_map[t] = 0.0
+		}
+	}
+	return territory_value_map
+}

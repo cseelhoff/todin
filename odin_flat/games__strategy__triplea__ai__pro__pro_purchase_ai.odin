@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:slice"
 
 Pro_Purchase_Ai :: struct {
 	calc:               ^Pro_Odds_Calculator,
@@ -679,3 +680,398 @@ pro_purchase_ai_repair :: proc(
 	}
 }
 
+
+// `ProPurchaseAi.purchaseAaUnits(Map<Territory, ProPurchaseTerritory>,
+// List<ProPlaceTerritory>, List<ProPurchaseOption>)`. For every prioritized
+// land territory under threat of strategic bombing, pick the cheapest
+// AA-for-bombing unit that fits in the territory's remaining production
+// budget and queue one for placement.
+pro_purchase_ai_purchase_aa_units :: proc(
+	self: ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	prioritized_land_territories: [dynamic]^Pro_Place_Territory,
+	special_purchase_options: [dynamic]^Pro_Purchase_Option,
+) {
+	if pro_resource_tracker_is_empty(self.resource_tracker) {
+		return
+	}
+	pro_logger_info(
+		fmt.tprintf("Purchase AA units with resources: %v", self.resource_tracker),
+	)
+
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
+		self.territory_manager,
+	)
+
+	for place_territory in prioritized_land_territories {
+		t := pro_place_territory_get_territory(place_territory)
+		pro_logger_debug(fmt.tprintf("Checking AA place for %s", territory_to_string(t)))
+
+		max_terr := pro_other_move_options_get_max(enemy_attack_options, t)
+		if max_terr == nil {
+			continue
+		}
+
+		remaining_unit_production := pro_purchase_territory_get_remaining_unit_production(
+			purchase_territories[t],
+		)
+		pro_logger_debug(
+			fmt.tprintf(
+				"%s, remainingUnitProduction=%d",
+				territory_to_string(t),
+				remaining_unit_production,
+			),
+		)
+		if remaining_unit_production <= 0 {
+			continue
+		}
+
+		// Check if the territory needs AA: an enemy strategic bomber can
+		// reach it, the territory hosts a damageable producer, and there
+		// is no AA-for-bombing defender already.
+		bomber_p, bomber_c := matches_unit_is_strategic_bomber()
+		enemy_can_bomb := false
+		for u in pro_territory_get_max_units(max_terr) {
+			if bomber_p(bomber_c, u) {
+				enemy_can_bomb = true
+				break
+			}
+		}
+		can_prod_dmg_p, can_prod_dmg_c := matches_unit_can_produce_units_and_can_be_damaged()
+		territory_can_be_bombed := false
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if can_prod_dmg_p(can_prod_dmg_c, u) {
+				territory_can_be_bombed = true
+				break
+			}
+		}
+		aa_unit_p, aa_unit_c := matches_unit_is_aa_for_bombing_this_unit_only()
+		has_aa_bombing_defense := false
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if aa_unit_p(aa_unit_c, u) {
+				has_aa_bombing_defense = true
+				break
+			}
+		}
+		pro_logger_debug(
+			fmt.tprintf(
+				"%s, enemyCanBomb=%v, territoryCanBeBombed=%v, hasAABombingDefense=%v",
+				territory_to_string(t),
+				enemy_can_bomb,
+				territory_can_be_bombed,
+				has_aa_bombing_defense,
+			),
+		)
+		if !enemy_can_bomb || !territory_can_be_bombed || has_aa_bombing_defense {
+			continue
+		}
+
+		// Strip options that cost too much PUs or production for this
+		// territory's remaining capacity.
+		purchase_options_for_territory :=
+			pro_purchase_validation_utils_find_purchase_options_for_territory_5(
+				self.pro_data,
+				self.player,
+				special_purchase_options,
+				t,
+				self.is_bid,
+			)
+		empty_units: [dynamic]^Unit
+		pro_purchase_validation_utils_remove_invalid_purchase_options(
+			self.pro_data,
+			self.player,
+			self.start_of_turn_data,
+			&purchase_options_for_territory,
+			self.resource_tracker,
+			remaining_unit_production,
+			empty_units,
+			purchase_territories,
+			0,
+			t,
+		)
+		delete(empty_units)
+		if len(purchase_options_for_territory) == 0 {
+			delete(purchase_options_for_territory)
+			continue
+		}
+
+		// Pick the cheapest AA-for-bombing unit type that does not
+		// require consuming other units to build.
+		best_aa_option: ^Pro_Purchase_Option = nil
+		min_cost: i32 = max(i32)
+		aa_type_p, aa_type_c := matches_unit_type_is_aa_for_bombing_this_unit_only()
+		consumes_p, consumes_c := matches_unit_type_consumes_units_on_creation()
+		for ppo in purchase_options_for_territory {
+			ut := pro_purchase_option_get_unit_type(ppo)
+			if aa_type_p(aa_type_c, ut) &&
+			   pro_purchase_option_get_cost(ppo) < min_cost &&
+			   !consumes_p(consumes_c, ut) {
+				best_aa_option = ppo
+				min_cost = pro_purchase_option_get_cost(ppo)
+			}
+		}
+		delete(purchase_options_for_territory)
+
+		if best_aa_option == nil {
+			continue
+		}
+		pro_logger_trace(
+			fmt.tprintf(
+				"Best AA unit: %s",
+				default_named_get_name(
+					&pro_purchase_option_get_unit_type(best_aa_option).named_attachable.default_named,
+				),
+			),
+		)
+
+		pro_resource_tracker_purchase(self.resource_tracker, best_aa_option)
+		pro_purchase_ai_add_units_to_place(
+			self,
+			place_territory,
+			pro_purchase_option_create_temp_units(best_aa_option),
+		)
+	}
+}
+
+// Synthetic less-comparator for `prioritizedLandTerritories.sort(
+// Comparator.comparingDouble(ProPlaceTerritory::getStrategicValue))`
+// in `ProPurchaseAi.upgradeUnitsWithRemainingPUs`.
+pro_purchase_ai_lambda_upgrade_units_with_remaining_pus_strategic_less :: proc(
+	a: ^Pro_Place_Territory,
+	b: ^Pro_Place_Territory,
+) -> bool {
+	return pro_place_territory_get_strategic_value(a) <
+		pro_place_territory_get_strategic_value(b)
+}
+
+// `ProPurchaseAi.upgradeUnitsWithRemainingPUs(Map<Territory, ProPurchaseTerritory>,
+// ProPurchaseOptionMap)`. With any leftover PUs after all higher-priority
+// purchases, walk safe land territories from least-strategic to most and
+// swap each cheap previously-queued unit for the most efficient air or
+// land replacement that fits the remaining budget.
+pro_purchase_ai_upgrade_units_with_remaining_pus :: proc(
+	self: ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	purchase_options: ^Pro_Purchase_Option_Map,
+) {
+	if pro_resource_tracker_is_empty(self.resource_tracker) {
+		return
+	}
+	pro_logger_info(
+		fmt.tprintf("Upgrade units with resources: %v", self.resource_tracker),
+	)
+
+	// Gather every safe (non-water, can-hold) place territory.
+	prioritized_land_territories: [dynamic]^Pro_Place_Territory
+	defer delete(prioritized_land_territories)
+	for _, ppt in purchase_territories {
+		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
+			t := pro_place_territory_get_territory(place_territory)
+			if !territory_is_water(t) && pro_place_territory_is_can_hold(place_territory) {
+				append(&prioritized_land_territories, place_territory)
+			}
+		}
+	}
+
+	// Sort by ascending strategic value (try far-away territories first).
+	slice.sort_by(
+		prioritized_land_territories[:],
+		pro_purchase_ai_lambda_upgrade_units_with_remaining_pus_strategic_less,
+	)
+	pro_logger_debug(
+		fmt.tprintf("Sorted land territories: %v", prioritized_land_territories),
+	)
+
+	for place_territory in prioritized_land_territories {
+		t := pro_place_territory_get_territory(place_territory)
+		pro_logger_debug(fmt.tprintf("Checking territory: %s", territory_to_string(t)))
+
+		// Build the air+land candidate list for this territory.
+		air_and_land_purchase_options: [dynamic]^Pro_Purchase_Option
+		defer delete(air_and_land_purchase_options)
+		for ppo in pro_purchase_option_map_get_air_options(purchase_options) {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		for ppo in pro_purchase_option_map_get_land_options(purchase_options) {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		purchase_options_for_territory :=
+			pro_purchase_validation_utils_find_purchase_options_for_territory_5(
+				self.pro_data,
+				self.player,
+				air_and_land_purchase_options,
+				t,
+				self.is_bid,
+			)
+		defer delete(purchase_options_for_territory)
+
+		remaining_upgrade_units :=
+			pro_purchase_territory_get_unit_production(purchase_territories[t]) / 3
+		for {
+			if remaining_upgrade_units <= 0 {
+				break
+			}
+
+			// Find the cheapest already-placed purchase option in this
+			// territory.
+			min_purchase_option: ^Pro_Purchase_Option = nil
+			for u in pro_place_territory_get_place_units(place_territory) {
+				for ppo in air_and_land_purchase_options {
+					if unit_type_equals(
+						   unit_get_type(u),
+						   pro_purchase_option_get_unit_type(ppo),
+					   ) &&
+					   (min_purchase_option == nil ||
+							   pro_purchase_option_get_cost(ppo) <
+								   pro_purchase_option_get_cost(min_purchase_option)) {
+						min_purchase_option = ppo
+					}
+				}
+			}
+			if min_purchase_option == nil {
+				break
+			}
+
+			// Re-validate the upgrade option list against a one-unit
+			// budget while temporarily reserving the cheap option's cost.
+			pro_resource_tracker_remove_temp_purchase(
+				self.resource_tracker,
+				min_purchase_option,
+			)
+			empty_units: [dynamic]^Unit
+			pro_purchase_validation_utils_remove_invalid_purchase_options(
+				self.pro_data,
+				self.player,
+				self.start_of_turn_data,
+				&purchase_options_for_territory,
+				self.resource_tracker,
+				1,
+				empty_units,
+				purchase_territories,
+				0,
+				t,
+			)
+			delete(empty_units)
+			pro_resource_tracker_clear_temp_purchases(self.resource_tracker)
+			if len(purchase_options_for_territory) == 0 {
+				break
+			}
+
+			// Choose the most efficient upgrade option, preferring air.
+			best_upgrade_option: ^Pro_Purchase_Option = nil
+			max_efficiency := pro_purchase_ai_find_upgrade_unit_efficiency(
+				min_purchase_option,
+				pro_place_territory_get_strategic_value(place_territory),
+			)
+			for ppo in purchase_options_for_territory {
+				if !pro_purchase_option_is_consumes_units(ppo) &&
+				   pro_purchase_option_get_cost(ppo) >
+					   pro_purchase_option_get_cost(min_purchase_option) &&
+				   (pro_purchase_option_is_air(ppo) ||
+						   pro_place_territory_get_strategic_value(place_territory) >= 0.25 ||
+						   pro_purchase_option_get_transport_cost(ppo) <=
+							   pro_purchase_option_get_transport_cost(min_purchase_option)) {
+					efficiency := pro_purchase_ai_find_upgrade_unit_efficiency(
+						ppo,
+						pro_place_territory_get_strategic_value(place_territory),
+					)
+					if pro_purchase_option_is_air(ppo) {
+						efficiency *= 10
+					}
+					if pro_purchase_option_get_carrier_cost(ppo) > 0 {
+						unused_local_carrier_capacity :=
+							pro_transport_utils_get_unused_local_carrier_capacity(
+								self.player,
+								t,
+								pro_place_territory_get_place_units(place_territory),
+							)
+						needed_fighters :=
+							unused_local_carrier_capacity /
+							pro_purchase_option_get_carrier_cost(ppo)
+						efficiency *= f64(1 + needed_fighters)
+					}
+					if efficiency > max_efficiency {
+						best_upgrade_option = ppo
+						max_efficiency = efficiency
+					}
+				}
+			}
+			if best_upgrade_option == nil {
+				for i := 0; i < len(air_and_land_purchase_options); i += 1 {
+					if air_and_land_purchase_options[i] == min_purchase_option {
+						ordered_remove(&air_and_land_purchase_options, i)
+						break
+					}
+				}
+				continue
+			}
+
+			// Pick the units that will actually be replaced.
+			units_to_remove: [dynamic]^Unit
+			num_units_to_remove := pro_purchase_option_get_quantity(min_purchase_option)
+			for u in pro_place_territory_get_place_units(place_territory) {
+				if num_units_to_remove <= 0 {
+					break
+				}
+				if unit_type_equals(
+					unit_get_type(u),
+					pro_purchase_option_get_unit_type(min_purchase_option),
+				) {
+					append(&units_to_remove, u)
+					num_units_to_remove -= 1
+				}
+			}
+			if num_units_to_remove > 0 {
+				delete(units_to_remove)
+				for i := 0; i < len(air_and_land_purchase_options); i += 1 {
+					if air_and_land_purchase_options[i] == min_purchase_option {
+						ordered_remove(&air_and_land_purchase_options, i)
+						break
+					}
+				}
+				continue
+			}
+
+			// Apply the upgrade: refund the cheap option, drop the
+			// removed units from the place list, and queue equivalent
+			// upgraded units while the budget still covers them.
+			pro_resource_tracker_remove_purchase(self.resource_tracker, min_purchase_option)
+			remaining_upgrade_units -= pro_purchase_option_get_quantity(min_purchase_option)
+
+			new_place_units: [dynamic]^Unit
+			for u in place_territory.place_units {
+				keep := true
+				for r in units_to_remove {
+					if u == r {
+						keep = false
+						break
+					}
+				}
+				if keep {
+					append(&new_place_units, u)
+				}
+			}
+			delete(place_territory.place_units)
+			place_territory.place_units = new_place_units
+
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s, removedUnits=%v",
+					territory_to_string(t),
+					units_to_remove,
+				),
+			)
+			for _ in 0 ..< len(units_to_remove) {
+				if pro_resource_tracker_has_enough(self.resource_tracker, best_upgrade_option) {
+					pro_resource_tracker_purchase(self.resource_tracker, best_upgrade_option)
+					pro_purchase_ai_add_units_to_place(
+						self,
+						place_territory,
+						pro_purchase_option_create_temp_units(best_upgrade_option),
+					)
+				}
+			}
+			delete(units_to_remove)
+		}
+	}
+}

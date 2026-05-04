@@ -521,3 +521,45 @@ pro_utils_get_closest_enemy_or_neutral_land_territory_distance :: proc(
 	return min_distance < 10 ? min_distance : -1
 }
 
+// Port of ProUtils.getClosestEnemyLandTerritoryDistanceOverWater —
+// distance to the closest enemy land territory within 9 hops of `t`,
+// where the route may pass only through water territories. Returns -1
+// if none reachable within 10. Mirrors:
+//   final Set<Territory> neighborTerritories = data.getMap().getNeighbors(t, 9);
+//   final List<Territory> enemyOrAdjacentLandTerritories =
+//       CollectionUtils.getMatches(neighborTerritories,
+//           ProMatches.territoryIsOrAdjacentToEnemyNotNeutralLand(player));
+//   int minDistance = 10;
+//   for (final Territory enemyLandTerritory : enemyOrAdjacentLandTerritories) {
+//     final int distance = data.getMap().getDistanceIgnoreEndForCondition(
+//         t, enemyLandTerritory, Matches.territoryIsWater());
+//     if (distance > 0 && distance < minDistance) { minDistance = distance; }
+//   }
+//   return (minDistance < 10) ? minDistance : -1;
+pro_utils_get_closest_enemy_land_territory_distance_over_water :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	t: ^Territory,
+) -> i32 {
+	game_map := game_state_get_map(data)
+	neighbor_territories := game_map_get_neighbors_distance(game_map, t, 9)
+	defer delete(neighbor_territories)
+	enemy_pred, enemy_ctx := pro_matches_territory_is_or_adjacent_to_enemy_not_neutral_land(player)
+	min_distance: i32 = 10
+	for enemy_land_territory in neighbor_territories {
+		if !enemy_pred(enemy_ctx, enemy_land_territory) {
+			continue
+		}
+		distance := game_map_get_distance_ignore_end_for_condition(
+			game_map,
+			t,
+			enemy_land_territory,
+			territory_is_water,
+		)
+		if distance > 0 && distance < min_distance {
+			min_distance = distance
+		}
+	}
+	return min_distance < 10 ? min_distance : -1
+}
+

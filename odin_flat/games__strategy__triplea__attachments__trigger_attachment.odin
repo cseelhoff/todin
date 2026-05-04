@@ -1203,6 +1203,61 @@ trigger_attachment_trigger_available_tech_change :: proc(
 }
 
 // ---------------------------------------------------------------------------
+// public static void triggerTechChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each satisfied trigger that passes filterSatisfiedTriggers with
+// techMatch(): roll testChance / consume uses, then for every
+// (player, TechAdvance) pair, skip advances the player already has
+// and otherwise log a history event and grant the advance via
+// TechTracker.addAdvance.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_tech_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_tech_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		players := trigger_attachment_get_players(t)
+		techs := trigger_attachment_get_tech(t)
+		for player in players {
+			tech_attachment := game_player_get_tech_attachment(player)
+			for ta in techs {
+				if tech_advance_has_tech(ta, tech_attachment) {
+					continue
+				}
+				attachment_text := my_formatter_attachment_name_to_text(t.name)
+				player_name := default_named_get_name(
+					&player.named_attachable.default_named,
+				)
+				ta_name := default_named_get_name(&ta.named_attachable.default_named)
+				event := strings.concatenate(
+					{attachment_text, ": ", player_name, " activates ", ta_name},
+				)
+				i_delegate_history_writer_start_event(history_writer, event)
+				delete(event)
+				tech_tracker_add_advance(player, bridge, ta)
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // public static void triggerProductionChange(
 //     Set<TriggerAttachment> satisfiedTriggers,
 //     IDelegateBridge bridge,

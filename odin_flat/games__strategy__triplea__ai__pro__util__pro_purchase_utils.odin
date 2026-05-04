@@ -507,3 +507,142 @@ pro_purchase_utils_randomize_purchase_option :: proc(
 	}
 	return keys[len(keys) - 1]
 }
+
+// Java: public static List<Unit> findMaxPurchaseDefenders(
+//     final ProData proData, final GamePlayer player, final Territory t,
+//     final List<ProPurchaseOption> landPurchaseOptions)
+//
+// Constants.PUS resolves to the literal "PUs" (matches existing usage in
+// pro_purchase_utils_get_cost). The Java call
+// `ProPurchaseValidationUtils.findPurchaseOptionsForTerritory(proData,
+// player, landPurchaseOptions, t, false)` is the 5-arg overload, which in
+// Odin is `pro_purchase_validation_utils_find_purchase_options_for_territory_5`.
+// `bestDefenseOption.getUnitType().createTemp(quantity, player)` returns a
+// freshly-allocated [dynamic]^Unit each iteration; we copy its elements into
+// `place_units` and free the temporary container.
+pro_purchase_utils_find_max_purchase_defenders :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	t: ^Territory,
+	land_purchase_options: [dynamic]^Pro_Purchase_Option,
+) -> [dynamic]^Unit {
+	pro_logger_info(
+		fmt.tprintf(
+			"Find max purchase defenders for %s",
+			default_named_get_name(&t.named_attachable.default_named),
+		),
+	)
+	data := pro_data_get_data(pro_data)
+
+	// Determine most cost efficient defender that can be produced in this territory
+	pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
+	pus_remaining := resource_collection_get_quantity(game_player_get_resources(player), pus)
+	purchase_options_for_territory :=
+		pro_purchase_validation_utils_find_purchase_options_for_territory_5(
+			pro_data,
+			player,
+			land_purchase_options,
+			t,
+			false,
+		)
+	defer delete(purchase_options_for_territory)
+	best_defense_option: ^Pro_Purchase_Option = nil
+	max_defense_efficiency: f64 = 0
+	for ppo in purchase_options_for_territory {
+		if pro_purchase_option_get_defense_efficiency(ppo) > max_defense_efficiency &&
+		   pro_purchase_option_get_cost(ppo) <= pus_remaining {
+			best_defense_option = ppo
+			max_defense_efficiency = pro_purchase_option_get_defense_efficiency(ppo)
+		}
+	}
+
+	// Determine number of defenders I can purchase
+	place_units: [dynamic]^Unit
+	if best_defense_option != nil {
+		bdo_unit_type := pro_purchase_option_get_unit_type(best_defense_option)
+		pro_logger_debug(
+			fmt.tprintf(
+				"Best defense option: %s",
+				default_named_get_name(&bdo_unit_type.named_attachable.default_named),
+			),
+		)
+		remaining_unit_production := pro_purchase_utils_get_unit_production(t, player)
+		pus_spent: i32 = 0
+		for pro_purchase_option_get_cost(best_defense_option) <= (pus_remaining - pus_spent) &&
+		    remaining_unit_production >= pro_purchase_option_get_quantity(best_defense_option) {
+
+			// If out of PUs or production then break
+
+			// Create new temp defenders
+			pus_spent += pro_purchase_option_get_cost(best_defense_option)
+			remaining_unit_production -= pro_purchase_option_get_quantity(best_defense_option)
+			new_units := unit_type_create_temp(
+				bdo_unit_type,
+				pro_purchase_option_get_quantity(best_defense_option),
+				player,
+			)
+			for u in new_units {
+				append(&place_units, u)
+			}
+			delete(new_units)
+		}
+		pro_logger_debug(fmt.tprintf("Potential purchased defenders: %v", place_units))
+	}
+	return place_units
+}
+
+// Java: public static Map<Territory, ProPurchaseTerritory> findPurchaseTerritories(
+//     final ProData proData, final GamePlayer player)
+//
+// `data.getMap().getTerritoriesOwnedBy(player)` and
+// `data.getMap().getTerritories()` map directly. The two-stage filtering
+// (factory-or-anywhere, then can-move-land-units) preserves Java's
+// reassign-then-filter pattern, with intermediate [dynamic]^Territory
+// buffers. `new ProPurchaseTerritory(t, data, player, unitProduction)` is
+// the 4-arg overload — `pro_purchase_territory_new_default` in Odin.
+pro_purchase_utils_find_purchase_territories :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+) -> map[^Territory]^Pro_Purchase_Territory {
+	pro_logger_info("Find all purchase territories")
+	data := pro_data_get_data(pro_data)
+
+	// Find all territories that I can place units on
+	ra := game_player_get_rules_attachment(player)
+	owned_and_not_conquered_factory_territories: [dynamic]^Territory
+	defer delete(owned_and_not_conquered_factory_territories)
+	if ra != nil && ra.placement_any_territory {
+		owned := game_map_get_territories_owned_by(game_data_get_map(data), player)
+		defer delete(owned)
+		for t in owned {
+			append(&owned_and_not_conquered_factory_territories, t)
+		}
+	} else {
+		f_p, f_c := pro_matches_territory_has_factory_and_is_not_conquered_owned_land(player)
+		all_terrs := game_map_get_territories(game_data_get_map(data))
+		defer delete(all_terrs)
+		for t in all_terrs {
+			if f_p(f_c, t) {
+				append(&owned_and_not_conquered_factory_territories, t)
+			}
+		}
+	}
+	move_p, move_c := pro_matches_territory_can_move_land_units(player, false)
+	filtered: [dynamic]^Territory
+	defer delete(filtered)
+	for t in owned_and_not_conquered_factory_territories {
+		if move_p(move_c, t) {
+			append(&filtered, t)
+		}
+	}
+
+	// Create purchase territory holder for each factory territory
+	purchase_territories := make(map[^Territory]^Pro_Purchase_Territory)
+	for t in filtered {
+		unit_production := pro_purchase_utils_get_unit_production(t, player)
+		ppt := pro_purchase_territory_new_default(t, data, player, unit_production)
+		purchase_territories[t] = ppt
+		pro_logger_debug(pro_purchase_territory_to_string(ppt))
+	}
+	return purchase_territories
+}

@@ -55,6 +55,397 @@ pro_move_utils_lambda__calculate_bombing_routes__2 :: proc(
 	append(moves, move_description_new_units_route(unit_list[:], route))
 }
 
+// File-scope holders bridging a ctx-form Predicate<Territory> (the
+// closures returned by ProMatches.territoryCanMove*UnitsThrough and
+// territoryCanMoveAirUnitsAndNoAa) into the bare
+// `proc(^Territory) -> bool` cond consumed by
+// `game_map_get_route_for_unit`. Each route lookup runs synchronously
+// inside the for-loop bodies below, so a single pair of holders is
+// sufficient — set the holders, call game_map_get_route_for_unit,
+// inspect the returned ^Route, repeat. Same pattern used by
+// pro_non_combat_move_ai.odin.
+@(private = "file")
+pro_move_utils_active_cond: proc(rawptr, ^Territory) -> bool
+
+@(private = "file")
+pro_move_utils_active_cond_ctx: rawptr
+
+@(private = "file")
+pro_move_utils_cond_trampoline :: proc(t: ^Territory) -> bool {
+	return pro_move_utils_active_cond(pro_move_utils_active_cond_ctx, t)
+}
+
+// games.strategy.triplea.ai.pro.util.ProMoveUtils#calculateMoveRoutes(
+//     ProData, GamePlayer, Map<Territory, ProTerritory>, boolean)
+//
+// Calculates normal movement routes (land, air, sea attack routes; not
+// amphibious, bombardment, or strategic bombing). Mirrors the Java:
+//
+//   1. Collect every amphib-attack participant (transport keys and the
+//      attacking units in their value collections) into a set so they
+//      can be skipped in the main loop — they are handled separately
+//      by calculateAmphibRoutes.
+//   2. For each (territory, ProTerritory) entry: walk every unit
+//      attacking the territory, skip amphib units and units already at
+//      `t`, build a singleton unit list, optionally extend it with
+//      `MoveValidator.carrierMustMoveWith(start, player).get(u)` when
+//      `u` is a carrier, then pick the route predicate based on the
+//      unit-list composition (any-sea → sea, all-land → land with a
+//      land-transport retry when the previous unit in this iteration
+//      was a land transport originating from the same start, all-air
+//      → air-no-AA). The land-transport retry mirrors the Java's
+//      `lastLandTransport` Tuple<Territory, Unit> threaded across
+//      iterations of the inner loop.
+//   3. Record an empty Optional → ProLogger.warn at WARN; record a
+//      present route → append `new MoveDescription(unitList, route)`.
+//
+// `route_for_unit` is the Odin equivalent of `getRouteForUnit`,
+// returning `^Route` (nil = empty Optional). Predicate values returned
+// by ProMatches/Matches are (proc, rawptr) pairs; this proc bridges
+// them into the bare-proc form via the file-scope cond holder.
+pro_move_utils_calculate_move_routes :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	is_combat_move: bool,
+) -> [dynamic]^Move_Description {
+	data := pro_data_get_data(pro_data)
+	gm := game_data_get_map(data)
+
+	// Find all amphib units (transport keys + attacking-unit values).
+	amphib_units := make(map[^Unit]struct{})
+	defer delete(amphib_units)
+	for _, pt in attack_map {
+		aam := pro_territory_get_amphib_attack_map(pt)
+		for k, v in aam {
+			amphib_units[k] = {}
+			for u in v {
+				amphib_units[u] = {}
+			}
+		}
+	}
+
+	moves := make([dynamic]^Move_Description)
+
+	is_sea_p, is_sea_c := matches_unit_is_sea()
+	is_land_p, is_land_c := matches_unit_is_land()
+	is_air_p, is_air_c := matches_unit_is_air()
+	is_carrier_p, is_carrier_c := matches_unit_is_carrier()
+	is_land_transport_p, is_land_transport_c := matches_unit_is_land_transport()
+
+	// Loop through all territories to attack.
+	for t in attack_map {
+		// Java: Tuple<Territory, Unit> lastLandTransport = Tuple.of(null, null);
+		llt_first: ^Territory = nil
+		llt_second: ^Unit = nil
+
+		units := pro_territory_get_units(attack_map[t])
+		for u in units {
+			// Skip amphib units.
+			if _, is_amphib := amphib_units[u]; is_amphib {
+				continue
+			}
+
+			// Skip if unit is already in move-to territory.
+			start_territory := pro_data_get_unit_territory(pro_data, u)
+			if start_territory == nil || start_territory == t {
+				continue
+			}
+
+			// Add unit to move list.
+			unit_list := make([dynamic]^Unit)
+			append(&unit_list, u)
+			if is_land_transport_p(is_land_transport_c, u) {
+				llt_first = start_territory
+				llt_second = u
+			}
+
+			// If carrier has dependent allied fighters then move them too.
+			if is_carrier_p(is_carrier_c, u) {
+				cmw := move_validator_carrier_must_move_with_territory(
+					start_territory,
+					player,
+				)
+				if extras, ok := cmw[u]; ok {
+					for x in extras {
+						append(&unit_list, x)
+					}
+				}
+			}
+
+			// Determine route and add to move list.
+			route: ^Route = nil
+
+			any_sea := false
+			for v in unit_list {
+				if is_sea_p(is_sea_c, v) {
+					any_sea = true
+					break
+				}
+			}
+			if any_sea {
+				// Sea unit (including carriers with planes).
+				cp, cc := pro_matches_territory_can_move_sea_units_through(
+					player,
+					is_combat_move,
+				)
+				pro_move_utils_active_cond = cp
+				pro_move_utils_active_cond_ctx = cc
+				route = game_map_get_route_for_unit(
+					gm,
+					start_territory,
+					t,
+					pro_move_utils_cond_trampoline,
+					u,
+					player,
+				)
+			} else {
+				all_land := true
+				for v in unit_list {
+					if !is_land_p(is_land_c, v) {
+						all_land = false
+						break
+					}
+				}
+				if all_land {
+					// Land unit.
+					empty_enemies: [dynamic]^Territory
+					cp, cc := pro_matches_territory_can_move_land_units_through(
+						player,
+						u,
+						start_territory,
+						is_combat_move,
+						empty_enemies,
+					)
+					pro_move_utils_active_cond = cp
+					pro_move_utils_active_cond_ctx = cc
+					route = game_map_get_route_for_unit(
+						gm,
+						start_territory,
+						t,
+						pro_move_utils_cond_trampoline,
+						u,
+						player,
+					)
+					if route == nil && start_territory == llt_first {
+						empty_enemies2: [dynamic]^Territory
+						cp2, cc2 := pro_matches_territory_can_move_land_units_through(
+							player,
+							llt_second,
+							start_territory,
+							is_combat_move,
+							empty_enemies2,
+						)
+						pro_move_utils_active_cond = cp2
+						pro_move_utils_active_cond_ctx = cc2
+						route = game_map_get_route_for_unit(
+							gm,
+							start_territory,
+							t,
+							pro_move_utils_cond_trampoline,
+							u,
+							player,
+						)
+					}
+				} else {
+					all_air := true
+					for v in unit_list {
+						if !is_air_p(is_air_c, v) {
+							all_air = false
+							break
+						}
+					}
+					if all_air {
+						// Air unit.
+						cp, cc := pro_matches_territory_can_move_air_units_and_no_aa(
+							data,
+							player,
+							is_combat_move,
+						)
+						pro_move_utils_active_cond = cp
+						pro_move_utils_active_cond_ctx = cc
+						route = game_map_get_route_for_unit(
+							gm,
+							start_territory,
+							t,
+							pro_move_utils_cond_trampoline,
+							u,
+							player,
+						)
+					}
+				}
+			}
+
+			if route == nil {
+				pro_logger_warn(
+					fmt.tprintf(
+						"%d-%s: route is null (could not calculate route)%v to %v, units=%v",
+						game_sequence_get_round(game_data_get_sequence(data)),
+						game_step_get_name(
+							game_sequence_get_step(game_data_get_sequence(data)),
+						),
+						start_territory,
+						t,
+						unit_list[:],
+					),
+				)
+			} else {
+				append(&moves, move_description_new_units_route(unit_list[:], route))
+			}
+		}
+	}
+	return moves
+}
+
+// games.strategy.triplea.ai.pro.util.ProMoveUtils#calculateBombardMoveRoutes(
+//     ProData, GamePlayer, Map<Territory, ProTerritory>)
+//
+// Calculates bombardment movement routes. Mirrors the Java:
+//
+//   For each ProTerritory in attackMap.values(), iterate the
+//   bombardTerritoryMap (Unit -> Territory) entries; skip units
+//   already at their bombard-from territory; for each surviving unit,
+//   if it is owned, sea, and can be moved, route it from its start
+//   territory to the bombard-from territory using the sea predicate
+//   (combat move = true), and append a MoveDescription on success.
+//
+// Java's `Optional<Route>::ifPresent` consumer is the existing
+// pro_move_utils_lambda__calculate_bombard_move_routes__1 helper.
+pro_move_utils_calculate_bombard_move_routes :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+) -> [dynamic]^Move_Description {
+	data := pro_data_get_data(pro_data)
+	gm := game_data_get_map(data)
+
+	moves := make([dynamic]^Move_Description)
+
+	// Loop through all territories to attack.
+	for _, t in attack_map {
+		btm := pro_territory_get_bombard_territory_map(t)
+		for u, bombard_from_territory in btm {
+			// Skip if unit is already in move-to territory.
+			start_territory := pro_data_get_unit_territory(pro_data, u)
+			if start_territory == nil || start_territory == bombard_from_territory {
+				continue
+			}
+
+			// Add unit to move list.
+			unit_list := make([dynamic]^Unit)
+			append(&unit_list, u)
+
+			// Determine route and add to move list.
+			owned_sea_p, owned_sea_c := pro_matches_unit_can_be_moved_and_is_owned_sea(
+				player,
+				true,
+			)
+			all_owned_sea := true
+			for v in unit_list {
+				if !owned_sea_p(owned_sea_c, v) {
+					all_owned_sea = false
+					break
+				}
+			}
+			if all_owned_sea {
+				cp, cc := pro_matches_territory_can_move_sea_units_through(player, true)
+				pro_move_utils_active_cond = cp
+				pro_move_utils_active_cond_ctx = cc
+				route := game_map_get_route_for_unit(
+					gm,
+					start_territory,
+					bombard_from_territory,
+					pro_move_utils_cond_trampoline,
+					u,
+					player,
+				)
+				if route != nil {
+					pro_move_utils_lambda__calculate_bombard_move_routes__1(
+						&moves,
+						unit_list,
+						route,
+					)
+				}
+			}
+		}
+	}
+
+	return moves
+}
+
+// games.strategy.triplea.ai.pro.util.ProMoveUtils#calculateBombingRoutes(
+//     ProData, GamePlayer, Map<Territory, ProTerritory>)
+//
+// Calculates strategic bombing raid movement routes. Mirrors the Java:
+//
+//   For each (territory, ProTerritory) entry, iterate the bombers
+//   list; skip units already at the target territory; if the unit is
+//   air, route it from its start territory to `t` using the
+//   air-no-AA predicate (combat move = true), and append a
+//   MoveDescription on success.
+pro_move_utils_calculate_bombing_routes :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+) -> [dynamic]^Move_Description {
+	data := pro_data_get_data(pro_data)
+	gm := game_data_get_map(data)
+
+	moves := make([dynamic]^Move_Description)
+
+	is_air_p, is_air_c := matches_unit_is_air()
+
+	// Loop through all territories to attack.
+	for t in attack_map {
+		bombers := pro_territory_get_bombers(attack_map[t])
+		for u in bombers {
+			// Skip if unit is already in move-to territory.
+			start_territory := pro_data_get_unit_territory(pro_data, u)
+			if start_territory == nil || start_territory == t {
+				continue
+			}
+
+			// Add unit to move list.
+			unit_list := make([dynamic]^Unit)
+			append(&unit_list, u)
+
+			// Determine route and add to move list.
+			all_air := true
+			for v in unit_list {
+				if !is_air_p(is_air_c, v) {
+					all_air = false
+					break
+				}
+			}
+			if all_air {
+				cp, cc := pro_matches_territory_can_move_air_units_and_no_aa(
+					data,
+					player,
+					true,
+				)
+				pro_move_utils_active_cond = cp
+				pro_move_utils_active_cond_ctx = cc
+				route := game_map_get_route_for_unit(
+					gm,
+					start_territory,
+					t,
+					pro_move_utils_cond_trampoline,
+					u,
+					player,
+				)
+				if route != nil {
+					pro_move_utils_lambda__calculate_bombing_routes__2(
+						&moves,
+						unit_list,
+						route,
+					)
+				}
+			}
+		}
+	}
+	return moves
+}
+
 // games.strategy.triplea.ai.pro.util.ProMoveUtils#doMove(
 //     ProData, List<MoveDescription>, IMoveDelegate)
 //

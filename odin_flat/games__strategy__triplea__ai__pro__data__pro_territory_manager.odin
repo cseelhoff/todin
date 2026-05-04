@@ -1,5 +1,7 @@
 package game
 
+import "core:slice"
+
 Pro_Territory_Manager :: struct {
 	calc:                     ^Pro_Odds_Calculator,
 	pro_data:                 ^Pro_Data,
@@ -317,5 +319,456 @@ pro_territory_manager_get_unit_range :: proc(
 		return range
 	}
 	return unit_get_movement_left(unit)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findNavalMoveOptions(
+//     ProData, GamePlayer, List<Territory>, Map<Territory, ProTerritory>,
+//     Map<Unit, Set<Territory>>, Map<Unit, Set<Territory>>,
+//     Predicate<Territory>, List<Territory>, boolean, boolean)
+//
+// BigDecimal -> f64. Predicate<Territory> rendered with the rawptr-ctx
+// closure-capture convention. Java's `gameMap.getRouteForUnit(...)` is
+// expressed via `route_finder_new_with_units_player` +
+// `route_finder_find_route_by_cost_pair` because the bare
+// `game_map_get_route_for_unit` helper takes a non-capturing predicate
+// while our `canMove` Predicate (built from
+// `pro_matches_territory_can_move_sea_units*`) carries a ctx — same
+// substitution used in `pro_territory_value_utils_calculate_territory_value_to_targets`.
+// `Set<Territory>` is `map[^Territory]struct{}`; `List<Territory>`
+// produced by `CollectionUtils.getMatches` is materialized as
+// `[dynamic]^Territory`.
+pro_territory_manager_find_naval_move_options :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	my_unit_territories: [dynamic]^Territory,
+	move_map: map[^Territory]^Pro_Territory,
+	unit_move_map: map[^Unit]map[^Territory]struct {},
+	transport_move_map: map[^Unit]map[^Territory]struct {},
+	move_to_territory_match: proc(rawptr, ^Territory) -> bool,
+	move_to_territory_match_ctx: rawptr,
+	cleared_territories: [dynamic]^Territory,
+	is_combat_move: bool,
+	is_checking_enemy_attacks: bool,
+) {
+	data := pro_data_get_data(pro_data)
+	game_map := game_data_get_map(data)
+
+	can_move_p: proc(rawptr, ^Territory) -> bool
+	can_move_c: rawptr
+	if is_checking_enemy_attacks {
+		can_move_p, can_move_c = pro_matches_territory_can_move_sea_units(player, is_combat_move)
+	} else {
+		empty_not: [dynamic]^Territory
+		can_move_p, can_move_c =
+			pro_matches_territory_can_move_sea_units_through_or_cleared_and_not_in_list(
+				player,
+				is_combat_move,
+				cleared_territories,
+				empty_not,
+			)
+	}
+
+	owned_sea_p, owned_sea_c := pro_matches_unit_can_be_moved_and_is_owned_sea(
+		player,
+		is_combat_move,
+	)
+	sea_p, sea_c := pro_matches_territory_can_move_sea_units(player, is_combat_move)
+	transport_p, transport_c := matches_unit_is_sea_transport()
+
+	unit_move_map := unit_move_map
+	transport_move_map := transport_move_map
+
+	for my_unit_territory in my_unit_territories {
+		// myUnitTerritory.getMatches(ProMatches.unitCanBeMovedAndIsOwnedSea(player, isCombatMove))
+		my_sea_units := territory_get_matches(my_unit_territory, owned_sea_p, owned_sea_c)
+
+		for my_sea_unit in my_sea_units {
+			if is_combat_move && !is_checking_enemy_attacks {
+				carrier_map := move_validator_carrier_must_move_with_territory(
+					my_unit_territory,
+					player,
+				)
+				if carrying, ok := carrier_map[my_sea_unit]; ok && len(carrying) > 0 {
+					continue
+				}
+			}
+
+			range := pro_territory_manager_get_unit_range(
+				my_sea_unit,
+				my_unit_territory,
+				player,
+				is_checking_enemy_attacks,
+			)
+
+			possible_move_territories := game_map_get_neighbors_by_movement_cost(
+				game_map,
+				my_unit_territory,
+				range,
+				sea_p,
+				sea_c,
+			)
+			possible_move_territories[my_unit_territory] = {}
+
+			potential_territories: [dynamic]^Territory
+			for t in possible_move_territories {
+				if move_to_territory_match(move_to_territory_match_ctx, t) {
+					append(&potential_territories, t)
+				}
+			}
+			if !is_combat_move {
+				found := false
+				for t in potential_territories {
+					if t == my_unit_territory {
+						found = true
+						break
+					}
+				}
+				if !found {
+					append(&potential_territories, my_unit_territory)
+				}
+			}
+
+			units_one := make([dynamic]^Unit, 0, 1)
+			append(&units_one, my_sea_unit)
+
+			for potential_territory in potential_territories {
+				rf := route_finder_new_with_units_player(
+					game_map,
+					can_move_p,
+					can_move_c,
+					units_one,
+					player,
+				)
+				optional_route := route_finder_find_route_by_cost_pair(
+					rf,
+					my_unit_territory,
+					potential_territory,
+				)
+				if optional_route == nil {
+					continue
+				}
+				my_route_length := route_get_movement_cost(optional_route, my_sea_unit)
+				if my_route_length > range {
+					continue
+				}
+
+				pt := pro_data_get_pro_territory(pro_data, move_map, potential_territory)
+				pro_territory_add_max_unit(pt, my_sea_unit)
+
+				if transport_p(transport_c, my_sea_unit) {
+					inner, ok := transport_move_map[my_sea_unit]
+					if !ok {
+						inner = make(map[^Territory]struct {})
+					}
+					inner[potential_territory] = {}
+					transport_move_map[my_sea_unit] = inner
+				} else {
+					inner, ok := unit_move_map[my_sea_unit]
+					if !ok {
+						inner = make(map[^Territory]struct {})
+					}
+					inner[potential_territory] = {}
+					unit_move_map[my_sea_unit] = inner
+				}
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findBombardOptions(
+//     ProData, GamePlayer, List<Territory>, Map<Territory, ProTerritory>,
+//     Map<Unit, Set<Territory>>, List<ProTransport>, boolean)
+//
+// BigDecimal -> f64. Predicate<Territory> rendered with the ctx-form
+// convention. Set retainAll mirrored by intersecting with the unload-from
+// / unload-to membership sets. The route lookup is expressed through
+// `route_finder_*` for the same ctx-Predicate reason as
+// findNavalMoveOptions.
+pro_territory_manager_find_bombard_options :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	my_unit_territories: [dynamic]^Territory,
+	move_map: map[^Territory]^Pro_Territory,
+	bombard_map: map[^Unit]map[^Territory]struct {},
+	transport_map_list: [dynamic]^Pro_Transport,
+	is_checking_enemy_attacks: bool,
+) {
+	data := pro_data_get_data(pro_data)
+	game_map := game_data_get_map(data)
+
+	// Find all transport unload from and to territories.
+	unload_from_territories := make(map[^Territory]struct {})
+	unload_to_territories := make(map[^Territory]struct {})
+	for amphib_data in transport_map_list {
+		for t in pro_transport_get_sea_transport_map(amphib_data) {
+			unload_from_territories[t] = {}
+		}
+		for t in pro_transport_get_transport_map(amphib_data) {
+			unload_to_territories[t] = {}
+		}
+	}
+
+	can_move_p: proc(rawptr, ^Territory) -> bool
+	can_move_c: rawptr
+	if is_checking_enemy_attacks {
+		can_move_p, can_move_c = pro_matches_territory_can_move_sea_units(player, true)
+	} else {
+		can_move_p, can_move_c = pro_matches_territory_can_move_sea_units_through(player, true)
+	}
+
+	owned_bombard_p, owned_bombard_c := pro_matches_unit_can_be_moved_and_is_owned_bombard(player)
+	sea_p, sea_c := pro_matches_territory_can_move_sea_units(player, true)
+
+	bombard_map := bombard_map
+
+	for my_unit_territory in my_unit_territories {
+		my_sea_units := territory_get_matches(my_unit_territory, owned_bombard_p, owned_bombard_c)
+
+		for my_sea_unit in my_sea_units {
+			range := pro_territory_manager_get_unit_range(
+				my_sea_unit,
+				my_unit_territory,
+				player,
+				is_checking_enemy_attacks,
+			)
+
+			potential_territories := game_map_get_neighbors_by_movement_cost(
+				game_map,
+				my_unit_territory,
+				range,
+				sea_p,
+				sea_c,
+			)
+			potential_territories[my_unit_territory] = {}
+			// retainAll(unloadFromTerritories)
+			for t, _ in potential_territories {
+				if _, ok := unload_from_territories[t]; !ok {
+					delete_key(&potential_territories, t)
+				}
+			}
+
+			units_one := make([dynamic]^Unit, 0, 1)
+			append(&units_one, my_sea_unit)
+
+			for bombard_from_territory in potential_territories {
+				rf := route_finder_new_with_units_player(
+					game_map,
+					can_move_p,
+					can_move_c,
+					units_one,
+					player,
+				)
+				optional_route := route_finder_find_route_by_cost_pair(
+					rf,
+					my_unit_territory,
+					bombard_from_territory,
+				)
+				if optional_route == nil {
+					continue
+				}
+				my_route_length := route_get_movement_cost(optional_route, my_sea_unit)
+				if my_route_length > range {
+					continue
+				}
+
+				// new HashSet<>(gameMap.getNeighbors(bombardFromTerritory))
+				// then retainAll(unloadToTerritories).
+				neighbors := game_map_get_neighbors(game_map, bombard_from_territory)
+				bombard_to_territories := make(map[^Territory]struct {})
+				for n in neighbors {
+					if _, ok := unload_to_territories[n]; ok {
+						bombard_to_territories[n] = {}
+					}
+				}
+
+				for bombard_to_territory in bombard_to_territories {
+					if pt, in_map := move_map[bombard_to_territory]; in_map {
+						pro_territory_add_max_bombard_unit(pt, my_sea_unit)
+						pro_territory_add_bombard_options_map(
+							pt,
+							my_sea_unit,
+							bombard_from_territory,
+						)
+					}
+				}
+
+				inner, ok := bombard_map[my_sea_unit]
+				if !ok {
+					inner = make(map[^Territory]struct {})
+				}
+				for t in bombard_to_territories {
+					inner[t] = {}
+				}
+				bombard_map[my_sea_unit] = inner
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#isLandMoveOption(
+//     boolean, GamePlayer, Unit, Territory, Territory, BigDecimal,
+//     Predicate<Territory>)
+//
+// BigDecimal -> f64. Predicate<Territory> rendered with the rawptr-ctx
+// convention. The route lookup uses `route_finder_*` for the same reason
+// as findNavalMoveOptions (capturing canMove Predicate).
+pro_territory_manager_is_land_move_option :: proc(
+	is_combat_move: bool,
+	player: ^Game_Player,
+	u: ^Unit,
+	from: ^Territory,
+	to: ^Territory,
+	range: f64,
+	can_move: proc(rawptr, ^Territory) -> bool,
+	can_move_ctx: rawptr,
+) -> bool {
+	game_map := game_data_get_map(game_player_get_data(player))
+	units_one := make([dynamic]^Unit, 0, 1)
+	append(&units_one, u)
+	rf := route_finder_new_with_units_player(game_map, can_move, can_move_ctx, units_one, player)
+	optional_route := route_finder_find_route_by_cost_pair(rf, from, to)
+	if optional_route == nil {
+		return false
+	}
+	route := optional_route
+	if route_has_more_than_one_step(route) {
+		middle_steps := route_get_middle_steps(route)
+		enemy_p, enemy_c := matches_is_territory_enemy(player)
+		any_enemy := false
+		for ms in middle_steps {
+			if enemy_p(enemy_c, ms) {
+				any_enemy = true
+				break
+			}
+		}
+		if any_enemy {
+			lost_blitz_types := territory_effect_helper_get_unit_types_that_lost_blitz(
+				route_get_all_territories(route),
+			)
+			of_types_p, of_types_c := matches_unit_is_of_types(lost_blitz_types)
+			if of_types_p(of_types_c, u) {
+				// If blitzing then make sure none of the territories
+				// cause blitz ability to be lost.
+				return false
+			}
+		}
+	}
+	if route_get_movement_cost(route, u) > range {
+		return false
+	}
+
+	// Skip units that can't participate in combat during combat moves except
+	// for land transports.
+	if is_combat_move {
+		land_transport_p, land_transport_c := matches_unit_is_land_transport()
+		if !land_transport_p(land_transport_c, u) {
+			enemy_unit_p, enemy_unit_c := matches_unit_is_enemy_of(player)
+			to_units := territory_get_units(to)
+			enemy_units: [dynamic]^Unit
+			for tu in to_units {
+				if enemy_unit_p(enemy_unit_c, tu) {
+					append(&enemy_units, tu)
+				}
+			}
+			combat_p, combat_c := matches_unit_can_participate_in_combat(
+				true,
+				player,
+				to,
+				1,
+				enemy_units,
+			)
+			return combat_p(combat_c, u)
+		}
+	}
+	return true
+}
+
+// File-scope holder for the comparator used to sort scramblers by
+// estimated strength. slice.sort_by takes a non-capturing
+// `proc(a, b) -> bool`, so the captured destination Territory is parked
+// here. findScrambleOptions is single-threaded and the comparator is
+// only consulted while the holder is set, mirroring the sibling
+// find_closest_territory pattern.
+@(private = "file")
+pro_territory_manager_find_scramble_options_active_to: ^Territory
+
+@(private = "file")
+pro_territory_manager_find_scramble_options_strength_descending :: proc(a: ^Unit, b: ^Unit) -> bool {
+	to := pro_territory_manager_find_scramble_options_active_to
+	empty: [dynamic]^Unit
+	one_a := make([dynamic]^Unit, 0, 1)
+	append(&one_a, a)
+	one_b := make([dynamic]^Unit, 0, 1)
+	append(&one_b, b)
+	sa := pro_battle_utils_estimate_strength(to, one_a, empty, false)
+	sb := pro_battle_utils_estimate_strength(to, one_b, empty, false)
+	return sa > sb
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findScrambleOptions(
+//     ProData, GamePlayer, Map<Territory, ProTerritory>)
+//
+// Mirrors the Java body verbatim: bails out when scramble rules are off,
+// delegates per-destination scramble enumeration to ScrambleLogic, and
+// either appends every scrambler to the destination's max-scramble list
+// (when there is room) or sorts the scrambler set by descending strength
+// estimate and appends the top `maxCanScramble`. The Java sort is
+// `Comparator.comparingDouble(strength).reversed()` followed by
+// `limit(maxCanScramble).forEachOrdered(addTo::add)` — translated as a
+// non-capturing comparator parked through a file-scope holder, since
+// slice.sort_by takes a bare `proc(a, b) -> bool`.
+pro_territory_manager_find_scramble_options :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	move_map: map[^Territory]^Pro_Territory,
+) {
+	data := pro_data_get_data(pro_data)
+	if !properties_get_scramble_rules_in_effect(game_data_get_properties(data)) {
+		return
+	}
+
+	territories_with_battles := make(map[^Territory]struct {})
+	for t, _ in move_map {
+		territories_with_battles[t] = {}
+	}
+	scramble_logic := scramble_logic_new_with_battles(
+		&data.game_state,
+		player,
+		territories_with_battles,
+	)
+
+	by_destination := scramble_logic_get_units_that_can_scramble_by_destination(scramble_logic)
+	for to, inner in by_destination {
+		for _, airbases_and_scramblers in inner {
+			airbases := tuple_get_first(airbases_and_scramblers)
+			scramblers := tuple_get_second(airbases_and_scramblers)
+			max_can_scramble := scramble_logic_get_max_scramble_count(airbases)
+
+			pt := move_map[to]
+			if i32(len(scramblers)) <= max_can_scramble {
+				for u in scramblers {
+					append(&pt.max_scramble_units, u)
+				}
+			} else {
+				sorted := make([dynamic]^Unit, 0, len(scramblers))
+				for u in scramblers {
+					append(&sorted, u)
+				}
+				pro_territory_manager_find_scramble_options_active_to = to
+				slice.sort_by(
+					sorted[:],
+					pro_territory_manager_find_scramble_options_strength_descending,
+				)
+				count: i32 = 0
+				for u in sorted {
+					if count >= max_can_scramble {
+						break
+					}
+					append(&pt.max_scramble_units, u)
+					count += 1
+				}
+			}
+		}
+	}
 }
 

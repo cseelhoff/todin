@@ -2651,3 +2651,79 @@ pro_matches_territory_is_or_adjacent_to_enemy_not_neutral_land :: proc(
 	return pro_matches_pred_territory_is_or_adjacent_to_enemy_not_neutral_land, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// territoryIsAlliedLandAndHasNoEnemyNeighbors(player) -> Predicate<Territory>
+//   alliedLand        = territoryCanMoveLandUnits(player, false)
+//                          .and(Matches.isTerritoryAllied(player))
+//   hasNoEnemyNeighbors = territoryHasNeighborMatching(
+//                            map, territoryIsEnemyNotPassiveNeutralLand(player)
+//                         ).negate()
+//   return alliedLand.and(hasNoEnemyNeighbors)
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_allied_land_and_has_no_enemy_neighbors :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_allied_land_and_has_no_enemy_neighbors :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_allied_land_and_has_no_enemy_neighbors)ctx_ptr
+	l_p, l_c := pro_matches_territory_can_move_land_units(ctx.player, false)
+	if !l_p(l_c, t) {
+		return false
+	}
+	a_p, a_c := matches_is_territory_allied(ctx.player)
+	if !a_p(a_c, t) {
+		return false
+	}
+	game_map := game_data_get_map(game_player_get_data(ctx.player))
+	inner_p, inner_c := pro_matches_territory_is_enemy_not_passive_neutral_land(ctx.player)
+	hn_p, hn_c := matches_territory_has_neighbor_matching(game_map, inner_p, inner_c)
+	return !hn_p(hn_c, t)
+}
+
+pro_matches_territory_is_allied_land_and_has_no_enemy_neighbors :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_allied_land_and_has_no_enemy_neighbors)
+	ctx.player = player
+	return pro_matches_pred_territory_is_allied_land_and_has_no_enemy_neighbors, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsEnemyNotPassiveNeutralOrAllied(player) -> Predicate<Territory>
+//   == territoryIsEnemyNotPassiveNeutralLand(player)
+//        .or(Matches.territoryIsLand().and(Matches.isTerritoryAllied(player)))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_or_allied :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_enemy_not_passive_neutral_or_allied :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_or_allied)ctx_ptr
+	enpn_p, enpn_c := pro_matches_territory_is_enemy_not_passive_neutral_land(ctx.player)
+	if enpn_p(enpn_c, t) {
+		return true
+	}
+	il_p, il_c := matches_territory_is_land()
+	if !il_p(il_c, t) {
+		return false
+	}
+	a_p, a_c := matches_is_territory_allied(ctx.player)
+	return a_p(a_c, t)
+}
+
+pro_matches_territory_is_enemy_not_passive_neutral_or_allied :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_or_allied)
+	ctx.player = player
+	return pro_matches_pred_territory_is_enemy_not_passive_neutral_or_allied, rawptr(ctx)
+}
+

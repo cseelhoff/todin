@@ -405,3 +405,47 @@ pro_odds_calculator_calculate_battle_results_6 :: proc(
 	)
 }
 
+// Java: ProOddsCalculator#calculateBattleResults (public, 5-arg)
+//   return calculateBattleResults(
+//       proData, t, attackingUnits, defendingUnits, bombardingUnits, true);
+pro_odds_calculator_calculate_battle_results :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_calculate_battle_results_6(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		true,
+	)
+}
+
+// Java: ProOddsCalculator#calculateBattleResultsNoSubmerge
+//   return calculateBattleResults(
+//       proData, t, attackingUnits, defendingUnits, bombardingUnits, false);
+pro_odds_calculator_calculate_battle_results_no_submerge :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_calculate_battle_results_6(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		false,
+	)
+}
+

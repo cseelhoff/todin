@@ -2,6 +2,136 @@ package game
 
 Pro_Simulate_Turn_Utils :: struct {}
 
+// games.strategy.triplea.ai.pro.simulate.ProSimulateTurnUtils#simulateBattles(ProData, GameData, GamePlayer, IDelegateBridge, ProOddsCalculator)
+//
+// Java: walks every pending battle in `data.getBattleDelegate().getBattleListing()`,
+// runs the battle calculator, then mutates the game state via change-factory
+// changes (kill remaining attackers/defenders, transfer infrastructure, change
+// territory ownership unless the territory is an allied capital, mark conquered,
+// and remove the battle from the tracker). ProLogger calls are dropped, matching
+// the convention used by the rest of this file.
+pro_simulate_turn_utils_simulate_battles :: proc(
+	pro_data: ^Pro_Data,
+	data: ^Game_Data,
+	player: ^Game_Player,
+	delegate_bridge: ^I_Delegate_Bridge,
+	calc: ^Pro_Odds_Calculator,
+) {
+	battle_delegate := game_data_get_battle_delegate(data)
+	battle_territories := battle_listing_get_battles_map(
+		battle_delegate_get_battle_listing(battle_delegate),
+	)
+	infra_pred, infra_ctx := matches_unit_is_infrastructure()
+	for battle_type, territories in battle_territories {
+		for t in territories {
+			battle := battle_tracker_get_pending_battle(
+				battle_delegate_get_battle_tracker(battle_delegate),
+				t,
+				battle_type,
+			)
+			territory_units := territory_get_unit_collection(t)
+			// new ArrayList<>(battle.getAttackingUnits()).retainAll(t.getUnits())
+			attackers: [dynamic]^Unit
+			for u in i_battle_get_attacking_units(battle) {
+				for tu in territory_units.units {
+					if tu == u {
+						append(&attackers, u)
+						break
+					}
+				}
+			}
+			defenders: [dynamic]^Unit
+			for u in i_battle_get_defending_units(battle) {
+				for tu in territory_units.units {
+					if tu == u {
+						append(&defenders, u)
+						break
+					}
+				}
+			}
+			bombarding_units := i_battle_get_bombarding_units(battle)
+
+			result := pro_odds_calculator_call_battle_calc_5(
+				calc,
+				pro_data,
+				t,
+				attackers,
+				defenders,
+				bombarding_units,
+			)
+			remaining_attackers := pro_battle_result_get_average_attackers_remaining(result)
+			remaining_defenders := pro_battle_result_get_average_defenders_remaining(result)
+
+			// attackersToRemove = new ArrayList<>(attackers); attackersToRemove.removeAll(remainingAttackers)
+			attackers_to_remove: [dynamic]^Unit
+			for a in attackers {
+				keep := false
+				for r in remaining_attackers {
+					if r == a {
+						keep = true
+						break
+					}
+				}
+				if !keep {
+					append(&attackers_to_remove, a)
+				}
+			}
+			// defendersToRemove = getMatches(defenders, !infrastructure); .removeAll(remainingDefenders)
+			defenders_to_remove: [dynamic]^Unit
+			for d in defenders {
+				if infra_pred(infra_ctx, d) {
+					continue
+				}
+				keep := false
+				for r in remaining_defenders {
+					if r == d {
+						keep = true
+						break
+					}
+				}
+				if !keep {
+					append(&defenders_to_remove, d)
+				}
+			}
+			// infrastructureToChangeOwner = getMatches(defenders, infrastructure)
+			infrastructure_to_change_owner: [dynamic]^Unit
+			for d in defenders {
+				if infra_pred(infra_ctx, d) {
+					append(&infrastructure_to_change_owner, d)
+				}
+			}
+			_ = infrastructure_to_change_owner
+
+			territory_holder := cast(^Unit_Holder)t
+			attackers_killed_change := change_factory_remove_units(
+				territory_holder,
+				attackers_to_remove,
+			)
+			i_delegate_bridge_add_change(delegate_bridge, attackers_killed_change)
+			defenders_killed_change := change_factory_remove_units(
+				territory_holder,
+				defenders_to_remove,
+			)
+			i_delegate_bridge_add_change(delegate_bridge, defenders_killed_change)
+			battle_tracker_capture_or_destroy_units(t, player, player, delegate_bridge, nil)
+			if !pro_simulate_turn_utils_check_if_captured_territory_is_allied_capital(
+				t,
+				&data.game_state,
+				player,
+				delegate_bridge,
+			) {
+				i_delegate_bridge_add_change(
+					delegate_bridge,
+					change_factory_change_owner(t, player),
+				)
+			}
+			tracker := battle_delegate_get_battle_tracker(battle_delegate)
+			tracker.conquered[t] = {}
+			battle_tracker_remove_battle(tracker, battle, data)
+		}
+	}
+}
+
 // games.strategy.triplea.ai.pro.simulate.ProSimulateTurnUtils#transferMoveMap(ProData, Map<Territory,ProTerritory>, GameState, GamePlayer)
 //
 // Java:

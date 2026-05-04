@@ -501,3 +501,215 @@ pro_non_combat_move_ai_log_attack_moves :: proc(
 	}
 }
 
+// File-scope holder bridging a ctx-form Predicate<Territory>
+// (canMoveThrough) into the bare-`proc(^Territory) -> bool` cond consumed
+// by `game_map_get_route_for_unit`, `game_map_get_route_for_unit_or_else_throw`,
+// and `breadth_first_search_new_with_predicate`. The
+// `find_destination_or_safe_territory_on_the_way` method is single-threaded
+// and constructed-then-traversed; the holder is set immediately before
+// each route lookup / BFS construction, matching the holder pattern used
+// by `breadth_first_search.odin` and `pro_territory_manager.odin`.
+@(private = "file")
+pro_non_combat_move_ai_active_can_move_through: proc(rawptr, ^Territory) -> bool
+
+@(private = "file")
+pro_non_combat_move_ai_active_can_move_through_ctx: rawptr
+
+@(private = "file")
+pro_non_combat_move_ai_can_move_through_trampoline :: proc(t: ^Territory) -> bool {
+	return pro_non_combat_move_ai_active_can_move_through(
+		pro_non_combat_move_ai_active_can_move_through_ctx,
+		t,
+	)
+}
+
+// Lambda: findDestinationOrSafeTerritoryOnTheWay  bfs.traverse((t, distance) -> { ... })
+// Java synthetic name: lambda$findDestinationOrSafeTerritoryOnTheWay$15.
+// Captures finalDestinationTest, from, canMoveThrough, unit, moveMap,
+// validateMove, and destination (MutableObject<Territory> -> ^^Territory)
+// per Java desugaring (passed as leading params). `this` (self) is the
+// implicit receiver for the synthetic instance lambda — it carries
+// `self.data`, `self.pro_data`, and `self.player`.
+pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__15 :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	final_destination_test: proc(rawptr, ^Territory) -> bool,
+	final_destination_test_ctx: rawptr,
+	from: ^Territory,
+	can_move_through: proc(rawptr, ^Territory) -> bool,
+	can_move_through_ctx: rawptr,
+	unit: ^Unit,
+	move_map: map[^Territory]^Pro_Territory,
+	validate_move: proc(rawptr, ^Route) -> bool,
+	validate_move_ctx: rawptr,
+	destination: ^^Territory,
+	t: ^Territory,
+	distance: i32,
+) -> bool {
+	// If it's a desired final destination, see if we can move towards it.
+	if final_destination_test(final_destination_test_ctx, t) {
+		pro_non_combat_move_ai_active_can_move_through = can_move_through
+		pro_non_combat_move_ai_active_can_move_through_ctx = can_move_through_ctx
+		route := game_map_get_route_for_unit(
+			game_data_get_map(self.data),
+			from,
+			t,
+			pro_non_combat_move_ai_can_move_through_trampoline,
+			unit,
+			self.player,
+		)
+		if route != nil {
+			for route_has_steps(route) {
+				pro_destination := pro_data_get_pro_territory(
+					self.pro_data,
+					move_map,
+					route_get_end(route),
+				)
+				if pro_territory_is_can_hold(pro_destination) &&
+				   validate_move(validate_move_ctx, route) {
+					destination^ = route_get_end(route)
+					// End the search.
+					return false
+				}
+				route = route_new(from, route_get_middle_steps(route))
+			}
+		}
+	}
+	return true
+}
+
+// Visitor adapter for the bfs.traverse lambda inside
+// findDestinationOrSafeTerritoryOnTheWay. Captures the lambda's full
+// closure (predicates with their ctx, the route-building inputs, the
+// MutableObject<Territory> out-param as ^^Territory, and `self`) so the
+// synthetic lambda$15 can be invoked from the Breadth_First_Search_Visitor
+// vtable slot, mirroring Pro_Territory_Manager_Find_Closest_Territory_Visitor.
+Pro_Non_Combat_Move_Ai_Find_Destination_Visitor :: struct {
+	using visitor:              Breadth_First_Search_Visitor,
+	self_ai:                    ^Pro_Non_Combat_Move_Ai,
+	final_destination_test:     proc(rawptr, ^Territory) -> bool,
+	final_destination_test_ctx: rawptr,
+	from:                       ^Territory,
+	can_move_through:           proc(rawptr, ^Territory) -> bool,
+	can_move_through_ctx:       rawptr,
+	unit:                       ^Unit,
+	move_map:                   map[^Territory]^Pro_Territory,
+	validate_move:              proc(rawptr, ^Route) -> bool,
+	validate_move_ctx:          rawptr,
+	destination:                ^^Territory,
+}
+
+@(private = "file")
+pro_non_combat_move_ai_find_destination_visit :: proc(
+	self: ^Breadth_First_Search_Visitor,
+	territory: ^Territory,
+	distance: i32,
+) -> bool {
+	me := cast(^Pro_Non_Combat_Move_Ai_Find_Destination_Visitor)self
+	return pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__15(
+		me.self_ai,
+		me.final_destination_test,
+		me.final_destination_test_ctx,
+		me.from,
+		me.can_move_through,
+		me.can_move_through_ctx,
+		me.unit,
+		me.move_map,
+		me.validate_move,
+		me.validate_move_ctx,
+		me.destination,
+		territory,
+		distance,
+	)
+}
+
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#findDestinationOrSafeTerritoryOnTheWay(Unit, Collection<Territory>, Predicate<Route>, Predicate<Territory>, Predicate<Territory>)
+// Java: returns Optional<Territory>; modeled in Odin as ^Territory (nil = empty).
+//
+// possibleMoves: the per-unit reachable set from `infraUnitMoveMap.get(u)`,
+// which the existing port stores as `map[^Territory]struct{}`.
+// MutableObject<Territory> destination is modeled as a local `^Territory`
+// (the visitor receives `&destination`), matching the convention used by
+// `pro_territory_manager_find_closest_territory`.
+pro_non_combat_move_ai_find_destination_or_safe_territory_on_the_way :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	unit: ^Unit,
+	possible_moves: map[^Territory]struct {},
+	validate_move: proc(rawptr, ^Route) -> bool,
+	validate_move_ctx: rawptr,
+	can_move_through: proc(rawptr, ^Territory) -> bool,
+	can_move_through_ctx: rawptr,
+	final_destination_test: proc(rawptr, ^Territory) -> bool,
+	final_destination_test_ctx: rawptr,
+) -> ^Territory {
+	from := self.unit_territory_map[unit]
+	if final_destination_test(final_destination_test_ctx, from) {
+		// Already at a desired destination, no need to move.
+		return from
+	}
+	pro_non_combat_move_ai_active_can_move_through = can_move_through
+	pro_non_combat_move_ai_active_can_move_through_ctx = can_move_through_ctx
+	game_map_ref := game_data_get_map(self.data)
+	for t, _ in possible_moves {
+		if !final_destination_test(final_destination_test_ctx, t) {
+			continue
+		}
+		r := game_map_get_route_for_unit_or_else_throw(
+			game_map_ref,
+			from,
+			t,
+			pro_non_combat_move_ai_can_move_through_trampoline,
+			unit,
+			self.player,
+		)
+		if validate_move(validate_move_ctx, r) {
+			// Found a reachable destination. Return directly.
+			return t
+		}
+	}
+
+	move_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+	// No destination can be reached directly. Consider multi-turn moves.
+	// Move to a territory that can be held on a path to a final destination.
+	destination: ^Territory = nil
+	start_territories := make([dynamic]^Territory, 0, 1)
+	append(&start_territories, from)
+	bfs := breadth_first_search_new_with_predicate(
+		start_territories,
+		pro_non_combat_move_ai_can_move_through_trampoline,
+	)
+	visitor := new(Pro_Non_Combat_Move_Ai_Find_Destination_Visitor)
+	visitor.visit = pro_non_combat_move_ai_find_destination_visit
+	visitor.self_ai = self
+	visitor.final_destination_test = final_destination_test
+	visitor.final_destination_test_ctx = final_destination_test_ctx
+	visitor.from = from
+	visitor.can_move_through = can_move_through
+	visitor.can_move_through_ctx = can_move_through_ctx
+	visitor.unit = unit
+	visitor.move_map = move_map
+	visitor.validate_move = validate_move
+	visitor.validate_move_ctx = validate_move_ctx
+	visitor.destination = &destination
+	breadth_first_search_traverse(bfs, &visitor.visitor)
+
+	// If nothing chosen and we can't hold the current territory, try to move
+	// somewhere safe. Mirrors Java:
+	//   possibleMoves.stream().filter(t -> canHold(moveMap, t)).findAny()
+	//                .ifPresent(destination::setValue);
+	if destination == nil && !pro_territory_is_can_hold(move_map[from]) {
+		for t, _ in possible_moves {
+			if pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__16(
+				self,
+				move_map,
+				t,
+			) {
+				destination = t
+				break
+			}
+		}
+	}
+	return destination
+}
+

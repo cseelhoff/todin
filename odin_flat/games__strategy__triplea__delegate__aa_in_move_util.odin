@@ -107,6 +107,33 @@ aa_in_move_util_get_territories_where_aa_will_fire :: proc(
 	return territories_where_aa_will_fire
 }
 
+// games.strategy.triplea.delegate.AaInMoveUtil#fireAa(games.strategy.engine.data.Route,java.util.Collection,java.util.Comparator,games.strategy.triplea.delegate.UndoableMove)
+//
+// Java's `Comparator<Unit> decreasingMovement` is modeled as the
+// closure-capable pair (less-proc + rawptr ctx) — see
+// aa_in_move_util_populate_execution_stack below.
+aa_in_move_util_fire_aa :: proc(
+	self: ^Aa_In_Move_Util,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	decreasing_movement: proc(rawptr, ^Unit, ^Unit) -> bool,
+	decreasing_movement_ctx: rawptr,
+	current_move: ^Undoable_Move,
+) -> [dynamic]^Unit {
+	if execution_stack_is_empty(self.execution_stack) {
+		aa_in_move_util_populate_execution_stack(
+			self,
+			route,
+			units,
+			decreasing_movement,
+			decreasing_movement_ctx,
+			current_move,
+		)
+	}
+	execution_stack_execute(self.execution_stack, self.bridge)
+	return self.casualties
+}
+
 // games.strategy.triplea.delegate.AaInMoveUtil#populateExecutionStack(games.strategy.engine.data.Route,java.util.Collection,java.util.Comparator,games.strategy.triplea.delegate.UndoableMove)
 //
 // Java's `Comparator<Unit> decreasingMovement` is modeled as the
