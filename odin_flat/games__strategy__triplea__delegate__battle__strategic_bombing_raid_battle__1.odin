@@ -201,3 +201,61 @@ strategic_bombing_raid_battle_1_kill_any_suicide_attackers :: proc(
 	outer.attacker_lost_tuv += tuv_lost_attacker
 }
 
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$1#execute
+//
+// Java:
+//   bridge.getDisplayChannelBroadcaster().gotoBattleStep(battleId, RAID);
+//   addPostBombingToHistory(bridge);
+//   if ((Properties.getPacificTheater(gameData.getProperties())
+//           || Properties.getSbrVictoryPoints(gameData.getProperties()))
+//       && defender.getName().equals(Constants.PLAYER_NAME_JAPANESE)) {
+//     final PlayerAttachment pa = PlayerAttachment.get(defender);
+//     if (pa != null) {
+//       final Change changeVp = ChangeFactory.attachmentPropertyChange(
+//           pa, (-(bombingRaidTotal / 10) + pa.getVps()), "vps");
+//       bridge.addChange(changeVp);
+//       bridge.getHistoryWriter().addChildToEvent(MessageFormat.format(
+//           "Bombing raid costs {0} {1}",
+//           bombingRaidTotal / 10,
+//           MyFormatter.pluralize("vp", (bombingRaidTotal / 10))));
+//     }
+//   }
+//   killAnySuicideAttackers(bridge);
+//   killAnyWithMaxDamageReached(bridge);
+strategic_bombing_raid_battle_1_execute :: proc(
+	self: ^Strategic_Bombing_Raid_Battle_1,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	_ = stack
+	outer := self.outer
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_goto_battle_step(display, outer.battle_id, "Strategic bombing raid")
+	strategic_bombing_raid_battle_1_add_post_bombing_to_history(self, bridge)
+
+	props := game_data_get_properties(outer.game_data)
+	if (properties_get_pacific_theater(props) || properties_get_sbr_victory_points(props)) &&
+	   outer.defender.name == "Japanese" {
+		pa := player_attachment_get(outer.defender)
+		if pa != nil {
+			new_value := new(i32)
+			new_value^ = -(outer.bombing_raid_total / 10) + player_attachment_get_vps(pa)
+			change_vp := change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(pa),
+				rawptr(new_value),
+				"vps",
+			)
+			i_delegate_bridge_add_change(bridge, change_vp)
+			history_writer := i_delegate_bridge_get_history_writer(bridge)
+			msg := fmt.aprintf(
+				"Bombing raid costs %d %s",
+				outer.bombing_raid_total / 10,
+				my_formatter_pluralize_quantity("vp", outer.bombing_raid_total / 10),
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+		}
+	}
+	strategic_bombing_raid_battle_1_kill_any_suicide_attackers(self, bridge)
+	strategic_bombing_raid_battle_1_kill_any_with_max_damage_reached(self, bridge)
+}
+

@@ -42,6 +42,10 @@ Player :: struct {
                 current_territory: ^Territory,
                 unit_message: string,
         ) -> ^Territory,
+        select_kamikaze_suicide_attacks: proc(
+                self: ^Player,
+                possible_units_to_attack: map[^Territory][dynamic]^Unit,
+        ) -> map[^Territory]map[^Unit]Integer_Map_Resource,
 }
 
 // games.strategy.engine.player.Player#getNumberOfFightersToMoveToNewCarrier(Collection, Territory)
@@ -153,5 +157,23 @@ player_select_territory_for_air_to_land :: proc(
 		return candidates[0]
 	}
 	return nil
+}
+
+// games.strategy.engine.player.Player#selectKamikazeSuicideAttacks(java.util.Map)
+//   Vtable dispatch through the proc field. Java declares the result
+//   @Nullable; AI implementations (AbstractAi, DummyPlayer) return
+//   null when no kamikaze attacks are chosen. The snapshot harness
+//   runs single-threaded with deterministic AI, so a nil dispatch
+//   field is treated as "no kamikaze attacks" — return an empty map
+//   so callers iterating the result get well-defined zero-iteration
+//   behaviour without a separate null check.
+player_select_kamikaze_suicide_attacks :: proc(
+	self: ^Player,
+	possible_units_to_attack: map[^Territory][dynamic]^Unit,
+) -> map[^Territory]map[^Unit]Integer_Map_Resource {
+	if self != nil && self.select_kamikaze_suicide_attacks != nil {
+		return self.select_kamikaze_suicide_attacks(self, possible_units_to_attack)
+	}
+	return make(map[^Territory]map[^Unit]Integer_Map_Resource)
 }
 

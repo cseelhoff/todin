@@ -1948,4 +1948,80 @@ must_fight_battle_remove_units :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#clearWaitingToDieAndDamagedChangesInto(IDelegateBridge, BattleState.Side...)
+//
+//   for (final Side side : sides) {
+//     if (side == OFFENSE) {
+//       Collection<Unit> killed = CollectionUtils.getMatches(
+//           killedDuringCurrentRound, Matches.unitIsOwnedBy(attacker));
+//       damagedChangeInto(attacker, attackingUnits, killed, bridge, side);
+//       removeUnits(attackingWaitingToDie, bridge, battleSite, side);
+//       attackingWaitingToDie.clear();
+//     } else {
+//       Collection<Unit> killed = CollectionUtils.getMatches(
+//           killedDuringCurrentRound, Matches.unitIsOwnedBy(attacker).negate());
+//       damagedChangeInto(defender, defendingUnits, killed, bridge, side);
+//       removeUnits(defendingWaitingToDie, bridge, battleSite, side);
+//       defendingWaitingToDie.clear();
+//     }
+//   }
+//   killedDuringCurrentRound.clear();
+must_fight_battle_clear_waiting_to_die_and_damaged_changes_into :: proc(
+	self: ^Must_Fight_Battle,
+	bridge: ^I_Delegate_Bridge,
+	sides: ..Battle_State_Side,
+) {
+	owned_pred, owned_ctx := matches_unit_is_owned_by(self.attacker)
+	for side in sides {
+		if side == .OFFENSE {
+			killed: [dynamic]^Unit
+			for u in self.killed_during_current_round {
+				if owned_pred(owned_ctx, u) {
+					append(&killed, u)
+				}
+			}
+			must_fight_battle_damaged_change_into(
+				self,
+				self.attacker,
+				self.attacking_units,
+				killed,
+				bridge,
+				side,
+			)
+			must_fight_battle_remove_units(
+				self,
+				self.attacking_waiting_to_die,
+				bridge,
+				self.battle_site,
+				side,
+			)
+			clear(&self.attacking_waiting_to_die)
+		} else {
+			killed: [dynamic]^Unit
+			for u in self.killed_during_current_round {
+				if !owned_pred(owned_ctx, u) {
+					append(&killed, u)
+				}
+			}
+			must_fight_battle_damaged_change_into(
+				self,
+				self.defender,
+				self.defending_units,
+				killed,
+				bridge,
+				side,
+			)
+			must_fight_battle_remove_units(
+				self,
+				self.defending_waiting_to_die,
+				bridge,
+				self.battle_site,
+				side,
+			)
+			clear(&self.defending_waiting_to_die)
+		}
+	}
+	clear(&self.killed_during_current_round)
+}
+
 

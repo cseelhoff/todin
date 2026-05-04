@@ -14,3 +14,7 @@ must_fight_battle_28_new :: proc(outer: ^Must_Fight_Battle) -> ^Must_Fight_Battl
 	return self
 }
 
+must_fight_battle_28_execute :: proc(self: ^Must_Fight_Battle_28, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_push_fight_loop_on_stack(self.this_0)
+}
+

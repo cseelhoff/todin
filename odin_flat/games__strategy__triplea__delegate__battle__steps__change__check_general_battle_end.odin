@@ -267,3 +267,19 @@ check_general_battle_end_is_stalemate :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#execute
+check_general_battle_end_execute :: proc(
+	self: ^Check_General_Battle_End,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if check_general_battle_end_has_side_lost(self, .OFFENSE) {
+		battle_actions_end_battle(self.battle_actions, .DEFENDER, bridge)
+	} else if check_general_battle_end_has_side_lost(self, .DEFENSE) {
+		battle_actions_end_battle(self.battle_actions, .ATTACKER, bridge)
+	} else if check_general_battle_end_is_stalemate(self) &&
+	   !check_general_battle_end_can_attacker_retreat_in_stalemate(self) {
+		battle_actions_end_battle(self.battle_actions, .DRAW, bridge)
+	}
+}
+
