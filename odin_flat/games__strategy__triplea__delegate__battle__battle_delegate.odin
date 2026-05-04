@@ -763,3 +763,52 @@ battle_delegate_move_air_and_land :: proc(
 	defending_air_total^ = keep
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#landPlanesOnCarriers(IDelegateBridge, Predicate<Unit>, Collection<Unit>, Predicate<Unit>, Predicate<Unit>, Territory, Territory)
+// Java: private static. Compute the free carrier capacity in newTerritory
+// (carrierCapacity(allied carriers there) - carrierCost(allied planes there)),
+// then take up to that many of the still-defending air units that match
+// alliedDefendingAir and hand them to moveAirAndLand for the actual landing.
+// Assumes each defending air unit costs 1 carrier slot (matches Java's TODO).
+battle_delegate_land_planes_on_carriers :: proc(
+	bridge: ^I_Delegate_Bridge,
+	allied_defending_air: proc(^Unit) -> bool,
+	defending_air: ^[dynamic]^Unit,
+	allied_carrier: proc(^Unit) -> bool,
+	allied_plane: proc(^Unit) -> bool,
+	new_territory: ^Territory,
+	battle_site: ^Territory,
+) {
+	new_uc := territory_get_unit_collection(new_territory)
+	allied_carriers_selected := unit_collection_get_matches(new_uc, allied_carrier)
+	allied_planes_selected := unit_collection_get_matches(new_uc, allied_plane)
+	allied_carrier_capacity_selected := air_movement_validator_carrier_capacity(
+		allied_carriers_selected[:],
+		new_territory,
+	)
+	allied_plane_cost_selected := air_movement_validator_carrier_cost(
+		allied_planes_selected[:],
+	)
+	territory_capacity := allied_carrier_capacity_selected - allied_plane_cost_selected
+	if territory_capacity > 0 {
+		// CollectionUtils.getNMatches(defendingAir, territoryCapacity, alliedDefendingAir)
+		moving_air := make([dynamic]^Unit)
+		count: i32 = 0
+		for u in defending_air {
+			if count >= territory_capacity {
+				break
+			}
+			if allied_defending_air(u) {
+				append(&moving_air, u)
+				count += 1
+			}
+		}
+		battle_delegate_move_air_and_land(
+			bridge,
+			&moving_air,
+			defending_air,
+			new_territory,
+			battle_site,
+		)
+	}
+}
+

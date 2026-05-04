@@ -106,3 +106,54 @@ aa_in_move_util_get_territories_where_aa_will_fire :: proc(
 	}
 	return territories_where_aa_will_fire
 }
+
+// games.strategy.triplea.delegate.AaInMoveUtil#populateExecutionStack(games.strategy.engine.data.Route,java.util.Collection,java.util.Comparator,games.strategy.triplea.delegate.UndoableMove)
+//
+// Java's `Comparator<Unit> decreasingMovement` is modeled as the
+// closure-capable pair (less-proc + rawptr ctx). The proc returns
+// true when its first argument should sort strictly before the
+// second (i.e. Java's `compare(a, b) < 0`). Java's
+// `targets.sort(decreasingMovement)` becomes an in-place insertion
+// sort over the captured comparator, matching the convention used
+// elsewhere in the port (see pro_transport_utils).
+aa_in_move_util_populate_execution_stack :: proc(
+	self: ^Aa_In_Move_Util,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	decreasing_movement: proc(rawptr, ^Unit, ^Unit) -> bool,
+	decreasing_movement_ctx: rawptr,
+	current_move: ^Undoable_Move,
+) {
+	// final List<Unit> targets = new ArrayList<>(units);
+	targets := make([dynamic]^Unit)
+	for u in units {
+		append(&targets, u)
+	}
+	// targets.sort(decreasingMovement);
+	for i := 1; i < len(targets); i += 1 {
+		j := i
+		for j > 0 && decreasing_movement(decreasing_movement_ctx, targets[j], targets[j - 1]) {
+			tmp := targets[j]
+			targets[j] = targets[j - 1]
+			targets[j - 1] = tmp
+			j -= 1
+		}
+	}
+
+	executables := make([dynamic]^I_Executable)
+	defer delete(executables)
+	territories := aa_in_move_util_get_territories_where_aa_will_fire(self, route, units)
+	defer delete(territories)
+	for location in territories {
+		ie := aa_in_move_util_3_new(self, location, targets, current_move)
+		append(&executables, cast(^I_Executable)ie)
+	}
+	// Collections.reverse(executables);
+	n := len(executables)
+	for i := 0; i < n / 2; i += 1 {
+		tmp := executables[i]
+		executables[i] = executables[n - 1 - i]
+		executables[n - 1 - i] = tmp
+	}
+	execution_stack_push_all(self.execution_stack, executables[:])
+}

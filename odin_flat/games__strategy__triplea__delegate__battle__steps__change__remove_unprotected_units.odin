@@ -286,3 +286,53 @@ remove_unprotected_units_check_unprotected_units :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits#checkUndefendedTransports
+// Java:
+//   final GamePlayer player = battleState.getPlayer(side);
+//   final List<Unit> alliedTransports = getAlliedTransports(player);
+//   if (alliedTransports.isEmpty()) return;
+//   final Collection<Unit> alliedUnits = getAlliedUnits(player);
+//   if (alliedTransports.size() != alliedUnits.size()) return;
+//   final Collection<Unit> enemyUnits = getEnemyUnitsThatCanFire(player);
+//   if (enemyUnits.isEmpty()) return;
+//   final Change change =
+//       ChangeFactory.markNoMovementChange(
+//           CollectionUtils.getMatches(enemyUnits, Matches.unitIsSea()));
+//   bridge.addChange(change);
+//   battleActions.removeUnits(alliedUnits, bridge, battleState.getBattleSite(), side);
+remove_unprotected_units_check_undefended_transports :: proc(
+	self: ^Remove_Unprotected_Units,
+	bridge: ^I_Delegate_Bridge,
+	side: Battle_State_Side,
+) {
+	player := battle_state_get_player(self.battle_state, side)
+	allied_transports := remove_unprotected_units_get_allied_transports(self, player)
+	if len(allied_transports) == 0 {
+		return
+	}
+	allied_units := remove_unprotected_units_get_allied_units(self, player)
+	if len(allied_transports) != len(allied_units) {
+		return
+	}
+	enemy_units := remove_unprotected_units_get_enemy_units_that_can_fire(self, player)
+	if len(enemy_units) == 0 {
+		return
+	}
+	sea_p, sea_c := matches_unit_is_sea()
+	sea_enemies: [dynamic]^Unit
+	for u in enemy_units {
+		if sea_p(sea_c, u) {
+			append(&sea_enemies, u)
+		}
+	}
+	change := change_factory_mark_no_movement_change_collection(sea_enemies)
+	i_delegate_bridge_add_change(bridge, change)
+	battle_actions_remove_units(
+		self.battle_actions,
+		allied_units,
+		bridge,
+		battle_state_get_battle_site(self.battle_state),
+		side,
+	)
+}
+

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Transport_Utils :: struct {}
 
 // Java: public static Set<Unit> getMovedUnits(
@@ -1019,6 +1021,203 @@ pro_transport_utils_get_unused_local_carrier_capacity :: proc(
 	free(owned_air_ctx)
 	delete(owned_nearby_units)
 	return capacity
+}
+
+// Java: public static List<Unit> getUnitsToAdd(
+//     final ProData proData, final Unit unit,
+//     final Map<Territory, ProTerritory> moveMap)
+//   return getUnitsToAdd(proData, unit, new ArrayList<>(), moveMap);
+//
+// 3-arg overload: forwards to the 4-arg form with an empty
+// `alreadyMovedUnits` list.
+pro_transport_utils_get_units_to_add_3 :: proc(
+	pro_data: ^Pro_Data,
+	unit: ^Unit,
+	move_map: map[^Territory]^Pro_Territory,
+) -> [dynamic]^Unit {
+	already_moved_units: [dynamic]^Unit
+	defer delete(already_moved_units)
+	return pro_transport_utils_get_units_to_add(pro_data, unit, already_moved_units, move_map)
+}
+
+// Java: public static boolean checkTransportDefense(
+//     ProData proData, ProOddsCalculator calc, ProTerritory proTerritory)
+//   final List<Unit> defendingUnits =
+//       CollectionUtils.getMatches(proTerritory.getAllDefenders(), Matches.unitIsNotLand());
+//   proTerritory.setBattleResultIfNull(
+//       () -> calc.estimateDefendBattleResults(proData, proTerritory, defendingUnits));
+//   Territory t = proTerritory.getTerritory();
+//   ProBattleResult result = proTerritory.getBattleResult();
+//   ProLogger.trace(String.format(
+//       "%s TUVSwing=%s, Win%%=%s, enemyAttackers=%s, defenders=%s",
+//       t.getName(), result.getTuvSwing(), result.getWinPercentage(),
+//       proTerritory.getMaxEnemyUnits().size(), defendingUnits.size()));
+//   return result.getWinPercentage() > (100 - proData.getWinPercentage())
+//       || result.getTuvSwing() > 0;
+//
+// Java passes a capturing `Supplier` to `setBattleResultIfNull`. Odin's
+// pre-existing `pro_territory_set_battle_result_if_null` takes a
+// non-capturing `proc() -> ^Pro_Battle_Result`; rather than reshape that
+// API just for one call site, we inline the supplier logic — semantically
+// identical: only invoke the estimate when no battle result is cached.
+pro_transport_utils_check_transport_defense :: proc(
+	pro_data: ^Pro_Data,
+	calc: ^Pro_Odds_Calculator,
+	pro_territory: ^Pro_Territory,
+) -> bool {
+	all_defenders := pro_territory_get_all_defenders(pro_territory)
+	defer delete(all_defenders)
+
+	not_land_pred, not_land_ctx := matches_unit_is_not_land()
+	defending_units: [dynamic]^Unit
+	for u in all_defenders {
+		if not_land_pred(not_land_ctx, u) {
+			append(&defending_units, u)
+		}
+	}
+
+	if pro_territory_get_battle_result(pro_territory) == nil {
+		estimated := pro_odds_calculator_estimate_defend_battle_results_3(
+			calc,
+			pro_data,
+			pro_territory,
+			defending_units,
+		)
+		pro_territory_set_battle_result(pro_territory, estimated)
+	}
+
+	t := pro_territory_get_territory(pro_territory)
+	result := pro_territory_get_battle_result(pro_territory)
+	max_enemy := pro_territory_get_max_enemy_units(pro_territory)
+
+	pro_logger_trace(
+		fmt.tprintf(
+			"%s TUVSwing=%v, Win%%=%v, enemyAttackers=%v, defenders=%v",
+			territory_to_string(t),
+			pro_battle_result_get_tuv_swing(result),
+			pro_battle_result_get_win_percentage(result),
+			len(max_enemy),
+			len(defending_units),
+		),
+	)
+
+	defer delete(defending_units)
+	defer delete(max_enemy)
+
+	return pro_battle_result_get_win_percentage(result) >
+		    f64(100) - pro_data_get_win_percentage(pro_data) ||
+	       pro_battle_result_get_tuv_swing(result) > 0
+}
+
+// Java: public static List<Unit> getUnitsToTransportThatCantMoveToHigherValue(
+//     final GamePlayer player, final Unit transport, final ProData proData,
+//     final Set<Territory> territoriesToLoadFrom,
+//     final Collection<Unit> unitsToIgnore,
+//     final Map<Territory, ProTerritory> moveMap,
+//     final Map<Unit, Set<Territory>> unitMoveMap, final double value)
+//   final List<Unit> unitsToIgnoreOrHaveBetterLandMove = new ArrayList<>(unitsToIgnore);
+//   if (!transport.isTransporting(proData.getUnitTerritory(transport))) {
+//     Predicate<Unit> canBeLoaded =
+//         ProMatches.unitIsOwnedTransportableUnitAndCanBeLoaded(player, transport, true);
+//     final List<Unit> units = new ArrayList<>();
+//     for (final Territory loadFrom : territoriesToLoadFrom) {
+//       units.addAll(loadFrom.getMatches(canBeLoaded));
+//     }
+//     units.removeAll(unitsToIgnore);
+//     for (final Unit u : units) {
+//       for (final Territory t : Optional.ofNullable(unitMoveMap.get(u)).orElse(Set.of())) {
+//         if (moveMap.get(t) != null && moveMap.get(t).getValue() > value) {
+//           unitsToIgnoreOrHaveBetterLandMove.add(u);
+//           break;
+//         }
+//       }
+//     }
+//   }
+//   return getUnitsToTransportFromTerritories(player, transport, territoriesToLoadFrom,
+//       unitsToIgnoreOrHaveBetterLandMove);
+//
+// `Optional.ofNullable(unitMoveMap.get(u)).orElse(Set.of())` collapses to
+// "iterate over `unitMoveMap[u]` if present, otherwise nothing" — Odin's
+// map-lookup `(val, ok)` form expresses this directly.
+pro_transport_utils_get_units_to_transport_that_cant_move_to_higher_value :: proc(
+	player: ^Game_Player,
+	transport: ^Unit,
+	pro_data: ^Pro_Data,
+	territories_to_load_from: map[^Territory]struct {},
+	units_to_ignore: [dynamic]^Unit,
+	move_map: map[^Territory]^Pro_Territory,
+	unit_move_map: map[^Unit]map[^Territory]struct {},
+	value: f64,
+) -> [dynamic]^Unit {
+	units_to_ignore_or_have_better_land_move: [dynamic]^Unit
+	for u in units_to_ignore {
+		append(&units_to_ignore_or_have_better_land_move, u)
+	}
+
+	transport_territory := pro_data_get_unit_territory(pro_data, transport)
+	if !unit_is_transporting_in_territory_arg(transport, transport_territory) {
+		can_be_loaded_pred, can_be_loaded_ctx :=
+			pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(player, transport, true)
+
+		// Gather candidate units across every load-from territory.
+		units: [dynamic]^Unit
+		for load_from, _ in territories_to_load_from {
+			matched := territory_get_matches(load_from, can_be_loaded_pred, can_be_loaded_ctx)
+			for u in matched {
+				append(&units, u)
+			}
+			delete(matched)
+		}
+		free(can_be_loaded_ctx)
+
+		// `units.removeAll(unitsToIgnore)` — strip the ignore list.
+		if len(units_to_ignore) > 0 {
+			filtered: [dynamic]^Unit
+			for u in units {
+				ignored := false
+				for ig in units_to_ignore {
+					if ig == u {
+						ignored = true
+						break
+					}
+				}
+				if !ignored {
+					append(&filtered, u)
+				}
+			}
+			delete(units)
+			units = filtered
+		}
+
+		// For each candidate, check whether any reachable territory in
+		// `unitMoveMap[u]` has a higher value than `value` per `moveMap`.
+		for u in units {
+			move_set, ok := unit_move_map[u]
+			if !ok {
+				continue
+			}
+			for tt, _ in move_set {
+				pt, pt_ok := move_map[tt]
+				if !pt_ok || pt == nil {
+					continue
+				}
+				if pro_territory_get_value(pt) > value {
+					append(&units_to_ignore_or_have_better_land_move, u)
+					break
+				}
+			}
+		}
+		delete(units)
+	}
+
+	result := pro_transport_utils_get_units_to_transport_from_territories_4(
+		player,
+		transport,
+		territories_to_load_from,
+		units_to_ignore_or_have_better_land_move,
+	)
+	delete(units_to_ignore_or_have_better_land_move)
+	return result
 }
 
 

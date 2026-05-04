@@ -301,3 +301,113 @@ offensive_general_retreat_can_attacker_retreat :: proc(self: ^Offensive_General_
 	return len(battle_state_get_attacker_retreat_territories(self.battle_state)) > 0
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#isRetreatPossible()
+//
+// Java:
+//   return canAttackerRetreat()
+//       || canAttackerRetreatSeaPlanes()
+//       || (battleState.getStatus().isAmphibious()
+//           && (canAttackerRetreatPartialAmphib() || canAttackerRetreatAmphibPlanes()));
+offensive_general_retreat_is_retreat_possible :: proc(self: ^Offensive_General_Retreat) -> bool {
+	if offensive_general_retreat_can_attacker_retreat(self) {
+		return true
+	}
+	if offensive_general_retreat_can_attacker_retreat_sea_planes(self) {
+		return true
+	}
+	if battle_status_is_amphibious(battle_state_get_status(self.battle_state)) {
+		if offensive_general_retreat_can_attacker_retreat_partial_amphib(self) ||
+		   offensive_general_retreat_can_attacker_retreat_amphib_planes(self) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#retreatUnits(
+//   games.strategy.engine.delegate.IDelegateBridge)
+//
+// Java:
+//   if (battleState.getStatus().isOver()) return;
+//   final Retreater retreater;
+//   if (battleState.getStatus().isAmphibious()) retreater = getAmphibiousRetreater();
+//   else if (canAttackerRetreat()) retreater = new RetreaterGeneral(battleState);
+//   else retreater = null;
+//   if (retreater != null) {
+//     final String stepName = getName();
+//     if (Optional.ofNullable(battleState.getStepStrings()).orElse(List.of()).contains(stepName)) {
+//       ... gotoBattleStep(battleId, stepName);
+//     }
+//     final Collection<Unit> retreatUnits = retreater.getRetreatUnits();
+//     final Collection<Territory> possibleRetreatSites =
+//         retreater.getPossibleRetreatSites(retreatUnits);
+//     battleActions.queryRetreatTerritory(...).ifPresent(retreatTo -> retreat(...));
+//   }
+//
+// The websocket branch (sendMessage(GoToBattleStepMessage)) is dormant
+// for snapshot runs; we always take the broadcaster path, mirroring
+// evader_retreat.odin.
+offensive_general_retreat_retreat_units :: proc(
+	self: ^Offensive_General_Retreat,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if battle_status_is_over(battle_state_get_status(self.battle_state)) {
+		return
+	}
+
+	retreater: ^Retreater = nil
+	if battle_status_is_amphibious(battle_state_get_status(self.battle_state)) {
+		retreater = offensive_general_retreat_get_amphibious_retreater(self)
+	} else if offensive_general_retreat_can_attacker_retreat(self) {
+		concrete := retreater_general_new(self.battle_state)
+		r := new(Retreater)
+		r.self_raw = concrete
+		retreater = r
+	}
+
+	if retreater != nil {
+		step_name := offensive_general_retreat_get_name(self)
+		step_strings := battle_state_get_step_strings(self.battle_state)
+		contains_step := false
+		for s in step_strings {
+			if s == step_name {
+				contains_step = true
+				break
+			}
+		}
+		if contains_step {
+			display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+			i_display_goto_battle_step(
+				display,
+				battle_state_get_battle_id(self.battle_state),
+				step_name,
+			)
+		}
+
+		retreat_units := retreater.get_retreat_units(retreater.self_raw)
+		possible_retreat_sites := retreater.get_possible_retreat_sites(
+			retreater.self_raw,
+			retreat_units,
+		)
+		retreat_to := battle_actions_query_retreat_territory(
+			self.battle_actions,
+			self.battle_state,
+			bridge,
+			battle_state_get_player(self.battle_state, .OFFENSE),
+			possible_retreat_sites,
+			offensive_general_retreat_get_query_text(
+				self,
+				retreater.get_retreat_type(retreater.self_raw),
+			),
+		)
+		if retreat_to != nil {
+			offensive_general_retreat_lambda__retreat_units__0(
+				self,
+				bridge,
+				retreater,
+				retreat_to,
+			)
+		}
+	}
+}
+

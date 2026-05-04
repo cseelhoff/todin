@@ -513,3 +513,43 @@ initialization_delegate_init_tech :: proc(bridge: ^I_Delegate_Bridge) {
 	}
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#initOriginalOwner(games.strategy.engine.delegate.IDelegateBridge)
+// Static helper. For each map territory with a non-null owner: if its
+// TerritoryAttachment has no original owner yet, record the territory's
+// current owner as the original owner; then record the current owner as
+// the original owner of every infrastructure unit in the territory.
+// Emits a single "Adding original owners" history event with the
+// accumulated CompositeChange.
+initialization_delegate_init_original_owner :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	changes := composite_change_new()
+	infra_pred, infra_ctx := matches_unit_is_infrastructure()
+	for current in game_map_get_territories(game_data_get_map(data)) {
+		if !game_player_is_null(territory_get_owner(current)) {
+			territory_attachment := territory_attachment_get_or_throw(current)
+			if territory_attachment_get_original_owner(territory_attachment) == nil {
+				composite_change_add(
+					changes,
+					original_owner_tracker_add_original_owner_change_territory(
+						current,
+						territory_get_owner(current),
+					),
+				)
+			}
+			factory_and_infrastructure := territory_get_matches(current, infra_pred, infra_ctx)
+			composite_change_add(
+				changes,
+				original_owner_tracker_add_original_owner_change_units(
+					factory_and_infrastructure,
+					territory_get_owner(current),
+				),
+			)
+		}
+	}
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(bridge),
+		"Adding original owners",
+	)
+	i_delegate_bridge_add_change(bridge, &changes.change)
+}
+

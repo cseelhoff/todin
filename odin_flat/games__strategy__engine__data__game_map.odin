@@ -916,6 +916,39 @@ game_map_lambda_get_route_for_unit_or_else_throw_13 :: proc() -> ^Throwable {
 	return t
 }
 
+// Mirrors Java GameMap#getRouteForUnitOrElseThrow(Territory, Territory,
+// Predicate<Territory>, Unit, GamePlayer):
+//     return getRouteForUnits(start, end, cond, List.of(unit), player)
+//                .orElseThrow(() -> new IllegalStateException(
+//                    "Route expected to be returned"));
+// Wraps `game_map_get_route_for_units` (single-unit `List.of(unit)`):
+// when it yields nil (Java's empty Optional), the captured-state-free
+// supplier `game_map_lambda_get_route_for_unit_or_else_throw_13` builds
+// the IllegalStateException-shim message that Java's
+// `Optional.orElseThrow` would have raised, and the Odin port surfaces
+// it via `fmt.panicf` — matching the convention used by
+// `default_attachment_get_attachment` for the same orElseThrow shape.
+// The Predicate stays the bare `proc(^Territory) -> bool` form (no
+// captures), in keeping with the sibling `game_map_get_route_for_unit`.
+game_map_get_route_for_unit_or_else_throw :: proc(
+	self: ^Game_Map,
+	start: ^Territory,
+	end: ^Territory,
+	cond: proc(^Territory) -> bool,
+	unit: ^Unit,
+	player: ^Game_Player,
+) -> ^Route {
+	units := make([dynamic]^Unit, 0, 1)
+	append(&units, unit)
+	result := game_map_get_route_for_units(self, start, end, cond, units, player)
+	if result == nil {
+		err := game_map_lambda_get_route_for_unit_or_else_throw_13()
+		message := err.message
+		fmt.panicf("%s", message)
+	}
+	return result
+}
+
 // Java synthetic lambda from `GameMap.getTerritoryOrThrow(String s)`:
 //   () -> new IllegalArgumentException(
 //             String.format("Territory with name %s could not be found", s))

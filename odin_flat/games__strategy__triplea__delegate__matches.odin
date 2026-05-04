@@ -4460,6 +4460,58 @@ matches_lambda_unit_is_supporter_or_has_combat_ability_45 :: proc(
 	return p(c, unit_get_type(u))
 }
 
+// lambda$unitTypeIsSupporterOrHasCombatAbility$46 —
+//   ut -> {
+//     UnitAttachment ua = ut.getUnitAttachment();
+//     if (attack && ua.getAttack(player) > 0) return true;
+//     if (!attack && ua.getDefense(player) > 0) return true;
+//     return !UnitSupportAttachment.get(ut).isEmpty();
+//   }
+matches_lambda_unit_type_is_supporter_or_has_combat_ability_46 :: proc(
+	attack: bool,
+	player: ^Game_Player,
+	ut: ^Unit_Type,
+) -> bool {
+	ua := unit_type_get_unit_attachment(ut)
+	if attack && unit_attachment_get_attack(ua, player) > 0 {
+		return true
+	}
+	if !attack && unit_attachment_get_defense(ua, player) > 0 {
+		return true
+	}
+	return len(unit_support_attachment_get(ut)) > 0
+}
+
+// lambda$unitHasDefendValueOfAtLeast$22 —
+//   unit -> unit.getUnitAttachment().getDefense(unit.getOwner()) >= defendValue
+matches_lambda_unit_has_defend_value_of_at_least_22 :: proc(
+	defend_value: i32,
+	unit: ^Unit,
+) -> bool {
+	return unit_attachment_get_defense(unit_get_unit_attachment(unit), unit_get_owner(unit)) >= defend_value
+}
+
+// lambda$unitIsTransportingSomeCategories$131 —
+//   unit -> {
+//     Collection<Unit> transporting = unit.getTransporting();
+//     return !Collections.disjoint(UnitSeparator.categorize(transporting), unitCategories);
+//   }
+matches_lambda_unit_is_transporting_some_categories_131 :: proc(
+	unit_categories: [dynamic]^Unit_Category,
+	unit: ^Unit,
+) -> bool {
+	transporting := unit_get_transporting(unit)
+	transporting_categories := unit_separator_categorize(transporting)
+	for tc in transporting_categories {
+		for uc in unit_categories {
+			if unit_category_equals(tc, uc) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // lambda$unitOwnerHasImprovedArtillerySupportTech$171 —
 //   u -> TechTracker.hasImprovedArtillerySupport(u.getOwner())
 matches_lambda_unit_owner_has_improved_artillery_support_tech_171 :: proc(u: ^Unit) -> bool {

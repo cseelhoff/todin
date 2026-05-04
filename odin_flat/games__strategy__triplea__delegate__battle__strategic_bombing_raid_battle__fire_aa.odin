@@ -100,3 +100,51 @@ strategic_bombing_raid_battle_fire_aa_prepare_valid_attacking_units_for_this_rol
 		self.valid_attacking_units_for_this_roll = new_units
 	}
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$FireAa#execute(ExecutionStack, IDelegateBridge)
+//
+// Java body iterates aaTypes; for each currentTypeAa it filters defendingAa
+// by matches.unitIsAaOfTypeAa(currentTypeAa) into currentPossibleAa, calls
+// prepareValidAttackingUnitsForThisRoll, then constructs four anonymous
+// IExecutable instances (roll, calculateCasualties, notifyCasualties,
+// removeHits) and pushes them in reverse order. The roll step is skipped
+// when isEditMode is true.
+strategic_bombing_raid_battle_fire_aa_execute :: proc(
+	self_base: ^I_Executable,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	_ = stack
+	self := cast(^Fire_Aa)self_base
+	outer := self.this_0
+	is_edit_mode := edit_delegate_get_edit_mode(
+		game_data_get_properties(i_delegate_bridge_get_data(bridge)),
+	)
+	for current_type_aa in outer.aa_types {
+		of_type_aa_p, of_type_aa_c := matches_unit_is_aa_of_type_aa(current_type_aa)
+		current_possible_aa: [dynamic]^Unit
+		for u in outer.defending_aa {
+			if of_type_aa_p(of_type_aa_c, u) {
+				append(&current_possible_aa, u)
+			}
+		}
+		strategic_bombing_raid_battle_fire_aa_prepare_valid_attacking_units_for_this_roll(
+			self,
+			current_type_aa,
+			current_possible_aa,
+		)
+
+		roll := fire_aa_1_new(self, current_possible_aa, current_type_aa)
+		calculate_casualties := fire_aa_2_new(self, current_possible_aa, current_type_aa)
+		notify_casualties := fire_aa_3_new(self, current_type_aa)
+		remove_hits := fire_aa_4_new(self, current_type_aa)
+
+		// push in reverse order of execution
+		execution_stack_push_one(outer.stack, &remove_hits.i_executable)
+		execution_stack_push_one(outer.stack, &notify_casualties.i_executable)
+		execution_stack_push_one(outer.stack, &calculate_casualties.i_executable)
+		if !is_edit_mode {
+			execution_stack_push_one(outer.stack, &roll.i_executable)
+		}
+	}
+}

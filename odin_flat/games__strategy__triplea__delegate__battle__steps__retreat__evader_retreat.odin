@@ -227,3 +227,65 @@ evader_retreat_retreat_evaders :: proc(
 		parameters.bridge,
 	)
 }
+
+// games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#retreatUnits(
+//   games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat$Parameters,
+//   java.lang.String,
+//   games.strategy.engine.data.Territory)
+//
+// Java (private overload):
+//   final GamePlayer retreatingPlayer = parameters.battleState.getPlayer(parameters.side);
+//   SoundUtils.playRetreatType(retreatingPlayer, parameters.units,
+//       MustFightBattle.RetreatType.SUBS, parameters.bridge);
+//   if (parameters.battleState.getBattleSite().equals(retreatTo)) {
+//     submergeEvaders(parameters);
+//     longMessage = shortMessage = retreatingPlayer.getName() + " submerges subs";
+//   } else {
+//     retreatEvaders(parameters, retreatTo);
+//     shortMessage = retreatingPlayer.getName() + " retreats";
+//     longMessage = retreatingPlayer.getName() + " retreats subs to " + retreatTo.getName();
+//   }
+//   ...broadcaster.notifyRetreat(shortMessage, longMessage, step, retreatingPlayer);
+//
+// The websocket sendMessage(NotifyRetreatMessage) branch is dormant for
+// snapshot runs (mirroring notifyRetreat / public retreatUnits above).
+evader_retreat_retreat_units_to_territory :: proc(
+	parameters: ^Evader_Retreat_Parameters,
+	step: string,
+	retreat_to: ^Territory,
+) {
+	retreating_player := battle_state_get_player(parameters.battle_state, parameters.side)
+
+	sound_utils_play_retreat_type(
+		retreating_player,
+		parameters.units,
+		.SUBS,
+		parameters.bridge,
+	)
+
+	short_message: string
+	long_message: string
+	if battle_state_get_battle_site(parameters.battle_state) == retreat_to {
+		evader_retreat_submerge_evaders(parameters)
+		short_message = fmt.aprintf("%s submerges subs", retreating_player.named.base.name)
+		long_message = short_message
+	} else {
+		evader_retreat_retreat_evaders(parameters, retreat_to)
+		short_message = fmt.aprintf("%s retreats", retreating_player.named.base.name)
+		retreat_to_name := default_named_get_name(&retreat_to.named_attachable.default_named)
+		long_message = fmt.aprintf(
+			"%s retreats subs to %s",
+			retreating_player.named.base.name,
+			retreat_to_name,
+		)
+	}
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(parameters.bridge)
+	i_display_notify_retreat(
+		display,
+		short_message,
+		long_message,
+		step,
+		retreating_player,
+	)
+}

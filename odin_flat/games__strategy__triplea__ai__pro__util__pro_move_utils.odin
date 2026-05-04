@@ -136,3 +136,22 @@ pro_move_utils_do_move :: proc(
 	}
 }
 
+// Synthetic lambda `result -> ProLogger.warn(<round>-<step>: could not move ... because: result)`
+// from `ProMoveUtils.doMove`, applied as the `Optional<String>::ifPresent`
+// consumer on the result of `IMoveDelegate.performMove(move)`. Captures
+// the enclosing `data` (GameState) and `move` (MoveDescription); logs the
+// round/step header along with the move's units, route, and the failure
+// reason returned by the delegate.
+pro_move_utils_lambda__do_move__4 :: proc(data: ^Game_Data, move: ^Move_Description, result: string) {
+	pro_logger_warn(
+		fmt.tprintf(
+			"%d-%s: could not move %v over %v because: %s",
+			game_sequence_get_round(game_data_get_sequence(data)),
+			game_step_get_name(game_sequence_get_step(game_data_get_sequence(data))),
+			move.units[:],
+			move_description_get_route(move),
+			result,
+		),
+	)
+}
+

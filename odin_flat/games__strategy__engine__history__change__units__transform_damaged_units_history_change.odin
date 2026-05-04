@@ -198,3 +198,64 @@ transform_damaged_units_history_change_lambda_perform_4 :: proc(
 	history_writer_add_child_to_event(writer, transform_transcript_text, old_units)
 }
 
+// Java: public void perform(final IDelegateBridge bridge)
+// Mirrors the Java body one-to-one: bail out on an empty
+// `transformingUnits`, otherwise build a CompositeChange that adds
+// the new units, removes the old units, applies the queued
+// attribute-translation child, and (when the constructor flag is
+// set) marks the new units as having no movement remaining; then
+// fold that into `this.change`, hand it to the bridge, and emit
+// per-(old,new)-type history events. The two synthetic lambdas in
+// `forEach` and the chained `flatMap`/`forEach` stream pipeline are
+// surfaced here as direct loops calling the matching
+// `lambda_perform_*` helpers, keeping the Java structure visible.
+// `change_factory_{add,remove}_units` consume `^Unit_Holder`, so the
+// `^Territory` is forwarded through the same cast convention used by
+// `change_factory_move_units`. `attribute_changes` and `self.change`
+// are `^Composite_Change`; the engine APIs want `^Change`, so we hand
+// them out via the embedded `change` field address.
+transform_damaged_units_history_change_perform :: proc(
+	self: ^Transform_Damaged_Units_History_Change,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if len(self.transforming_units) == 0 {
+		return
+	}
+
+	new_units := transform_damaged_units_history_change_get_new_units(self)
+	old_units := transform_damaged_units_history_change_get_old_units(self)
+
+	composite_change := composite_change_new_from_varargs(
+		change_factory_add_units(cast(^Unit_Holder)self.location, new_units),
+		change_factory_remove_units(cast(^Unit_Holder)self.location, old_units),
+		&self.attribute_changes.change,
+	)
+	if self.mark_no_movement_on_new_units {
+		composite_change_add(
+			composite_change,
+			change_factory_mark_no_movement_change_collection(new_units),
+		)
+	}
+	composite_change_add(self.change, &composite_change.change)
+
+	i_delegate_bridge_add_change(bridge, &self.change.change)
+
+	grouped_by_old_and_new_unit_types := make(
+		map[^Unit_Type]map[^Unit_Type]^Transform_Damaged_Units_History_Change_Grouped_Units,
+	)
+	for old_unit, new_unit in self.transforming_units {
+		transform_damaged_units_history_change_lambda_perform_2(
+			grouped_by_old_and_new_unit_types,
+			old_unit,
+			new_unit,
+		)
+	}
+
+	for _, tmp in grouped_by_old_and_new_unit_types {
+		flat := transform_damaged_units_history_change_lambda_perform_3(tmp)
+		for grouped_units in flat {
+			transform_damaged_units_history_change_lambda_perform_4(self, bridge, grouped_units)
+		}
+	}
+}
+

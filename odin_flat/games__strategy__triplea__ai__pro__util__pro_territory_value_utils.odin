@@ -356,3 +356,99 @@ pro_territory_value_utils_find_enemy_capitals_and_factories_value :: proc(
 	return enemy_capitals_and_factories_map
 }
 
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #calculateTerritoryValueToTargets(
+//       Territory, List<Territory>, GamePlayer, GameData,
+//       ToIntFunction<Territory>)
+// Java:
+//   double territoryValue = 0;
+//   for (final Territory targetTerritory : targetTerritories) {
+//     final Optional<Route> optionalRoute = data.getMap()
+//         .getRouteForUnits(t, targetTerritory,
+//             ProMatches.territoryCanMoveSeaUnits(player, true),
+//             Set.of(), player);
+//     if (optionalRoute.isEmpty()) continue;
+//     final int distance = optionalRoute.get().numberOfSteps();
+//     if (distance > 0) {
+//       territoryValue += toTargetValueFunction.applyAsInt(targetTerritory)
+//           / Math.pow(2, distance);
+//       territoryValue += targetTerritory.getUnitCollection()
+//           .countMatches(Matches.unitIsEnemyOf(player))
+//           / Math.pow(2, distance);
+//     }
+//   }
+//   return territoryValue;
+//
+// `ToIntFunction<Territory>` is a functional interface (returns `int`),
+// translated to a `proc(rawptr, ^Territory) -> i32` plus a paired
+// `rawptr` userdata per the closure-capture rule in
+// llm-instructions.md: one of the two Java callsites passes the
+// non-capturing method ref `TerritoryAttachment::getProduction`, but
+// the other passes a lambda capturing `player`, so the parameter must
+// support captures.
+//
+// `data.getMap().getRouteForUnits(...)` is bypassed in favor of
+// constructing a `Route_Finder` directly via
+// `route_finder_new_with_units_player`. The reason: the Odin
+// `game_map_get_route_for_units` helper accepts a bare
+// `proc(^Territory) -> bool` (non-capturing) Predicate, but the
+// `pro_matches_territory_can_move_sea_units` factory returns the
+// `(proc(rawptr, ^Territory) -> bool, rawptr)` ctx-form Predicate
+// (it captures `player` and `is_combat_move`). `Route_Finder` itself
+// holds the ctx-form Predicate, so we feed the factory's output
+// straight to it — same end result as `getRouteForUnits` (single
+// `findRouteByCost` call, empty unit set, optional route → nullable
+// `^Route`).
+//
+// `Set.of()` (an empty unmodifiable Set<Unit>) is mirrored as the
+// zero-value `[dynamic]^Unit` (nil dynamic array, len 0) — same shape
+// the existing `route_finder_new_map_condition` uses for its
+// `Set.of()` call.
+//
+// The inner `targetTerritory.getUnitCollection().countMatches(
+//   Matches.unitIsEnemyOf(player))` is exactly the body of the sibling
+// lambda `pro_territory_value_utils_lambda_find_sea_territory_values_0`
+// already defined above this method (which inlines the
+// `Matches.unitIsEnemyOf(player)` Predicate by walking the unit
+// collection and calling `game_player_is_at_war` on each owner). We
+// reuse that lambda rather than duplicating its loop.
+pro_territory_value_utils_calculate_territory_value_to_targets :: proc(
+	t: ^Territory,
+	target_territories: [dynamic]^Territory,
+	player: ^Game_Player,
+	data: ^Game_Data,
+	to_target_value_function: proc(rawptr, ^Territory) -> i32,
+	to_target_value_function_ctx: rawptr,
+) -> f64 {
+	territory_value: f64 = 0
+	sea_pred, sea_ctx := pro_matches_territory_can_move_sea_units(player, true)
+	empty_units: [dynamic]^Unit
+	game_map := game_data_get_map(data)
+	for target_territory in target_territories {
+		rf := route_finder_new_with_units_player(
+			game_map,
+			sea_pred,
+			sea_ctx,
+			empty_units,
+			player,
+		)
+		optional_route := route_finder_find_route_by_cost_pair(rf, t, target_territory)
+		if optional_route == nil {
+			continue
+		}
+		distance := route_number_of_steps(optional_route)
+		if distance > 0 {
+			divisor := math.pow(2.0, f64(distance))
+			territory_value +=
+				f64(to_target_value_function(to_target_value_function_ctx, target_territory)) /
+				divisor
+			enemy_count := pro_territory_value_utils_lambda_find_sea_territory_values_0(
+				player,
+				target_territory,
+			)
+			territory_value += f64(enemy_count) / divisor
+		}
+	}
+	return territory_value
+}
+

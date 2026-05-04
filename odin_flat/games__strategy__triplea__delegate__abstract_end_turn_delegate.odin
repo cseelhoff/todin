@@ -645,3 +645,235 @@ abstract_end_turn_delegate_roll_war_bonds_for_friends :: proc(
 	i_remote_player_report_message(remote, msg, msg)
 	return fmt.aprintf("%s<br />", transcript_text)
 }
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#getBlockadeProductionLoss(GamePlayer, GameState, IDelegateBridge, StringBuilder)
+//
+// For each blockade-zone (sea zone) territory, compute the income loss
+// inflicted on this player's adjacent income-producing land territories,
+// either by summing each enemy unit's blockade attribute or by rolling
+// `CONVOY_BLOCKADE_DICE_SIDES`-sided dice (one per blockade point) when
+// `convoyBlockadesRollDiceForCost` is enabled. The total is then
+// re-balanced so that no single land territory is debited beyond its
+// own production, distributing damage across territories that touch
+// only one blockade zone first. When dice were rolled, a history
+// event and `endTurnReport` lines are emitted; `endTurnReport` is
+// otherwise left untouched. Returns the net PUs lost to convoy
+// blockades this turn.
+abstract_end_turn_delegate_get_blockade_production_loss :: proc(
+	self: ^Abstract_End_Turn_Delegate,
+	player: ^Game_Player,
+	data: ^Game_State,
+	bridge: ^I_Delegate_Bridge,
+	end_turn_report: ^String_Builder,
+) -> i32 {
+	CONVOY_BLOCKADE_DICE_SIDES :: i32(6)
+
+	player_rules := player_attachment_get(player)
+	if player_rules != nil && player_attachment_get_immune_to_blockade(player_rules) {
+		return 0
+	}
+
+	game_map := game_state_get_map(data)
+	is_blockade_pred, is_blockade_ctx := matches_territory_is_blockade_zone()
+	blockable: [dynamic]^Territory
+	defer delete(blockable)
+	for t in game_map_get_territories(game_map) {
+		if is_blockade_pred(is_blockade_ctx, t) {
+			append(&blockable, t)
+		}
+	}
+	if len(blockable) == 0 {
+		return 0
+	}
+
+	enemy_pred, enemy_ctx := matches_enemy_unit(player)
+	total_loss: i32 = 0
+	roll_dice_for_blockade_damage := properties_get_convoy_blockades_roll_dice_for_cost(
+		game_state_get_properties(data),
+	)
+	transcripts: [dynamic]string
+	defer delete(transcripts)
+	damage_per_blockade_zone: map[^Territory]^Tuple(i32, [dynamic]^Territory)
+	defer delete(damage_per_blockade_zone)
+	rolled_dice := false
+
+	for b in blockable {
+		// match will check for land, convoy zones, and also contested territories
+		owned_pred, owned_ctx := matches_is_territory_owned_by(player)
+		collect_pred, collect_ctx := matches_territory_can_collect_income_from(player)
+		viable_neighbors: [dynamic]^Territory
+		for n in game_map_get_neighbors(game_map, b) {
+			if owned_pred(owned_ctx, n) && collect_pred(collect_ctx, n) {
+				append(&viable_neighbors, n)
+			}
+		}
+		max_loss := abstract_end_turn_delegate_get_production_instance(self, viable_neighbors)
+		if max_loss <= 0 {
+			delete(viable_neighbors)
+			continue
+		}
+		enemies: [dynamic]^Unit
+		defer delete(enemies)
+		uc := territory_get_unit_collection(b)
+		if uc != nil {
+			for u in unit_collection_get_units(uc) {
+				if enemy_pred(enemy_ctx, u) {
+					append(&enemies, u)
+				}
+			}
+		}
+		if len(enemies) == 0 {
+			delete(viable_neighbors)
+			continue
+		}
+		loss: i32 = 0
+		if roll_dice_for_blockade_damage {
+			number_of_dice: i32 = 0
+			for u in enemies {
+				number_of_dice += unit_attachment_get_blockade(unit_get_unit_attachment(u))
+			}
+			if number_of_dice > 0 {
+				// there is an issue with maps that have lots of rolls without any pause between them:
+				// they are causing the crypted random source (ie: live and pbem games) to lock up or
+				// error out so we need to slow them down a bit, until we come up with a better solution
+				// (like aggregating all the chances together, then getting a ton of random numbers at
+				// once instead of one at a time)
+				if pbem_message_poster_game_data_has_play_by_email_or_forum_messengers(data) {
+					interruptibles_sleep(100)
+				}
+				transcript := fmt.aprintf(
+					"Rolling for Convoy Blockade Damage in %s",
+					default_named_get_name(&b.named_attachable.default_named),
+				)
+				dice := i_delegate_bridge_get_random(
+					bridge,
+					CONVOY_BLOCKADE_DICE_SIDES,
+					number_of_dice,
+					unit_get_owner(enemies[0]),
+					I_Random_Stats_Dice_Type.BOMBING,
+					transcript,
+				)
+				dice_slice := dice[:]
+				append(
+					&transcripts,
+					fmt.aprintf("%s. Rolls: %s", transcript, my_formatter_as_dice_ints(dice_slice)),
+				)
+				rolled_dice = true
+				for d in dice {
+					// we are zero based
+					roll := d + 1
+					if roll <= 3 {
+						loss += roll
+					}
+				}
+			}
+		} else {
+			for u in enemies {
+				loss += unit_attachment_get_blockade(unit_get_unit_attachment(u))
+			}
+		}
+		if loss <= 0 {
+			delete(viable_neighbors)
+			continue
+		}
+		loss_for_blockade := min(max_loss, loss)
+		damage_per_blockade_zone[b] = tuple_new(
+			i32,
+			[dynamic]^Territory,
+			loss_for_blockade,
+			viable_neighbors,
+		)
+		total_loss += loss_for_blockade
+	}
+	if total_loss <= 0 && !rolled_dice {
+		return 0
+	}
+	// now we need to make sure that we didn't deal more damage than the territories are worth, in
+	// the case of having multiple sea zones touching the same land zone.
+	blockade_zones_sorted: [dynamic]^Territory
+	defer delete(blockade_zones_sorted)
+	for k, _ in damage_per_blockade_zone {
+		append(&blockade_zones_sorted, k)
+	}
+	// blockadeZonesSorted.sort(getSingleBlockadeThenHighestToLowestBlockadeDamage(damagePerBlockadeZone))
+	// Java Comparator translates to Odin's _compare proc; the captured
+	// damage map is held in the comparator record passed below.
+	{
+		zones_cmp := Single_Blockade_Then_Highest_To_Lowest_Blockade_Damage_Comparator{
+			damage_per_blockade_zone = damage_per_blockade_zone,
+		}
+		// Insertion sort — Java's List.sort is stable; insertion sort
+		// preserves order for equal elements without needing a closure.
+		for i := 1; i < len(blockade_zones_sorted); i += 1 {
+			cur := blockade_zones_sorted[i]
+			j := i
+			for j > 0 &&
+			    abstract_end_turn_delegate_single_blockade_then_highest_to_lowest_blockade_damage_compare(
+				    &zones_cmp,
+				    blockade_zones_sorted[j - 1],
+				    cur,
+			    ) > 0 {
+				blockade_zones_sorted[j] = blockade_zones_sorted[j - 1]
+				j -= 1
+			}
+			blockade_zones_sorted[j] = cur
+		}
+	}
+	// we want to match highest damage to largest producer first, that is why we sort twice
+	total_damage_tracker := integer_map_new()
+	for b in blockade_zones_sorted {
+		tuple := damage_per_blockade_zone[b]
+		damage_for_zone := tuple.first
+		terrs_losing_income: [dynamic]^Territory
+		defer delete(terrs_losing_income)
+		for t in tuple.second {
+			append(&terrs_losing_income, t)
+		}
+		neighbor_cmp := Single_Neighbor_Blockades_Then_Highest_To_Lowest_Production_Comparator{
+			blockade_zones = blockade_zones_sorted,
+			game_map       = game_map,
+		}
+		for i := 1; i < len(terrs_losing_income); i += 1 {
+			cur := terrs_losing_income[i]
+			j := i
+			for j > 0 &&
+			    abstract_end_turn_delegate_single_neighbor_blockades_then_highest_to_lowest_production_compare(
+				    &neighbor_cmp,
+				    terrs_losing_income[j - 1],
+				    cur,
+			    ) > 0 {
+				terrs_losing_income[j] = terrs_losing_income[j - 1]
+				j -= 1
+			}
+			terrs_losing_income[j] = cur
+		}
+		idx := 0
+		for damage_for_zone > 0 && idx < len(terrs_losing_income) {
+			t := terrs_losing_income[idx]
+			idx += 1
+			max_production_less_previous_damage :=
+				territory_attachment_static_get_production(t) -
+				integer_map_get_int(total_damage_tracker, rawptr(t))
+			damage_to_terr := min(damage_for_zone, max_production_less_previous_damage)
+			damage_for_zone -= damage_to_terr
+			integer_map_put(
+				total_damage_tracker,
+				rawptr(t),
+				damage_to_terr + integer_map_get_int(total_damage_tracker, rawptr(t)),
+			)
+		}
+	}
+	real_total_loss := max(i32(0), integer_map_total_values(total_damage_tracker))
+	if roll_dice_for_blockade_damage && (real_total_loss > 0 || len(transcripts) > 0) {
+		mainline := fmt.aprintf("Total Cost from Convoy Blockades: %d", real_total_loss)
+		writer := i_delegate_bridge_get_history_writer(bridge)
+		i_delegate_history_writer_start_event(writer, mainline)
+		string_builder_append(string_builder_append(end_turn_report, mainline), "<br />")
+		for t in transcripts {
+			history_writer_add_child_to_event(writer, t)
+			string_builder_append(string_builder_append(string_builder_append(end_turn_report, "* "), t), "<br />")
+		}
+		string_builder_append(end_turn_report, "<br />")
+	}
+	return real_total_loss
+}

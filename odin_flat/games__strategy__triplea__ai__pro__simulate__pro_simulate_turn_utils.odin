@@ -2,6 +2,156 @@ package game
 
 Pro_Simulate_Turn_Utils :: struct {}
 
+// games.strategy.triplea.ai.pro.simulate.ProSimulateTurnUtils#transferMoveMap(ProData, Map<Territory,ProTerritory>, GameState, GamePlayer)
+//
+// Java:
+//   public static Map<Territory, ProTerritory> transferMoveMap(
+//       final ProData proData,
+//       final Map<Territory, ProTerritory> moveMap,
+//       final GameState toData,
+//       final GamePlayer player) {
+//     final Map<Unit, Territory> unitTerritoryMap = proData.getUnitTerritoryMap();
+//     final Map<Territory, ProTerritory> result = new HashMap<>();
+//     final List<Unit> usedUnits = new ArrayList<>();
+//     for (final Territory fromTerritory : moveMap.keySet()) {
+//       final Territory toTerritory = toData.getMap().getTerritoryOrNull(fromTerritory.getName());
+//       final ProTerritory patd = new ProTerritory(toTerritory, proData);
+//       result.put(toTerritory, patd);
+//       ... (transfers transports + amphib units, then loose units, bombers, bombard map)
+//     }
+//     return result;
+//   }
+//
+// ProLogger calls have no Odin counterpart; the rest of the helpers in this
+// file already drop them silently, so we follow the same convention here.
+pro_simulate_turn_utils_transfer_move_map :: proc(
+	pro_data: ^Pro_Data,
+	move_map: map[^Territory]^Pro_Territory,
+	to_data: ^Game_State,
+	player: ^Game_Player,
+) -> map[^Territory]^Pro_Territory {
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
+	result := make(map[^Territory]^Pro_Territory)
+	used_units: [dynamic]^Unit
+	for from_territory, from_patd in move_map {
+		to_territory := game_map_get_territory_or_null(
+			game_state_get_map(to_data),
+			default_named_get_name(&from_territory.named_attachable.default_named),
+		)
+		patd := pro_territory_new(to_territory, pro_data)
+		result[to_territory] = patd
+		amphib_attack_map := from_patd.amphib_attack_map
+		is_transporting_map := from_patd.is_transporting_map
+		transport_territory_map := from_patd.transport_territory_map
+		bombard_map := from_patd.bombard_territory_map
+		amphib_units: [dynamic]^Unit
+		for transport, attackers in amphib_attack_map {
+			to_transport: ^Unit
+			to_units: [dynamic]^Unit
+			if is_transporting_map[transport] {
+				to_transport = pro_simulate_turn_utils_transfer_loaded_transport(
+					transport,
+					attackers,
+					unit_territory_map,
+					&used_units,
+					to_data,
+					player,
+				)
+				if to_transport == nil {
+					continue
+				}
+				for tu in unit_get_transporting_no_args(to_transport) {
+					append(&to_units, tu)
+				}
+			} else {
+				to_transport = pro_simulate_turn_utils_transfer_unit(
+					transport,
+					unit_territory_map,
+					&used_units,
+					to_data,
+					player,
+				)
+				if to_transport == nil {
+					continue
+				}
+				for u in attackers {
+					to_unit := pro_simulate_turn_utils_transfer_unit(
+						u,
+						unit_territory_map,
+						&used_units,
+						to_data,
+						player,
+					)
+					if to_unit != nil {
+						append(&to_units, to_unit)
+					}
+				}
+			}
+			pro_territory_add_units(patd, to_units)
+			pro_territory_put_amphib_attack_map(patd, to_transport, to_units)
+			for u in attackers {
+				append(&amphib_units, u)
+			}
+			if unload, ok := transport_territory_map[transport]; ok && unload != nil {
+				patd.transport_territory_map[to_transport] = game_map_get_territory_or_null(
+					game_state_get_map(to_data),
+					default_named_get_name(&unload.named_attachable.default_named),
+				)
+			}
+		}
+		for u in from_patd.units {
+			already_amphib := false
+			for au in amphib_units {
+				if au == u {
+					already_amphib = true
+					break
+				}
+			}
+			if already_amphib {
+				continue
+			}
+			to_unit := pro_simulate_turn_utils_transfer_unit(
+				u,
+				unit_territory_map,
+				&used_units,
+				to_data,
+				player,
+			)
+			if to_unit != nil {
+				pro_territory_add_unit(patd, to_unit)
+			}
+		}
+		for u in from_patd.bombers {
+			to_unit := pro_simulate_turn_utils_transfer_unit(
+				u,
+				unit_territory_map,
+				&used_units,
+				to_data,
+				player,
+			)
+			if to_unit != nil {
+				append(&patd.bombers, to_unit)
+			}
+		}
+		for u, bombard_from in bombard_map {
+			to_unit := pro_simulate_turn_utils_transfer_unit(
+				u,
+				unit_territory_map,
+				&used_units,
+				to_data,
+				player,
+			)
+			if to_unit != nil {
+				patd.bombard_territory_map[to_unit] = game_map_get_territory_or_null(
+					game_state_get_map(to_data),
+					default_named_get_name(&bombard_from.named_attachable.default_named),
+				)
+			}
+		}
+	}
+	return result
+}
+
 // games.strategy.triplea.ai.pro.simulate.ProSimulateTurnUtils#transferUnit(Unit, Map<Unit,Territory>, List<Unit>, GameState, GamePlayer)
 //
 // Java:

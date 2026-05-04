@@ -240,3 +240,228 @@ pro_purchase_option_calculate_efficiency_no_sea :: proc(
 pro_purchase_option_create_temp_units :: proc(self: ^Pro_Purchase_Option) -> [dynamic]^Unit {
 	return unit_type_create_temp(self.unit_type, self.quantity, self.player)
 }
+
+// Java constructor:
+//   ProPurchaseOption(ProductionRule, UnitType, GamePlayer, GameData)
+// Constants.PUS == "PUs".
+pro_purchase_option_new :: proc(
+	production_rule: ^Production_Rule,
+	unit_type: ^Unit_Type,
+	player: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Pro_Purchase_Option {
+	self := new(Pro_Purchase_Option)
+	self.production_rule = production_rule
+	self.unit_type = unit_type
+	self.player = player
+	unit_attachment := unit_type_get_unit_attachment(unit_type)
+	resource_list := game_data_get_resource_list(data)
+	pus := resource_list_get_resource_or_throw(resource_list, "PUs")
+	costs_im := production_rule_get_costs(production_rule)
+	self.cost = integer_map_get_int(&costs_im, rawptr(pus))
+
+	// Java: costs = productionRule.getCosts(); — IntegerMap<Resource>.
+	// Mirror as the typed Integer_Map_Resource alias.
+	costs_typed := new(Integer_Map_Resource)
+	costs_typed^ = make(Integer_Map_Resource)
+	for k, v in costs_im.map_values {
+		(costs_typed^)[cast(^Resource)k] = v
+	}
+	self.costs = costs_typed
+
+	self.is_construction = unit_attachment_is_construction(unit_attachment)
+	self.construction_type = unit_attachment_get_construction_type(unit_attachment)
+	self.construction_type_per_turn = unit_attachment_get_constructions_per_terr_per_type_per_turn(unit_attachment)
+	self.max_construction_type = unit_attachment_get_max_constructions_per_type_per_terr(unit_attachment)
+	self.movement = unit_attachment_get_movement_with_player(unit_attachment, player)
+	results_im := production_rule_get_results(production_rule)
+	self.quantity = integer_map_total_values(&results_im)
+	is_infra := unit_attachment_is_infrastructure(unit_attachment)
+	self.hit_points = unit_attachment_get_hit_points(unit_attachment) * self.quantity
+	if is_infra {
+		self.hit_points = 0
+	}
+	self.attack = f64(unit_attachment_get_attack_with_player(unit_attachment, player)) * f64(self.quantity)
+	self.amphib_attack = self.attack + 0.5 * f64(unit_attachment_get_is_marine(unit_attachment)) * f64(self.quantity)
+	self.defense = f64(unit_attachment_get_defense(unit_attachment, player)) * f64(self.quantity)
+	self.transport_cost = unit_attachment_get_transport_cost(unit_attachment) * self.quantity
+	self.carrier_cost = unit_attachment_get_carrier_cost(unit_attachment) * self.quantity
+	self.is_air = unit_attachment_is_air(unit_attachment)
+	self.is_sub = unit_attachment_get_can_evade(unit_attachment)
+	self.is_destroyer = unit_attachment_is_destroyer(unit_attachment)
+	self.is_transport = unit_attachment_get_transport_capacity(unit_attachment) > 0
+	self.is_land_transport = unit_attachment_is_land_transport(unit_attachment)
+	self.is_carrier = unit_attachment_get_carrier_capacity(unit_attachment) > 0
+	self.carrier_capacity = unit_attachment_get_carrier_capacity(unit_attachment) * self.quantity
+	self.transport_efficiency = f64(unit_attachment_get_transport_capacity(unit_attachment)) / f64(self.cost)
+	if self.hit_points == 0 {
+		self.cost_per_hit_point = math.INF_F64
+	} else {
+		self.cost_per_hit_point = f64(self.cost) / f64(self.hit_points)
+	}
+	dice_sides := f64(data.dice_sides)
+	cost_f := f64(self.cost)
+	hp_f := f64(self.hit_points)
+	self.hit_point_efficiency =
+		(hp_f + 0.2 * self.attack * 6.0 / dice_sides + 0.2 * self.defense * 6.0 / dice_sides) /
+		cost_f
+	self.attack_efficiency =
+		(1.0 + hp_f) *
+		(hp_f + self.attack * 6.0 / dice_sides + 0.5 * self.defense * 6.0 / dice_sides) /
+		cost_f
+	self.defense_efficiency =
+		(1.0 + hp_f) *
+		(hp_f + 0.5 * self.attack * 6.0 / dice_sides + self.defense * 6.0 / dice_sides) /
+		cost_f
+	self.max_built_per_player = unit_attachment_get_max_built_per_player(unit_attachment)
+
+	// Support fields.
+	self.unit_support_attachments = unit_support_attachment_get(unit_type)
+	self.is_attack_support = false
+	self.is_defense_support = false
+	for usa, _ in self.unit_support_attachments {
+		if unit_support_attachment_get_offence(usa) {
+			self.is_attack_support = true
+		}
+		if unit_support_attachment_get_defence(usa) {
+			self.is_defense_support = true
+		}
+	}
+	self.consumes_units = len(unit_attachment_get_consumes_units(unit_attachment)) > 0
+	return self
+}
+
+// TODO (Java): doesn't consider enemy support
+pro_purchase_option_calculate_support_factor :: proc(
+	self: ^Pro_Purchase_Option,
+	owned_local_units: [dynamic]^Unit,
+	units_to_place: [dynamic]^Unit,
+	data: ^Game_Data,
+	defense: bool,
+) -> f64 {
+	if (!self.is_attack_support && !defense) || (!self.is_defense_support && defense) {
+		return 0
+	}
+
+	units: [dynamic]^Unit
+	for u in units_to_place {
+		append(&units, u)
+	}
+	temp := unit_type_create_temp(self.unit_type, 1, self.player)
+	for u in temp {
+		append(&units, u)
+	}
+	delete(temp)
+
+	// Omit units that will be consumed by placing units here.
+	to_consume := pro_purchase_utils_get_units_to_consume(self.player, owned_local_units, units)
+	defer delete(to_consume)
+	for u in owned_local_units {
+		consumed := false
+		for c in to_consume {
+			if c == u {
+				consumed = true
+				break
+			}
+		}
+		if !consumed {
+			append(&units, u)
+		}
+	}
+
+	utl := game_data_get_unit_type_list(data)
+	support_rules_set := unit_type_list_get_support_rules(utl)
+	rules_dyn: [dynamic]^Unit_Support_Attachment
+	defer delete(rules_dyn)
+	for r, _ in support_rules_set {
+		append(&rules_dyn, r)
+	}
+	side: Battle_State_Side = .OFFENSE
+	if defense {
+		side = .DEFENSE
+	}
+	available_supports := support_calculator_new(units, rules_dyn, side, true)
+	bonus_types := support_calculator_get_unit_support_attachments(available_supports)
+	defer delete(bonus_types)
+
+	total_support_factor: f64 = 0
+	for usa, _ in self.unit_support_attachments {
+		for bonus_type in bonus_types {
+			contains := false
+			for x in bonus_type {
+				if x == usa {
+					contains = true
+					break
+				}
+			}
+			if !contains {
+				continue
+			}
+
+			// Find number of support provided and supportable units.
+			num_added_support := unit_support_attachment_get_number(usa)
+			if unit_support_attachment_get_imp_art_tech(usa) &&
+			   tech_tracker_has_improved_artillery_support(self.player) {
+				num_added_support *= 2
+			}
+			num_support_provided: i32 = -num_added_support
+			supportable_units := make(map[^Unit]struct {})
+			for usa2 in bonus_type {
+				num_support_provided += support_calculator_get_support(available_supports, usa2)
+				types := unit_support_attachment_get_unit_type(usa2)
+				for u in units {
+					if _, ok := types[unit_get_type(u)]; ok {
+						supportable_units[u] = struct {}{}
+					}
+				}
+			}
+			num_supportable_units := i32(len(supportable_units))
+			delete(supportable_units)
+
+			// Find ratio of supportable to support units (optimal 2 to 1).
+			num_extra_supportable_units := max(i32(0), num_supportable_units - num_support_provided)
+
+			// Ranges from 0 to 1.
+			ratio := min(
+				1.0,
+				2.0 * f64(num_extra_supportable_units) /
+				f64(num_supportable_units + num_added_support),
+			)
+
+			// Find approximate strength bonus provided.
+			bonus: f64 = 0
+			if unit_support_attachment_get_strength(usa) {
+				bonus += f64(unit_support_attachment_get_bonus(usa))
+			}
+			if unit_support_attachment_get_roll(usa) {
+				bonus += f64(unit_support_attachment_get_bonus(usa)) * f64(data.dice_sides) * 0.75
+			}
+
+			// Find support factor value.
+			support_factor := math.pow(f64(num_added_support) * 0.9, 0.9) * bonus * ratio
+			total_support_factor += support_factor
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s, bonusType=%v, supportFactor=%v, numSupportProvided=%d, numSupportableUnits=%d, numAddedSupport=%d, ratio=%v, bonus=%v",
+					default_named_get_name(&self.unit_type.named_attachable.default_named),
+					unit_support_attachment_get_bonus_type(usa),
+					support_factor,
+					num_support_provided,
+					num_supportable_units,
+					num_added_support,
+					ratio,
+					bonus,
+				),
+			)
+		}
+	}
+	pro_logger_debug(
+		fmt.tprintf(
+			"%s, defense=%v, totalSupportFactor=%v",
+			default_named_get_name(&self.unit_type.named_attachable.default_named),
+			defense,
+			total_support_factor,
+		),
+	)
+	return total_support_factor
+}

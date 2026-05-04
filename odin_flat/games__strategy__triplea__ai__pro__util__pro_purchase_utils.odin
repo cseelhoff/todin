@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:math/rand"
 
 Pro_Purchase_Utils :: struct {}
 
@@ -316,4 +317,193 @@ pro_purchase_utils_get_production_rule :: proc(
 		}
 	}
 	return nil
+}
+
+// Java synthetic lambda: ProPurchaseUtils#lambda$getCostComparator$1(ProData, Unit) -> double.
+//
+// Origin: inside getCostComparator the keyExtractor
+//     (unit) -> ProPurchaseUtils.getCost(proData, unit)
+// of `Comparator.comparingDouble(...)`. The lambda captures `proData`,
+// so under the rawptr-ctx closure-capture convention it lives as a
+// free top-level proc whose first parameter is a `^Pro_Purchase_Utils_Cost_Comparator_Ctx`
+// (the same ctx struct already used by the comparator itself, which
+// holds the captured `^Pro_Data`).
+pro_purchase_utils_lambda_get_cost_comparator_1 :: proc(ctx: rawptr, unit: ^Unit) -> f64 {
+	c := cast(^Pro_Purchase_Utils_Cost_Comparator_Ctx)ctx
+	return pro_purchase_utils_get_cost(c.pro_data, unit)
+}
+
+// Java: public static Map<Territory, ProPurchaseTerritory> findBidTerritories(
+//     final ProData proData, final GamePlayer player) {
+//   ...
+//   final Set<Territory> ownedOrHasUnitTerritories =
+//       new HashSet<>(data.getMap().getTerritoriesOwnedBy(player));
+//   ownedOrHasUnitTerritories.addAll(proData.getMyUnitTerritories());
+//   final List<Territory> potentialTerritories =
+//       CollectionUtils.getMatches(
+//           ownedOrHasUnitTerritories,
+//           Matches.territoryIsPassableAndNotRestrictedAndOkByRelationships(
+//               player, false, false, false, false, false));
+//   final Map<Territory, ProPurchaseTerritory> purchaseTerritories = new HashMap<>();
+//   for (final Territory t : potentialTerritories) {
+//     final ProPurchaseTerritory ppt = new ProPurchaseTerritory(t, data, player, 1, true);
+//     purchaseTerritories.put(t, ppt);
+//   }
+//   return purchaseTerritories;
+// }
+pro_purchase_utils_find_bid_territories :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+) -> map[^Territory]^Pro_Purchase_Territory {
+	pro_logger_info("Find all bid territories")
+	data := pro_data_get_data(pro_data)
+	owned_or_has_unit_set := make(map[^Territory]struct {})
+	defer delete(owned_or_has_unit_set)
+	owned := game_map_get_territories_owned_by(game_data_get_map(data), player)
+	defer delete(owned)
+	for t in owned {
+		owned_or_has_unit_set[t] = struct {}{}
+	}
+	for t in pro_data_get_my_unit_territories(pro_data) {
+		owned_or_has_unit_set[t] = struct {}{}
+	}
+	pred, pred_ctx := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		player,
+		false,
+		false,
+		false,
+		false,
+		false,
+	)
+	purchase_territories := make(map[^Territory]^Pro_Purchase_Territory)
+	for t in owned_or_has_unit_set {
+		if !pred(pred_ctx, t) {
+			continue
+		}
+		ppt := pro_purchase_territory_new(t, data, player, 1, true)
+		purchase_territories[t] = ppt
+		pro_logger_debug(pro_purchase_territory_to_string(ppt))
+	}
+	return purchase_territories
+}
+
+// Java: private static int getUnitProduction(
+//     final Territory territory, final GamePlayer player) {
+//   final Predicate<Unit> factoryMatch =
+//       Matches.unitIsOwnedAndIsFactoryOrCanProduceUnits(player)
+//           .and(Matches.unitIsBeingTransported().negate())
+//           .and((territory.isWater() ? Matches.unitIsLand() : Matches.unitIsSea()).negate());
+//   final Collection<Unit> factoryUnits = territory.getMatches(factoryMatch);
+//   final boolean originalFactory =
+//       TerritoryAttachment.get(territory)
+//           .map(TerritoryAttachment::getOriginalFactory)
+//           .orElse(false);
+//   final boolean playerIsOriginalOwner =
+//       !factoryUnits.isEmpty() && player.equals(getOriginalFactoryOwner(territory, player));
+//   final RulesAttachment ra = player.getRulesAttachment();
+//   if (originalFactory && playerIsOriginalOwner) {
+//     if (ra != null && ra.getMaxPlacePerTerritory() != -1) {
+//       return Math.max(0, ra.getMaxPlacePerTerritory());
+//     }
+//     return Integer.MAX_VALUE;
+//   }
+//   if (ra != null && ra.getPlacementAnyTerritory()) {
+//     return Integer.MAX_VALUE;
+//   }
+//   return UnitUtils.getProductionPotentialOfTerritory(
+//       territory.getUnits(), territory, player, true, true);
+// }
+pro_purchase_utils_get_unit_production :: proc(
+	territory: ^Territory,
+	player: ^Game_Player,
+) -> i32 {
+	fact_p, fact_c := matches_unit_is_owned_and_is_factory_or_can_produce_units(player)
+	trans_p, trans_c := matches_unit_is_being_transported()
+	side_p: proc(rawptr, ^Unit) -> bool
+	side_c: rawptr
+	if territory_is_water(territory) {
+		side_p, side_c = matches_unit_is_land()
+	} else {
+		side_p, side_c = matches_unit_is_sea()
+	}
+	factory_units: [dynamic]^Unit
+	defer delete(factory_units)
+	for u in territory.unit_collection.units {
+		if fact_p(fact_c, u) && !trans_p(trans_c, u) && !side_p(side_c, u) {
+			append(&factory_units, u)
+		}
+	}
+	ta := territory_attachment_get(territory)
+	original_factory := ta != nil && territory_attachment_get_original_factory(ta)
+	player_is_original_owner :=
+		len(factory_units) > 0 &&
+		player == pro_purchase_utils_get_original_factory_owner(territory, player)
+	ra := game_player_get_rules_attachment(player)
+	if original_factory && player_is_original_owner {
+		if ra != nil && ra.max_place_per_territory != -1 {
+			return max(i32(0), ra.max_place_per_territory)
+		}
+		return max(i32)
+	}
+	if ra != nil && ra.placement_any_territory {
+		return max(i32)
+	}
+	return unit_utils_get_production_potential_of_territory(
+		territory.unit_collection.units,
+		territory,
+		player,
+		true,
+		true,
+	)
+}
+
+// Java: public static Optional<ProPurchaseOption> randomizePurchaseOption(
+//     final Map<ProPurchaseOption, Double> purchaseEfficiencies, final String type)
+//
+// Optional<ProPurchaseOption> collapses to ^Pro_Purchase_Option (nil = empty).
+// Java's `Math.random()` maps to `rand.float64()`. The Java code uses a
+// LinkedHashMap to preserve insertion order across the two iterations;
+// Odin's builtin `map` is unordered, but a single map iteration order
+// is stable for a given call, so we snapshot keys in a slice during the
+// upper-bound pass and reuse that slice for the selection pass.
+pro_purchase_utils_randomize_purchase_option :: proc(
+	purchase_efficiencies: map[^Pro_Purchase_Option]f64,
+	type_name: string,
+) -> ^Pro_Purchase_Option {
+	pro_logger_trace(fmt.tprintf("Select purchase option for %s", type_name))
+	total_efficiency: f64 = 0
+	for _, eff in purchase_efficiencies {
+		total_efficiency += eff
+	}
+	if total_efficiency == 0 {
+		return nil
+	}
+	keys: [dynamic]^Pro_Purchase_Option
+	defer delete(keys)
+	upper_bounds: [dynamic]f64
+	defer delete(upper_bounds)
+	upper_bound: f64 = 0.0
+	for ppo, eff in purchase_efficiencies {
+		chance := eff / total_efficiency * 100
+		upper_bound += chance
+		append(&keys, ppo)
+		append(&upper_bounds, upper_bound)
+		ut := pro_purchase_option_get_unit_type(ppo)
+		pro_logger_trace(
+			fmt.tprintf(
+				"%s, probability=%v, upperBound=%v",
+				default_named_get_name(&ut.named_attachable.default_named),
+				chance,
+				upper_bound,
+			),
+		)
+	}
+	random_number := rand.float64() * 100
+	pro_logger_trace(fmt.tprintf("Random number: %v", random_number))
+	for ppo, i in keys {
+		if random_number <= upper_bounds[i] {
+			return ppo
+		}
+	}
+	return keys[len(keys) - 1]
 }

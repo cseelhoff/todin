@@ -347,3 +347,61 @@ pro_odds_calculator_call_battle_calc_with_retreat_air :: proc(
 	)
 }
 
+// Java: ProOddsCalculator#callBattleCalc (public, 5-arg)
+//   return callBattleCalc(proData, t, attackingUnits, defendingUnits, bombardingUnits, true);
+pro_odds_calculator_call_battle_calc_5 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_call_battle_calc(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		true,
+		false,
+	)
+}
+
+// Java: ProOddsCalculator#calculateBattleResults (private, 6-arg w/ checkSubmerge)
+//   final ProBattleResult result =
+//       checkIfNoAttackersOrDefenders(proData, t, attackingUnits, defendingUnits, checkSubmerge);
+//   if (result != null) { return result; }
+//   return callBattleCalc(
+//       proData, t, attackingUnits, defendingUnits, bombardingUnits, checkSubmerge);
+pro_odds_calculator_calculate_battle_results_6 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+	check_submerge: bool,
+) -> ^Pro_Battle_Result {
+	result := pro_odds_calculator_check_if_no_attackers_or_defenders(
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		check_submerge,
+	)
+	if result != nil {
+		return result
+	}
+	return pro_odds_calculator_call_battle_calc_6(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		check_submerge,
+	)
+}
+

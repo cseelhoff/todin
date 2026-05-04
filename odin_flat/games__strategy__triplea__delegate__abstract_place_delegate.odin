@@ -1331,3 +1331,388 @@ abstract_place_delegate_move_air_onto_new_carriers :: proc(
 		territory_to_string(at),
 	)
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#applyStackingLimitsPerUnitType(Collection,Territory)
+// Java filters each unit type separately so a stacking limit on one type does
+// not also exclude units of another type that share a combined limit.
+abstract_place_delegate_apply_stacking_limits_per_unit_type :: proc(
+	self:  ^Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	to:    ^Territory,
+) -> [dynamic]^Unit {
+	result := make([dynamic]^Unit)
+	unit_types := unit_utils_get_unit_types_from_unit_list(units)
+	defer delete(unit_types)
+	for ut, _ in unit_types {
+		of_type_p, of_type_c := matches_unit_is_of_type(ut)
+		matched := make([dynamic]^Unit)
+		for u in units {
+			if of_type_p(of_type_c, u) {
+				append(&matched, u)
+			}
+		}
+		snapshot := make([dynamic]^Unit)
+		if existing, ok := self.produced[to]; ok {
+			for u in existing {
+				append(&snapshot, u)
+			}
+		}
+		filtered := unit_stacking_limit_filter_filter_units(
+			matched,
+			UNIT_STACKING_LIMIT_FILTER_PLACEMENT_LIMIT,
+			self.player,
+			to,
+			snapshot,
+		)
+		for u in filtered {
+			append(&result, u)
+		}
+		delete(matched)
+		delete(snapshot)
+		delete(filtered)
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getMaxUnitsToBePlacedFrom(Territory,Collection,Territory,GamePlayer)
+// Private 4-arg variant: delegates to the 7-arg implementation with
+// countSwitchedProductionToNeighbors=false and the two optional arguments
+// nil, mirroring Java's `getMaxUnitsToBePlacedFrom(producer, units, to, player, false, null, null)`.
+abstract_place_delegate_get_max_units_to_be_placed_from :: proc(
+	self:     ^Abstract_Place_Delegate,
+	producer: ^Territory,
+	units:    [dynamic]^Unit,
+	to:       ^Territory,
+	player:   ^Game_Player,
+) -> i32 {
+	return abstract_place_delegate_get_max_units_to_be_placed_from_full(
+		self, producer, units, to, player, false, nil, nil,
+	)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getMaxUnitsToBePlacedFrom(Territory,Collection,Territory,GamePlayer,boolean,Collection,Map)
+// Full 7-arg implementation. Returns -1 if we can place unlimited units.
+// The two trailing pointer parameters are nilable and only consulted when
+// `count_switched_production_to_neighbors` is true; that mirrors Java's
+// nullable Collection / nullable Map.
+abstract_place_delegate_get_max_units_to_be_placed_from_full :: proc(
+	self:     ^Abstract_Place_Delegate,
+	producer: ^Territory,
+	units:    [dynamic]^Unit,
+	to:       ^Territory,
+	player:   ^Game_Player,
+	count_switched_production_to_neighbors:          bool,
+	not_usable_as_other_producers:                   ^[dynamic]^Territory,
+	current_available_placement_for_other_producers: ^map[^Territory]i32,
+) -> i32 {
+	properties := abstract_delegate_get_properties(&self.abstract_delegate)
+	unit_placement_restrictions := abstract_place_delegate_has_unit_placement_restrictions(self)
+
+	units_can_be_placed_by_this_producer := make([dynamic]^Unit)
+	defer delete(units_can_be_placed_by_this_producer)
+	if unit_placement_restrictions {
+		req_p, req_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, producer, false)
+		for u in units {
+			if req_p(req_c, u) {
+				append(&units_can_be_placed_by_this_producer, u)
+			}
+		}
+	} else {
+		for u in units {
+			append(&units_can_be_placed_by_this_producer, u)
+		}
+	}
+	if len(units_can_be_placed_by_this_producer) == 0 {
+		return 0
+	}
+
+	// factoryMatch = unitIsOwnedAndIsFactoryOrCanProduceUnits(player)
+	//                .and(unitIsBeingTransported().negate())
+	//                .and(producer.isWater() ? unitIsLand().negate() : unitIsSea().negate())
+	fact_p, fact_c := matches_unit_is_owned_and_is_factory_or_can_produce_units(player)
+	trans_p, trans_c := matches_unit_is_being_transported()
+	side_p: proc(rawptr, ^Unit) -> bool
+	side_c: rawptr
+	if territory_is_water(producer) {
+		side_p, side_c = matches_unit_is_not_land()
+	} else {
+		side_p, side_c = matches_unit_is_not_sea()
+	}
+	factory_units := make([dynamic]^Unit)
+	defer delete(factory_units)
+	for u in producer.unit_collection.units {
+		if fact_p(fact_c, u) && !trans_p(trans_c, u) && side_p(side_c, u) {
+			append(&factory_units, u)
+		}
+	}
+
+	unit_placement_per_territory_restricted := properties_get_unit_placement_per_territory_restricted(properties)
+	original_factory := false
+	if ta := territory_attachment_get(producer); ta != nil {
+		original_factory = territory_attachment_get_original_factory(ta)
+	}
+	player_is_original_owner := false
+	if len(factory_units) > 0 {
+		player_is_original_owner = self.player == abstract_place_delegate_get_original_factory_owner(self, producer)
+	}
+	ra := game_player_get_rules_attachment(player)
+	already_produced_units := abstract_place_delegate_get_already_produced(self, producer)
+	defer delete(already_produced_units)
+	unit_count_already_produced := i32(len(already_produced_units))
+
+	if original_factory && player_is_original_owner {
+		if ra != nil && ra.max_place_per_territory != -1 {
+			v := ra.max_place_per_territory - unit_count_already_produced
+			if v < 0 {
+				return 0
+			}
+			return v
+		}
+		return -1
+	}
+
+	if unit_placement_per_territory_restricted && ra != nil && ra.placement_per_territory > 0 {
+		allowed_placement := ra.placement_per_territory
+		owned_p, owned_c := matches_unit_is_owned_by(player)
+		owned_units_in_territory: i32 = 0
+		for u in to.unit_collection.units {
+			if owned_p(owned_c, u) {
+				owned_units_in_territory += 1
+			}
+		}
+		if owned_units_in_territory >= allowed_placement {
+			return 0
+		}
+		if ra.max_place_per_territory == -1 {
+			return -1
+		}
+		v := ra.max_place_per_territory - unit_count_already_produced
+		if v < 0 {
+			return 0
+		}
+		return v
+	}
+
+	constructions_map := abstract_place_delegate_how_many_of_each_construction_can_place(
+		self, to, producer, units_can_be_placed_by_this_producer, player,
+	)
+	defer delete(constructions_map)
+	max_constructions: i32 = 0
+	for _, v in constructions_map {
+		max_constructions += v
+	}
+
+	was_factory_there_at_start := abstract_place_delegate_was_owned_unit_that_can_produce_units_or_is_factory_in_territory_at_start_of_step(
+		self, producer, player,
+	)
+	if !was_factory_there_at_start {
+		if ra != nil && ra.max_place_per_territory > 0 {
+			v := ra.max_place_per_territory - unit_count_already_produced
+			if max_constructions < v {
+				v = max_constructions
+			}
+			if v < 0 {
+				return 0
+			}
+			return v
+		}
+		if max_constructions < 0 {
+			return 0
+		}
+		return max_constructions
+	}
+
+	units_at_start := abstract_place_delegate_units_at_start_of_step_in_territory(self, producer)
+	defer delete(units_at_start)
+	production := unit_utils_get_production_potential_of_territory(units_at_start, producer, player, true, true)
+	if max_constructions > 0 {
+		production += max_constructions
+	}
+	if production < 0 {
+		return 0
+	}
+	con_p, con_c := matches_unit_is_construction()
+	for u in already_produced_units {
+		if con_p(con_c, u) {
+			production += 1
+		}
+	}
+
+	unit_count_have_to_and_have_been_be_produced_here := unit_count_already_produced
+	if count_switched_production_to_neighbors && unit_count_already_produced > 0 {
+		if not_usable_as_other_producers == nil {
+			panic("notUsableAsOtherProducers cannot be null if countSwitchedProductionToNeighbors is true")
+		}
+		if current_available_placement_for_other_producers == nil {
+			panic("currentAvailablePlacementForOtherProducers cannot be null if countSwitchedProductionToNeighbors is true")
+		}
+		production_can_not_be_moved: i32 = 0
+		production_that_can_be_taken_over: i32 = 0
+		req_creation_p, req_creation_c := matches_unit_requires_units_on_creation()
+		for placement_move in self.placements {
+			if placement_move.producer_territory != producer {
+				continue
+			}
+			place_territory := placement_move.place_territory
+			units_placed_by_current_placement_move := placement_move.units
+			any_requires := false
+			if abstract_place_delegate_has_unit_placement_restrictions(self) {
+				for u in units_placed_by_current_placement_move {
+					if req_creation_p(req_creation_c, u) {
+						any_requires = true
+						break
+					}
+				}
+			}
+			if !territory_is_water(place_territory) || any_requires {
+				production_can_not_be_moved += i32(len(units_placed_by_current_placement_move))
+			} else {
+				max_production_that_can_be_taken_over_from_this_placement := i32(len(units_placed_by_current_placement_move))
+				new_potential_other_producers := abstract_place_delegate_get_all_producers_3(
+					self, place_territory, player, units_can_be_placed_by_this_producer,
+				)
+				// removeAll(notUsableAsOtherProducers)
+				for i := len(new_potential_other_producers) - 1; i >= 0; i -= 1 {
+					t := new_potential_other_producers[i]
+					for nu in not_usable_as_other_producers^ {
+						if t == nu {
+							ordered_remove(&new_potential_other_producers, i)
+							break
+						}
+					}
+				}
+				// stable insertion sort by best-producer comparator
+				cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(
+					self, place_territory, units_can_be_placed_by_this_producer, player,
+				)
+				for i := 1; i < len(new_potential_other_producers); i += 1 {
+					j := i
+					for j > 0 && cmp_fn(cmp_ctx, new_potential_other_producers[j], new_potential_other_producers[j - 1]) < 0 {
+						tmp := new_potential_other_producers[j]
+						new_potential_other_producers[j] = new_potential_other_producers[j - 1]
+						new_potential_other_producers[j - 1] = tmp
+						j -= 1
+					}
+				}
+				free(cmp_ctx)
+				production_that_can_be_taken_over_from_this_placement: i32 = 0
+				for potential_other_producer in new_potential_other_producers {
+					potential, has_potential := current_available_placement_for_other_producers[potential_other_producer]
+					if !has_potential {
+						units_placed_so_far := abstract_place_delegate_units_placed_in_territory_so_far(self, place_territory)
+						potential = abstract_place_delegate_get_max_units_to_be_placed_from(
+							self, potential_other_producer, units_placed_so_far, place_territory, player,
+						)
+						delete(units_placed_so_far)
+					}
+					if potential == -1 {
+						current_available_placement_for_other_producers[potential_other_producer] = -1
+						production_that_can_be_taken_over_from_this_placement = max_production_that_can_be_taken_over_from_this_placement
+						break
+					}
+					needed := max_production_that_can_be_taken_over_from_this_placement - production_that_can_be_taken_over_from_this_placement
+					surplus := potential - needed
+					if surplus > 0 {
+						current_available_placement_for_other_producers[potential_other_producer] = surplus
+						production_that_can_be_taken_over_from_this_placement += needed
+					} else {
+						current_available_placement_for_other_producers[potential_other_producer] = 0
+						production_that_can_be_taken_over_from_this_placement += potential
+						append(not_usable_as_other_producers, potential_other_producer)
+					}
+					if surplus >= 0 {
+						break
+					}
+				}
+				delete(new_potential_other_producers)
+				if production_that_can_be_taken_over_from_this_placement > max_production_that_can_be_taken_over_from_this_placement {
+					panic("productionThatCanBeTakenOverFromThisPlacement should never be larger than maxProductionThatCanBeTakenOverFromThisPlacement")
+				}
+				production_that_can_be_taken_over += production_that_can_be_taken_over_from_this_placement
+			}
+			if production_that_can_be_taken_over >= unit_count_already_produced - production_can_not_be_moved {
+				break
+			}
+		}
+		v := unit_count_already_produced - production_that_can_be_taken_over
+		if v < 0 {
+			v = 0
+		}
+		unit_count_have_to_and_have_been_be_produced_here = v
+	}
+
+	if ra != nil && ra.max_place_per_territory > 0 {
+		current_value := unit_count_have_to_and_have_been_be_produced_here
+		v1 := production - current_value
+		v2 := ra.max_place_per_territory - current_value
+		value := v1
+		if v2 < value {
+			value = v2
+		}
+		if value < 0 {
+			return 0
+		}
+		return value
+	}
+	v := production - unit_count_have_to_and_have_been_be_produced_here
+	if v < 0 {
+		return 0
+	}
+	return v
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#performPlaceFrom(Territory,Collection,Territory,GamePlayer)
+// Private. Builds a CompositeChange consuming/upgrading units, moving any
+// fighter overflow onto new carriers, removing the placed units from the
+// player's hand, adding them to `at`, and recording an UndoablePlacement.
+abstract_place_delegate_perform_place_from :: proc(
+	self:            ^Abstract_Place_Delegate,
+	producer:        ^Territory,
+	placeable_units: [dynamic]^Unit,
+	at:              ^Territory,
+	player:          ^Game_Player,
+) {
+	change := composite_change_new()
+	did_it := abstract_place_delegate_can_we_consume_units(self, placeable_units, at, change)
+	if !did_it {
+		panic("Something wrong with consuming/upgrading units")
+	}
+	infra_p, infra_c := matches_unit_is_infrastructure()
+	factory_and_infrastructure := make([dynamic]^Unit)
+	defer delete(factory_and_infrastructure)
+	for u in placeable_units {
+		if infra_p(infra_c, u) {
+			append(&factory_and_infrastructure, u)
+		}
+	}
+	if len(factory_and_infrastructure) > 0 {
+		composite_change_add(
+			change,
+			original_owner_tracker_add_original_owner_change_units(factory_and_infrastructure, player),
+		)
+	}
+	moved_air_transcript_text_for_history := abstract_place_delegate_move_air_onto_new_carriers(
+		self, at, producer, placeable_units, player, change,
+	)
+	remove := change_factory_remove_units(cast(^Unit_Holder)player, placeable_units)
+	place := change_factory_add_units(cast(^Unit_Holder)at, placeable_units)
+	composite_change_add(change, remove)
+	composite_change_add(change, place)
+	current_placement := undoable_placement_new(change, producer, at, placeable_units)
+	append(&self.placements, current_placement)
+	abstract_place_delegate_update_undoable_placement_indexes(self)
+	transcript_text := fmt.aprintf(
+		"%s placed in %s",
+		my_formatter_units_to_text_no_owner(placeable_units, nil),
+		territory_to_string(at),
+	)
+	bridge := abstract_delegate_get_bridge(&self.abstract_delegate)
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	desc := undoable_placement_get_description_object(current_placement)
+	i_delegate_history_writer_start_event(writer, transcript_text, rawptr(desc))
+	if msg, has := moved_air_transcript_text_for_history.?; has {
+		history_writer_add_child_to_event(writer, msg)
+	}
+	i_delegate_bridge_add_change(bridge, &change.change)
+	abstract_place_delegate_update_produced_map(self, producer, placeable_units)
+}

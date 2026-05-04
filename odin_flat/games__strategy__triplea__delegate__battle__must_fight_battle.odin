@@ -106,6 +106,117 @@ must_fight_battle_lambda_add_attack_change_0 :: proc(k: ^Territory) -> [dynamic]
 	return [dynamic]^Unit{}
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#addAttackChange(Route, Collection<Unit>, Map<Unit, Set<Unit>>)
+//
+// Java: see MustFightBattle.java. Builds the CompositeChange recording the
+// attack: appends `units` (filtered to the attacker's own units when
+// WW2V2 is enabled) to attackingUnits and to attackingFromMap[territory
+// before end of route]; flips isAmphibious / amphibiousAttackFrom when
+// the route is sea→land and any attacker is land; if allied air is not
+// independent, marks allied air as transportedBy on the available
+// carriers and removes them from attackingUnits; finally marks the
+// non-air (and, on a sea battle, non-land) attackers as having no
+// movement, unless the route only walks through ignored sub/transport
+// units. The `targets` parameter is required by the IBattle override
+// signature but is unused in MustFightBattle's implementation.
+must_fight_battle_add_attack_change :: proc(
+	self: ^Must_Fight_Battle,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	targets: map[^Unit]map[^Unit]struct{},
+) -> ^Change {
+	_ = targets
+	change := composite_change_new()
+	// Filter out allied units if WW2V2.
+	owned_p, owned_c := matches_unit_is_owned_by(self.attacker)
+	attacking_units: [dynamic]^Unit
+	if properties_get_ww2_v2(game_data_get_properties(self.game_data)) {
+		for u in units {
+			if owned_p(owned_c, u) {
+				append(&attacking_units, u)
+			}
+		}
+	} else {
+		for u in units {
+			append(&attacking_units, u)
+		}
+	}
+	attacking_from := route_get_territory_before_end(route)
+	for u in attacking_units {
+		append(&self.attacking_units, u)
+	}
+	bucket, ok := self.attacking_from_map[attacking_from]
+	if !ok {
+		bucket = must_fight_battle_lambda_add_attack_change_0(attacking_from)
+	}
+	for u in attacking_units {
+		append(&bucket, u)
+	}
+	self.attacking_from_map[attacking_from] = bucket
+	// are we amphibious
+	start := route_get_start(route)
+	end := route_get_end(route)
+	if territory_is_water(start) && !territory_is_water(end) {
+		land_p, land_c := matches_unit_is_land()
+		any_land := false
+		for u in attacking_units {
+			if land_p(land_c, u) {
+				any_land = true
+				break
+			}
+		}
+		if any_land {
+			append(&self.amphibious_attack_from, route_get_territory_before_end(route))
+			self.is_amphibious = true
+		}
+	}
+	if !properties_get_allied_air_independent(game_data_get_properties(self.game_data)) {
+		// allied air can not participate in the battle so set transportedBy
+		// on each allied air unit and remove them from the attacking units.
+		allied_air_transport_change := transport_tracker_mark_transported_by_for_allied_air_on_carrier(units, self.attacker)
+		composite_change_add(change, &allied_air_transport_change.change.change)
+		air_set: map[^Unit]struct{}
+		defer delete(air_set)
+		for u in allied_air_transport_change.allied_air {
+			air_set[u] = {}
+		}
+		for i := len(self.attacking_units) - 1; i >= 0; i -= 1 {
+			if _, found := air_set[self.attacking_units[i]]; found {
+				ordered_remove(&self.attacking_units, i)
+			}
+		}
+	}
+	// mark units with no movement for all but air
+	not_air_p, not_air_c := matches_unit_is_not_air()
+	non_air: [dynamic]^Unit
+	for u in attacking_units {
+		if not_air_p(not_air_c, u) {
+			append(&non_air, u)
+		}
+	}
+	// we don't want to change the movement of transported land units if this
+	// is a sea battle so restrict non-air to remove land units.
+	if territory_is_water(self.battle_site) {
+		not_land_p, not_land_c := matches_unit_is_not_land()
+		filtered: [dynamic]^Unit
+		for u in non_air {
+			if not_land_p(not_land_c, u) {
+				append(&filtered, u)
+			}
+		}
+		delete(non_air)
+		non_air = filtered
+	}
+	// If attacker stops in an occupied territory, movement stops (battle is
+	// optional).
+	move_validator := move_validator_new(self.game_data, false)
+	if move_validator_only_ignored_units_on_path(move_validator, route, self.attacker, false) {
+		return &change.change
+	}
+	composite_change_add(change, change_factory_mark_no_movement_change_collection(non_air))
+	return &change.change
+}
+
 // games.strategy.triplea.delegate.battle.MustFightBattle#markCasualties(Collection<Unit>, Side)
 //
 //   if (casualties.isEmpty()) return;

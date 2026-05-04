@@ -165,3 +165,13 @@ check_general_battle_end_can_attacker_retreat_in_stalemate :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#getFiringGroup
+check_general_battle_end_get_firing_group :: proc(
+	self: ^Check_General_Battle_End,
+	side: Battle_State_Side,
+	type: Firing_Group_Splitter_General_Type,
+) -> [dynamic]^Firing_Group {
+	splitter := firing_group_splitter_general_new(side, type, "stalemate")
+	return firing_group_splitter_general_apply(splitter, self.battle_state)
+}
+

@@ -173,3 +173,53 @@ aa_casualty_selector_calculate_rolled_aa_casualties :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#getLowLuckAaCasualties(java.util.List,games.strategy.triplea.delegate.power.calculator.AaPowerStrengthAndRolls,games.strategy.triplea.delegate.DiceRoll,games.strategy.engine.delegate.IDelegateBridge)
+aa_casualty_selector_get_low_luck_aa_casualties :: proc(
+	available_targets: [dynamic]^Unit,
+	unit_power_and_rolls_map: ^Aa_Power_Strength_And_Rolls,
+	dice: ^Dice_Roll,
+	bridge: ^I_Delegate_Bridge,
+) -> [dynamic]^Unit {
+	target_groups := low_luck_target_groups_new(available_targets, dice, unit_power_and_rolls_map)
+
+	if !low_luck_target_groups_has_guaranteed_groups(target_groups) {
+		// it is not possible to separate the targets into guaranteed hit groups so randomly
+		// choose the targets instead
+		return aa_casualty_selector_find_random_targets(
+			available_targets,
+			bridge,
+			dice_roll_get_hits(dice),
+		)
+	}
+
+	if dice_roll_get_hits(dice) >= i32(len(low_luck_target_groups_get_guaranteed_hit_groups(target_groups))) {
+		// there are enough hits to hit all the guaranteed hits
+		hit_units := low_luck_target_groups_get_guaranteed_hits(target_groups)
+
+		// if there are more hits than groups, the extra hits come out of the remainderUnits
+		remainder_hits := dice_roll_get_hits(dice) - i32(len(hit_units))
+		if remainder_hits > 0 {
+			// randomly pull out units from the remainder group
+			extras := aa_casualty_selector_find_random_targets(
+				low_luck_target_groups_get_remainder_units(target_groups),
+				bridge,
+				remainder_hits,
+			)
+			for u in extras {
+				append(&hit_units, u)
+			}
+		}
+		return hit_units
+	} else {
+		// There is somehow more guaranteed hit groups than hits. This currently only happens
+		// with multi hp targets and damageable AA shots.
+
+		// Randomly pick out of the guaranteed hits
+		return aa_casualty_selector_find_random_targets(
+			low_luck_target_groups_get_guaranteed_hits(target_groups),
+			bridge,
+			dice_roll_get_hits(dice),
+		)
+	}
+}
+

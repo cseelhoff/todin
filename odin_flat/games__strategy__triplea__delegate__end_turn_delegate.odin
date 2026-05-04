@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 
 End_Turn_Delegate :: struct {
 	using abstract_end_turn_delegate: Abstract_End_Turn_Delegate,
@@ -721,5 +722,63 @@ end_turn_delegate_add_other_resources :: proc(
 	if !composite_change_is_empty(change) {
 		i_delegate_bridge_add_change(bridge, &change.change)
 	}
+	return string_builder_to_string(end_turn_report)
+}
+
+// ---------------------------------------------------------------------------
+// games.strategy.triplea.delegate.EndTurnDelegate
+//   #doNationalObjectivesAndOtherEndTurnEffects(IDelegateBridge bridge)
+//
+// Java:
+//   final StringBuilder endTurnReport = new StringBuilder();
+//   if (Properties.getNationalObjectives(getData().getProperties())) {
+//     final String nationalObjectivesText = determineNationalObjectives(bridge);
+//     if (!nationalObjectivesText.isBlank()) {
+//       endTurnReport.append(nationalObjectivesText).append("<br />");
+//     }
+//   }
+//   final String unitCreatedResourcesText = addUnitCreatedResources(bridge);
+//   if (!unitCreatedResourcesText.isBlank()) {
+//     endTurnReport.append(unitCreatedResourcesText).append("<br />");
+//   }
+//   final String createsUnitsText = createUnits(bridge);
+//   if (!createsUnitsText.isBlank()) {
+//     endTurnReport.append(createsUnitsText).append("<br />");
+//   }
+//   return endTurnReport.toString();
+// ---------------------------------------------------------------------------
+end_turn_delegate_do_national_objectives_and_other_end_turn_effects :: proc(
+	self: ^End_Turn_Delegate,
+	bridge: ^I_Delegate_Bridge,
+) -> string {
+	end_turn_report := string_builder_new()
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+
+	if properties_get_national_objectives(game_data_get_properties(data)) {
+		national_objectives_text := end_turn_delegate_determine_national_objectives(
+			self,
+			bridge,
+		)
+		if strings.trim_space(national_objectives_text) != "" {
+			string_builder_append(end_turn_report, national_objectives_text)
+			string_builder_append(end_turn_report, "<br />")
+		}
+	}
+
+	unit_created_resources_text := end_turn_delegate_add_unit_created_resources(
+		self,
+		bridge,
+	)
+	if strings.trim_space(unit_created_resources_text) != "" {
+		string_builder_append(end_turn_report, unit_created_resources_text)
+		string_builder_append(end_turn_report, "<br />")
+	}
+
+	creates_units_text := end_turn_delegate_create_units_with_bridge(self, bridge)
+	if strings.trim_space(creates_units_text) != "" {
+		string_builder_append(end_turn_report, creates_units_text)
+		string_builder_append(end_turn_report, "<br />")
+	}
+
 	return string_builder_to_string(end_turn_report)
 }

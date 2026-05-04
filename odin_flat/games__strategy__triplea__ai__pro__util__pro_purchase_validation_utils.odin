@@ -422,3 +422,66 @@ pro_purchase_validation_utils_has_enough_resources_and_production :: proc(
 	return pro_resource_tracker_has_enough(resource_tracker, purchase_option) &&
 	       pro_purchase_option_get_quantity(purchase_option) <= limit
 }
+
+// Mirrors Java's lambda inside removeInvalidPurchaseOptions:
+//   purchaseOption ->
+//        !hasEnoughResourcesAndProduction(purchaseOption, resourceTracker,
+//                                         remainingUnitProduction, remainingConstructions)
+//     || hasReachedMaxUnitBuiltPerPlayer(purchaseOption, player, data,
+//                                        unitsToPlace, purchaseTerritories)
+//     || hasReachedConstructionLimits(purchaseOption, data, unitsToPlace,
+//                                     purchaseTerritories, territory)
+//     || !unitsToConsumeAreAllPresent(proData, player, territory,
+//            combineLists(unitsToPlace, purchaseOption.createTempUnits()))
+// Returns true when the purchaseOption should be removed (mirrors the
+// removeIf predicate). Captured environment is passed explicitly; the
+// purchase_option arg comes last to match the Java lambda signature.
+pro_purchase_validation_utils_lambda_remove_invalid_purchase_options_1 :: proc(
+	resource_tracker: ^Pro_Resource_Tracker,
+	remaining_unit_production: i32,
+	remaining_constructions: i32,
+	player: ^Game_Player,
+	data: ^Game_State,
+	units_to_place: [dynamic]^Unit,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	territory: ^Territory,
+	pro_data: ^Pro_Data,
+	purchase_option: ^Pro_Purchase_Option,
+) -> bool {
+	if !pro_purchase_validation_utils_has_enough_resources_and_production(
+		purchase_option,
+		resource_tracker,
+		remaining_unit_production,
+		remaining_constructions,
+	) {
+		return true
+	}
+	if pro_purchase_validation_utils_has_reached_max_unit_built_per_player(
+		purchase_option,
+		player,
+		data,
+		units_to_place,
+		purchase_territories,
+	) {
+		return true
+	}
+	if pro_purchase_validation_utils_has_reached_construction_limits(
+		purchase_option,
+		data,
+		units_to_place,
+		purchase_territories,
+		territory,
+	) {
+		return true
+	}
+	combined := pro_purchase_validation_utils_combine_lists(
+		units_to_place,
+		pro_purchase_option_create_temp_units(purchase_option),
+	)
+	return !pro_purchase_validation_utils_units_to_consume_are_all_present(
+		pro_data,
+		player,
+		territory,
+		combined,
+	)
+}

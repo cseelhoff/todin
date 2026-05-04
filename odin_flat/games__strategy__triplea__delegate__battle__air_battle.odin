@@ -280,3 +280,70 @@ air_battle_territory_could_possibly_have_air_battle_defenders :: proc(
 	return false
 }
 
+// games.strategy.triplea.delegate.battle.AirBattle#<init>(
+//     Territory, IBattle$BattleType, GameData, GamePlayer, BattleTracker)
+//
+// Java:
+//   AirBattle(Territory battleSite, BattleType battleType, GameData data,
+//             GamePlayer attacker, BattleTracker battleTracker) {
+//     super(battleSite, attacker, battleTracker, battleType, data);
+//     isAmphibious = false;
+//     maxRounds = Properties.getAirBattleRounds(data.getProperties());
+//     updateDefendingUnits();
+//   }
+//
+// Mirrors AbstractBattle's constructor inline (we can't call
+// abstract_battle_new because it allocates a separate Abstract_Battle;
+// here the embedded base lives inside Air_Battle).
+air_battle_new :: proc(
+	battle_site: ^Territory,
+	battle_type: I_Battle_Battle_Type,
+	data: ^Game_Data,
+	attacker: ^Game_Player,
+	battle_tracker: ^Battle_Tracker,
+) -> ^Air_Battle {
+	self := new(Air_Battle)
+	// super(battleSite, attacker, battleTracker, battleType, data)
+	self.battle_id = uuid_random_uuid()
+	self.headless = false
+	self.round = 1
+	self.is_over = false
+	self.who_won = .NOT_FINISHED
+	self.attacker_lost_tuv = 0
+	self.defender_lost_tuv = 0
+	self.dependent_units = make(map[^Unit][dynamic]^Unit)
+	self.attacking_units = make([dynamic]^Unit)
+	self.defending_units = make([dynamic]^Unit)
+	self.amphibious_land_attackers = make([dynamic]^Unit)
+	self.bombarding_units = make([dynamic]^Unit)
+	self.battle_tracker = battle_tracker
+	self.attacker = attacker
+	self.battle_site = battle_site
+	self.territory_effects = territory_effect_helper_get_effects(battle_site)
+	self.is_bombing_run = i_battle_battle_type_is_bombing_run(battle_type)
+	self.battle_type = battle_type
+	self.game_data = data
+	self.defender = abstract_battle_find_defender(battle_site, attacker, &data.game_state)
+	// AirBattle's own fields:
+	//   protected final ExecutionStack stack = new ExecutionStack();
+	//   protected final Collection<Unit> defendingWaitingToDie = new ArrayList<>();
+	//   protected final Collection<Unit> attackingWaitingToDie = new ArrayList<>();
+	//   protected boolean intercept = false;
+	self.stack = Execution_Stack {
+		current_step = nil,
+		deque        = make([dynamic]^I_Executable),
+	}
+	self.defending_waiting_to_die = make([dynamic]^Unit)
+	self.attacking_waiting_to_die = make([dynamic]^Unit)
+	self.intercept = false
+	// isAmphibious = false
+	self.is_amphibious = false
+	// maxRounds = Properties.getAirBattleRounds(data.getProperties())
+	self.max_rounds = properties_get_air_battle_rounds(
+		game_state_get_properties(&data.game_state),
+	)
+	// updateDefendingUnits()
+	air_battle_update_defending_units(self)
+	return self
+}
+

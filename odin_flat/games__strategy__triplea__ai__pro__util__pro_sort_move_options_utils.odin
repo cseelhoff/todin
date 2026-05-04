@@ -422,3 +422,118 @@ pro_sort_move_options_utils_lambda_sort_unit_needed_options_1 :: proc(
 	n2 := default_named_get_name(&unit_type2.named_attachable.default_named)
 	return strings.compare(n1, n2)
 }
+
+// Java: lambda$sortUnitNeededOptionsThenAttack$4(GamePlayer player,
+//           Map<Territory, ProTerritory> attackMap,
+//           ProOddsCalculator calc,
+//           Map<Object, Double> attackEfficiencyCache,
+//           ProData proData, GameState data,
+//           Map<Unit, Territory> unitTerritoryMap,
+//           Map.Entry<Unit, Set<Territory>> o1,
+//           Map.Entry<Unit, Set<Territory>> o2) -> int
+// Comparator body of sortUnitNeededOptionsThenAttack: order by need
+// count asc, then attack efficiency desc (cached per entry via
+// computeIfAbsent), then — when both unit types are equal and air —
+// by total air distance from the unit's home territory across the
+// filtered targets asc, then by unit type name asc. The cache is keyed
+// on the entry's unit pointer (the entry identity used by Java's
+// HashMap<Object,Double> in the source).
+pro_sort_move_options_utils_lambda_sort_unit_needed_options_then_attack_4 :: proc(
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	calc: ^Pro_Odds_Calculator,
+	attack_efficiency_cache: ^map[^Unit]f64,
+	pro_data: ^Pro_Data,
+	data: ^Game_Data,
+	unit_territory_map: map[^Unit]^Territory,
+	o1: Pro_Sort_Move_Options_Map_Entry,
+	o2: Pro_Sort_Move_Options_Map_Entry,
+) -> int {
+	territories1 := pro_sort_move_options_utils_remove_winning_territories(
+		o1.value,
+		player,
+		attack_map,
+		calc,
+	)
+	territories2 := pro_sort_move_options_utils_remove_winning_territories(
+		o2.value,
+		player,
+		attack_map,
+		calc,
+	)
+
+	if len(territories1) != len(territories2) {
+		return len(territories1) - len(territories2)
+	}
+	if len(territories1) == 0 {
+		return 0
+	}
+
+	u1 := o1.key
+	u2 := o2.key
+
+	ae1, ok1 := attack_efficiency_cache[u1]
+	if !ok1 {
+		ae1 = pro_sort_move_options_utils_calculate_attack_efficiency(
+			pro_data,
+			player,
+			attack_map,
+			territories1,
+			u1,
+		)
+		attack_efficiency_cache[u1] = ae1
+	}
+	ae2, ok2 := attack_efficiency_cache[u2]
+	if !ok2 {
+		ae2 = pro_sort_move_options_utils_calculate_attack_efficiency(
+			pro_data,
+			player,
+			attack_map,
+			territories2,
+			u2,
+		)
+		attack_efficiency_cache[u2] = ae2
+	}
+	if ae1 != ae2 {
+		if ae1 < ae2 {
+			return 1
+		}
+		return -1
+	}
+
+	unit_type1 := unit_get_type(u1)
+	unit_type2 := unit_get_type(u2)
+
+	if unit_type1 == unit_type2 && unit_attachment_is_air(unit_type_get_unit_attachment(unit_type1)) {
+		air_pred, air_ctx := pro_matches_territory_can_move_air_units_and_no_aa(data, player, true)
+		territory1 := unit_territory_map[u1]
+		territory2 := unit_territory_map[u2]
+		distance1: i32 = 0
+		for t in territories1 {
+			distance1 += game_map_get_distance_predicate(
+				game_data_get_map(data),
+				territory1,
+				t,
+				air_pred,
+				air_ctx,
+			)
+		}
+		distance2: i32 = 0
+		for t in territories2 {
+			distance2 += game_map_get_distance_predicate(
+				game_data_get_map(data),
+				territory2,
+				t,
+				air_pred,
+				air_ctx,
+			)
+		}
+		if distance1 != distance2 {
+			return int(distance1 - distance2)
+		}
+	}
+
+	n1 := default_named_get_name(&unit_type1.named_attachable.default_named)
+	n2 := default_named_get_name(&unit_type2.named_attachable.default_named)
+	return strings.compare(n1, n2)
+}

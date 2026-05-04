@@ -2459,3 +2459,195 @@ pro_matches_territory_is_enemy_land :: proc(
 	return pro_matches_pred_territory_is_enemy_land, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// territoryCanMoveLandUnitsThroughIgnoreEnemyUnits(player, u, startTerritory,
+//     isCombatMove, blockedTerritories, clearedTerritories) -> Predicate<Territory>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_move_land_units_through_ignore_enemy_units :: struct {
+	player:               ^Game_Player,
+	u:                    ^Unit,
+	start_territory:      ^Territory,
+	is_combat_move:       bool,
+	blocked_territories:  [dynamic]^Territory,
+	cleared_territories:  [dynamic]^Territory,
+}
+
+pro_matches_pred_territory_can_move_land_units_through_ignore_enemy_units :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_move_land_units_through_ignore_enemy_units)ctx_ptr
+	for bt in ctx.blocked_territories {
+		if bt == t {
+			return false
+		}
+	}
+	cm_p, cm_c := pro_matches_territory_can_move_specific_land_unit(ctx.player, ctx.is_combat_move, ctx.u)
+	if !cm_p(cm_c, t) {
+		return false
+	}
+	at_p, at_c := matches_is_territory_allied(ctx.player)
+	if at_p(at_c, t) {
+		return true
+	}
+	for ct in ctx.cleared_territories {
+		if ct == t {
+			return true
+		}
+	}
+	if ctx.is_combat_move {
+		ucb_p, ucb_c := matches_unit_can_blitz()
+		if ucb_p(ucb_c, ctx.u) && territory_effect_helper_unit_keeps_blitz(ctx.u, ctx.start_territory) {
+			tib_p, tib_c := pro_matches_territory_is_blitzable(ctx.player, ctx.u)
+			if tib_p(tib_c, t) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+pro_matches_territory_can_move_land_units_through_ignore_enemy_units :: proc(
+	player: ^Game_Player,
+	u: ^Unit,
+	start_territory: ^Territory,
+	is_combat_move: bool,
+	blocked_territories: [dynamic]^Territory,
+	cleared_territories: [dynamic]^Territory,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_move_land_units_through_ignore_enemy_units)
+	ctx.player = player
+	ctx.u = u
+	ctx.start_territory = start_territory
+	ctx.is_combat_move = is_combat_move
+	ctx.blocked_territories = blocked_territories
+	ctx.cleared_territories = cleared_territories
+	return pro_matches_pred_territory_can_move_land_units_through_ignore_enemy_units, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsEnemyNotPassiveNeutralLand(player) -> Predicate<Territory>
+//   == territoryIsEnemyLand(player)
+//        .and(Matches.territoryIsNeutralButNotWater().negate())
+//        .and(t -> !ProUtils.isPassiveNeutralPlayer(t.getOwner()))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_enemy_not_passive_neutral_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_land)ctx_ptr
+	el_p, el_c := pro_matches_territory_is_enemy_land(ctx.player)
+	if !el_p(el_c, t) {
+		return false
+	}
+	nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+	if nbnw_p(nbnw_c, t) {
+		return false
+	}
+	return !pro_utils_is_passive_neutral_player(territory_get_owner(t))
+}
+
+pro_matches_territory_is_enemy_not_passive_neutral_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_enemy_not_passive_neutral_land)
+	ctx.player = player
+	return pro_matches_pred_territory_is_enemy_not_passive_neutral_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsEnemyNotNeutralLand(player) -> Predicate<Territory>
+//   == territoryIsEnemyLand(player)
+//        .and(Matches.territoryIsNeutralButNotWater().negate())
+//        .and(t -> !ProUtils.isNeutralPlayer(t.getOwner()))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_enemy_not_neutral_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_enemy_not_neutral_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_enemy_not_neutral_land)ctx_ptr
+	el_p, el_c := pro_matches_territory_is_enemy_land(ctx.player)
+	if !el_p(el_c, t) {
+		return false
+	}
+	nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+	if nbnw_p(nbnw_c, t) {
+		return false
+	}
+	return !pro_utils_is_neutral_player(territory_get_owner(t))
+}
+
+pro_matches_territory_is_enemy_not_neutral_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_enemy_not_neutral_land)
+	ctx.player = player
+	return pro_matches_pred_territory_is_enemy_not_neutral_land, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsOrAdjacentToEnemyNotNeutralLand(player) -> Predicate<Territory>
+//   isMatch    = territoryIsEnemyLand
+//                  .and(territoryIsNeutralButNotWater().negate())
+//                  .and(t -> !ProUtils.isPassiveNeutralPlayer(t.getOwner()))
+//   adjacent   = territoryCanMoveLandUnits(player, false)
+//                  .and(territoryHasNeighborMatching(map, isMatch))
+//   return     isMatch.or(adjacent)
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_or_adjacent_to_enemy_not_neutral_land :: struct {
+	player: ^Game_Player,
+}
+
+// inner: same as territoryIsEnemyNotPassiveNeutralLand body
+pro_matches_pred_toa_enemy_not_neutral_inner :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_or_adjacent_to_enemy_not_neutral_land)ctx_ptr
+	el_p, el_c := pro_matches_territory_is_enemy_land(ctx.player)
+	if !el_p(el_c, t) {
+		return false
+	}
+	nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+	if nbnw_p(nbnw_c, t) {
+		return false
+	}
+	return !pro_utils_is_passive_neutral_player(territory_get_owner(t))
+}
+
+pro_matches_pred_territory_is_or_adjacent_to_enemy_not_neutral_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_or_adjacent_to_enemy_not_neutral_land)ctx_ptr
+	if pro_matches_pred_toa_enemy_not_neutral_inner(ctx_ptr, t) {
+		return true
+	}
+	l_p, l_c := pro_matches_territory_can_move_land_units(ctx.player, false)
+	if !l_p(l_c, t) {
+		return false
+	}
+	game_map := game_data_get_map(game_player_get_data(ctx.player))
+	hn_p, hn_c := matches_territory_has_neighbor_matching(
+		game_map, pro_matches_pred_toa_enemy_not_neutral_inner, ctx_ptr,
+	)
+	return hn_p(hn_c, t)
+}
+
+pro_matches_territory_is_or_adjacent_to_enemy_not_neutral_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_or_adjacent_to_enemy_not_neutral_land)
+	ctx.player = player
+	return pro_matches_pred_territory_is_or_adjacent_to_enemy_not_neutral_land, rawptr(ctx)
+}
+

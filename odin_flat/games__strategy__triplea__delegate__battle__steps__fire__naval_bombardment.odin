@@ -149,3 +149,61 @@ naval_bombardment_get_all_step_details :: proc(
 	}
 	return result
 }
+
+// Java: public void execute(ExecutionStack stack, IDelegateBridge bridge)
+//   if (!valid()) return;
+//   Collection<Unit> bombardingUnits = battleState.getBombardingUnits();
+//   if (!bombardingUnits.isEmpty()) {
+//     Change change = ChangeFactory.markNoMovementChange(bombardingUnits);
+//     bridge.addChange(change);
+//   }
+//   List<BattleStep> steps = getSteps();
+//   if (!steps.isEmpty()) {
+//     bridge.getSoundChannelBroadcaster().playSoundForAll(
+//         SoundPath.CLIP_BATTLE_BOMBARD, battleState.getPlayer(side));
+//     Collections.reverse(steps);
+//     steps.forEach(stack::push);
+//   }
+//
+// Notes:
+//   - SoundPath.CLIP_BATTLE_BOMBARD is the literal string "battle_bombard"
+//     (see SoundPath.java); the Odin sound channel takes the bare key.
+//   - Battle_Step embeds I_Executable at offset 0 (see battle_step.odin);
+//     casting `^Battle_Step` to `^I_Executable` matches the
+//     defensive_first_strike_execute / move_performer pattern for
+//     stack::push.
+naval_bombardment_execute :: proc(
+	self: ^Naval_Bombardment,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	if !naval_bombardment_valid(self) {
+		return
+	}
+
+	bombarding_units := battle_state_get_bombarding_units(self.battle_state)
+	if len(bombarding_units) > 0 {
+		change := change_factory_mark_no_movement_change_collection(bombarding_units)
+		i_delegate_bridge_add_change(bridge, change)
+	}
+
+	steps := naval_bombardment_get_steps(self)
+	if len(steps) > 0 {
+		channel := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+		headless_sound_channel_play_sound_for_all(
+			channel,
+			"battle_bombard",
+			battle_state_get_player(self.battle_state, .OFFENSE),
+		)
+
+		// Collections.reverse: in-place reverse of the dynamic array.
+		n := len(steps)
+		for i in 0 ..< n / 2 {
+			steps[i], steps[n - 1 - i] = steps[n - 1 - i], steps[i]
+		}
+		// steps.forEach(stack::push)
+		for step in steps {
+			execution_stack_push_one(stack, cast(^I_Executable)step)
+		}
+	}
+}

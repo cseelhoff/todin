@@ -1467,3 +1467,268 @@ move_validator_convert_transport_keyed_map_to_loaded_unit_keyed_map :: proc(
 	return units_to_transport
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateCanal(Route, Collection<Unit>, Map<Unit, Collection<Unit>>, GamePlayer)
+// Java (package-private):
+//   @Nullable String validateCanal(
+//       final Route route,
+//       @Nullable final Collection<Unit> units,
+//       final Map<Unit, Collection<Unit>> airTransportDependents,
+//       final GamePlayer player) { ... }
+//
+// The Java parameter `units` is nullable. Odin's [dynamic]^Unit cannot
+// directly express "null Collection vs empty Collection", so we add an
+// explicit `units_is_null` discriminator. When true, Java's
+// `setWithNull` (a singleton set holding `null`) is mirrored by an
+// `units_without_dependents` containing one `nil` ^Unit, which is
+// fine because `move_validator_can_pass_through_canal` already
+// short-circuits the `unit != null` branch.
+//
+// Optional<String> result -> nullable ^string. We allocate the result
+// string with `new(string)` once we know the final answer; callers
+// that compare the return to `nil` use the standard Odin pointer
+// idiom.
+move_validator_validate_canal_with_dependents :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	units_is_null: bool,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^string {
+	territories := route_get_all_territories(route)
+	defer delete(territories)
+
+	territory_canals: map[^Territory][dynamic]^Canal_Attachment
+	defer {
+		for _, list in territory_canals {
+			delete(list)
+		}
+		delete(territory_canals)
+	}
+
+	num_canals := 0
+	for t in territories {
+		canals := canal_attachment_get(t, route)
+		territory_canals[t] = canals
+		num_canals += len(canals)
+	}
+	if num_canals == 0 {
+		return nil
+	}
+	must_control_all_canals := properties_get_control_all_canals_between_territories_to_pass(
+		game_data_get_properties(self.data),
+	)
+
+	last_failure: string
+	has_failure := false
+	units_that_fail_canal: map[^Unit]struct {}
+	defer delete(units_that_fail_canal)
+
+	units_without_dependents: [dynamic]^Unit
+	defer delete(units_without_dependents)
+	if units_is_null {
+		append(&units_without_dependents, (^Unit)(nil))
+	} else {
+		deps_units := move_validator_find_non_dependent_units(
+			units,
+			route,
+			air_transport_dependents,
+		)
+		defer delete(deps_units)
+		for u in deps_units {
+			append(&units_without_dependents, u)
+		}
+	}
+
+	for unit in units_without_dependents {
+		for t in territories {
+			failure_message: string
+			failure_present := false
+			canals_for_t := territory_canals[t]
+			for canal_attachment in canals_for_t {
+				msg, present := move_validator_can_pass_through_canal(
+					self,
+					canal_attachment,
+					unit,
+					player,
+				)
+				failure_message = msg
+				failure_present = present
+				can_pass := !failure_present
+				if must_control_all_canals != can_pass {
+					// need to control any canal and can pass OR
+					// need to control all and can't pass.
+					break
+				}
+			}
+			if failure_present {
+				last_failure = failure_message
+				has_failure = true
+				units_that_fail_canal[unit] = struct {}{}
+			}
+		}
+	}
+	if !has_failure {
+		return nil
+	}
+	if units_is_null {
+		rs := new(string)
+		rs^ = last_failure
+		return rs
+	}
+
+	// If any units failed canal check then try to land transport them.
+	potential_land_transports: [dynamic]^Unit
+	defer delete(potential_land_transports)
+	units_to_land_transport: [dynamic]^Unit
+	defer delete(units_to_land_transport)
+
+	ctx1 := Move_Validator_Validate_Canal_1_Ctx {
+		units_that_fail_canal = units_that_fail_canal,
+		route                 = route,
+	}
+	ctx2 := Move_Validator_Validate_Canal_2_Ctx {
+		units_that_fail_canal = units_that_fail_canal,
+		route                 = route,
+	}
+	for u in units_without_dependents {
+		if move_validator_lambda_validate_canal_1(rawptr(&ctx1), u) {
+			append(&potential_land_transports, u)
+		}
+		if move_validator_lambda_validate_canal_2(rawptr(&ctx2), u) {
+			append(&units_to_land_transport, u)
+		}
+	}
+
+	disallowed := move_validator_check_land_transports(
+		self,
+		player,
+		potential_land_transports,
+		units_to_land_transport,
+	)
+	defer delete(disallowed)
+	if len(disallowed) == 0 {
+		return nil
+	}
+	rs := new(string)
+	rs^ = last_failure
+	return rs
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateParatroops
+// Java (private):
+//   private MoveValidationResult validateParatroops(
+//       final Collection<Unit> units,
+//       final Map<Unit, Collection<Unit>> airTransportDependents,
+//       final Route route,
+//       final GamePlayer player,
+//       final MoveValidationResult result) { ... }
+move_validator_validate_paratroops :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	if !tech_attachment_get_paratroopers(game_player_get_tech_attachment(player)) {
+		return result
+	}
+
+	transportable_p, transportable_c := matches_unit_is_air_transportable()
+	transport_p, transport_c := matches_unit_is_air_transport()
+	has_transportable := false
+	has_transport := false
+	for u in units {
+		if !has_transportable && transportable_p(transportable_c, u) {
+			has_transportable = true
+		}
+		if !has_transport && transport_p(transport_c, u) {
+			has_transport = true
+		}
+		if has_transportable && has_transport {
+			break
+		}
+	}
+	if !has_transportable || !has_transport {
+		return result
+	}
+
+	properties := game_data_get_properties(self.data)
+	if self.is_non_combat &&
+	   !properties_get_paratroopers_can_move_during_non_combat(properties) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Paratroops may not move during NonCombat",
+		)
+	}
+	if !edit_delegate_get_edit_mode(properties) {
+		// if we can move without using paratroop tech, do so this allows
+		// moving a bomber/infantry from one friendly territory to another
+		paratroopers_to_air_transports :=
+			move_validator_convert_transport_keyed_map_to_loaded_unit_keyed_map(
+				self,
+				air_transport_dependents,
+				result,
+			)
+		defer delete(paratroopers_to_air_transports)
+		if move_validation_result_has_error(result) {
+			return result
+		}
+		for air_transport, _ in air_transport_dependents {
+			if unit_has_moved(air_transport) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Cannot move then transport paratroops",
+					air_transport,
+				)
+			}
+		}
+		friendly_p, friendly_c := matches_is_territory_friendly(player)
+		friendly_end := friendly_p(friendly_c, route_get_end(route))
+		can_move_non_combat := properties_get_paratroopers_can_move_during_non_combat(
+			properties,
+		)
+		is_wrong_phase := !self.is_non_combat && friendly_end && can_move_non_combat
+		must_advance_to_battle := friendly_end && !can_move_non_combat
+		for paratroop, _ in paratroopers_to_air_transports {
+			if unit_has_moved(paratroop) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Cannot paratroop units that have already moved",
+					paratroop,
+				)
+			}
+			if must_advance_to_battle {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Paratroops must advance to battle",
+					paratroop,
+				)
+			}
+			if is_wrong_phase {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Paratroops may only airlift during Non-Combat Movement Phase",
+					paratroop,
+				)
+			}
+		}
+		if !properties_get_paratroopers_can_attack_deep_into_enemy_territory(properties) {
+			land_p, land_c := matches_territory_is_land()
+			enemy_p, enemy_c := matches_is_territory_enemy(player)
+			middle := route_get_middle_steps(route)
+			defer delete(middle)
+			for t in middle {
+				if land_p(land_c, t) && enemy_p(enemy_c, t) {
+					return move_validation_result_set_error_return_result(
+						result,
+						"Must stop paratroops in first enemy territory",
+					)
+				}
+			}
+		}
+	}
+	return result
+}
+

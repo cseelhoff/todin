@@ -21,3 +21,39 @@ mark_no_movement_left_get_order :: proc(self: ^Mark_No_Movement_Left) -> Battle_
 	return .MARK_NO_MOVEMENT_LEFT
 }
 
+// Java: MarkNoMovementLeft#execute(ExecutionStack, IDelegateBridge)
+//   if (battleState.getStatus().isFirstRound() && !battleState.getStatus().isHeadless()) {
+//     final Collection<Unit> attackingNonAir =
+//         CollectionUtils.getMatches(
+//             battleState.filterUnits(ALIVE, OFFENSE), Matches.unitIsAir().negate());
+//     final Change noMovementChange = ChangeFactory.markNoMovementChange(attackingNonAir);
+//     if (!noMovementChange.isEmpty()) bridge.addChange(noMovementChange);
+//   }
+// `collection_utils_get_matches` takes `proc(rawptr) -> bool`, but
+// `matches_unit_is_air` returns the rawptr-ctx pair form; following
+// the convention in air_that_cant_land_util.odin we filter inline.
+mark_no_movement_left_execute :: proc(
+	self: ^Mark_No_Movement_Left,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	status := battle_state_get_status(self.battle_state)
+	if battle_status_is_first_round(status) && !battle_status_is_headless(status) {
+		alive_filter := battle_state_unit_battle_filter_new(.Alive)
+		alive_offense := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+		defer delete(alive_offense)
+		air_pred, air_ctx := matches_unit_is_air()
+		attacking_non_air := make([dynamic]^Unit, 0, len(alive_offense))
+		for u in alive_offense {
+			if !air_pred(air_ctx, u) {
+				append(&attacking_non_air, u)
+			}
+		}
+		no_movement_change := change_factory_mark_no_movement_change_collection(attacking_non_air)
+		delete(attacking_non_air)
+		if !change_is_empty(no_movement_change) {
+			i_delegate_bridge_add_change(bridge, no_movement_change)
+		}
+	}
+}
+

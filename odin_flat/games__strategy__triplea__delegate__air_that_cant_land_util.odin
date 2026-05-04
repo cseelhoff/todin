@@ -98,3 +98,52 @@ air_that_cant_land_util_remove_air_that_cant_land_in_territory :: proc(
 	i_delegate_bridge_add_change(self.bridge, remove)
 }
 
+// Java: void removeAirThatCantLand(
+//         final GamePlayer player, final boolean spareAirInSeaZonesBesideFactories)
+air_that_cant_land_util_remove_air_that_cant_land :: proc(
+	self: ^Air_That_Cant_Land_Util,
+	player: ^Game_Player,
+	spare_air_in_sea_zones_beside_factories: bool,
+) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	gm := game_data_get_map(data)
+	has_neighboring_friendly_factory_match_pred,
+		has_neighboring_friendly_factory_match_ctx :=
+		matches_territory_has_allied_is_factory_or_can_produce_units(player)
+	cant_land := air_that_cant_land_util_get_territories_where_air_cant_land(self, player)
+	defer delete(cant_land)
+	for current in cant_land {
+		air_pred, air_ctx := matches_unit_is_air()
+		allied_pred, allied_ctx := matches_allied_unit(player)
+		all_units := unit_holder_get_units(cast(^Unit_Holder)current)
+		air := make([dynamic]^Unit, 0, len(all_units))
+		for u in all_units {
+			if air_pred(air_ctx, u) && allied_pred(allied_ctx, u) {
+				append(&air, u)
+			}
+		}
+		delete(all_units)
+		neighbors := game_map_get_neighbors_predicate(
+			gm,
+			current,
+			has_neighboring_friendly_factory_match_pred,
+			has_neighboring_friendly_factory_match_ctx,
+		)
+		has_neighboring_friendly_factory := len(neighbors) != 0
+		delete(neighbors)
+		skip :=
+			spare_air_in_sea_zones_beside_factories &&
+			territory_is_water(current) &&
+			has_neighboring_friendly_factory
+		if !skip {
+			air_that_cant_land_util_remove_air_that_cant_land_in_territory(
+				self,
+				player,
+				current,
+				air,
+			)
+		}
+		delete(air)
+	}
+}
+

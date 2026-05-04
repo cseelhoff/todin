@@ -2352,4 +2352,427 @@ trigger_attachment_trigger_unit_removal :: proc(
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Java: private static final Map<String, BiFunction<GamePlayer, String,
+//                                                   DefaultAttachment>>
+//   playerPropertyChangeAttachmentNameToAttachmentGetter = ...;
+// (PlayerAttachment, RulesAttachment, TriggerAttachment, TechAttachment,
+//  PoliticalActionAttachment, UserActionAttachment)
+//
+// Each value in the Java map is a `Foo::get(GamePlayer, String)` method
+// reference whose body delegates to `getAttachment(player, name, Foo.class)`
+// — i.e. a typed lookup through the player's NamedAttachable map. In the
+// Odin port the lookup itself is type-agnostic
+// (`named_attachable_get_attachment` already returns the stored
+// `^I_Attachment`); the only role of the Java map is the
+// `containsKey(attachmentName)` gate that screens out attachment-class
+// names not enumerated in this set. We mirror that gate here.
+// ---------------------------------------------------------------------------
+trigger_attachment_is_player_property_attachment :: proc(name: string) -> bool {
+	return name == "PlayerAttachment" ||
+	       name == "RulesAttachment" ||
+	       name == "TriggerAttachment" ||
+	       name == "TechAttachment" ||
+	       name == "PoliticalActionAttachment" ||
+	       name == "UserActionAttachment"
+}
+
+// Java: private static final Map<String, BiFunction<UnitType, String,
+//                                                   DefaultAttachment>>
+//   unitPropertyChangeAttachmentNameToAttachmentGetter = ...;
+// (UnitAttachment, UnitSupportAttachment) — same role as above.
+trigger_attachment_is_unit_property_attachment :: proc(name: string) -> bool {
+	return name == "UnitAttachment" || name == "UnitSupportAttachment"
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerPlayerPropertyChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each trigger filtered by playerPropertyMatch(): roll testChance /
+// consume uses, and for each (property, player) pair locate the named
+// attachment on the player and queue a property-change history event via
+// `getPropertyChangeHistoryStartEvent` + `appendChangeWriteEvent`.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_player_property_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_player_property_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	append_pred, append_ctx := trigger_attachment_append_change_write_event(bridge, change)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for property in trigger_attachment_get_player_property(t) {
+			clear_first_new_value := trigger_attachment_get_clear_first_new_value(property.second)
+			for player in trigger_attachment_get_players(t) {
+				attachment_name_pair := trigger_attachment_get_player_attachment_name(t)
+				attachment_class := attachment_name_pair.first
+				attachment_name := attachment_name_pair.second
+				if !trigger_attachment_is_player_property_attachment(attachment_class) {
+					continue
+				}
+				raw := named_attachable_get_attachment(
+					&player.named_attachable,
+					attachment_name,
+				)
+				if raw == nil {
+					continue
+				}
+				attachment := cast(^Default_Attachment)rawptr(raw)
+				event := trigger_attachment_get_property_change_history_start_event(
+					t,
+					attachment,
+					property.first,
+					clear_first_new_value,
+					attachment_name,
+					&player.named,
+				)
+				if event != nil {
+					append_pred(append_ctx, event)
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerRelationshipTypePropertyChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each trigger filtered by relationshipTypePropertyMatch(): for each
+// (property, relationshipType) pair, only `RelationshipTypeAttachment`
+// is recognized; queue the corresponding property-change.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_relationship_type_property_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_relationship_type_property_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	append_pred, append_ctx := trigger_attachment_append_change_write_event(bridge, change)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for property in trigger_attachment_get_relationship_type_property(t) {
+			clear_first_new_value := trigger_attachment_get_clear_first_new_value(property.second)
+			for relationship_type in trigger_attachment_get_relationship_types(t) {
+				attachment_name_pair := trigger_attachment_get_relationship_type_attachment_name(t)
+				if attachment_name_pair.first != "RelationshipTypeAttachment" {
+					continue
+				}
+				attachment := relationship_type_attachment_get(
+					relationship_type,
+					attachment_name_pair.second,
+				)
+				if attachment == nil {
+					continue
+				}
+				event := trigger_attachment_get_property_change_history_start_event(
+					t,
+					&attachment.default_attachment,
+					property.first,
+					clear_first_new_value,
+					attachment_name_pair.second,
+					&relationship_type.named,
+				)
+				if event != nil {
+					append_pred(append_ctx, event)
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerTerritoryPropertyChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each trigger filtered by territoryPropertyMatch(): for each
+// (property, territory) pair, dispatch on TerritoryAttachment vs
+// CanalAttachment. Track touched territories so we can fire
+// `notifyAttachmentChanged` after applying the composite change.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_territory_property_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_territory_property_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	territories_needing_redraw := make(map[^Territory]struct {})
+	defer delete(territories_needing_redraw)
+	append_pred, append_ctx := trigger_attachment_append_change_write_event(bridge, change)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for property in trigger_attachment_get_territory_property(t) {
+			clear_first_new_value := trigger_attachment_get_clear_first_new_value(property.second)
+			for territory in trigger_attachment_get_territories(t) {
+				territories_needing_redraw[territory] = {}
+				attachment_name_pair := trigger_attachment_get_territory_attachment_name(t)
+				if attachment_name_pair.first == "TerritoryAttachment" {
+					attachment := territory_attachment_get(territory, attachment_name_pair.second)
+					if attachment == nil {
+						// Mirrors Java's orElseThrow on the missing-attachment case
+						// (water territories may legitimately lack an attachment).
+						fmt.panicf(
+							"Triggers: No territory attachment for: %s",
+							default_named_get_name(&territory.named_attachable.default_named),
+						)
+					}
+					event := trigger_attachment_get_property_change_history_start_event(
+						t,
+						&attachment.default_attachment,
+						property.first,
+						clear_first_new_value,
+						attachment_name_pair.second,
+						&territory.named,
+					)
+					if event != nil {
+						append_pred(append_ctx, event)
+					}
+				} else if attachment_name_pair.first == "CanalAttachment" {
+					attachment := canal_attachment_get_by_name(
+						territory,
+						attachment_name_pair.second,
+					)
+					event := trigger_attachment_get_property_change_history_start_event(
+						t,
+						&attachment.default_attachment,
+						property.first,
+						clear_first_new_value,
+						attachment_name_pair.second,
+						&territory.named,
+					)
+					if event != nil {
+						append_pred(append_ctx, event)
+					}
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+		for territory in territories_needing_redraw {
+			territory_notify_attachment_changed(territory)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerTerritoryEffectPropertyChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each trigger filtered by territoryEffectPropertyMatch(): for each
+// (property, territoryEffect) pair recognize only
+// `TerritoryEffectAttachment`.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_territory_effect_property_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_territory_effect_property_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	append_pred, append_ctx := trigger_attachment_append_change_write_event(bridge, change)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for property in trigger_attachment_get_territory_effect_property(t) {
+			clear_first_new_value := trigger_attachment_get_clear_first_new_value(property.second)
+			for territory_effect in trigger_attachment_get_territory_effects(t) {
+				attachment_name_pair := trigger_attachment_get_territory_effect_attachment_name(t)
+				if attachment_name_pair.first != "TerritoryEffectAttachment" {
+					continue
+				}
+				attachment := territory_effect_attachment_get(
+					territory_effect,
+					attachment_name_pair.second,
+				)
+				if attachment == nil {
+					continue
+				}
+				event := trigger_attachment_get_property_change_history_start_event(
+					t,
+					&attachment.default_attachment,
+					property.first,
+					clear_first_new_value,
+					attachment_name_pair.second,
+					&territory_effect.named,
+				)
+				if event != nil {
+					append_pred(append_ctx, event)
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerUnitPropertyChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each trigger filtered by unitPropertyMatch(): for each
+// (property, unitType) pair gate on the recognized attachment-class
+// names (UnitAttachment, UnitSupportAttachment) and queue the
+// property-change history event.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_unit_property_change :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_unit_property_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	change := composite_change_new()
+	append_pred, append_ctx := trigger_attachment_append_change_write_event(bridge, change)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for property in trigger_attachment_get_unit_property(t) {
+			clear_first_new_value := trigger_attachment_get_clear_first_new_value(property.second)
+			for unit_type in trigger_attachment_get_unit_type(t) {
+				attachment_name_pair := trigger_attachment_get_unit_attachment_name(t)
+				attachment_class := attachment_name_pair.first
+				attachment_name := attachment_name_pair.second
+				if !trigger_attachment_is_unit_property_attachment(attachment_class) {
+					continue
+				}
+				raw := named_attachable_get_attachment(
+					&unit_type.named_attachable,
+					attachment_name,
+				)
+				if raw == nil {
+					continue
+				}
+				attachment := cast(^Default_Attachment)rawptr(raw)
+				event := trigger_attachment_get_property_change_history_start_event(
+					t,
+					attachment,
+					property.first,
+					clear_first_new_value,
+					attachment_name,
+					&unit_type.named,
+				)
+				if event != nil {
+					append_pred(append_ctx, event)
+				}
+			}
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerUnitPlacement(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For every trigger filtered by placeMatch(): roll testChance /
+// consume uses, and for each (player, territory) entry in the
+// trigger's placement map dispatch into `place_units` repeated
+// `eachMultiple` times.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_unit_placement :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_place_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		each_multiple := abstract_trigger_attachment_get_each_multiple(
+			&t.abstract_trigger_attachment,
+		)
+		players := trigger_attachment_get_players(t)
+		placement := trigger_attachment_get_placement(t)
+		for player in players {
+			for ter, ut_map in placement {
+				for i: i32 = 0; i < each_multiple; i += 1 {
+					trigger_attachment_place_units(t, ter, ut_map, player, bridge)
+				}
+			}
+		}
+	}
+}
 

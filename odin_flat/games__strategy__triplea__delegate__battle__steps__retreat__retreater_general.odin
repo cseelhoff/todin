@@ -110,3 +110,92 @@ retreater_general_get_possible_retreat_sites :: proc(
 	return result
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#retreatNonCombatTransportedItems(java.util.Collection,games.strategy.engine.data.Territory)
+// Java:
+//   final CompositeChange change = new CompositeChange();
+//   final Collection<Unit> transports =
+//       CollectionUtils.getMatches(units, Matches.unitIsSeaTransport());
+//   for (final Unit transport : transports) {
+//     final Collection<Unit> retreated =
+//         battleState.getTransportDependents(List.of(transport));
+//     if (!retreated.isEmpty()) {
+//       final Territory retreatedFrom =
+//           TransportTracker.getTerritoryTransportHasUnloadedTo(transport);
+//       if (retreatedFrom != null) {
+//         TransportTracker.reloadTransports(transports, change);
+//         change.add(ChangeFactory.moveUnits(retreatedFrom, retreatTo, retreated));
+//       }
+//     }
+//   }
+//   return change;
+retreater_general_retreat_non_combat_transported_items :: proc(
+	self: ^Retreater_General,
+	units: [dynamic]^Unit,
+	retreat_to: ^Territory,
+) -> ^Change {
+	change := composite_change_new()
+
+	transport_p, transport_c := matches_unit_is_sea_transport()
+	transports: [dynamic]^Unit
+	for u in units {
+		if transport_p(transport_c, u) {
+			append(&transports, u)
+		}
+	}
+
+	for transport in transports {
+		one := make([dynamic]^Unit)
+		append(&one, transport)
+		retreated := battle_state_get_transport_dependents(self.battle_state, one)
+		delete(one)
+		if len(retreated) != 0 {
+			retreated_from := transport_tracker_get_territory_transport_has_unloaded_to(transport)
+			if retreated_from != nil {
+				transport_tracker_reload_transports(transports, change)
+				composite_change_add(
+					change,
+					change_factory_move_units(retreated_from, retreat_to, retreated),
+				)
+			}
+		}
+	}
+
+	delete(transports)
+	return &change.change
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#retreatCombatTransportedItems(java.util.Collection,games.strategy.engine.data.Territory,java.util.Collection)
+// Java:
+//   final CompositeChange change = new CompositeChange();
+//   for (final IBattle dependent : dependentBattles) {
+//     final Route route = new Route(battleState.getBattleSite(), dependent.getTerritory());
+//     final Collection<Unit> retreatedUnits = dependent.getDependentUnits(units);
+//     change.add(dependent.removeAttack(route, retreatedUnits));
+//     TransportTracker.reloadTransports(units, change);
+//     change.add(ChangeFactory.moveUnits(dependent.getTerritory(), retreatTo, retreatedUnits));
+//   }
+//   return change;
+retreater_general_retreat_combat_transported_items :: proc(
+	self: ^Retreater_General,
+	units: [dynamic]^Unit,
+	retreat_to: ^Territory,
+	dependent_battles: [dynamic]^I_Battle,
+) -> ^Change {
+	change := composite_change_new()
+
+	battle_site := battle_state_get_battle_site(self.battle_state)
+	for dependent in dependent_battles {
+		dependent_territory := i_battle_get_territory(dependent)
+		route := route_new_from_start_and_steps(battle_site, dependent_territory)
+		retreated_units := i_battle_get_dependent_units(dependent, units)
+		composite_change_add(change, i_battle_remove_attack(dependent, route, retreated_units))
+		transport_tracker_reload_transports(units, change)
+		composite_change_add(
+			change,
+			change_factory_move_units(dependent_territory, retreat_to, retreated_units),
+		)
+	}
+
+	return &change.change
+}
+

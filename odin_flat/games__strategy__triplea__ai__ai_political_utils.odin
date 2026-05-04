@@ -1,5 +1,7 @@
 package game
 
+import "core:math/rand"
+
 // Java owner: games.strategy.triplea.ai.AiPoliticalUtils
 // Utility class with only static methods; no instance state.
 
@@ -126,4 +128,88 @@ ai_political_utils_is_acceptable_cost :: proc(
 	r := resource_list_get_resource_or_throw(game_state_get_resource_list(data), "PUs")
 	cost: i32 = next_action.cost_resources[r]
 	return production >= 21 && f32(cost) <= (production / 10)
+}
+
+// Java: public static List<PoliticalActionAttachment> getPoliticalActionsOther(
+//           GamePlayer gamePlayer, Map<ICondition, Boolean> testedConditions, GameState data)
+// Returns the non-war political actions considered acceptable for the
+// specified player under the specified conditions.
+ai_political_utils_get_political_actions_other :: proc(
+	game_player: ^Game_Player,
+	tested_conditions: map[^I_Condition]bool,
+	data: ^Game_State,
+) -> [dynamic]^Political_Action_Attachment {
+	war_actions := ai_political_utils_get_political_actions_towards_war(
+		game_player,
+		tested_conditions,
+		data,
+	)
+	valid_actions := political_action_attachment_get_valid_actions(
+		game_player,
+		tested_conditions,
+		data,
+	)
+	// validActions.removeAll(warActions)
+	filtered_valid: [dynamic]^Political_Action_Attachment
+	for paa in valid_actions {
+		in_war := false
+		for w in war_actions {
+			if w == paa {
+				in_war = true
+				break
+			}
+		}
+		if !in_war {
+			append(&filtered_valid, paa)
+		}
+	}
+	delete(valid_actions)
+
+	// Count actions in filtered_valid that have no resource cost (mirrors
+	// CollectionUtils.countMatches(validActions, politicalActionHasNoResourceCost())).
+	no_cost_count: i32 = 0
+	for paa in filtered_valid {
+		if len(paa.cost_resources) == 0 {
+			no_cost_count += 1
+		}
+	}
+
+	acceptable_actions: [dynamic]^Political_Action_Attachment
+	for next_action in filtered_valid {
+		// warActions.contains(nextAction): impossible after removeAll, but mirror Java.
+		in_war := false
+		for w in war_actions {
+			if w == next_action {
+				in_war = true
+				break
+			}
+		}
+		if in_war {
+			continue
+		}
+		if ai_political_utils_goes_towards_war(next_action, game_player, data) &&
+		   rand.float64() < 0.5 {
+			continue
+		}
+		if ai_political_utils_away_from_ally(next_action, game_player, data) &&
+		   rand.float64() < 0.9 {
+			continue
+		}
+		if ai_political_utils_is_free(next_action) {
+			append(&acceptable_actions, next_action)
+		} else if no_cost_count > 1 {
+			if rand.float64() < 0.9 &&
+			   ai_political_utils_is_acceptable_cost(next_action, game_player, data) {
+				append(&acceptable_actions, next_action)
+			}
+		} else {
+			if rand.float64() < 0.4 &&
+			   ai_political_utils_is_acceptable_cost(next_action, game_player, data) {
+				append(&acceptable_actions, next_action)
+			}
+		}
+	}
+	delete(filtered_valid)
+	delete(war_actions)
+	return acceptable_actions
 }

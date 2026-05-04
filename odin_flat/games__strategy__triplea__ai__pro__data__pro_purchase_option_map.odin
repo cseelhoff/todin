@@ -1,5 +1,7 @@
 package game
 
+import "core:strings"
+
 Pro_Purchase_Option_Map :: struct {
 	land_fodder_options:    [dynamic]^Pro_Purchase_Option,
 	land_attack_options:    [dynamic]^Pro_Purchase_Option,
@@ -114,5 +116,22 @@ pro_purchase_option_map_can_unit_type_suicide :: proc(self: ^Pro_Purchase_Option
 	return (unit_attachment_get_is_suicide_on_attack(ua) &&
 			unit_attachment_get_movement_with_player(ua, player) > 0) ||
 		unit_attachment_get_is_suicide_on_defense(ua)
+}
+
+pro_purchase_option_map_log_options :: proc(purchase_options: [dynamic]^Pro_Purchase_Option, name: string) {
+	sb: strings.Builder
+	strings.builder_init(&sb)
+	defer strings.builder_destroy(&sb)
+	strings.write_string(&sb, name)
+	for ppo in purchase_options {
+		ut := pro_purchase_option_get_unit_type(ppo)
+		strings.write_string(&sb, default_named_get_name(&ut.named_attachable.default_named))
+		strings.write_string(&sb, ", ")
+	}
+	buf := strings.to_string(sb)
+	if len(buf) >= 2 {
+		buf = buf[:len(buf) - 2]
+	}
+	pro_logger_debug(buf)
 }
 

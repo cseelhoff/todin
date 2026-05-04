@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:strings"
 
 Battle_Tracker :: struct {
 	pending_battles:                       map[^I_Battle]struct{},
@@ -1060,6 +1061,247 @@ battle_tracker_add_changes_on_take_over_capitol :: proc(
 			)
 			remove_tokens := change_factory_change_resources_change(whose_capital, tokens, -curr_tokens)
 			battle_tracker_add_change(bridge, change_tracker, remove_tokens)
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#captureOrDestroyUnits(
+//   Territory, GamePlayer, GamePlayer, IDelegateBridge, UndoableMove)
+//
+// Java static. Walks the territory's units, removing destroy-on-capture
+// targets, retiring disabled enemy combat units, optionally swapping
+// noncombatant units to a different unit type, then transferring the
+// remaining noncombatants to the new owner with bookkeeping for capture
+// damage and units that die at max damage.
+battle_tracker_capture_or_destroy_units :: proc(
+	territory: ^Territory,
+	game_player: ^Game_Player,
+	new_owner: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+) {
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	data := i_delegate_bridge_get_data(bridge)
+	properties := game_data_get_properties(data)
+	unit_collection := territory_get_unit_collection(territory)
+	territory_holder := cast(^Unit_Holder)territory
+
+	// destroy any units that should be destroyed on capture
+	if properties_get_units_can_be_destroyed_instead_of_captured(properties) {
+		eu_p, eu_c := matches_enemy_unit(game_player)
+		du_p, du_c := matches_unit_destroyed_when_captured_by_or_from(game_player)
+		destroyed: [dynamic]^Unit
+		for u in unit_collection.units {
+			if eu_p(eu_c, u) && du_p(du_c, u) {
+				append(&destroyed, u)
+			}
+		}
+		if len(destroyed) > 0 {
+			history_writer_add_child_to_event(history_writer, "Some non-combat units are destroyed: ")
+			battle_tracker_add_change(
+				bridge,
+				change_tracker,
+				change_factory_remove_units(territory_holder, destroyed),
+			)
+		}
+	}
+
+	// destroy any capture-on-entering units, IF the property to destroy them
+	// instead of capture is turned on
+	if properties_get_on_entering_units_destroyed_instead_of_captured(properties) {
+		ce_p, ce_c := matches_unit_can_be_captured_on_entering_this_territory(game_player, territory)
+		destroyed: [dynamic]^Unit
+		for u in unit_collection.units {
+			if ce_p(ce_c, u) {
+				append(&destroyed, u)
+			}
+		}
+		if len(destroyed) > 0 {
+			msg := fmt.aprintf(
+				"%s destroys some units instead of capturing them",
+				game_player.name,
+			)
+			history_writer_add_child_to_event(history_writer, msg)
+			battle_tracker_add_change(
+				bridge,
+				change_tracker,
+				change_factory_remove_units(territory_holder, destroyed),
+			)
+		}
+	}
+
+	// destroy any disabled units owned by the enemy that are NOT
+	// infrastructure or factories
+	{
+		eu_p, eu_c := matches_enemy_unit(game_player)
+		dis_p, dis_c := matches_unit_is_disabled()
+		inf_p, inf_c := matches_unit_is_infrastructure()
+		destroyed: [dynamic]^Unit
+		for u in unit_collection.units {
+			if eu_p(eu_c, u) && dis_p(dis_c, u) && !inf_p(inf_c, u) {
+				append(&destroyed, u)
+			}
+		}
+		if len(destroyed) > 0 {
+			msg := fmt.aprintf("%s destroys some disabled combat units", game_player.name)
+			history_writer_add_child_to_event(history_writer, msg)
+			battle_tracker_add_change(
+				bridge,
+				change_tracker,
+				change_factory_remove_units(territory_holder, destroyed),
+			)
+		}
+	}
+
+	// take over non-combatants
+	non_com: [dynamic]^Unit
+	{
+		eu_p, eu_c := matches_enemy_unit(game_player)
+		inf_p, inf_c := matches_unit_is_infrastructure()
+		ce_p, ce_c := matches_unit_can_be_captured_on_entering_this_territory(game_player, territory)
+		for u in unit_collection.units {
+			enemy_non_com := eu_p(eu_c, u) && inf_p(inf_c, u)
+			if enemy_non_com || ce_p(ce_c, u) {
+				append(&non_com, u)
+			}
+		}
+	}
+
+	// change any units that change unit types on capture
+	if properties_get_units_can_be_changed_on_capture(properties) {
+		wc_p, wc_c := matches_unit_when_captured_changes_into_different_unit_type()
+		to_replace: [dynamic]^Unit
+		for u in non_com {
+			if wc_p(wc_c, u) {
+				append(&to_replace, u)
+			}
+		}
+		for u in to_replace {
+			capture_map := unit_attachment_get_when_captured_changes_into(unit_get_unit_attachment(u))
+			current_owner := unit_get_owner(u)
+			for key, to_create in capture_map {
+				parts := strings.split(key, ":")
+				defer delete(parts)
+				if len(parts) < 2 {
+					continue
+				}
+				if !(parts[0] == "any" ||
+					   player_list_get_player_id(game_data_get_player_list(data), parts[0]) ==
+						   current_owner) {
+					continue
+				}
+				// we could use "id" or "newOwner" here... not sure which to use
+				if !(parts[1] == "any" ||
+					   player_list_get_player_id(game_data_get_player_list(data), parts[1]) ==
+						   game_player) {
+					continue
+				}
+				changes := composite_change_new()
+				to_add: [dynamic]^Unit
+				translate_attributes :=
+					strings.equal_fold(tuple_get_first(to_create), "true")
+				ut_to_count := tuple_get_second(to_create)
+				for ut, qty in ut_to_count {
+					created := unit_type_create_2(ut, qty, new_owner)
+					for c in created {
+						append(&to_add, c)
+					}
+					delete(created)
+				}
+				if len(to_add) > 0 {
+					if translate_attributes {
+						translate := unit_utils_translate_attributes_to_other_units(
+							u,
+							to_add,
+							territory,
+						)
+						if !change_is_empty(translate) {
+							composite_change_add(changes, translate)
+						}
+					}
+					single: [dynamic]^Unit
+					append(&single, u)
+					composite_change_add(
+						changes,
+						change_factory_remove_units(territory_holder, single),
+					)
+					composite_change_add(
+						changes,
+						change_factory_add_units(territory_holder, to_add),
+					)
+					composite_change_add(
+						changes,
+						change_factory_mark_no_movement_change_collection(to_add),
+					)
+					msg := fmt.aprintf(
+						"%s converts %s into different units",
+						game_player.name,
+						unit_to_string_no_owner(u),
+					)
+					history_writer_add_child_to_event(history_writer, msg)
+					battle_tracker_add_change(bridge, change_tracker, &changes.change)
+					// don't forget to remove this unit from the list
+					for cand, idx in non_com {
+						if cand == u {
+							ordered_remove(&non_com, idx)
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+	}
+
+	if len(non_com) > 0 {
+		// FYI: a dummy delegate will not do anything with this change,
+		// meaning that the battle calculator will think this unit lived,
+		// even though it died or was captured, etc.!
+		battle_tracker_add_change(
+			bridge,
+			change_tracker,
+			change_factory_change_owner_3(non_com, new_owner, territory),
+		)
+		battle_tracker_add_change(
+			bridge,
+			change_tracker,
+			change_factory_mark_no_movement_change_collection(non_com),
+		)
+		damage_map := new(Integer_Map_Unit)
+		damage_map.entries = make(map[^Unit]i32)
+		ws_p, ws_c := matches_unit_when_captured_sustains_damage()
+		for unit in non_com {
+			if !ws_p(ws_c, unit) {
+				continue
+			}
+			damage_limit := unit_get_how_much_more_damage_can_this_unit_take(unit, territory)
+			sustained_damage :=
+				unit_attachment_get_when_captured_sustains_damage(unit_get_unit_attachment(unit))
+			actual_damage := max(i32(0), min(sustained_damage, damage_limit))
+			total_damage := unit_get_unit_damage(unit) + actual_damage
+			damage_map.entries[unit] = total_damage
+		}
+		if len(damage_map.entries) > 0 {
+			single_terr: [dynamic]^Territory
+			append(&single_terr, territory)
+			damage_change := change_factory_bombing_unit_damage(damage_map, single_terr)
+			battle_tracker_add_change(bridge, change_tracker, damage_change)
+			// Kill any units that can die if they have reached max damage
+			can_die_p, can_die_c := matches_unit_can_die_from_reaching_max_damage()
+			max_p, max_c := matches_unit_is_at_max_damage_or_not_can_be_damaged(territory)
+			units_can_die: [dynamic]^Unit
+			for unit, _ in damage_map.entries {
+				if can_die_p(can_die_c, unit) && max_p(max_c, unit) {
+					append(&units_can_die, unit)
+				}
+			}
+			if len(units_can_die) > 0 {
+				battle_tracker_add_change(
+					bridge,
+					change_tracker,
+					change_factory_remove_units(territory_holder, units_can_die),
+				)
+			}
 		}
 	}
 }

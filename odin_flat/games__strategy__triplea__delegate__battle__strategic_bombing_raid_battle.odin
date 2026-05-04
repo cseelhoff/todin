@@ -571,3 +571,257 @@ strategic_bombing_raid_battle_update_defending_units :: proc(self: ^Strategic_Bo
 		self.defending_units = targets_for_aa_fire
 	}
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#<init>(
+//     Territory, GameData, GamePlayer, BattleTracker)
+//
+//   super(battleSite, attacker, battleTracker, BattleType.BOMBING_RAID, data);
+//   isAmphibious = false;
+//   updateDefendingUnits();
+//
+// Java field initializers (`targets = new HashMap<>()`,
+// `stack = new ExecutionStack()`, `bombingRaidDamage = new IntegerMap<>()`)
+// run before the constructor body, so we mirror them here too.
+strategic_bombing_raid_battle_new :: proc(
+	battle_site:    ^Territory,
+	data:           ^Game_Data,
+	attacker:       ^Game_Player,
+	battle_tracker: ^Battle_Tracker,
+) -> ^Strategic_Bombing_Raid_Battle {
+	self := new(Strategic_Bombing_Raid_Battle)
+	parent := abstract_battle_new(battle_site, attacker, battle_tracker, .BOMBING_RAID, data)
+	self.abstract_battle = parent^
+	free(parent)
+	self.targets = make(map[^Unit]map[^Unit]struct{})
+	self.stack = execution_stack_new()
+	self.steps = make([dynamic]string)
+	self.defending_aa = make([dynamic]^Unit)
+	self.aa_types = make([dynamic]string)
+	self.bombing_raid_total = 0
+	self.bombing_raid_damage.map_values = make(map[rawptr]i32)
+	self.is_amphibious = false
+	strategic_bombing_raid_battle_update_defending_units(self)
+	return self
+}
+
+// Adapter to bridge the Strategic_Bombing_Raid_Battle$2#execute proc, which
+// already exists with a typed receiver, into the I_Executable.execute vtable
+// shape used by Execution_Stack.
+strategic_bombing_raid_battle_2_execute_dispatch :: proc(
+	self_base: ^I_Executable,
+	stack:     ^Execution_Stack,
+	bridge:    ^I_Delegate_Bridge,
+) {
+	strategic_bombing_raid_battle_2_execute(
+		cast(^Strategic_Bombing_Raid_Battle_2)self_base,
+		stack,
+		bridge,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#fight(IDelegateBridge)
+//
+//   removeUnitsThatNoLongerExist();
+//   if (stack.isExecuting()) {
+//     showBattle(bridge);
+//     stack.execute(bridge);
+//     return;
+//   }
+//   updateDefendingUnits();
+//   bridge.getHistoryWriter().startEvent(
+//       MessageFormat.format("Strategic bombing raid in {0}", battleSite),
+//       battleSite);
+//   if (attackingUnits.isEmpty()
+//       || (defendingUnits.isEmpty()
+//           || defendingUnits.stream().noneMatch(Matches.unitCanBeDamaged()))) {
+//     endBeforeRolling(bridge);
+//     return;
+//   }
+//   CasualtySortingUtil.sortPreBattle(attackingUnits);
+//   ...build steps, defendingAa, aaTypes; reverse aaTypes...
+//   showBattle(bridge);
+//   ...build fightSteps (FireAa per per-target group, or one global FireAa;
+//      ConductBombing; postBombing; end); reverse and push onto stack...
+//   stack.execute(bridge);
+strategic_bombing_raid_battle_fight :: proc(
+	self:   ^Strategic_Bombing_Raid_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	strategic_bombing_raid_battle_remove_units_that_no_longer_exist(self)
+
+	if execution_stack_is_executing(self.stack) {
+		strategic_bombing_raid_battle_show_battle(self, bridge)
+		execution_stack_execute(self.stack, bridge)
+		return
+	}
+
+	// Battle is created with no attackers, so targets is empty at construction;
+	// refresh now to capture the full target list.
+	strategic_bombing_raid_battle_update_defending_units(self)
+
+	history_writer := i_delegate_bridge_get_history_writer(bridge)
+	site_name := default_named_get_name(&self.battle_site.named_attachable.default_named)
+	event_msg := fmt.aprintf("Strategic bombing raid in %s", site_name)
+	i_delegate_history_writer_start_event(history_writer, event_msg, rawptr(self.battle_site))
+
+	// defendingUnits.stream().noneMatch(Matches.unitCanBeDamaged())
+	can_be_damaged_p, can_be_damaged_c := matches_unit_can_be_damaged()
+	none_can_be_damaged := true
+	for u in self.defending_units {
+		if can_be_damaged_p(can_be_damaged_c, u) {
+			none_can_be_damaged = false
+			break
+		}
+	}
+	if len(self.attacking_units) == 0 ||
+	   len(self.defending_units) == 0 ||
+	   none_can_be_damaged {
+		strategic_bombing_raid_battle_end_before_rolling(self, bridge)
+		return
+	}
+
+	casualty_sorting_util_sort_pre_battle(&self.attacking_units)
+
+	tech_advances := tech_tracker_get_current_tech_advances(
+		self.attacker,
+		game_data_get_technology_frontier(self.game_data),
+	)
+	defer delete(tech_advances)
+	airborne_tech_targets_allowed :=
+		tech_ability_attachment_get_airborne_targetted_by_aa_with_techs(tech_advances)
+
+	aa_only_p, aa_only_c := matches_unit_is_aa_for_bombing_this_unit_only()
+	aa_can_fire_p, aa_can_fire_c := matches_unit_is_aa_that_can_fire(
+		self.attacking_units,
+		airborne_tech_targets_allowed,
+		self.attacker,
+		aa_only_p,
+		aa_only_c,
+		self.round,
+		true,
+	)
+
+	// defendingAa = battleSite.getUnitCollection().getMatches(predicate above)
+	site_units := unit_collection_get_units(self.battle_site.unit_collection)
+	defer delete(site_units)
+	new_defending_aa: [dynamic]^Unit
+	for u in site_units {
+		if aa_can_fire_p(aa_can_fire_c, u) {
+			append(&new_defending_aa, u)
+		}
+	}
+	delete(self.defending_aa)
+	self.defending_aa = new_defending_aa
+
+	// aaTypes = UnitAttachment.getAllOfTypeAas(defendingAa); Collections.reverse(aaTypes)
+	new_aa_types := unit_attachment_get_all_of_type_aas(self.defending_aa)
+	delete(self.aa_types)
+	self.aa_types = new_aa_types
+	{
+		n := len(self.aa_types)
+		for i in 0 ..< n / 2 {
+			tmp := self.aa_types[i]
+			self.aa_types[i] = self.aa_types[n - 1 - i]
+			self.aa_types[n - 1 - i] = tmp
+		}
+	}
+
+	has_aa := len(self.defending_aa) > 0
+
+	// steps = new ArrayList<>();
+	delete(self.steps)
+	self.steps = make([dynamic]string)
+	if has_aa {
+		// for (final String typeAa : UnitAttachment.getAllOfTypeAas(defendingAa)) { ... }
+		// Java re-evaluates getAllOfTypeAas here (a fresh, ascending list),
+		// not the reversed aaTypes field — preserve that behaviour exactly.
+		all_type_aas := unit_attachment_get_all_of_type_aas(self.defending_aa)
+		defer delete(all_type_aas)
+		for type_aa in all_type_aas {
+			append(
+				&self.steps,
+				fmt.aprintf("%s%s", type_aa, BATTLE_STEP_AA_GUNS_FIRE_SUFFIX),
+			)
+			append(
+				&self.steps,
+				fmt.aprintf(
+					"%s%s%s",
+					BATTLE_STEP_SELECT_PREFIX,
+					type_aa,
+					BATTLE_STEP_CASUALTIES_SUFFIX,
+				),
+			)
+			append(
+				&self.steps,
+				fmt.aprintf(
+					"%s%s%s",
+					BATTLE_STEP_NOTIFY_PREFIX,
+					type_aa,
+					BATTLE_STEP_CASUALTIES_SUFFIX,
+				),
+			)
+		}
+	}
+	append(&self.steps, "Strategic bombing raid")
+
+	strategic_bombing_raid_battle_show_battle(self, bridge)
+
+	fight_steps: [dynamic]^I_Executable
+
+	if has_aa {
+		// global1940 rules - per-target AA shot for entries whose key is an
+		// isAaForBombingThisUnitOnly unit; mirrors the stream pipeline:
+		//   targets.entrySet().stream()
+		//       .filter(e -> e.getKey().getUnitAttachment().isAaForBombingThisUnitOnly())
+		//       .map(Entry::getValue)
+		//       .map(FireAa::new)
+		//       .collect(...)
+		for key, value in self.targets {
+			if !strategic_bombing_raid_battle_lambda__fight__5(key, value) {
+				continue
+			}
+			attackers_list: [dynamic]^Unit
+			for u, _ in value {
+				append(&attackers_list, u)
+			}
+			fa := strategic_bombing_raid_battle_lambda__fight__6(self, attackers_list)
+			fa.execute = strategic_bombing_raid_battle_fire_aa_execute
+			append(&fight_steps, &fa.i_executable)
+		}
+		// otherwise fire an AA shot at all the planes
+		if len(fight_steps) == 0 {
+			fa := fire_aa_new(self)
+			fa.execute = strategic_bombing_raid_battle_fire_aa_execute
+			append(&fight_steps, &fa.i_executable)
+		}
+	}
+
+	cb := strategic_bombing_raid_battle_conduct_bombing_new(self)
+	cb.execute = strategic_bombing_raid_battle_conduct_bombing_execute
+	append(&fight_steps, &cb.i_executable)
+
+	post := strategic_bombing_raid_battle_post_bombing(self)
+	post.execute = strategic_bombing_raid_battle_1_execute
+	append(&fight_steps, post)
+
+	end_step := strategic_bombing_raid_battle_end(self)
+	end_step.execute = strategic_bombing_raid_battle_2_execute_dispatch
+	append(&fight_steps, end_step)
+
+	// Collections.reverse(fightSteps)
+	{
+		n := len(fight_steps)
+		for i in 0 ..< n / 2 {
+			tmp := fight_steps[i]
+			fight_steps[i] = fight_steps[n - 1 - i]
+			fight_steps[n - 1 - i] = tmp
+		}
+	}
+
+	for executable in fight_steps {
+		execution_stack_push_one(self.stack, executable)
+	}
+	delete(fight_steps)
+
+	execution_stack_execute(self.stack, bridge)
+}

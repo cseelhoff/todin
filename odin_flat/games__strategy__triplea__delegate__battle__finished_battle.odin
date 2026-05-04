@@ -32,14 +32,14 @@ finished_battle_new :: proc(
 	who_won: I_Battle_Who_Won,
 ) -> ^Finished_Battle {
 	self := new(Finished_Battle)
-	self.battle_site = battle_site
-	self.attacker = attacker
-	self.battle_tracker = battle_tracker
-	self.battle_type = battle_type
-	self.game_data = data
+	parent := abstract_battle_new(battle_site, attacker, battle_tracker, battle_type, data)
+	self.abstract_battle = parent^
+	free(parent)
 	self.battle_result_description = battle_result_description
 	self.who_won = who_won
 	self.is_finished_battle = true
+	self.amphibious_attack_from = make([dynamic]^Territory)
+	self.attacking_from_map = make(map[^Territory][dynamic]^Unit)
 	return self
 }
 
