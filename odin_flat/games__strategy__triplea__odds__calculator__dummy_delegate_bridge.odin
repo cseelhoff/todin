@@ -109,3 +109,25 @@ dummy_delegate_bridge_get_costs_for_tuv :: proc(
 ) -> map[^Unit_Type]i32 {
 	return tuv_costs_calculator_get_costs_for_tuv(self.tuv_calculator, player)
 }
+
+// Java: DummyDelegateBridge#addChange(Change)
+//   if (change instanceof UnitDamageReceivedChange) {
+//     allChanges.add(change);
+//     gameData.performChange(change);
+//   } else if (change instanceof CompositeChange compositeChange) {
+//     compositeChange.getChanges().forEach(this::addChange);
+//   }
+dummy_delegate_bridge_add_change :: proc(self: ^Dummy_Delegate_Bridge, change: ^Change) {
+	if change == nil {
+		return
+	}
+	if change.kind == .Unit_Damage_Received_Change {
+		composite_change_add(self.all_changes, change)
+		game_data_perform_change(self.game_data, change)
+	} else if change.kind == .Composite_Change {
+		composite_change := cast(^Composite_Change)change
+		for child in composite_change_get_changes(composite_change) {
+			dummy_delegate_bridge_add_change(self, child)
+		}
+	}
+}

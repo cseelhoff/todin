@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Purchase_Ai :: struct {
 	calc:               ^Pro_Odds_Calculator,
 	pro_data:           ^Pro_Data,
@@ -134,5 +136,43 @@ pro_purchase_ai_lambda_purchase_sea_and_amphib_units_3 :: proc(
 	}
 	value, ok := territory_value_map[potential_territory]
 	return ok && value > 0.25
+}
+
+// Static `ProPurchaseAi.doPlace(Territory, Collection<Unit>,
+// IAbstractPlaceDelegate)`. Places each unit in `to_place` one at
+// a time on territory `t` via the delegate; if the delegate
+// returns an error message (Java `Optional<String>`), log it as a
+// warning along with the territory/unit context. After all units
+// are placed, pause for AI move pacing.
+//
+// The Java code uses `.ifPresent(message -> { ... })`; the lambda
+// is inlined here as a `Maybe(string)` unwrap, mirroring the same
+// effect.
+pro_purchase_ai_do_place :: proc(
+	t: ^Territory,
+	to_place: [dynamic]^Unit,
+	del: ^I_Abstract_Place_Delegate,
+) {
+	for unit in to_place {
+		units: [dynamic]^Unit
+		append(&units, unit)
+		result := i_abstract_place_delegate_place_units(
+			del,
+			units,
+			t,
+			.NOT_BID,
+		)
+		if msg, ok := result.?; ok {
+			pro_logger_warn(msg)
+			pro_logger_warn(
+				fmt.tprintf(
+					"Attempt was at: %s with: %s",
+					territory_to_string(t),
+					unit_to_string(unit),
+				),
+			)
+		}
+	}
+	abstract_ai_move_pause()
 }
 

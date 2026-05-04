@@ -147,3 +147,80 @@ pro_territory_value_utils_find_max_land_mass_size :: proc(player: ^Game_Player) 
 	return max_land_mass_size
 }
 
+// Visitor for findNearbyEnemyCapitalsAndFactories. Reifies the Java anonymous
+// BreadthFirstSearch.Visitor — captures the enemy set being searched for, the
+// `found` accumulator, and the inner `currentDistance` field that the visitor
+// uses to detect distance-layer transitions.
+//
+// MIN_FACTORY_CHECK_DISTANCE = 9 from ProTerritoryValueUtils (file-static).
+Pro_Territory_Value_Utils_Find_Nearby_Enemy_Capitals_And_Factories_Visitor :: struct {
+	using visitor:                Breadth_First_Search_Visitor,
+	enemy_capitals_and_factories: ^map[^Territory]struct {},
+	found:                        ^map[^Territory]struct {},
+	current_distance:             i32,
+}
+
+@(private = "file")
+PRO_TERRITORY_VALUE_UTILS_MIN_FACTORY_CHECK_DISTANCE :: 9
+
+pro_territory_value_utils_find_nearby_enemy_capitals_and_factories_visit :: proc(
+	self: ^Breadth_First_Search_Visitor,
+	territory: ^Territory,
+	distance: i32,
+) -> bool {
+	this :=
+		cast(^Pro_Territory_Value_Utils_Find_Nearby_Enemy_Capitals_And_Factories_Visitor)self
+	if _, in_set := this.enemy_capitals_and_factories[territory]; in_set {
+		this.found[territory] = {}
+	}
+	if distance != this.current_distance {
+		this.current_distance = distance
+		// shouldContinueSearch(): currentDistance <= MIN_FACTORY_CHECK_DISTANCE || found.isEmpty()
+		should_continue :=
+			this.current_distance <= PRO_TERRITORY_VALUE_UTILS_MIN_FACTORY_CHECK_DISTANCE ||
+			len(this.found) == 0
+		if !should_continue {
+			return false
+		}
+	}
+	return true
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils#findNearbyEnemyCapitalsAndFactories(
+//     Territory, Set<Territory>)
+// Java:
+//   final var found = new HashSet<Territory>();
+//   new BreadthFirstSearch(startTerritory)
+//       .traverse(new BreadthFirstSearch.Visitor() {
+//             int currentDistance = -1;
+//             public boolean visit(Territory territory, int distance) {
+//               if (enemyCapitalsAndFactories.contains(territory)) found.add(territory);
+//               if (distance != currentDistance) {
+//                 currentDistance = distance;
+//                 if (!shouldContinueSearch()) return false;
+//               }
+//               return true;
+//             }
+//             public boolean shouldContinueSearch() {
+//               return currentDistance <= MIN_FACTORY_CHECK_DISTANCE || found.isEmpty();
+//             }
+//           });
+//   return found;
+pro_territory_value_utils_find_nearby_enemy_capitals_and_factories :: proc(
+	start_territory: ^Territory,
+	enemy_capitals_and_factories: ^map[^Territory]struct {},
+) -> map[^Territory]struct {} {
+	found := make(map[^Territory]struct {})
+	bfs := breadth_first_search_new_with_start_territory(start_territory)
+	visitor := Pro_Territory_Value_Utils_Find_Nearby_Enemy_Capitals_And_Factories_Visitor{
+		visitor                      = Breadth_First_Search_Visitor{
+			visit = pro_territory_value_utils_find_nearby_enemy_capitals_and_factories_visit,
+		},
+		enemy_capitals_and_factories = enemy_capitals_and_factories,
+		found                        = &found,
+		current_distance             = -1,
+	}
+	breadth_first_search_traverse(bfs, &visitor.visitor)
+	return found
+}
+

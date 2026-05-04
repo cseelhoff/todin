@@ -143,3 +143,21 @@ remove_units_history_change_new :: proc(
 	return self
 }
 
+// Java: unloadedUnits.forEach((territory, units) -> {
+//     allKilledUnits.addAll(units);
+//     change.add(ChangeFactory.removeUnits(territory, units));
+// });
+// Captures allKilledUnits and the local CompositeChange `change` (passed
+// explicitly as the first two args).
+remove_units_history_change_lambda_perform_3 :: proc(
+	all_killed_units: ^[dynamic]^Unit,
+	change: ^Composite_Change,
+	territory: ^Territory,
+	units: [dynamic]^Unit,
+) {
+	for u in units {
+		append(all_killed_units, u)
+	}
+	composite_change_add(change, change_factory_remove_units(cast(^Unit_Holder)territory, units))
+}
+

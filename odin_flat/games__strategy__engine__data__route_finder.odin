@@ -310,3 +310,34 @@ route_finder_new_map_condition :: proc(
 		nil,
 	)
 }
+
+// Mirrors RouteFinder#findRouteByDistance(Territory, Territory):
+//     return findRouteByCost(start, end, t -> BigDecimal.ONE);
+// Java's @Nonnull annotations become assert(... != nil) — these are
+// validated by Preconditions.checkNotNull deeper in findRouteByCost.
+// The cost lambda `t -> BigDecimal.ONE` is captured by the file-scoped
+// `route_finder_lambda_find_route_by_distance_0` proc (BigDecimal -> f64
+// per the port rules, so 1.0). Java's Optional<Route> collapses to a
+// nullable ^Route — nil signals "no route found".
+route_finder_find_route_by_distance :: proc(
+	self: ^Route_Finder,
+	start: ^Territory,
+	end: ^Territory,
+) -> ^Route {
+	return route_finder_find_route_by_cost_with_cost_fn(
+		self,
+		start,
+		end,
+		route_finder_lambda_find_route_by_distance_0,
+	)
+}
+
+// Mirrors @VisibleForTesting RouteFinder#getMaxMovementCost(Territory):
+//     return TerritoryEffectHelper.getMaxMovementCost(t, units);
+// BigDecimal -> f64 per the port rules. Forwards to the static helper
+// with this RouteFinder's captured unit collection. Already referenced
+// as a forward call by the cost-pair adapter earlier in this file;
+// emitting the body now closes that reference.
+route_finder_get_max_movement_cost :: proc(self: ^Route_Finder, t: ^Territory) -> f64 {
+	return territory_effect_helper_get_max_movement_cost(t, self.units)
+}

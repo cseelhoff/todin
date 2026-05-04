@@ -352,3 +352,52 @@ pro_purchase_validation_utils_is_placing_fighters_on_new_carriers :: proc(
 	}
 	return false
 }
+
+// Mirrors Java's private static
+//   boolean hasReachedConstructionLimits(
+//       ProPurchaseOption purchaseOption, GameState data,
+//       List<Unit> unitsToPlace,
+//       Map<Territory, ProPurchaseTerritory> purchaseTerritories,
+//       Territory territory)
+// which returns true when the option is a construction and either
+// already has its per-turn quota of constructions of this type queued
+// for `territory`, or together with units already in `territory` would
+// exceed the territory's allowed maximum of this construction type.
+pro_purchase_validation_utils_has_reached_construction_limits :: proc(
+	purchase_option: ^Pro_Purchase_Option,
+	data: ^Game_State,
+	units_to_place: [dynamic]^Unit,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	territory: ^Territory,
+) -> bool {
+	if pro_purchase_option_is_construction(purchase_option) && territory != nil {
+		num_construction_type_to_place :=
+			pro_purchase_validation_utils_find_number_of_construction_type_to_place(
+				purchase_option,
+				units_to_place,
+				purchase_territories,
+				territory,
+			)
+		if num_construction_type_to_place >=
+		   pro_purchase_option_get_construction_type_per_turn(purchase_option) {
+			return true
+		}
+
+		max_construction_type :=
+			pro_purchase_validation_utils_find_max_construction_type_allowed(
+				purchase_option,
+				data,
+				territory,
+			)
+		target_type := pro_purchase_option_get_unit_type(purchase_option)
+		num_existing_construction_type: i32 = 0
+		for u in unit_collection_get_units(territory_get_unit_collection(territory)) {
+			if unit_get_type(u) == target_type {
+				num_existing_construction_type += 1
+			}
+		}
+		return (num_construction_type_to_place + num_existing_construction_type) >=
+		       max_construction_type
+	}
+	return false
+}

@@ -19,6 +19,17 @@ files_is_regular_file :: proc(p: Path) -> bool {
 	return os.is_file(p.value)
 }
 
+// JDK shim: java.nio.file.Files.isWritable(Path). The single-process
+// AI snapshot harness has no permission model — a path is considered
+// writable iff it (or its parent for not-yet-created paths) exists.
+files_is_writable :: proc(p: Path) -> bool {
+	if os.exists(p.value) {
+		return true
+	}
+	parent := path_get_parent(p)
+	return parent.value != "" && os.exists(parent.value)
+}
+
 files_create_directories :: proc(p: Path) -> Path {
 	parts := strings.split(p.value, "/")
 	defer delete(parts)

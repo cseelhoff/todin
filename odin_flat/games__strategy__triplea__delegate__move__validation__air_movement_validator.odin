@@ -285,3 +285,111 @@ air_movement_validator_lambda_populate_static_allied_and_building_carrier_capaci
 	}
 	return result
 }
+
+// Java: public static int carrierCapacity(
+//     final Collection<Unit> units, final Territory territoryUnitsAreCurrentlyIn) {
+//   int sum = 0;
+//   for (final Unit unit : units) {
+//     sum += carrierCapacity(unit, territoryUnitsAreCurrentlyIn);
+//   }
+//   return sum;
+// }
+air_movement_validator_carrier_capacity :: proc(
+	units: []^Unit,
+	territory_units_are_currently_in: ^Territory,
+) -> i32 {
+	sum: i32 = 0
+	for unit in units {
+		sum += air_movement_validator_carrier_capacity_unit(
+			unit,
+			territory_units_are_currently_in,
+		)
+	}
+	return sum
+}
+
+// Java: public static int carrierCost(final Collection<Unit> units) {
+//   int sum = 0;
+//   for (final Unit unit : units) {
+//     sum += carrierCost(unit);
+//   }
+//   return sum;
+// }
+air_movement_validator_carrier_cost :: proc(units: []^Unit) -> i32 {
+	sum: i32 = 0
+	for unit in units {
+		sum += air_movement_validator_carrier_cost_unit(unit)
+	}
+	return sum
+}
+
+// Java: private static boolean areNeutralsPassableByAir(final GameState data) {
+//   return Properties.getNeutralFlyoverAllowed(data.getProperties())
+//       && !Properties.getNeutralsImpassable(data.getProperties());
+// }
+air_movement_validator_are_neutrals_passable_by_air :: proc(data: ^Game_State) -> bool {
+	props := game_state_get_properties(data)
+	return properties_get_neutral_flyover_allowed(props) &&
+		!properties_get_neutrals_impassable(props)
+}
+
+// Java: private static int getNeutralCharge(final GameState data, final int numberOfTerritories) {
+//   return numberOfTerritories * Properties.getNeutralCharge(data.getProperties());
+// }
+air_movement_validator_get_neutral_charge :: proc(
+	data: ^Game_State,
+	number_of_territories: i32,
+) -> i32 {
+	return number_of_territories *
+		properties_get_neutral_charge(game_state_get_properties(data))
+}
+
+// Java: public static Collection<Unit> whatAirCanLandOnTheseCarriers(
+//     final Collection<Unit> carriers,
+//     final Collection<Unit> airUnits,
+//     final Territory territoryUnitsAreIn) {
+//   final Collection<Unit> airThatCanLandOnThem = new ArrayList<>();
+//   for (final Unit carrier : carriers) {
+//     int carrierCapacity = carrierCapacity(carrier, territoryUnitsAreIn);
+//     for (final Unit air : airUnits) {
+//       if (airThatCanLandOnThem.contains(air)) { continue; }
+//       final int airCost = carrierCost(air);
+//       if (carrierCapacity >= airCost) {
+//         carrierCapacity -= airCost;
+//         airThatCanLandOnThem.add(air);
+//       }
+//     }
+//   }
+//   return airThatCanLandOnThem;
+// }
+air_movement_validator_what_air_can_land_on_these_carriers :: proc(
+	carriers: []^Unit,
+	air_units: []^Unit,
+	territory_units_are_in: ^Territory,
+) -> [dynamic]^Unit {
+	air_that_can_land_on_them: [dynamic]^Unit
+	for carrier in carriers {
+		carrier_capacity := air_movement_validator_carrier_capacity_unit(
+			carrier,
+			territory_units_are_in,
+		)
+		for air in air_units {
+			already := false
+			for existing in air_that_can_land_on_them {
+				if existing == air {
+					already = true
+					break
+				}
+			}
+			if already {
+				continue
+			}
+			air_cost := air_movement_validator_carrier_cost_unit(air)
+			if carrier_capacity >= air_cost {
+				carrier_capacity -= air_cost
+				append(&air_that_can_land_on_them, air)
+			}
+		}
+	}
+	return air_that_can_land_on_them
+}

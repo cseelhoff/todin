@@ -142,3 +142,43 @@ evader_retreat_retreat_units :: proc(
 		evader_retreat_retreat_units_to_territory(parameters, step, optional_retreat_to)
 	}
 }
+
+// games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#submergeEvaders(
+//   games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat$Parameters)
+//
+// Java:
+//   final CompositeChange change = new CompositeChange();
+//   for (final Unit u : parameters.units) {
+//     change.add(ChangeFactory.unitPropertyChange(u, true, Unit.PropertyName.SUBMERGED));
+//   }
+//   parameters.bridge.addChange(change);
+//   parameters.battleState.retreatUnits(parameters.side, parameters.units);
+//   addHistoryRetreat(parameters.bridge, parameters.units, " submerged");
+//   notifyRetreat(parameters.battleState, parameters.battleActions,
+//                 parameters.units, parameters.side, parameters.bridge);
+evader_retreat_submerge_evaders :: proc(parameters: ^Evader_Retreat_Parameters) {
+	change := composite_change_new()
+	for u in parameters.units {
+		boxed := new(bool)
+		boxed^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				u,
+				rawptr(boxed),
+				.Submerged,
+			),
+		)
+	}
+	i_delegate_bridge_add_change(parameters.bridge, &change.change)
+	battle_state_retreat_units(parameters.battle_state, parameters.side, parameters.units)
+
+	evader_retreat_add_history_retreat(parameters.bridge, parameters.units, " submerged")
+	evader_retreat_notify_retreat(
+		parameters.battle_state,
+		parameters.battle_actions,
+		parameters.units,
+		parameters.side,
+		parameters.bridge,
+	)
+}

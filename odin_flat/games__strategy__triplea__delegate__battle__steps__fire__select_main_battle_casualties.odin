@@ -64,4 +64,38 @@ select_main_battle_casualties_get_max_hits :: proc(units: [dynamic]^Unit) -> i32
 	return count
 }
 
+// Java: TargetUnits getTargetUnits(SelectCasualties step)
+// Splits the firing group's target units into combat units and
+// (if transport casualties are restricted) sea transports that may
+// only be hit after the combat units are exhausted.
+select_main_battle_casualties_get_target_units :: proc(
+	step: ^Select_Casualties,
+) -> ^Select_Main_Battle_Casualties_Target_Units {
+	firing_group := select_casualties_get_firing_group(step)
+	target_list := firing_group_get_target_units(firing_group)
+	props := game_data_get_properties(battle_state_get_game_data(select_casualties_get_battle_state(step)))
+	if properties_get_transport_casualties_restricted(props) {
+		nst_p, nst_c := matches_unit_is_not_sea_transport_but_could_be_combat_sea_transport()
+		ns_p, ns_c := matches_unit_is_not_sea()
+		st_p, st_c := matches_unit_is_sea_transport_but_not_combat_sea_transport()
+		s_p, s_c := matches_unit_is_sea()
+		combat_units := make([dynamic]^Unit)
+		restricted_transports := make([dynamic]^Unit)
+		for u in target_list {
+			if nst_p(nst_c, u) || ns_p(ns_c, u) {
+				append(&combat_units, u)
+			}
+			if st_p(st_c, u) && s_p(s_c, u) {
+				append(&restricted_transports, u)
+			}
+		}
+		return select_main_battle_casualties_target_units_of(combat_units, restricted_transports)
+	}
+	combat_units := make([dynamic]^Unit, 0, len(target_list))
+	for u in target_list {
+		append(&combat_units, u)
+	}
+	return select_main_battle_casualties_target_units_of(combat_units, make([dynamic]^Unit))
+}
+
 

@@ -93,3 +93,20 @@ ai_political_utils_want_to_perform_action_towards_war :: proc(
 		ai_political_utils_goes_towards_war(next_action, game_player, data) \
 	)
 }
+
+// Java: public static List<PoliticalActionAttachment> getPoliticalActionsTowardsWar(
+//           GamePlayer gamePlayer, Map<ICondition, Boolean> testedConditions, GameState data)
+ai_political_utils_get_political_actions_towards_war :: proc(
+	game_player: ^Game_Player,
+	tested_conditions: map[^I_Condition]bool,
+	data: ^Game_State,
+) -> [dynamic]^Political_Action_Attachment {
+	acceptable_actions: [dynamic]^Political_Action_Attachment
+	valid_actions := political_action_attachment_get_valid_actions(game_player, tested_conditions, data)
+	for next_action in valid_actions {
+		if ai_political_utils_want_to_perform_action_towards_war(next_action, game_player, data) {
+			append(&acceptable_actions, next_action)
+		}
+	}
+	return acceptable_actions
+}

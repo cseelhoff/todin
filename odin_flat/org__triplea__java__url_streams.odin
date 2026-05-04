@@ -62,8 +62,27 @@ url_streams_open_stream_uri :: proc(uri: ^Uri) -> ^Input_Stream {
 	return url_streams_open_stream_url(url)
 }
 
-// Proc group dispatching the two `openStream` static overloads by argument shape.
+// Java: public static <T> Optional<T> openStream(
+//   final URI uri, final Function<InputStream, T> streamOperation) {
+//   final Optional<InputStream> stream = openStream(uri);
+//   if (stream.isPresent()) {
+//     try (InputStream inputStream = stream.get()) {
+//       return Optional.ofNullable(streamOperation.apply(inputStream));
+//     } catch (final IOException e) { ...; return Optional.empty(); }
+//   } else { return Optional.empty(); }
+// }
+// Generic T collapses to rawptr (Optional<T> ≡ rawptr with nil == empty).
+url_streams_open_stream_uri_op :: proc(uri: ^Uri, stream_operation: proc(s: ^Input_Stream) -> rawptr) -> rawptr {
+	input_stream := url_streams_open_stream_uri(uri)
+	if input_stream == nil {
+		return nil
+	}
+	return stream_operation(input_stream)
+}
+
+// Proc group dispatching the `openStream` static overloads by argument shape.
 url_streams_open_stream :: proc{
 	url_streams_open_stream_url,
 	url_streams_open_stream_uri,
+	url_streams_open_stream_uri_op,
 }

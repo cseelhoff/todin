@@ -293,3 +293,29 @@ pro_territory_manager_lambda_find_amphib_move_options_6 :: proc(
 	return unit_attachment_get_transport_cost(unit_get_unit_attachment(u)) <= capacity
 }
 
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#getUnitRange(Unit, Territory, GamePlayer, boolean)
+//
+// Java: returns BigDecimal; for enemy-attack analysis uses the unit-attachment
+// movement value (plus a +1 bonus when the unit is in a facility-bonus
+// territory), otherwise returns the unit's current remaining movement.
+// BigDecimal → f64 per the Odin port convention.
+pro_territory_manager_get_unit_range :: proc(
+	unit: ^Unit,
+	unit_territory: ^Territory,
+	player: ^Game_Player,
+	is_checking_enemy_attacks: bool,
+) -> f64 {
+	if is_checking_enemy_attacks {
+		range := f64(unit_attachment_get_movement(unit_get_unit_attachment(unit), player))
+		bonus_p, bonus_c := matches_unit_can_be_given_bonus_movement_by_facilities_in_its_territory(
+			unit_territory,
+			player,
+		)
+		if bonus_p(bonus_c, unit) {
+			return range + 1.0
+		}
+		return range
+	}
+	return unit_get_movement_left(unit)
+}
+

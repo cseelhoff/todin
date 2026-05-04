@@ -99,3 +99,11 @@ abstract_ai_move_pause :: proc() {
 abstract_ai_combat_step_pause :: proc() {
 }
 
+// games.strategy.triplea.ai.AbstractAi#confirmOwnCasualties(java.util.UUID,java.lang.String)
+//   public void confirmOwnCasualties(final UUID battleId, final String message) {
+//     combatStepPause();
+//   }
+abstract_ai_confirm_own_casualties :: proc(self: ^Abstract_Ai, battle_id: ^Uuid, message: string) {
+	abstract_ai_combat_step_pause()
+}
+

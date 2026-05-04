@@ -403,3 +403,85 @@ unified_messenger_message_received :: proc(
 		count_down_latch_count_down(latch)
 	}
 }
+
+// Java: public void addImplementor(RemoteName endPointDescriptor, Object implementor,
+//                                  boolean singleThreaded) {
+//         if (!endPointDescriptor.getClazz().isAssignableFrom(implementor.getClass())) {
+//           throw new IllegalArgumentException(
+//               implementor + " does not implement " + endPointDescriptor.getClazz());
+//         }
+//         EndPoint endPoint = getLocalEndPointOrCreate(endPointDescriptor, singleThreaded);
+//         endPoint.addImplementor(implementor);
+//       }
+// The isAssignableFrom check has no surface in the port: implementor is
+// `rawptr` (Java's Object) with no runtime class info, mirroring the
+// "no reflection" rule. We trust the caller (same convention used
+// elsewhere in this file) and proceed to create/look up the end point
+// and register the implementor.
+unified_messenger_add_implementor :: proc(
+	self: ^Unified_Messenger,
+	end_point_descriptor: ^Remote_Name,
+	implementor: rawptr,
+	single_threaded: bool,
+) {
+	end_point := unified_messenger_get_local_end_point_or_create(
+		self,
+		end_point_descriptor,
+		single_threaded,
+	)
+	end_point_add_implementor(end_point, implementor)
+}
+
+// Java: public RemoteMethodCallResults invokeAndWait(String endPointName,
+//             RemoteMethodCall remoteCall) throws RemoteNotFoundException {
+//         EndPoint local;
+//         synchronized (endPointMutex) { local = localEndPoints.get(endPointName); }
+//         if (local == null) return invokeAndWaitRemote(remoteCall);
+//         long number = local.takeANumber();
+//         List<RemoteMethodCallResults> results =
+//             local.invokeLocal(remoteCall, number, getLocalNode());
+//         if (results.isEmpty()) {
+//           throw new RemoteNotFoundException(
+//               "Not found:" + endPointName
+//                   + ", method name: " + remoteCall.getMethodName()
+//                   + ", remote name: " + remoteCall.getRemoteName());
+//         }
+//         if (results.size() > 1) {
+//           throw new IllegalStateException("Too many implementors, got back: " + results);
+//         }
+//         return results.get(0);
+//       }
+// Synchronized block dropped (single-threaded snapshot harness, same
+// convention as invoke_and_wait_remote / invoke above). Java's checked
+// RemoteNotFoundException and IllegalStateException are surfaced via
+// panic, matching invoke_and_wait_remote's existing convention in this
+// file.
+unified_messenger_invoke_and_wait :: proc(
+	self: ^Unified_Messenger,
+	end_point_name: string,
+	remote_call: ^Remote_Method_Call,
+) -> ^Remote_Method_Call_Results {
+	local, ok := self.local_end_points[end_point_name]
+	if !ok {
+		return unified_messenger_invoke_and_wait_remote(self, remote_call)
+	}
+	number := end_point_take_a_number(local)
+	results := end_point_invoke_local(
+		local,
+		remote_call,
+		number,
+		unified_messenger_get_local_node(self),
+	)
+	if len(results) == 0 {
+		panic(fmt.tprintf(
+			"Not found:%s, method name: %s, remote name: %s",
+			end_point_name,
+			remote_method_call_get_method_name(remote_call),
+			remote_method_call_get_remote_name(remote_call),
+		))
+	}
+	if len(results) > 1 {
+		panic(fmt.tprintf("Too many implementors, got back: %v", results))
+	}
+	return results[0]
+}

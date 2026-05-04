@@ -542,3 +542,424 @@ move_validator_lambda_validate_basic_6 :: proc(ctx: rawptr, unit: ^Unit) -> bool
 	return false
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#isNotNeutralsBlitzable
+// Java:
+//   private static boolean isNotNeutralsBlitzable(final GameProperties properties) {
+//     return !Properties.getNeutralsBlitzable(properties)
+//         && !Properties.getNeutralsImpassable(properties);
+//   }
+move_validator_is_not_neutrals_blitzable :: proc(properties: ^Game_Properties) -> bool {
+	return !properties_get_neutrals_blitzable(properties) &&
+	       !properties_get_neutrals_impassable(properties)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#getNeutralCharge
+// Java:
+//   private static int getNeutralCharge(
+//       final GameProperties properties, final int numberOfTerritories) {
+//     return numberOfTerritories * Properties.getNeutralCharge(properties);
+//   }
+move_validator_get_neutral_charge :: proc(
+	properties: ^Game_Properties,
+	number_of_territories: i32,
+) -> i32 {
+	return number_of_territories * properties_get_neutral_charge(properties)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#hasConqueredNonBlitzedNonWaterOnRoute
+// Java:
+//   private static boolean hasConqueredNonBlitzedNonWaterOnRoute(
+//       final Route route, final GameData data) {
+//     for (final Territory current : route.getMiddleSteps()) {
+//       if (!Matches.territoryIsWater().test(current)
+//           && AbstractMoveDelegate.getBattleTracker(data).wasConquered(current)
+//           && !AbstractMoveDelegate.getBattleTracker(data).wasBlitzed(current)) {
+//         return true;
+//       }
+//     }
+//     return false;
+//   }
+move_validator_has_conquered_non_blitzed_non_water_on_route :: proc(
+	route: ^Route,
+	data: ^Game_Data,
+) -> bool {
+	bt := abstract_move_delegate_get_battle_tracker(data)
+	middle := route_get_middle_steps(route)
+	defer delete(middle)
+	for current in middle {
+		if !territory_is_water(current) &&
+		   battle_tracker_was_conquered(bt, current) &&
+		   !battle_tracker_was_blitzed(bt, current) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#onlyIgnoredUnitsOnPath
+// Java:
+//   public boolean onlyIgnoredUnitsOnPath(
+//       final Route route, final GamePlayer player, final boolean ignoreRouteEnd) {
+//     final Predicate<Unit> transportOnly =
+//         Matches.unitIsInfrastructure()
+//             .or(Matches.unitIsSeaTransportButNotCombatSeaTransport())
+//             .or(Matches.unitIsLand())
+//             .or(Matches.enemyUnit(player).negate());
+//     final Predicate<Unit> subOnly =
+//         Matches.unitIsInfrastructure()
+//             .or(Matches.unitCanBeMovedThroughByEnemies())
+//             .or(Matches.enemyUnit(player).negate());
+//     final Predicate<Unit> transportOrSubOnly = transportOnly.or(subOnly);
+//     final boolean getIgnoreTransportInMovement =
+//         Properties.getIgnoreTransportInMovement(data.getProperties());
+//     List<Territory> steps;
+//     if (ignoreRouteEnd) { steps = route.getMiddleSteps(); }
+//     else {
+//       steps = route.getSteps();
+//       if (steps.isEmpty()) { steps = List.of(route.getStart()); }
+//     }
+//     boolean validMove = false;
+//     for (final Territory current : steps) {
+//       if (current.isWater()) {
+//         if ((getIgnoreTransportInMovement
+//                 && current.getUnitCollection().allMatch(transportOrSubOnly))
+//             || current.getUnitCollection().allMatch(subOnly)) {
+//           validMove = true;
+//           continue;
+//         }
+//         return false;
+//       }
+//     }
+//     return validMove;
+//   }
+move_validator_only_ignored_units_on_path :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	player: ^Game_Player,
+	ignore_route_end: bool,
+) -> bool {
+	infra_p, infra_c := matches_unit_is_infrastructure()
+	stxc_p, stxc_c := matches_unit_is_sea_transport_but_not_combat_sea_transport()
+	land_p, land_c := matches_unit_is_land()
+	enemy_p, enemy_c := matches_enemy_unit(player)
+	can_through_p, can_through_c := matches_unit_can_be_moved_through_by_enemies()
+
+	transport_only :: proc(
+		u: ^Unit,
+		infra_p: proc(rawptr, ^Unit) -> bool, infra_c: rawptr,
+		stxc_p: proc(rawptr, ^Unit) -> bool, stxc_c: rawptr,
+		land_p: proc(rawptr, ^Unit) -> bool, land_c: rawptr,
+		enemy_p: proc(rawptr, ^Unit) -> bool, enemy_c: rawptr,
+	) -> bool {
+		return infra_p(infra_c, u) ||
+			stxc_p(stxc_c, u) ||
+			land_p(land_c, u) ||
+			!enemy_p(enemy_c, u)
+	}
+	sub_only :: proc(
+		u: ^Unit,
+		infra_p: proc(rawptr, ^Unit) -> bool, infra_c: rawptr,
+		can_through_p: proc(rawptr, ^Unit) -> bool, can_through_c: rawptr,
+		enemy_p: proc(rawptr, ^Unit) -> bool, enemy_c: rawptr,
+	) -> bool {
+		return infra_p(infra_c, u) ||
+			can_through_p(can_through_c, u) ||
+			!enemy_p(enemy_c, u)
+	}
+
+	get_ignore_transport_in_movement := properties_get_ignore_transport_in_movement(
+		game_data_get_properties(self.data),
+	)
+	steps: [dynamic]^Territory
+	if ignore_route_end {
+		steps = route_get_middle_steps(route)
+	} else {
+		steps = route_get_steps(route)
+		if len(steps) == 0 {
+			append(&steps, route_get_start(route))
+		}
+	}
+	defer delete(steps)
+
+	valid_move := false
+	for current in steps {
+		if territory_is_water(current) {
+			uc := territory_get_unit_collection(current)
+			all_transport_or_sub := true
+			for u in uc.units {
+				if !(transport_only(
+						u,
+						infra_p, infra_c,
+						stxc_p, stxc_c,
+						land_p, land_c,
+						enemy_p, enemy_c,
+					) ||
+					sub_only(
+						u,
+						infra_p, infra_c,
+						can_through_p, can_through_c,
+						enemy_p, enemy_c,
+					)) {
+					all_transport_or_sub = false
+					break
+				}
+			}
+			all_sub := true
+			for u in uc.units {
+				if !sub_only(
+					u,
+					infra_p, infra_c,
+					can_through_p, can_through_c,
+					enemy_p, enemy_c,
+				) {
+					all_sub = false
+					break
+				}
+			}
+			if (get_ignore_transport_in_movement && all_transport_or_sub) || all_sub {
+				valid_move = true
+				continue
+			}
+			return false
+		}
+	}
+	return valid_move
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateMovementRestrictedByTerritory
+// Java:
+//   private MoveValidationResult validateMovementRestrictedByTerritory(
+//       final Route route, final GamePlayer player, final MoveValidationResult result) {
+//     if (getEditMode(data.getProperties())) { return result; }
+//     if (!Properties.getMovementByTerritoryRestricted(data.getProperties())) { return result; }
+//     final RulesAttachment ra = player.getRulesAttachment();
+//     if (ra == null || ra.getMovementRestrictionTerritories() == null) { return result; }
+//     final Collection<Territory> listedTerritories =
+//         ra.getListedTerritories(ra.getMovementRestrictionTerritories(), true, true);
+//     if (ra.isMovementRestrictionTypeAllowed()) {
+//       for (final Territory current : route.getAllTerritories()) {
+//         if (!listedTerritories.contains(current)) {
+//           return result.setErrorReturnResult("Cannot move outside restricted territories");
+//         }
+//       }
+//     } else if (ra.isMovementRestrictionTypeDisallowed()) {
+//       for (final Territory current : route.getAllTerritories()) {
+//         if (listedTerritories.contains(current)) {
+//           return result.setErrorReturnResult("Cannot move to restricted territories");
+//         }
+//       }
+//     }
+//     return result;
+//   }
+move_validator_validate_movement_restricted_by_territory :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	props := game_data_get_properties(self.data)
+	if edit_delegate_get_edit_mode(props) {
+		return result
+	}
+	if !properties_get_movement_by_territory_restricted(props) {
+		return result
+	}
+	ra := game_player_get_rules_attachment(player)
+	if ra == nil {
+		return result
+	}
+	mrt := rules_attachment_get_movement_restriction_territories(ra)
+	if mrt == nil {
+		return result
+	}
+	listed := rules_attachment_get_listed_territories(ra, mrt, true, true)
+	defer delete(listed)
+	all_terrs := route_get_all_territories(route)
+	defer delete(all_terrs)
+	contains :: proc(list: [dynamic]^Territory, t: ^Territory) -> bool {
+		for x in list {
+			if x == t {
+				return true
+			}
+		}
+		return false
+	}
+	if rules_attachment_is_movement_restriction_type_allowed(ra) {
+		for current in all_terrs {
+			if !contains(listed, current) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot move outside restricted territories",
+				)
+			}
+		}
+	} else if rules_attachment_is_movement_restriction_type_disallowed(ra) {
+		for current in all_terrs {
+			if contains(listed, current) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot move to restricted territories",
+				)
+			}
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#checkCanalStepAndOwnership
+// Java:
+//   private Optional<String> checkCanalStepAndOwnership(
+//       final CanalAttachment canalAttachment, final GamePlayer player) {
+//     if (canalAttachment.getCanNotMoveThroughDuringCombatMove()
+//         && GameStepPropertiesHelper.isCombatMove(data, true)) {
+//       return Optional.of("Can only move through " + canalAttachment.getCanalName()
+//           + " during non-combat move");
+//     }
+//     for (final Territory borderTerritory : canalAttachment.getLandTerritories()) {
+//       if (!data.getRelationshipTracker().canMoveThroughCanals(player, borderTerritory.getOwner())) {
+//         return Optional.of("Must control " + canalAttachment.getCanalName()
+//             + " to move through");
+//       }
+//       if (AbstractMoveDelegate.getBattleTracker(data).wasConquered(borderTerritory)) {
+//         return Optional.of("Must control " + canalAttachment.getCanalName()
+//             + " for an entire turn to move through");
+//       }
+//     }
+//     return Optional.empty();
+//   }
+// Optional<String> → (string, bool) per the convention used elsewhere in
+// the port (e.g. Client_Setting.get_encoded_current_value).
+move_validator_check_canal_step_and_ownership :: proc(
+	self: ^Move_Validator,
+	canal_attachment: ^Canal_Attachment,
+	player: ^Game_Player,
+) -> (string, bool) {
+	if canal_attachment_get_can_not_move_through_during_combat_move(canal_attachment) &&
+	   game_step_properties_helper_is_combat_move(self.data, true) {
+		return fmt.aprintf(
+			"Can only move through %v during non-combat move",
+			canal_attachment_get_canal_name(canal_attachment),
+		), true
+	}
+	rt := game_data_get_relationship_tracker(self.data)
+	bt := abstract_move_delegate_get_battle_tracker(self.data)
+	for border_territory in canal_attachment_get_land_territories(canal_attachment) {
+		if !relationship_tracker_can_move_through_canals(
+			rt,
+			player,
+			territory_get_owner(border_territory),
+		) {
+			return fmt.aprintf(
+				"Must control %v to move through",
+				canal_attachment_get_canal_name(canal_attachment),
+			), true
+		}
+		if battle_tracker_was_conquered(bt, border_territory) {
+			return fmt.aprintf(
+				"Must control %v for an entire turn to move through",
+				canal_attachment_get_canal_name(canal_attachment),
+			), true
+		}
+	}
+	return "", false
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#carrierMustMoveWith
+// Java (3-arg public static):
+//   public static Map<Unit, Collection<Unit>> carrierMustMoveWith(
+//       final Collection<Unit> units, final Collection<Unit> startUnits,
+//       final GamePlayer player) {
+//     final Predicate<Unit> friendlyNotOwnedAir =
+//         Matches.alliedUnit(player)
+//             .and(Matches.unitIsOwnedBy(player).negate())
+//             .and(Matches.unitCanLandOnCarrier());
+//     final Collection<Unit> alliedAir = CollectionUtils.getMatches(startUnits, friendlyNotOwnedAir);
+//     if (alliedAir.isEmpty()) { return Map.of(); }
+//     final Predicate<Unit> friendlyNotOwnedCarrier =
+//         Matches.unitIsCarrier()
+//             .and(Matches.alliedUnit(player))
+//             .and(Matches.unitIsOwnedBy(player).negate());
+//     final Collection<Unit> alliedCarrier =
+//         CollectionUtils.getMatches(startUnits, friendlyNotOwnedCarrier);
+//     for (final Unit carrier : alliedCarrier) {
+//       final Collection<Unit> carrying = getCanCarry(carrier, alliedAir, player);
+//       alliedAir.removeAll(carrying);
+//     }
+//     if (alliedAir.isEmpty()) { return Map.of(); }
+//     final Map<Unit, Collection<Unit>> mapping = new HashMap<>();
+//     final Collection<Unit> ownedCarrier =
+//         CollectionUtils.getMatches(units, Matches.unitIsCarrier().and(Matches.unitIsOwnedBy(player)));
+//     for (final Unit carrier : ownedCarrier) {
+//       final Collection<Unit> carrying = getCanCarry(carrier, alliedAir, player);
+//       alliedAir.removeAll(carrying);
+//       mapping.put(carrier, carrying);
+//     }
+//     return ImmutableMap.copyOf(mapping);
+//   }
+move_validator_carrier_must_move_with :: proc(
+	units: [dynamic]^Unit,
+	start_units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> map[^Unit][dynamic]^Unit {
+	allied_p, allied_c := matches_allied_unit(player)
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	can_land_p, can_land_c := matches_unit_can_land_on_carrier()
+	carrier_p, carrier_c := matches_unit_is_carrier()
+
+	allied_air := make([dynamic]^Unit)
+	for u in start_units {
+		if allied_p(allied_c, u) && !owned_p(owned_c, u) && can_land_p(can_land_c, u) {
+			append(&allied_air, u)
+		}
+	}
+	if len(allied_air) == 0 {
+		delete(allied_air)
+		return map[^Unit][dynamic]^Unit{}
+	}
+
+	allied_carrier := make([dynamic]^Unit)
+	defer delete(allied_carrier)
+	for u in start_units {
+		if carrier_p(carrier_c, u) && allied_p(allied_c, u) && !owned_p(owned_c, u) {
+			append(&allied_carrier, u)
+		}
+	}
+	remove_all :: proc(target: ^[dynamic]^Unit, removed: [dynamic]^Unit) {
+		for r in removed {
+			i := 0
+			for i < len(target) {
+				if target[i] == r {
+					ordered_remove(target, i)
+				} else {
+					i += 1
+				}
+			}
+		}
+	}
+	for carrier in allied_carrier {
+		carrying := move_validator_get_can_carry(carrier, allied_air, player)
+		defer delete(carrying)
+		remove_all(&allied_air, carrying)
+	}
+	if len(allied_air) == 0 {
+		delete(allied_air)
+		return map[^Unit][dynamic]^Unit{}
+	}
+
+	mapping: map[^Unit][dynamic]^Unit
+	owned_carrier := make([dynamic]^Unit)
+	defer delete(owned_carrier)
+	for u in units {
+		if carrier_p(carrier_c, u) && owned_p(owned_c, u) {
+			append(&owned_carrier, u)
+		}
+	}
+	for carrier in owned_carrier {
+		carrying := move_validator_get_can_carry(carrier, allied_air, player)
+		remove_all(&allied_air, carrying)
+		mapping[carrier] = carrying
+	}
+	delete(allied_air)
+	return mapping
+}
+

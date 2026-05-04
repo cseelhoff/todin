@@ -573,3 +573,8 @@ pro_territory_get_all_defenders_for_carrier_calcs :: proc(
 	}
 	return defenders
 }
+
+
+pro_territory_put_amphib_attack_map :: proc(self: ^Pro_Territory, transport: ^Unit, amphib_units: [dynamic]^Unit) {
+	self.amphib_attack_map[transport] = amphib_units
+}

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Air_That_Cant_Land_Util :: struct {
 	bridge: ^I_Delegate_Bridge,
 }
@@ -8,5 +10,63 @@ air_that_cant_land_util_new :: proc(bridge: ^I_Delegate_Bridge) -> ^Air_That_Can
 	self := new(Air_That_Cant_Land_Util)
 	self.bridge = bridge
 	return self
+}
+
+// Java: private void removeAirThatCantLand(
+//         final GamePlayer player, final Territory territory, final Collection<Unit> airUnits)
+// The private 3-arg overload of removeAirThatCantLand. Distinguished
+// here from the public 2-arg `removeAirThatCantLand(player, bool)` by
+// the `_in_territory` suffix since Odin does not support overloading.
+air_that_cant_land_util_remove_air_that_cant_land_in_territory :: proc(
+	self: ^Air_That_Cant_Land_Util,
+	player: ^Game_Player,
+	territory: ^Territory,
+	air_units: [dynamic]^Unit,
+) {
+	to_remove := make([dynamic]^Unit, 0, len(air_units))
+	if !territory_is_water(territory) {
+		// if we cant land on land then none can
+		for u in air_units {
+			append(&to_remove, u)
+		}
+	} else {
+		// on water we may just no have enough carriers — find the carrier capacity
+		allied_pred, allied_ctx := matches_allied_unit(player)
+		all_units := unit_holder_get_units(cast(^Unit_Holder)territory)
+		defer delete(all_units)
+		carriers := make([dynamic]^Unit, 0, len(all_units))
+		defer delete(carriers)
+		for u in all_units {
+			if allied_pred(allied_ctx, u) {
+				append(&carriers, u)
+			}
+		}
+		capacity := air_movement_validator_carrier_capacity(carriers[:], territory)
+		for unit in air_units {
+			ua := unit_get_unit_attachment(unit)
+			cost := unit_attachment_get_carrier_cost(ua)
+			if cost == -1 || cost > capacity {
+				append(&to_remove, unit)
+			} else {
+				capacity -= cost
+			}
+		}
+	}
+	remove := change_factory_remove_units(cast(^Unit_Holder)territory, to_remove)
+	were_or_was := "was"
+	if len(to_remove) > 1 {
+		were_or_was = "were"
+	}
+	transcript_text := fmt.aprintf(
+		"%s could not land in %s and %s removed",
+		my_formatter_units_to_text_no_owner(to_remove, nil),
+		default_named_get_name(&territory.named_attachable.default_named),
+		were_or_was,
+	)
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(self.bridge),
+		transcript_text,
+	)
+	i_delegate_bridge_add_change(self.bridge, remove)
 }
 

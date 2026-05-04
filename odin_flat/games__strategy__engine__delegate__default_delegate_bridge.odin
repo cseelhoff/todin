@@ -156,3 +156,12 @@ default_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^Default_Del
 	)
 	return cast(^I_Sound)default_delegate_bridge_get_outbound(self, rawptr(implementor))
 }
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#getRemotePlayer()
+// Java: return getRemotePlayer(getGamePlayer());
+default_delegate_bridge_get_remote_player_current :: proc(self: ^Default_Delegate_Bridge) -> ^Player {
+	return default_delegate_bridge_get_remote_player(
+		self,
+		default_delegate_bridge_get_game_player(self),
+	)
+}

@@ -208,3 +208,38 @@ available_supports_get_sorted_support :: proc(support_calculator: ^Support_Calcu
 	return support_calculation_result
 }
 
+// AvailableSupports filter(Predicate<UnitSupportAttachment> ruleFilter)
+//   Builds a new AvailableSupports retaining only rules/support-units for
+//   which ruleFilter.test(usa) is true. Empty rule lists are dropped, and
+//   surviving SupportDetails values are deep-copied via the copy ctor.
+available_supports_filter :: proc(
+	self: ^Available_Supports,
+	rule_filter: proc(rawptr, ^Unit_Support_Attachment) -> bool,
+	rule_filter_ctx: rawptr,
+) -> ^Available_Supports {
+	support_rules := make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment)
+	for bonus_type, rules in self.support_rules {
+		filtered_support_rules: [dynamic]^Unit_Support_Attachment
+		for rule in rules {
+			if rule_filter(rule_filter_ctx, rule) {
+				append(&filtered_support_rules, rule)
+			}
+		}
+		if len(filtered_support_rules) > 0 {
+			support_rules[bonus_type] = filtered_support_rules
+		}
+	}
+
+	support_units := make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details)
+	for usa, details in self.support_units {
+		if rule_filter(rule_filter_ctx, usa) {
+			support_units[usa] = available_supports_support_details_new_copy(details)
+		}
+	}
+
+	builder := available_supports_builder()
+	builder = available_supports_available_supports_builder_support_rules(builder, support_rules)
+	builder = available_supports_available_supports_builder_support_units(builder, support_units)
+	return available_supports_available_supports_builder_build(builder)
+}
+

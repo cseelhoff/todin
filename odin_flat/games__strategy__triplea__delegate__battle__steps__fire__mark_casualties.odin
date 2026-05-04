@@ -171,3 +171,125 @@ mark_casualties_get_all_step_details :: proc(
 	return out
 }
 
+// Java: lambda$notifyCasualties$0(IDelegateBridge bridge)
+//   () -> {
+//     try {
+//       battleActions.getRemotePlayer(battleState.getPlayer(side), bridge)
+//           .confirmEnemyCasualties(
+//               battleState.getBattleId(),
+//               "Press space to continue",
+//               battleState.getPlayer(side.getOpposite()));
+//     } catch (final Exception e) { /* ignore */ }
+//   }
+// Captured: this (Mark_Casualties) and bridge (passed as arg).
+mark_casualties_lambda_notify_casualties_0 :: proc(
+	self: ^Mark_Casualties,
+	bridge: ^I_Delegate_Bridge,
+) {
+	remote := battle_actions_get_remote_player(
+		self.battle_actions,
+		battle_state_get_player(self.battle_state, self.side),
+		bridge,
+	)
+	if remote == nil {
+		return
+	}
+	player_confirm_enemy_casualties(
+		remote,
+		battle_state_get_battle_id(self.battle_state),
+		"Press space to continue",
+		battle_state_get_player(self.battle_state, battle_state_side_get_opposite(self.side)),
+	)
+}
+
+// Java: private void notifyCasualties(IDelegateBridge bridge)
+//   final Map<Unit, Collection<Unit>> dependentUnits = new HashMap<>();
+//   for (final Unit unit : fireRoundState.getCasualties().getKilled()) {
+//     dependentUnits.put(unit, battleState.getDependentUnits(List.of(unit)));
+//   }
+//   for (final Unit unit : fireRoundState.getCasualties().getDamaged()) {
+//     dependentUnits.put(unit, battleState.getDependentUnits(List.of(unit)));
+//   }
+//   bridge.getDisplayChannelBroadcaster().casualtyNotification(
+//       battleState.getBattleId(),
+//       getPossibleOldNameForNotifyingBattleDisplay(battleState, firingGroup, side, getName()),
+//       fireRoundState.getDice(),
+//       battleState.getPlayer(side.getOpposite()),
+//       new ArrayList<>(fireRoundState.getCasualties().getKilled()),
+//       new ArrayList<>(fireRoundState.getCasualties().getDamaged()),
+//       dependentUnits);
+//   if (autoCalculated || opp.isAi()) {
+//     battleActions.getRemotePlayer(opp, bridge)
+//         .confirmOwnCasualties(battleState.getBattleId(), "Press space to continue");
+//   }
+//   final Thread t = new Thread(() -> { ...lambda$0... }, "click to continue waiter");
+//   t.start();
+//   bridge.leaveDelegateExecution();
+//   Interruptibles.join(t);
+//   bridge.enterDelegateExecution();
+mark_casualties_notify_casualties :: proc(
+	self: ^Mark_Casualties,
+	bridge: ^I_Delegate_Bridge,
+) {
+	casualties := fire_round_state_get_casualties(self.fire_round_state)
+	killed := casualty_list_get_killed(&casualties.casualty_list)
+	damaged := casualty_list_get_damaged(&casualties.casualty_list)
+
+	dependent_units := make(map[^Unit][dynamic]^Unit)
+	for unit in killed {
+		single := make([dynamic]^Unit)
+		append(&single, unit)
+		dependent_units[unit] = battle_state_get_dependent_units(self.battle_state, single)
+	}
+	for unit in damaged {
+		single := make([dynamic]^Unit)
+		append(&single, unit)
+		dependent_units[unit] = battle_state_get_dependent_units(self.battle_state, single)
+	}
+
+	killed_copy := make([dynamic]^Unit)
+	for u in killed do append(&killed_copy, u)
+	damaged_copy := make([dynamic]^Unit)
+	for u in damaged do append(&damaged_copy, u)
+
+	step_name := mark_casualties_get_possible_old_name_for_notifying_battle_display(
+		self.battle_state,
+		self.firing_group,
+		self.side,
+		mark_casualties_get_name(self),
+	)
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_casualty_notification(
+		display,
+		battle_state_get_battle_id(self.battle_state),
+		step_name,
+		fire_round_state_get_dice(self.fire_round_state),
+		battle_state_get_player(self.battle_state, battle_state_side_get_opposite(self.side)),
+		killed_copy,
+		damaged_copy,
+		dependent_units,
+	)
+
+	opp := battle_state_get_player(self.battle_state, battle_state_side_get_opposite(self.side))
+	if casualty_details_get_auto_calculated(casualties) || game_player_is_ai(opp) {
+		remote_opp := battle_actions_get_remote_player(self.battle_actions, opp, bridge)
+		if remote_opp != nil {
+			player_confirm_own_casualties(
+				remote_opp,
+				battle_state_get_battle_id(self.battle_state),
+				"Press space to continue",
+			)
+		}
+	}
+
+	// Java spawns a thread running lambda$0, then leaves/joins/enters the
+	// delegate execution context. The snapshot harness is single-threaded:
+	// thread_start runs the target inline and Interruptibles.join is a
+	// no-op (see java__lang__thread.odin / interruptibles.odin), and the
+	// I_Delegate_Bridge vtable does not expose leaveDelegateExecution
+	// (only enter), so the leave/enter pair collapses to a no-op. We
+	// invoke the lambda directly to preserve observable behavior.
+	mark_casualties_lambda_notify_casualties_0(self, bridge)
+}
+

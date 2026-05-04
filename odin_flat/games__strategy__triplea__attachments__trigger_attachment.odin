@@ -1769,4 +1769,243 @@ trigger_attachment_trigger_victory_with_messages :: proc(
 	}
 }
 
+// ---------------------------------------------------------------------------
+// lambda$triggerNotifications$2(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams,
+//     ResourceLoader resourceLoader)
+//
+// Java body (the lambda passed to bridge.getResourceLoader().ifPresent):
+//   resourceLoader -> triggerNotifications(
+//       satisfiedTriggers, bridge, fireTriggerParams,
+//       new NotificationMessages(resourceLoader));
+//
+// Captures (satisfiedTriggers, bridge, fireTriggerParams); the
+// trailing ResourceLoader is the lambda parameter. Ported as a plain
+// 4-arg proc — there are no consumers in the harness (the public 3-arg
+// `trigger_attachment_trigger_notifications` short-circuits because
+// the resource-loader Optional is empty), so the (proc, rawptr) ctx
+// adapter pair is unnecessary.
+// ---------------------------------------------------------------------------
+trigger_attachment_lambda__trigger_notifications__2 :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+	resource_loader: ^Resource_Loader,
+) {
+	trigger_attachment_trigger_notifications_with_messages(
+		satisfied_triggers,
+		bridge,
+		fire_trigger_params,
+		notification_messages_new(resource_loader),
+	)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$triggerVictory$9(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams,
+//     ResourceLoader resourceLoader)
+//
+// Mirror of lambda$triggerNotifications$2 for the victory side:
+//   resourceLoader -> triggerVictory(
+//       satisfiedTriggers, bridge, fireTriggerParams,
+//       new NotificationMessages(resourceLoader));
+// ---------------------------------------------------------------------------
+trigger_attachment_lambda__trigger_victory__9 :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+	resource_loader: ^Resource_Loader,
+) {
+	trigger_attachment_trigger_victory_with_messages(
+		satisfied_triggers,
+		bridge,
+		fire_trigger_params,
+		notification_messages_new(resource_loader),
+	)
+}
+
+// ---------------------------------------------------------------------------
+// private static void removeUnits(
+//     TriggerAttachment t, Territory terr, IntegerMap<UnitType> utMap,
+//     GamePlayer player, IDelegateBridge bridge)
+//
+// For each UnitType key in utMap, take up to utMap.getInt(ut) units from
+// terr that are owned by `player` AND of that exact type, batch them
+// into a CompositeChange via ChangeFactory.removeUnits, and — if any
+// were actually removed — emit a single history event and apply the
+// change. Inlined the (owned ∧ ofType) Predicate AND because Odin's
+// `collection_utils_get_n_matches` accepts only a no-ctx predicate,
+// while `matches_unit_is_owned_by` / `matches_unit_is_of_type` carry
+// a captured ctx in the (proc, rawptr) form.
+// ---------------------------------------------------------------------------
+trigger_attachment_remove_units :: proc(
+	t: ^Trigger_Attachment,
+	terr: ^Territory,
+	ut_map: ^Integer_Map,
+	player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+) {
+	change := composite_change_new()
+	total_removed: [dynamic]^Unit
+	defer delete(total_removed)
+	owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+	for ut_raw in integer_map_key_set(ut_map) {
+		ut := cast(^Unit_Type)ut_raw
+		remove_num := integer_map_get_int(ut_map, ut_raw)
+		of_type_pred, of_type_ctx := matches_unit_is_of_type(ut)
+		territory_units := territory_get_units(terr)
+		to_remove: [dynamic]^Unit
+		count: i32 = 0
+		for u in territory_units {
+			if count >= remove_num {
+				break
+			}
+			if owned_pred(owned_ctx, u) && of_type_pred(of_type_ctx, u) {
+				append(&to_remove, u)
+				count += 1
+			}
+		}
+		if len(to_remove) > 0 {
+			for r in to_remove {
+				append(&total_removed, r)
+			}
+			composite_change_add(
+				change,
+				change_factory_remove_units(cast(^Unit_Holder)terr, to_remove),
+			)
+		}
+	}
+	if !composite_change_is_empty(change) {
+		attachment_text := my_formatter_attachment_name_to_text(t.name)
+		units_text := my_formatter_units_to_text_no_owner(total_removed, nil)
+		player_name := default_named_get_name(&player.named_attachable.default_named)
+		terr_name := default_named_get_name(&terr.named_attachable.default_named)
+		transcript := strings.concatenate(
+			{
+				attachment_text,
+				": has removed ",
+				units_text,
+				" owned by ",
+				player_name,
+				" in ",
+				terr_name,
+			},
+		)
+		writer := i_delegate_bridge_get_history_writer(bridge)
+		i_delegate_history_writer_start_event(writer, transcript, rawptr(&total_removed))
+		delete(transcript)
+		i_delegate_bridge_add_change(bridge, change)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static void triggerPurchase(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each satisfied trigger filtered by purchaseMatch(): roll
+// testChance / consume uses, and for every (player, eachMultiple)
+// instantiate t.getPurchase() into freshly-created units, write a
+// history event, and apply ChangeFactory.addUnits(player, units).
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_purchase :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_purchase_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		each_multiple := abstract_trigger_attachment_get_each_multiple(
+			&t.abstract_trigger_attachment,
+		)
+		players := trigger_attachment_get_players(t)
+		purchase := trigger_attachment_get_purchase(t)
+		for player in players {
+			for i: i32 = 0; i < each_multiple; i += 1 {
+				units: [dynamic]^Unit
+				for ut_raw in integer_map_key_set(purchase) {
+					ut := cast(^Unit_Type)ut_raw
+					qty := integer_map_get_int(purchase, ut_raw)
+					created := unit_type_create_2(ut, qty, player)
+					for u in created {
+						append(&units, u)
+					}
+					delete(created)
+				}
+				if len(units) > 0 {
+					attachment_text := my_formatter_attachment_name_to_text(t.name)
+					units_text := my_formatter_units_to_text_no_owner(units, nil)
+					player_name := default_named_get_name(
+						&player.named_attachable.default_named,
+					)
+					transcript := strings.concatenate(
+						{
+							attachment_text,
+							": ",
+							units_text,
+							" gained by ",
+							player_name,
+						},
+					)
+					writer := i_delegate_bridge_get_history_writer(bridge)
+					i_delegate_history_writer_start_event(
+						writer,
+						transcript,
+						rawptr(&units),
+					)
+					delete(transcript)
+					place := change_factory_add_units(cast(^Unit_Holder)player, units)
+					i_delegate_bridge_add_change(bridge, place)
+				} else {
+					delete(units)
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// public static String triggerResourceChange(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// 3-arg public overload: build a fresh StringBuilder, delegate to the
+// 4-arg private `trigger_attachment_trigger_resource_change`, and
+// return the accumulated end-of-turn report. The `_simple` suffix
+// disambiguates from the 4-arg variant (Odin has no overloading);
+// matches the convention used by
+// `trigger_attachment_collect_tests_for_all_triggers_simple`.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_resource_change_simple :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) -> string {
+	end_of_turn_report := strings.builder_make()
+	trigger_attachment_trigger_resource_change(
+		satisfied_triggers,
+		bridge,
+		fire_trigger_params,
+		&end_of_turn_report,
+	)
+	return strings.to_string(end_of_turn_report)
+}
+
 

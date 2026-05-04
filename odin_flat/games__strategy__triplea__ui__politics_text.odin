@@ -37,3 +37,9 @@ politics_text_get_acceptance_question :: proc(self: ^Politics_Text, politics_key
 	return politics_text_get_message(self, politics_key, "ACCEPT_QUESTION")
 }
 
+politics_text_new :: proc(rl: ^Resource_Loader) -> ^Politics_Text {
+	self := new(Politics_Text)
+	self.properties = resource_loader_load_property_file(rl, "politicstext.properties")
+	return self
+}
+

@@ -272,3 +272,19 @@ resource_collection_add_times :: proc(self: ^Resource_Collection, resources: ^In
 		resource_collection_add_integer_map(self, resources)
 	}
 }
+
+// public void multiply(final int times)
+// Java: final IntegerMap<Resource> base = new IntegerMap<>(resources);
+//       add(base, times - 1);
+// Snapshots a copy of the current resources, then adds (times - 1)
+// copies of that snapshot back onto self. The copy is required because
+// resource_collection_add_times mutates self.resources during the loop;
+// reading from a separate base map keeps the per-iteration addend stable.
+resource_collection_multiply :: proc(self: ^Resource_Collection, times: i32) {
+	base: Integer_Map_Resource = make(Integer_Map_Resource)
+	for k, v in self.resources {
+		base[k] = v
+	}
+	resource_collection_add_times(self, &base, times - 1)
+	delete(base)
+}

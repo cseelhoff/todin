@@ -21,3 +21,9 @@ notification_messages_get_sounds_key :: proc(self: ^Notification_Messages, notif
 	return properties_get_property(&self.properties, key)
 }
 
+notification_messages_new :: proc(rl: ^Resource_Loader) -> ^Notification_Messages {
+	self := new(Notification_Messages)
+	self.properties = resource_loader_load_property_file(rl, "notifications.properties")^
+	return self
+}
+

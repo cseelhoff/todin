@@ -57,3 +57,9 @@ pro_logger_log :: proc(level: Level, message: string, t: ^Throwable) {
 	_ = pro_logger_format_message(message, t, level)
 }
 
+// Private ProLogger.log(Level, String) — forwards to the 3-arg
+// form with a nil Throwable.
+pro_logger_log_1 :: proc(level: Level, message: string) {
+	pro_logger_log(level, message, nil)
+}
+

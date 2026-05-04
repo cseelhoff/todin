@@ -28,3 +28,21 @@ strength_and_rolls_new :: proc(strength: ^Strength_Value, rolls: ^Roll_Value) ->
 	}
 	return self
 }
+
+// Java: UnitPowerStrengthAndRolls$StrengthAndRolls#of(StrengthValue, RollValue)
+// Lombok @Value(staticConstructor = "of"): public static factory that
+// delegates to the private constructor's zero-normalisation logic.
+unit_power_strength_and_rolls_strength_and_rolls_of :: proc(
+	strength: ^Strength_Value,
+	rolls: ^Roll_Value,
+) -> ^Unit_Power_Strength_And_Rolls_Strength_And_Rolls {
+	self := new(Unit_Power_Strength_And_Rolls_Strength_And_Rolls)
+	if strength_value_is_zero(strength) || roll_value_is_zero(rolls) {
+		self.strength = strength_value_to_value(strength, 0)
+		self.rolls = roll_value_to_value(rolls, 0)
+	} else {
+		self.strength = strength
+		self.rolls = rolls
+	}
+	return self
+}

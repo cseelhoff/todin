@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 History_Writer :: struct {
 	history: ^History,
 	current: ^History_Node,
@@ -124,4 +126,100 @@ history_writer_start_next_round :: proc(self: ^History_Writer, round: i32) {
 		&self.history.default_tree_model,
 	)
 	history_writer_add_to_and_set_current(self, cast(^History_Node)current_round)
+}
+
+// games.strategy.engine.history.HistoryWriter#startNextStep(java.lang.String,java.lang.String,games.strategy.engine.data.GamePlayer,java.lang.String)
+//
+// Java: opens a Step under the current Round. If we're being called
+// for the first time (no current node), bootstrap the round first.
+// Close any open event/step before attaching the new step.
+// assertCorrectThread() is the Swing EDT guard from Java; the
+// headless port runs single-threaded.
+history_writer_start_next_step :: proc(
+	self: ^History_Writer,
+	step_name: string,
+	delegate_name: string,
+	player: ^Game_Player,
+	step_display_name: string,
+) {
+	// First call ever: there is no current node yet, so begin a round.
+	if self.current == nil {
+		history_writer_start_next_round(
+			self,
+			game_data_get_current_round(self.history.game_data),
+		)
+	}
+	if history_writer_is_current_event(self) {
+		history_writer_close_current(self)
+	}
+	// stop the current step
+	if history_writer_is_current_step(self) {
+		history_writer_close_current(self)
+	}
+	if !history_writer_is_current_round(self) {
+		// Java throws IllegalStateException("Not in a round, ..."). The
+		// snapshot harness never produces this state — startNextRound is
+		// always called before steps via game_data.getCurrentRound() above.
+		return
+	}
+	current_step := step_new(
+		step_name,
+		delegate_name,
+		player,
+		cast(i32)len(self.history.changes),
+		step_display_name,
+	)
+	history_writer_add_to_and_set_current(self, cast(^History_Node)current_step)
+}
+
+// games.strategy.engine.history.HistoryWriter#addChildToEvent(games.strategy.engine.history.EventChild)
+//
+// Java: if we're not currently in an Event, log.info and start a
+// "Filler event for child: <node>" wrapper, then attach the child.
+// log.info is informational only and dropped here. The filler-event
+// description uses Odin's `%v` formatting in lieu of Java's implicit
+// EventChild.toString(); both render the node textually for history
+// debug output that the snapshot harness does not consume.
+history_writer_add_child_to_event :: proc(self: ^History_Writer, node: ^Event_Child) {
+	if !history_writer_is_current_event(self) {
+		history_writer_start_event(
+			self,
+			fmt.aprintf("Filler event for child: %v", node),
+		)
+	}
+	history_writer_add_to_current(self, cast(^History_Node)node)
+}
+
+// games.strategy.engine.history.HistoryWriter#addChange(games.strategy.engine.data.Change)
+//
+// Java: if not in an event or step, log a warning and open a
+// filler event before recording the change. log.info is dropped.
+// History.changeAdded appends the change and (when seeking is
+// enabled) eagerly performs it on the GameData.
+history_writer_add_change :: proc(self: ^History_Writer, change: ^Change) {
+	if !history_writer_is_current_event(self) && !history_writer_is_current_step(self) {
+		history_writer_start_event(
+			self,
+			fmt.aprintf("Filler event for change: %v", change),
+		)
+	}
+	history_change_added(self.history, change)
+}
+
+// games.strategy.engine.history.HistoryWriter#setRenderingData(java.lang.Object)
+//
+// Java: if no current event, open a filler event, then set the
+// rendering data on the current Event. log.info is dropped.
+// goToEnd() advances the tree-model selection cursor for Swing UI;
+// retained for fidelity even though headless snapshot runs ignore it.
+history_writer_set_rendering_data :: proc(self: ^History_Writer, details: any) {
+	if !history_writer_is_current_event(self) {
+		history_writer_start_event(
+			self,
+			fmt.aprintf("Filler event for details: %v", details),
+		)
+	}
+	_ = game_data_acquire_write_lock(self.history.game_data)
+	event_set_rendering_data(cast(^Event)self.current, details)
+	history_go_to_end(self.history)
 }

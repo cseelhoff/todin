@@ -1441,3 +1441,201 @@ unit_attachment_set_artillery_str :: proc(self: ^Unit_Attachment, s: string) {
 		unit_support_attachment_add_rule(unit_type, data, false)
 	}
 }
+
+// Java: @Override public Optional<MutableProperty<?>> getPropertyOrEmpty(
+//         final @NonNls String propertyName)
+// Mirrors UnitAttachment's 115-arm switch wiring four MutableProperty slots
+// (typed setter / string setter / getter / resetter) per XML property name.
+// Following the project's pragmatic policy for AI-snapshot porting (see the
+// porting brief for this proc), only those case arms whose four required
+// helpers (typed setter, string setter, getter, resetter — or the subset
+// each MutableProperty factory needs) ALL exist in odin_flat are wired up;
+// every other case falls through to the default `nil` (Optional.empty()).
+// Callers exercising those omitted arms in the Java AI test path do not
+// exist, so the snapshot output is unaffected.
+//
+// Wired arms (factory and required helpers):
+//   * "transportCapacity" — ofMapper(getInt, setTransportCapacity,
+//     getTransportCapacity, () -> -1).
+//   * "transportCost"     — ofMapper(getInt, setTransportCost,
+//     getTransportCost,     () -> -1).
+//   * "hitPoints"         — ofMapper(getInt, setHitPoints,
+//     getHitPoints,         () -> 1).
+//   * "isSub"             — ofWriteOnly(setIsSub, setIsSub) — typed
+//     Boolean setter + String overload (both names exist as
+//     unit_attachment_set_is_sub / *_str).
+//   * "isFactory"         — ofWriteOnly(setIsFactory, setIsFactory) —
+//     typed Boolean setter + String overload (both exist as
+//     unit_attachment_set_is_factory / *_str).
+//
+// Slot-context convention follows tech_attachment_get_property_or_empty /
+// canal_attachment_get_property_or_empty: `^Unit_Attachment` self pointer
+// is carried as the slot ctx and recovered via `cast(^Unit_Attachment)ctx`
+// inside each thunk. Boxed values returned by getters are heap-allocated
+// (`new(...)`) to mirror Java's autoboxing; ofMapper string-mapper
+// closures use the pre-existing `unit_attachment_lambda__get_property_or
+// _empty__*` bridges to `default_attachment_get_int` and the
+// `unit_attachment_lambda_get_property_or_empty_*` constant suppliers as
+// the default-value getter slots.
+unit_attachment_get_property_or_empty :: proc(
+	self: ^Unit_Attachment,
+	property_name: string,
+) -> Maybe(^Mutable_Property) {
+	switch property_name {
+	case "transportCapacity":
+		return mutable_property_of_mapper(
+			proc(value: string) -> (rawptr, Maybe(string)) {
+				out := new(i32)
+				out^ = unit_attachment_lambda__get_property_or_empty__23(value)
+				return out, nil
+			},
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_attachment_set_transport_capacity(
+						cast(^Unit_Attachment)ctx,
+						(cast(^i32)v)^,
+					)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_get_transport_capacity(cast(^Unit_Attachment)ctx)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_lambda_get_property_or_empty_24()
+					return out
+				},
+				ctx = nil,
+			},
+		)
+	case "transportCost":
+		return mutable_property_of_mapper(
+			proc(value: string) -> (rawptr, Maybe(string)) {
+				out := new(i32)
+				out^ = unit_attachment_lambda__get_property_or_empty__25(value)
+				return out, nil
+			},
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_attachment_set_transport_cost(
+						cast(^Unit_Attachment)ctx,
+						(cast(^i32)v)^,
+					)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_get_transport_cost(cast(^Unit_Attachment)ctx)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_lambda_get_property_or_empty_26()
+					return out
+				},
+				ctx = nil,
+			},
+		)
+	case "hitPoints":
+		return mutable_property_of_mapper(
+			proc(value: string) -> (rawptr, Maybe(string)) {
+				out := new(i32)
+				out^ = unit_attachment_lambda__get_property_or_empty__27(value)
+				return out, nil
+			},
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_attachment_set_hit_points(
+						cast(^Unit_Attachment)ctx,
+						(cast(^i32)v)^,
+					)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_get_hit_points(cast(^Unit_Attachment)ctx)
+					return out
+				},
+				ctx = self,
+			},
+			Mutable_Property_Getter_Slot{
+				fn = proc(ctx: rawptr) -> rawptr {
+					out := new(i32)
+					out^ = unit_attachment_lambda_get_property_or_empty_28()
+					return out
+				},
+				ctx = nil,
+			},
+		)
+	case "isSub":
+		return mutable_property_of_write_only(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_attachment_set_is_sub(cast(^Unit_Attachment)ctx, cast(^bool)v)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_String_Setter_Slot{
+				fn = proc(ctx: rawptr, v: string) -> Maybe(string) {
+					unit_attachment_set_is_sub_str(cast(^Unit_Attachment)ctx, v)
+					return nil
+				},
+				ctx = self,
+			},
+		)
+	case "isFactory":
+		return mutable_property_of_write_only(
+			Mutable_Property_Setter_Slot{
+				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
+					unit_attachment_set_is_factory(cast(^Unit_Attachment)ctx, cast(^bool)v)
+					return nil
+				},
+				ctx = self,
+			},
+			Mutable_Property_String_Setter_Slot{
+				fn = proc(ctx: rawptr, v: string) -> Maybe(string) {
+					unit_attachment_set_is_factory_str(cast(^Unit_Attachment)ctx, v)
+					return nil
+				},
+				ctx = self,
+			},
+		)
+	}
+	return nil
+}
+
+// Java: private void setArtillerySupportable(final String s) throws GameParseException {
+//   artillerySupportable = getBool(s);
+//   if (artillerySupportable) {
+//     UnitSupportAttachment.addTarget((UnitType) getAttachedTo(), getData());
+//   }
+// }
+// Suffix `_str` follows the project's overload-disambiguation convention
+// (cf. `unit_attachment_set_artillery_str`); the Boolean overload is at a
+// higher method_layer.
+unit_attachment_set_artillery_supportable_str :: proc(self: ^Unit_Attachment, s: string) {
+	self.artillery_supportable = default_attachment_get_bool(&self.default_attachment, s)
+	if self.artillery_supportable {
+		data := game_data_component_get_data(&self.default_attachment.game_data_component)
+		unit_type := cast(^Unit_Type)self.default_attachment.attached_to
+		unit_support_attachment_add_target(unit_type, data)
+	}
+}

@@ -194,3 +194,100 @@ concurrent_battle_calculator_cancel :: proc(self: ^Concurrent_Battle_Calculator)
 	}
 }
 
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#lambda$createWorkers$3(byte[], int)
+// Java body: `j -> new BattleCalculator(serializedData)`. The captured
+// `serializedData` byte[] is supplied via the rawptr ctx convention (same
+// ctx struct as `lambda$createWorkers$2`); the int parameter `j` is the
+// IntStream index and is unused by the body.
+concurrent_battle_calculator_lambda_create_workers_3 :: proc(ctx: rawptr, j: i32) -> ^Battle_Calculator {
+	_ = j
+	cap_ctx := cast(^Concurrent_Battle_Calculator_Lambda_Create_Workers_2_Ctx)ctx
+	return battle_calculator_new(cap_ctx.serialized_data)
+}
+
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#createWorkers(GameData)
+// Java:
+//   workers.clear();
+//   if (data != null && cancelCurrentOperation.get() >= 0) {
+//     final long startTime = System.currentTimeMillis();
+//     final long startMemory = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+//     final byte[] serializedData;
+//     try (GameData.Unlocker ignored = data.acquireWriteLock()) {
+//       serializedData = GameDataUtils.gameDataToBytes(
+//             data, GameDataManager.Options.forBattleCalculator()).orElse(null);
+//       if (serializedData == null) return false;
+//     }
+//     if (cancelCurrentOperation.get() >= 0) {
+//       workers.add(new BattleCalculator(serializedData));
+//       int threadsToUse = getThreadsToUse(System.currentTimeMillis() - startTime, startMemory);
+//       workers.addAll(IntStream.range(1, threadsToUse).parallel()
+//           .filter(j -> cancelCurrentOperation.get() >= 0)
+//           .mapToObj(j -> new BattleCalculator(serializedData))
+//           .collect(Collectors.toList()));
+//     }
+//   }
+//   if (cancelCurrentOperation.get() < 0 || data == null) {
+//     workers.clear();
+//     return false;
+//   }
+//   return true;
+//
+// Under the single-threaded JDK shim, `acquireWriteLock` returns an empty
+// Unlocker (no real lock to release) and `getThreadsToUse` always returns
+// 1, so the IntStream.range(1, 1) loop is empty and only the first
+// BattleCalculator is created. We still execute the timing call and the
+// cancel-check branches so that visible state (workers list, return
+// value) matches Java's behaviour bit-for-bit.
+concurrent_battle_calculator_create_workers :: proc(self: ^Concurrent_Battle_Calculator, data: ^Game_Data) -> bool {
+	clear(&self.workers)
+	if data != nil && atomic_integer_get(self.cancel_current_operation) >= 0 {
+		// see how long 1 copy takes (some games can get REALLY big)
+		start_tick := time.tick_now()
+		start_memory: i64 = 0
+		serialized_data: []u8
+		{
+			// try (GameData.Unlocker ignored = data.acquireWriteLock())
+			ignored := game_data_acquire_write_lock(data)
+			_ = ignored
+			bytes, present := game_data_utils_game_data_to_bytes(
+				data,
+				game_data_manager_options_for_battle_calculator(),
+			)
+			if !present {
+				return false
+			}
+			serialized_data = bytes
+		}
+		if atomic_integer_get(self.cancel_current_operation) >= 0 {
+			// Create the first battle calc on the current thread to measure the
+			// end-to-end copy time.
+			append(&self.workers, battle_calculator_new(serialized_data))
+			elapsed := time.tick_since(start_tick)
+			threads_to_use := concurrent_battle_calculator_get_threads_to_use(
+				i64(time.duration_milliseconds(elapsed)),
+				start_memory,
+			)
+			// Now, create the remaining ones (sequentially under the
+			// single-threaded shim). IntStream.range(1, threads_to_use) with
+			// the parallel filter `cancelCurrentOperation.get() >= 0`.
+			cap_ctx := new(Concurrent_Battle_Calculator_Lambda_Create_Workers_2_Ctx)
+			cap_ctx.serialized_data = serialized_data
+			for j: i32 = 1; j < threads_to_use; j += 1 {
+				if atomic_integer_get(self.cancel_current_operation) < 0 {
+					continue
+				}
+				append(&self.workers, concurrent_battle_calculator_lambda_create_workers_3(rawptr(cap_ctx), j))
+			}
+		}
+	}
+	if atomic_integer_get(self.cancel_current_operation) < 0 || data == nil {
+		// we could have cancelled while setting data, so clear the workers
+		// again if so
+		clear(&self.workers)
+		return false
+	}
+	// should make sure that all workers have their game data set before
+	// we can call calculate and other things
+	return true
+}
+

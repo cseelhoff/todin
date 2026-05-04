@@ -989,3 +989,54 @@ game_map_is_valid_route :: proc(self: ^Game_Map, route: ^Route) -> bool {
 	}
 	return true
 }
+
+// Adapter ctx + trampoline for the inline predicate
+//   Matches.territoryIs(t2).or(cond)
+// in GameMap.getDistanceIgnoreEndForCondition. The combined predicate is
+//   t -> t.equals(t2) || cond.test(t)
+// which captures `t2` and `cond`. We bridge to the rawptr-ctx Predicate
+// shape consumed by game_map_get_distance_predicate (see closure-capture
+// convention in llm-instructions.md). Two Territories compare equal in
+// Java via DefaultNamed.equals, which is identity/name based — see the
+// equality check inside game_map_get_distance_bipredicate above.
+Game_Map_Ctx_Distance_Ignore_End_For_Condition :: struct {
+	t2:   ^Territory,
+	cond: proc(^Territory) -> bool,
+}
+
+@(private = "file")
+game_map_pred_distance_ignore_end_for_condition :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Game_Map_Ctx_Distance_Ignore_End_For_Condition)ctx_ptr
+	if t == c.t2 || (t != nil && c.t2 != nil && t.named.base.name == c.t2.named.base.name) {
+		return true
+	}
+	return c.cond(t)
+}
+
+// Mirrors GameMap.getDistanceIgnoreEndForCondition(Territory, Territory, Predicate<Territory>):
+//   return getDistance(t1, t2, Matches.territoryIs(t2).or(cond));
+// Per the Phase B clarification, the Java Predicate parameter is rendered
+// as a bare `proc(^Territory) -> bool` (no userdata) — callers that don't
+// capture state pass a non-capturing proc. We then heap-allocate a small
+// ctx that pairs `t2` with `cond` to feed game_map_get_distance_predicate
+// under the rawptr-ctx convention.
+game_map_get_distance_ignore_end_for_condition :: proc(
+	self: ^Game_Map,
+	t1: ^Territory,
+	t2: ^Territory,
+	cond: proc(^Territory) -> bool,
+) -> i32 {
+	ctx := new(Game_Map_Ctx_Distance_Ignore_End_For_Condition)
+	ctx.t2 = t2
+	ctx.cond = cond
+	return game_map_get_distance_predicate(
+		self,
+		t1,
+		t2,
+		game_map_pred_distance_ignore_end_for_condition,
+		rawptr(ctx),
+	)
+}

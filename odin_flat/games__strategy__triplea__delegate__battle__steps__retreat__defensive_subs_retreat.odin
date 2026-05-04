@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Defensive_Subs_Retreat :: struct {
 	using battle_step: Battle_Step,
 	battle_state:   ^Battle_State,
@@ -115,5 +117,45 @@ defensive_subs_retreat_get_empty_or_friendly_sea_neighbors :: proc(
 		append(&result, t)
 	}
 	return result
+}
+
+// Java: DefensiveSubsRetreat#getName
+//   if (Properties.getSubmersibleSubs(battleState.getGameData().getProperties()))
+//       return battleState.getPlayer(DEFENSE).getName() + SUBS_SUBMERGE;
+//   else
+//       return battleState.getPlayer(DEFENSE).getName() + SUBS_WITHDRAW;
+defensive_subs_retreat_get_name :: proc(self: ^Defensive_Subs_Retreat) -> string {
+	game_data := battle_state_get_game_data(self.battle_state)
+	props := game_data_get_properties(game_data)
+	player := battle_state_get_player(self.battle_state, .DEFENSE)
+	if properties_get_submersible_subs(props) {
+		return fmt.aprintf("%s%s", player.named.base.name, BATTLE_STEP_SUBS_SUBMERGE)
+	}
+	return fmt.aprintf("%s%s", player.named.base.name, BATTLE_STEP_SUBS_WITHDRAW)
+}
+
+// Java: DefensiveSubsRetreat#getOrder
+//   if (Properties.getSubRetreatBeforeBattle(battleState.getGameData().getProperties()))
+//       return SUB_DEFENSIVE_RETREAT_BEFORE_BATTLE;
+//   else
+//       return SUB_DEFENSIVE_RETREAT_AFTER_BATTLE;
+defensive_subs_retreat_get_order :: proc(self: ^Defensive_Subs_Retreat) -> Battle_Step_Order {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	if properties_get_sub_retreat_before_battle(props) {
+		return Battle_Step_Order.SUB_DEFENSIVE_RETREAT_BEFORE_BATTLE
+	}
+	return Battle_Step_Order.SUB_DEFENSIVE_RETREAT_AFTER_BATTLE
+}
+
+// Java: DefensiveSubsRetreat#isRetreatNotPossible
+//   return !(Properties.getSubmersibleSubs(...) || Properties.getSubmarinesDefendingMaySubmergeOrRetreat(...))
+//          && getEmptyOrFriendlySeaNeighbors().isEmpty();
+defensive_subs_retreat_is_retreat_not_possible :: proc(self: ^Defensive_Subs_Retreat) -> bool {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	if properties_get_submersible_subs(props) || properties_get_submarines_defending_may_submerge_or_retreat(props) {
+		return false
+	}
+	neighbors := defensive_subs_retreat_get_empty_or_friendly_sea_neighbors(self)
+	return len(neighbors) == 0
 }
 

@@ -43,6 +43,23 @@ client_setting_save_games_folder_path :: proc() -> ^Path_Client_Setting {
         return _client_setting_save_games_folder_path
 }
 
+// Java: public static final PathClientSetting mapFolderOverride =
+//   new PathClientSetting("MAP_FOLDER_OVERRIDE");
+// No default value: the override is "absent" (has_current == false)
+// until a user explicitly sets it via the UI. The snapshot harness
+// never sets it, so callers must check `has_current` to model Java's
+// `Optional<Path>.isPresent()`.
+@(private="file") _client_setting_map_folder_override: ^Path_Client_Setting
+
+client_setting_map_folder_override :: proc() -> ^Path_Client_Setting {
+        if _client_setting_map_folder_override == nil {
+                _client_setting_map_folder_override = path_client_setting_new_no_default(
+                        "MAP_FOLDER_OVERRIDE",
+                )
+        }
+        return _client_setting_map_folder_override
+}
+
 // Java: protected ClientSetting(Class<T> type, String name, T defaultValue).
 // The two-arg form (no default) delegates to this; the orchestrator only
 // asked for the three-arg constructor. `default_value` may be nil (Java
@@ -274,5 +291,9 @@ client_setting_set_value_and_flush :: proc(self: ^Client_Setting, value: rawptr,
 	// run.
 	preferences := client_setting_get_preferences()
 	client_setting_lambda_set_value_and_flush_3(preferences)
+}
+
+client_setting_reset_value :: proc(self: ^Client_Setting) {
+	client_setting_set_value_and_flush(self, nil, false)
 }
 

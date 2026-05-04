@@ -524,4 +524,375 @@ pro_transport_utils_interleave_units_carriers_and_planes :: proc(
 	return result
 }
 
+// Java: u -> u.getMovementLeft().intValue()
+// Comparator key extractor lambda inside `selectUnitsToTransportFromList`,
+// in the `Matches.unitIsLandTransport().test(transport)` branch:
+//   Comparator.<Unit>comparingInt(u -> u.getMovementLeft().intValue())
+//       .thenComparing(getDecreasingAttackComparator(transport.getOwner()))
+// Bytecode index 1.
+pro_transport_utils_lambda_select_units_to_transport_from_list_1 :: proc(u: ^Unit) -> i32 {
+	return i32(unit_get_movement_left(u))
+}
+
+// Java: u -> u.getMovementLeft().intValue()
+// Comparator key extractor lambda inside `findBestUnitsToLandTransport`,
+// the primary sort key for the `unitIsLandTransportWithoutCapacity`
+// branch:
+//   Comparator.<Unit>comparingInt(u -> u.getMovementLeft().intValue())
+//       .thenComparing(getDecreasingAttackComparator(player))
+// Bytecode index 2.
+pro_transport_utils_lambda_find_best_units_to_land_transport_2 :: proc(u: ^Unit) -> i32 {
+	return i32(unit_get_movement_left(u))
+}
+
+// Java: u -> u.getMovementLeft().intValue()
+// Comparator key extractor lambda inside `findBestUnitsToLandTransport`,
+// the primary sort key for the with-capacity branch:
+//   Comparator.<Unit>comparingInt(u -> u.getMovementLeft().intValue())
+//       .thenComparingInt(u -> u.getUnitAttachment().getTransportCost())
+//       .thenComparing(getDecreasingAttackComparator(player))
+// Bytecode index 3.
+pro_transport_utils_lambda_find_best_units_to_land_transport_3 :: proc(u: ^Unit) -> i32 {
+	return i32(unit_get_movement_left(u))
+}
+
+// Comparator helper for `findBestUnitsToLandTransport`, with-capacity
+// branch: movementLeft asc, then transportCost asc, then decreasing attack.
+@(private = "file")
+pro_transport_utils_find_best_with_capacity_less :: proc(
+	a, b: ^Unit,
+	decr_attack: proc(rawptr, ^Unit, ^Unit) -> bool,
+	decr_attack_ctx: rawptr,
+) -> bool {
+	ma := i32(unit_get_movement_left(a))
+	mb := i32(unit_get_movement_left(b))
+	if ma != mb {
+		return ma < mb
+	}
+	ca := unit_attachment_get_transport_cost(unit_get_unit_attachment(a))
+	cb := unit_attachment_get_transport_cost(unit_get_unit_attachment(b))
+	if ca != cb {
+		return ca < cb
+	}
+	return decr_attack(decr_attack_ctx, a, b)
+}
+
+// Java: public static List<Unit> findBestUnitsToLandTransport(
+//     final Unit unit, final Territory t, final Set<Unit> usedUnits)
+//   Returns the list of units that should move together with `unit` as a
+//   land transport convoy. If `unit` is itself in `usedUnits`, returns
+//   empty. If `unit` is not a land transport (or the player lacks the
+//   `mechanizedInfantry` tech), returns just `[unit]`. Otherwise gathers
+//   land-transportable units owned by the player that are slower than
+//   `unit` and not already used, sorts them, and either picks the single
+//   best one (capacity-less land transport) or runs them through
+//   `selectUnitsToTransportFromList`.
+pro_transport_utils_find_best_units_to_land_transport :: proc(
+	unit: ^Unit,
+	t: ^Territory,
+	used_units: map[^Unit]struct {},
+) -> [dynamic]^Unit {
+	results: [dynamic]^Unit
+
+	if unit in used_units {
+		// Can't even move this unit.
+		return results
+	}
+
+	player := unit_get_owner(unit)
+	is_land_transport_pred, is_land_transport_ctx := matches_unit_is_land_transport()
+	if !is_land_transport_pred(is_land_transport_ctx, unit) ||
+	   !tech_attachment_get_mechanized_infantry(game_player_get_tech_attachment(player)) {
+		// This unit can't transport anything else.
+		append(&results, unit)
+		return results
+	}
+
+	// units = t.getMatches(unitIsOwnedBy(player) AND unitIsLandTransportable()
+	//                       AND unitHasLessMovementThan(unit))
+	owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+	land_transportable_pred, land_transportable_ctx := matches_unit_is_land_transportable()
+	less_movement_pred, less_movement_ctx := pro_matches_unit_has_less_movement_than(unit)
+
+	all_units := territory_get_units(t)
+	units: [dynamic]^Unit
+	for u in all_units {
+		if !owned_pred(owned_ctx, u) {
+			continue
+		}
+		if !land_transportable_pred(land_transportable_ctx, u) {
+			continue
+		}
+		if !less_movement_pred(less_movement_ctx, u) {
+			continue
+		}
+		if u in used_units {
+			continue
+		}
+		append(&units, u)
+	}
+	delete(all_units)
+	free(less_movement_ctx)
+
+	if len(units) == 0 {
+		append(&results, unit)
+		delete(units)
+		return results
+	}
+
+	append(&results, unit)
+
+	decr_attack_pred, decr_attack_ctx :=
+		pro_transport_utils_get_decreasing_attack_comparator(player)
+
+	without_capacity_pred, without_capacity_ctx :=
+		matches_unit_is_land_transport_without_capacity()
+	if without_capacity_pred(without_capacity_ctx, unit) {
+		// Insertion sort by movementLeft asc, then decreasing attack.
+		for i := 1; i < len(units); i += 1 {
+			j := i
+			for j > 0 &&
+			    pro_transport_utils_select_units_less(
+				    units[j],
+				    units[j - 1],
+				    true,
+				    decr_attack_pred,
+				    decr_attack_ctx,
+			    ) {
+				tmp := units[j]
+				units[j] = units[j - 1]
+				units[j - 1] = tmp
+				j -= 1
+			}
+		}
+		append(&results, units[0])
+	} else {
+		// Insertion sort by movementLeft asc, then transportCost asc, then
+		// decreasing attack.
+		for i := 1; i < len(units); i += 1 {
+			j := i
+			for j > 0 &&
+			    pro_transport_utils_find_best_with_capacity_less(
+				    units[j],
+				    units[j - 1],
+				    decr_attack_pred,
+				    decr_attack_ctx,
+			    ) {
+				tmp := units[j]
+				units[j] = units[j - 1]
+				units[j - 1] = tmp
+				j -= 1
+			}
+		}
+		selected := pro_transport_utils_select_units_to_transport_from_list(unit, units)
+		for s in selected {
+			append(&results, s)
+		}
+		delete(selected)
+	}
+
+	delete(units)
+	free(decr_attack_ctx)
+	return results
+}
+
+// Java: public static List<Unit> getUnitsToTransportFromTerritories(
+//     final GamePlayer player, final Unit transport,
+//     final Set<Territory> territoriesToLoadFrom,
+//     final Collection<Unit> unitsToIgnore,
+//     final Predicate<Unit> validUnitMatch)
+//   If transport already carries something, returns its current cargo.
+//   Otherwise gathers candidate units from each load-from territory that
+//   match `validUnitMatch` (minus `unitsToIgnore`), sorts them by
+//   transport cost asc, then decreasing attack, and runs them through
+//   `selectUnitsToTransportFromList`.
+pro_transport_utils_get_units_to_transport_from_territories :: proc(
+	player: ^Game_Player,
+	transport: ^Unit,
+	territories_to_load_from: map[^Territory]struct {},
+	units_to_ignore: [dynamic]^Unit,
+	valid_unit_match: proc(rawptr, ^Unit) -> bool,
+	valid_unit_match_ctx: rawptr,
+) -> [dynamic]^Unit {
+	transporting := unit_get_transporting_no_args(transport)
+	if len(transporting) > 0 {
+		return transporting
+	}
+	delete(transporting)
+
+	// Get all units that can be transported.
+	units: [dynamic]^Unit
+	for load_from, _ in territories_to_load_from {
+		matched := territory_get_matches(load_from, valid_unit_match, valid_unit_match_ctx)
+		for u in matched {
+			append(&units, u)
+		}
+		delete(matched)
+	}
+	// Remove units_to_ignore.
+	if len(units_to_ignore) > 0 {
+		filtered: [dynamic]^Unit
+		for u in units {
+			ignored := false
+			for ig in units_to_ignore {
+				if ig == u {
+					ignored = true
+					break
+				}
+			}
+			if !ignored {
+				append(&filtered, u)
+			}
+		}
+		delete(units)
+		units = filtered
+	}
+
+	// Sort: transportCost asc, then decreasing attack.
+	decr_attack_pred, decr_attack_ctx :=
+		pro_transport_utils_get_decreasing_attack_comparator(player)
+	for i := 1; i < len(units); i += 1 {
+		j := i
+		for j > 0 &&
+		    pro_transport_utils_units_to_transport_from_territories_less(
+			    units[j],
+			    units[j - 1],
+			    decr_attack_pred,
+			    decr_attack_ctx,
+		    ) {
+			tmp := units[j]
+			units[j] = units[j - 1]
+			units[j - 1] = tmp
+			j -= 1
+		}
+	}
+	free(decr_attack_ctx)
+
+	result := pro_transport_utils_select_units_to_transport_from_list(transport, units)
+	delete(units)
+	return result
+}
+
+// Comparator helper for the 5-arg `getUnitsToTransportFromTerritories`:
+// transportCost asc, then decreasing attack.
+@(private = "file")
+pro_transport_utils_units_to_transport_from_territories_less :: proc(
+	a, b: ^Unit,
+	decr_attack: proc(rawptr, ^Unit, ^Unit) -> bool,
+	decr_attack_ctx: rawptr,
+) -> bool {
+	ca := unit_attachment_get_transport_cost(unit_get_unit_attachment(a))
+	cb := unit_attachment_get_transport_cost(unit_get_unit_attachment(b))
+	if ca != cb {
+		return ca < cb
+	}
+	return decr_attack(decr_attack_ctx, a, b)
+}
+
+// Java: public static List<Unit> getAirThatCantLandOnCarrier(
+//     final GamePlayer player, final Territory t, final List<Unit> units)
+//   Greedily fills carrier capacity from the front; any allied air unit
+//   whose carrierCost would overflow remaining capacity is added to the
+//   "can't land" list. Air units with carrierCost == -1 are ignored.
+pro_transport_utils_get_air_that_cant_land_on_carrier :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+	units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	capacity := air_movement_validator_carrier_capacity(units[:], t)
+	allied_air_pred, allied_air_ctx := pro_matches_unit_is_allied_air(player)
+
+	air_that_cant_land: [dynamic]^Unit
+	for air_unit in units {
+		if !allied_air_pred(allied_air_ctx, air_unit) {
+			continue
+		}
+		ua := unit_get_unit_attachment(air_unit)
+		cost := unit_attachment_get_carrier_cost(ua)
+		if cost == -1 {
+			continue
+		}
+		if cost <= capacity {
+			capacity -= cost
+		} else {
+			append(&air_that_cant_land, air_unit)
+		}
+	}
+	free(allied_air_ctx)
+	return air_that_cant_land
+}
+
+// Java: public static boolean validateCarrierCapacity(
+//     final GamePlayer player, final Territory t,
+//     final Collection<Unit> existingUnits, final Unit newUnit)
+//   Computes the residual carrier capacity in `t` after subtracting the
+//   carrier cost of every allied air unit in `existingUnits` plus
+//   `newUnit`; returns true iff the residual capacity is non-negative.
+pro_transport_utils_validate_carrier_capacity :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+	existing_units: [dynamic]^Unit,
+	new_unit: ^Unit,
+) -> bool {
+	capacity := air_movement_validator_carrier_capacity(existing_units[:], t)
+	allied_air_pred, allied_air_ctx := pro_matches_unit_is_allied_air(player)
+
+	air_units: [dynamic]^Unit
+	for u in existing_units {
+		if allied_air_pred(allied_air_ctx, u) {
+			append(&air_units, u)
+		}
+	}
+	append(&air_units, new_unit)
+
+	for air_unit in air_units {
+		ua := unit_get_unit_attachment(air_unit)
+		cost := unit_attachment_get_carrier_cost(ua)
+		if cost != -1 {
+			capacity -= cost
+		}
+	}
+	delete(air_units)
+	free(allied_air_ctx)
+	return capacity >= 0
+}
+
+// Java: public static int getUnusedCarrierCapacity(
+//     final GamePlayer player, final Territory t, final List<Unit> unitsToPlace)
+//   Sums carrier capacity over `unitsToPlace ∪ t.getUnits()`, then
+//   subtracts the carrier cost of every owned air unit in that combined
+//   collection. Air units with carrierCost == -1 are ignored.
+pro_transport_utils_get_unused_carrier_capacity :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+	units_to_place: [dynamic]^Unit,
+) -> i32 {
+	combined: [dynamic]^Unit
+	for u in units_to_place {
+		append(&combined, u)
+	}
+	territory_units := territory_get_units(t)
+	for u in territory_units {
+		append(&combined, u)
+	}
+	delete(territory_units)
+
+	capacity := air_movement_validator_carrier_capacity(combined[:], t)
+	owned_air_pred, owned_air_ctx := pro_matches_unit_is_owned_air(player)
+
+	for u in combined {
+		if !owned_air_pred(owned_air_ctx, u) {
+			continue
+		}
+		ua := unit_get_unit_attachment(u)
+		cost := unit_attachment_get_carrier_cost(ua)
+		if cost != -1 {
+			capacity -= cost
+		}
+	}
+	delete(combined)
+	free(owned_air_ctx)
+	return capacity
+}
+
 

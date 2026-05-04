@@ -109,3 +109,10 @@ pro_purchase_option_map_get_sea_options :: proc(self: ^Pro_Purchase_Option_Map) 
 	return result
 }
 
+pro_purchase_option_map_can_unit_type_suicide :: proc(self: ^Pro_Purchase_Option_Map, unit_type: ^Unit_Type, player: ^Game_Player) -> bool {
+	ua := unit_type_get_unit_attachment(unit_type)
+	return (unit_attachment_get_is_suicide_on_attack(ua) &&
+			unit_attachment_get_movement_with_player(ua, player) > 0) ||
+		unit_attachment_get_is_suicide_on_defense(ua)
+}
+

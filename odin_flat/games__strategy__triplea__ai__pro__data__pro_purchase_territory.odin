@@ -118,3 +118,14 @@ pro_purchase_territory_to_string :: proc(self: ^Pro_Purchase_Territory, allocato
 	return strings.to_string(sb)
 }
 
+// Java: ProPurchaseTerritory(Territory, GameData, GamePlayer, int) — delegates
+// to the 5-arg constructor with isBid=false.
+pro_purchase_territory_new_default :: proc(
+	territory: ^Territory,
+	data: ^Game_Data,
+	player: ^Game_Player,
+	unit_production: i32,
+) -> ^Pro_Purchase_Territory {
+	return pro_purchase_territory_new(territory, data, player, unit_production, false)
+}
+

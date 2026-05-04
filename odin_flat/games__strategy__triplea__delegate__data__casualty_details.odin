@@ -279,6 +279,82 @@ casualty_details_lambda_ensure_units_with_positive_marine_bonus_are_killed_last_
 	return a1 && !a2
 }
 
+// Java: private static void redistributeHits(
+//           List<Unit> targetsWithHitsBeforeRedistribution,
+//           List<Unit> targets,
+//           Comparator<Unit> shouldTakeHitsFirst,
+//           List<Unit> targetsHitWithCorrectOrder)
+//
+// Redistributes the hits from targetsWithHitsBeforeRedistribution among
+// targets according to which units shouldTakeHitsFirst. Mutates `targets`
+// (sorted in place) and appends the resulting per-hit unit references to
+// `targetsHitWithCorrectOrder`.
+casualty_details_redistribute_hits :: proc(
+	targets_with_hits_before_redistribution: ^[dynamic]^Unit,
+	targets: ^[dynamic]^Unit,
+	should_take_hits_first: proc(^Unit, ^Unit) -> bool,
+	targets_hit_with_correct_order: ^[dynamic]^Unit,
+) {
+	// targets.sort(shouldTakeHitsFirst);
+	slice.sort_by(targets[:], should_take_hits_first)
+
+	// targetsWithHitsBeforeRedistribution.stream()
+	//   .collect(Collectors.groupingBy(e -> e, Collectors.counting()))
+	//   .values().stream()
+	//   .sorted(Comparator.reverseOrder())   // descending
+	//   .collect(Collectors.toList())
+	hits_per_unit := make(map[^Unit]int)
+	defer delete(hits_per_unit)
+	// Preserve first-encountered insertion order for deterministic iteration
+	// when units share the same count (mirrors Java's HashMap behavior, which
+	// is unspecified but typically stable for a given JVM run; the algorithm
+	// does not rely on a specific tie-breaking order).
+	insertion_order := make([dynamic]^Unit, 0)
+	defer delete(insertion_order)
+	for u in targets_with_hits_before_redistribution {
+		if _, ok := hits_per_unit[u]; !ok {
+			append(&insertion_order, u)
+		}
+		hits_per_unit[u] = hits_per_unit[u] + 1
+	}
+	counts := make([dynamic]int, 0, len(insertion_order))
+	defer delete(counts)
+	for u in insertion_order {
+		append(&counts, hits_per_unit[u])
+	}
+	// Sort in descending order.
+	slice.sort_by(counts[:], proc(a, b: int) -> bool { return a > b })
+
+	// while (iter.hasNext() || hitsToRedistribute > 0) { ... }
+	hits_to_redistribute := 0
+	count_idx := 0
+	unit_idx := 0
+	for count_idx < len(counts) || hits_to_redistribute > 0 {
+		if count_idx < len(counts) {
+			hits_to_redistribute += counts[count_idx]
+			count_idx += 1
+		}
+
+		// final Unit unit = unitIterator.next();
+		// (Java would throw NoSuchElementException if exhausted; mirror by
+		// indexing — caller contract guarantees enough targets.)
+		unit := targets[unit_idx]
+		unit_idx += 1
+
+		hits_to_redistribute_to_unit := cast(int)unit_hits_unit_can_take_hit_without_being_killed(
+			unit,
+		)
+		if hits_to_redistribute < hits_to_redistribute_to_unit {
+			hits_to_redistribute_to_unit = hits_to_redistribute
+		}
+		hits_to_redistribute -= hits_to_redistribute_to_unit
+
+		for i := 0; i < hits_to_redistribute_to_unit; i += 1 {
+			append(targets_hit_with_correct_order, unit)
+		}
+	}
+}
+
 // Java: public void ensureUnitsWithPositiveMarineBonusAreKilledLast(Collection<Unit> units)
 //
 // Ensures that any killed or damaged units have no better marine effect than

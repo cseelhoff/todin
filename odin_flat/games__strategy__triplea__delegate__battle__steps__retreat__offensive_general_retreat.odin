@@ -174,3 +174,72 @@ offensive_general_retreat_retreat :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#canAttackerRetreatPartialAmphib()
+//
+// Java:
+//   if (!Properties.getPartialAmphibiousRetreat(battleState.getGameData().getProperties())) {
+//     return false;
+//   }
+//   return battleState.filterUnits(ALIVE, OFFENSE).stream()
+//       .filter(Matches.unitIsLand())
+//       .anyMatch(Matches.unitWasNotAmphibious());
+offensive_general_retreat_can_attacker_retreat_partial_amphib :: proc(self: ^Offensive_General_Retreat) -> bool {
+	game_data := battle_state_get_game_data(self.battle_state)
+	if !properties_get_partial_amphibious_retreat(game_data_get_properties(game_data)) {
+		return false
+	}
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	land_p, land_c := matches_unit_is_land()
+	not_amphib_p, not_amphib_c := matches_unit_was_not_amphibious()
+	for u in units {
+		if land_p(land_c, u) && not_amphib_p(not_amphib_c, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#canAttackerRetreatAmphibPlanes()
+//
+// Java:
+//   final GameState gameData = battleState.getGameData();
+//   return (Properties.getWW2V2(gameData.getProperties())
+//           || Properties.getAttackerRetreatPlanes(gameData.getProperties())
+//           || Properties.getPartialAmphibiousRetreat(gameData.getProperties()))
+//       && battleState.filterUnits(ALIVE, OFFENSE).stream().anyMatch(Matches.unitIsAir());
+offensive_general_retreat_can_attacker_retreat_amphib_planes :: proc(self: ^Offensive_General_Retreat) -> bool {
+	game_data := battle_state_get_game_data(self.battle_state)
+	props := game_data_get_properties(game_data)
+	if !(properties_get_ww2_v2(props) ||
+	     properties_get_attacker_retreat_planes(props) ||
+	     properties_get_partial_amphibious_retreat(props)) {
+		return false
+	}
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+	units := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	air_p, air_c := matches_unit_is_air()
+	for u in units {
+		if air_p(air_c, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.OffensiveGeneralRetreat#lambda$retreatUnits$0(
+//   games.strategy.engine.delegate.IDelegateBridge,
+//   games.strategy.triplea.delegate.battle.steps.retreat.Retreater,
+//   games.strategy.engine.data.Territory)
+//
+// Java (from retreatUnits() ifPresent):
+//   retreatTo -> retreat(bridge, retreater, retreatTo)
+offensive_general_retreat_lambda__retreat_units__0 :: proc(
+	self: ^Offensive_General_Retreat,
+	bridge: ^I_Delegate_Bridge,
+	retreater: ^Retreater,
+	retreat_to: ^Territory,
+) {
+	offensive_general_retreat_retreat(self, bridge, retreater, retreat_to)
+}
+

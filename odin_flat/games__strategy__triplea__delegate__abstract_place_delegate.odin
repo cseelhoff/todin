@@ -519,3 +519,463 @@ abstract_place_delegate_unit_is_carrier_owned_by_combined_players :: proc(
 	ctx.players = players
 	return abstract_place_delegate_pred_unit_is_carrier_owned_by_combined_players, rawptr(ctx)
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#unitsAtStartOfStepInTerritory(Territory)
+// Java:
+//   if (to == null) return new ArrayList<>();
+//   final Collection<Unit> unitsPlacedAlready = getAlreadyProduced(to);
+//   if (to.isWater()) {
+//     for (final Territory current : getAllProducers(to, player, null, true)) {
+//       unitsPlacedAlready.addAll(getAlreadyProduced(current));
+//     }
+//   }
+//   final Collection<Unit> unitsAtStartOfTurnInTo = new ArrayList<>(to.getUnits());
+//   unitsAtStartOfTurnInTo.removeAll(unitsPlacedAlready);
+//   return unitsAtStartOfTurnInTo;
+abstract_place_delegate_units_at_start_of_step_in_territory :: proc(
+	self: ^Abstract_Place_Delegate,
+	to: ^Territory,
+) -> [dynamic]^Unit {
+	if to == nil {
+		return make([dynamic]^Unit)
+	}
+	units_placed_already := abstract_place_delegate_get_already_produced(self, to)
+	if territory_is_water(to) {
+		empty_units: [dynamic]^Unit
+		producers := abstract_place_delegate_get_all_producers(self, to, self.player, empty_units, true)
+		defer delete(producers)
+		for current in producers {
+			extra := abstract_place_delegate_get_already_produced(self, current)
+			for u in extra {
+				append(&units_placed_already, u)
+			}
+			delete(extra)
+		}
+	}
+	result := make([dynamic]^Unit)
+	for u in to.unit_collection.units {
+		in_placed := false
+		for p in units_placed_already {
+			if u == p {
+				in_placed = true
+				break
+			}
+		}
+		if !in_placed {
+			append(&result, u)
+		}
+	}
+	delete(units_placed_already)
+	return result
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#wasOwnedUnitThatCanProduceUnitsOrIsFactoryInTerritoryAtStartOfStep(Territory,GamePlayer)
+// Java: build factoryMatch = unitIsOwnedAndIsFactoryOrCanProduceUnits(player)
+//                  .and(unitIsBeingTransported().negate())
+//                  .and(to.isWater() ? unitIsLand().negate() : unitIsSea().negate());
+//       return unitsAtStartOfStepInTerritory(to).stream().anyMatch(factoryMatch);
+abstract_place_delegate_was_owned_unit_that_can_produce_units_or_is_factory_in_territory_at_start_of_step :: proc(
+	self: ^Abstract_Place_Delegate,
+	to: ^Territory,
+	player: ^Game_Player,
+) -> bool {
+	units_at_start := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start)
+	fact_p, fact_c := matches_unit_is_owned_and_is_factory_or_can_produce_units(player)
+	trans_p, trans_c := matches_unit_is_being_transported()
+	water_to := territory_is_water(to)
+	side_p: proc(rawptr, ^Unit) -> bool
+	side_c: rawptr
+	if water_to {
+		side_p, side_c = matches_unit_is_not_land()
+	} else {
+		side_p, side_c = matches_unit_is_not_sea()
+	}
+	for u in units_at_start {
+		if fact_p(fact_c, u) && !trans_p(trans_c, u) && side_p(side_c, u) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#validateNewAirCanLandOnCarriers(Territory,Collection)
+// Static. Java:
+//   final int cost = AirMovementValidator.carrierCost(units);
+//   int capacity = AirMovementValidator.carrierCapacity(units, to);
+//   capacity += AirMovementValidator.carrierCapacity(to.getUnits(), to);
+//   if (cost > capacity) return Optional.of("Not enough new carriers to land all the fighters");
+//   return Optional.empty();
+abstract_place_delegate_validate_new_air_can_land_on_carriers :: proc(
+	to: ^Territory,
+	units: [dynamic]^Unit,
+) -> Maybe(string) {
+	cost := air_movement_validator_carrier_cost(units[:])
+	capacity := air_movement_validator_carrier_capacity(units[:], to)
+	capacity += air_movement_validator_carrier_capacity(to.unit_collection.units[:], to)
+	if cost > capacity {
+		return "Not enough new carriers to land all the fighters"
+	}
+	return nil
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#canProduce(Territory,Territory,Collection,GamePlayer,boolean)
+// Private 5-arg variant; mirrors the Java method body line-by-line.
+abstract_place_delegate_can_produce :: proc(
+	self:         ^Abstract_Place_Delegate,
+	producer:     ^Territory,
+	to:           ^Territory,
+	units:        [dynamic]^Unit,
+	player:       ^Game_Player,
+	simple_check: bool,
+) -> Maybe(string) {
+	test_units := units
+	can_produce_in_conquered := abstract_place_delegate_is_placement_allowed_in_captured_territory(player)
+	if !territory_is_owned_by(producer, player) {
+		if territory_is_water(producer) {
+			sea_p, sea_c := matches_unit_is_sea()
+			con_p, con_c := matches_unit_is_construction()
+			any_sea_construction := false
+			for u in test_units {
+				if sea_p(sea_c, u) && con_p(con_c, u) {
+					any_sea_construction = true
+					break
+				}
+			}
+			if any_sea_construction {
+				owned_neighbor := false
+				land_p, land_c := matches_territory_is_land()
+				neighbors := game_map_get_neighbors_predicate(
+					game_data_get_map(abstract_delegate_get_data(&self.abstract_delegate)),
+					to,
+					land_p,
+					land_c,
+				)
+				for current in neighbors {
+					if territory_is_owned_by(current, player) &&
+					   (can_produce_in_conquered || !abstract_place_delegate_was_conquered(self, current)) {
+						owned_neighbor = true
+						break
+					}
+				}
+				if !owned_neighbor {
+					return fmt.aprintf(
+						"%s is not owned by you, and you have no owned neighbors which can produce",
+						territory_to_string(producer),
+					)
+				}
+			} else {
+				return fmt.aprintf("%s is not owned by you", territory_to_string(producer))
+			}
+		} else {
+			return fmt.aprintf("%s is not owned by you", territory_to_string(producer))
+		}
+	}
+	if !can_produce_in_conquered && abstract_place_delegate_was_conquered(self, producer) {
+		return fmt.aprintf(
+			"%s was conquered this turn and cannot produce till next turn",
+			territory_to_string(producer),
+		)
+	}
+	if abstract_place_delegate_is_player_allowed_to_placement_any_territory_owned_land(self, player) {
+		land_p, land_c := matches_territory_is_land()
+		owned_p, owned_c := matches_is_territory_owned_by(player)
+		if land_p(land_c, to) && owned_p(owned_c, to) {
+			return nil
+		}
+	}
+	if abstract_place_delegate_is_player_allowed_to_placement_any_sea_zone_by_owned_land(self, player) {
+		water_p, water_c := matches_territory_is_water()
+		owned_p, owned_c := matches_is_territory_owned_by(player)
+		if water_p(water_c, to) && owned_p(owned_c, producer) {
+			return nil
+		}
+	}
+	if simple_check {
+		return nil
+	}
+	if abstract_place_delegate_has_unit_placement_restrictions(self) && len(test_units) > 0 {
+		req_p, req_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, producer, false)
+		any_req := false
+		for u in test_units {
+			if req_p(req_c, u) {
+				any_req = true
+				break
+			}
+		}
+		if !any_req {
+			return fmt.aprintf(
+				"You do not have the required units to build in %s",
+				territory_to_string(producer),
+			)
+		}
+	}
+	if territory_is_water(to) {
+		props := abstract_delegate_get_properties(&self.abstract_delegate)
+		if !properties_get_ww2_v2(props) && !properties_get_unit_placement_in_enemy_seas(props) {
+			enemy_p, enemy_c := matches_enemy_unit(player)
+			for u in to.unit_collection.units {
+				if enemy_p(enemy_c, u) {
+					return "Cannot place sea units with enemy naval units"
+				}
+			}
+		}
+	}
+	if abstract_place_delegate_was_owned_unit_that_can_produce_units_or_is_factory_in_territory_at_start_of_step(self, producer, player) {
+		return nil
+	}
+	con_p, con_c := matches_unit_is_construction()
+	any_construction := false
+	for u in test_units {
+		if con_p(con_c, u) {
+			any_construction = true
+			break
+		}
+	}
+	if any_construction {
+		constructions_map := abstract_place_delegate_how_many_of_each_construction_can_place(self, to, producer, test_units, player)
+		defer delete(constructions_map)
+		total: i32 = 0
+		for _, v in constructions_map {
+			total += v
+		}
+		if total > 0 {
+			return nil
+		}
+		return fmt.aprintf("No more constructions allowed in %s", territory_to_string(producer))
+	}
+	cu_p, cu_c := matches_unit_can_produce_units()
+	already_in_producer := abstract_place_delegate_get_already_produced(self, producer)
+	for u in already_in_producer {
+		if cu_p(cu_c, u) {
+			delete(already_in_producer)
+			return fmt.aprintf(
+				"Factory in %s can''t produce until 1 turn after it is created",
+				territory_to_string(producer),
+			)
+		}
+	}
+	delete(already_in_producer)
+	already_in_to := abstract_place_delegate_get_already_produced(self, to)
+	for u in already_in_to {
+		if cu_p(cu_c, u) {
+			delete(already_in_to)
+			return fmt.aprintf(
+				"Factory in %s can''t produce until 1 turn after it is created",
+				territory_to_string(producer),
+			)
+		}
+	}
+	delete(already_in_to)
+	return fmt.aprintf("No factory in %s", territory_to_string(producer))
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getAllProducers(Territory,GamePlayer,Collection,boolean)
+// Private 4-arg variant. The Java code mirrors the body 1:1.
+abstract_place_delegate_get_all_producers :: proc(
+	self:           ^Abstract_Place_Delegate,
+	to:             ^Territory,
+	player:         ^Game_Player,
+	units_to_place: [dynamic]^Unit,
+	simple_check:   bool,
+) -> [dynamic]^Territory {
+	producers := make([dynamic]^Territory)
+	if !territory_is_water(to) {
+		if simple_check {
+			append(&producers, to)
+		} else {
+			err := abstract_place_delegate_can_produce(self, to, to, units_to_place, player, false)
+			_, has_err := err.?
+			if !has_err {
+				append(&producers, to)
+			}
+		}
+		return producers
+	}
+	err_self := abstract_place_delegate_can_produce(self, to, to, units_to_place, player, simple_check)
+	_, has_err_self := err_self.?
+	if !has_err_self {
+		append(&producers, to)
+	}
+	land_p, land_c := matches_territory_is_land()
+	neighbors := game_map_get_neighbors_predicate(
+		game_data_get_map(abstract_delegate_get_data(&self.abstract_delegate)),
+		to,
+		land_p,
+		land_c,
+	)
+	for current in neighbors {
+		err_n := abstract_place_delegate_can_produce(self, current, to, units_to_place, player, simple_check)
+		_, has := err_n.?
+		if !has {
+			append(&producers, current)
+		}
+	}
+	return producers
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#howManyOfEachConstructionCanPlace(Territory,Territory,Collection,GamePlayer)
+// Translates the Java IntegerMap<String> arithmetic to map[string]i32. Returns
+// an empty map (never nil) when no constructions can be placed.
+abstract_place_delegate_how_many_of_each_construction_can_place :: proc(
+	self:     ^Abstract_Place_Delegate,
+	to:       ^Territory,
+	producer: ^Territory,
+	units:    [dynamic]^Unit,
+	player:   ^Game_Player,
+) -> map[string]i32 {
+	units_allowed := make(map[string]i32)
+	if to != producer || len(units) == 0 {
+		return units_allowed
+	}
+	con_p, con_c := matches_unit_is_construction()
+	any_con := false
+	for u in units {
+		if con_p(con_c, u) {
+			any_con = true
+			break
+		}
+	}
+	if !any_con {
+		return units_allowed
+	}
+	units_at_start_of_turn_in_to := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start_of_turn_in_to)
+	units_placed_already := abstract_place_delegate_get_already_produced(self, to)
+	defer delete(units_placed_already)
+
+	unit_map_held := make(map[string]i32)
+	defer delete(unit_map_held)
+	unit_map_max_type := make(map[string]i32)
+	defer delete(unit_map_max_type)
+	unit_map_type_per_turn := make(map[string]i32)
+	defer delete(unit_map_type_per_turn)
+
+	props := abstract_delegate_get_properties(&self.abstract_delegate)
+	max_factory := properties_get_factories_per_country(props)
+	territory_production: i32 = 0
+	if ta := territory_attachment_get(to); ta != nil {
+		territory_production = territory_attachment_get_production(ta)
+	}
+
+	for current_unit in units {
+		if !con_p(con_c, current_unit) {
+			continue
+		}
+		ua := unit_get_unit_attachment(current_unit)
+		if abstract_place_delegate_has_unit_placement_restrictions(self) {
+			if unit_attachment_unit_placement_restrictions_contain(ua, to) {
+				continue
+			}
+			required_production := unit_attachment_get_can_only_be_placed_in_territory_valued_at_x(ua)
+			if required_production != -1 && required_production > territory_production {
+				continue
+			}
+			req_p, req_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, to, true)
+			if !req_p(req_c, current_unit) {
+				continue
+			}
+		}
+		cons_p, cons_c := matches_unit_which_consumes_units_has_required_units(units_at_start_of_turn_in_to)
+		if !cons_p(cons_c, current_unit) {
+			continue
+		}
+		ct := unit_attachment_get_construction_type(ua)
+		unit_map_held[ct] = unit_map_held[ct] + 1
+		unit_map_type_per_turn[ct] = unit_attachment_get_constructions_per_terr_per_type_per_turn(ua)
+		if ct == "factory" {
+			unit_map_max_type[ct] = max_factory
+		} else {
+			unit_map_max_type[ct] = unit_attachment_get_max_constructions_per_type_per_terr(ua)
+		}
+	}
+
+	more_without_factory := properties_get_more_constructions_without_factory(props)
+	more_with_factory := properties_get_more_constructions_with_factory(props)
+	unlimited_constructions := properties_get_unlimited_constructions(props)
+	was_factory_there_at_start := abstract_place_delegate_was_owned_unit_that_can_produce_units_or_is_factory_in_territory_at_start_of_step(self, to, player)
+
+	unit_map_to := make(map[string]i32)
+	defer delete(unit_map_to)
+	existing_construction := make([dynamic]^Unit)
+	defer delete(existing_construction)
+	for u in to.unit_collection.units {
+		if con_p(con_c, u) {
+			append(&existing_construction, u)
+		}
+	}
+	if len(existing_construction) > 0 {
+		for u in existing_construction {
+			ua := unit_get_unit_attachment(u)
+			ct := unit_attachment_get_construction_type(ua)
+			unit_map_to[ct] = unit_map_to[ct] + 1
+		}
+		held_keys := make([dynamic]string)
+		defer delete(held_keys)
+		for k in unit_map_held {
+			append(&held_keys, k)
+		}
+		for ct in held_keys {
+			unit_max := unit_map_max_type[ct]
+			if ct != "factory" && !strings.has_suffix(ct, "structure") {
+				more := more_without_factory
+				if was_factory_there_at_start {
+					more = more_with_factory
+				}
+				production: i32 = 0
+				if more {
+					production = territory_production
+				}
+				v_a := unit_max
+				if production > v_a {
+					v_a = production
+				}
+				v_b: i32 = 0
+				if unlimited_constructions {
+					v_b = 10000
+				}
+				if v_b > v_a {
+					unit_max = v_b
+				} else {
+					unit_max = v_a
+				}
+			}
+			existing_count := unit_map_to[ct]
+			held_val := unit_map_held[ct]
+			value := unit_max - existing_count
+			if held_val < value {
+				value = held_val
+			}
+			if value < 0 {
+				value = 0
+			}
+			unit_map_held[ct] = value
+		}
+	}
+
+	for u in units_placed_already {
+		con_p2, con_c2 := matches_unit_is_construction()
+		if !con_p2(con_c2, u) {
+			continue
+		}
+		ua := unit_get_unit_attachment(u)
+		ct := unit_attachment_get_construction_type(ua)
+		unit_map_type_per_turn[ct] = unit_map_type_per_turn[ct] - 1
+	}
+
+	for ct, _ in unit_map_held {
+		per_turn := unit_map_type_per_turn[ct]
+		held := unit_map_held[ct]
+		unit_allowed := per_turn
+		if held < unit_allowed {
+			unit_allowed = held
+		}
+		if unit_allowed < 0 {
+			unit_allowed = 0
+		}
+		if unit_allowed > 0 {
+			units_allowed[ct] = unit_allowed
+		}
+	}
+	return units_allowed
+}

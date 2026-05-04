@@ -93,3 +93,40 @@ relationship_type_list_create_default_relationship :: proc(
 	)
 	relationship_type_list_add_relationship_type(self, relationship_type)
 }
+
+// Mirrors Java RelationshipTypeList(GameData) constructor: seeds the list
+// with the four default relationship types (SELF/ALLIED, NULL/WAR,
+// DEFAULT_WAR/WAR, DEFAULT_ALLIED/ALLIED). The Java try/catch on
+// GameParseException is unreachable in practice (only thrown for an
+// invalid archetype, never passed here) — the Odin port simply omits the
+// guard, matching the comment in `create_default_relationship`.
+relationship_type_list_new :: proc(data: ^Game_Data) -> ^Relationship_Type_List {
+	self := new(Relationship_Type_List)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.relationship_types = make(map[string]^Relationship_Type)
+	relationship_type_list_create_default_relationship(
+		self,
+		"self_relation",
+		"allied",
+		data,
+	)
+	relationship_type_list_create_default_relationship(
+		self,
+		"null_relation",
+		"war",
+		data,
+	)
+	relationship_type_list_create_default_relationship(
+		self,
+		"default_war_relation",
+		"war",
+		data,
+	)
+	relationship_type_list_create_default_relationship(
+		self,
+		"default_allied_relation",
+		"allied",
+		data,
+	)
+	return self
+}

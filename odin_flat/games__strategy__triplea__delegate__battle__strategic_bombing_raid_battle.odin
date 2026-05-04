@@ -353,3 +353,128 @@ strategic_bombing_raid_battle_show_battle :: proc(
 		self.steps,
 	)
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#endBeforeRolling
+//
+//   private void endBeforeRolling(final IDelegateBridge bridge) {
+//     bridge.getDisplayChannelBroadcaster().battleEnd(battleId, "Bombing raid does no damage");
+//     whoWon = WhoWon.DRAW;
+//     battleResultDescription = BattleRecord.BattleResultDescription.NO_BATTLE;
+//     battleTracker.getBattleRecords().addResultToBattle(
+//         attacker, battleId, defender, attackerLostTuv, defenderLostTuv,
+//         battleResultDescription, new BattleResults(this, gameData));
+//     isOver = true;
+//     battleTracker.removeBattle(StrategicBombingRaidBattle.this, gameData);
+//   }
+strategic_bombing_raid_battle_end_before_rolling :: proc(
+	self:   ^Strategic_Bombing_Raid_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_battle_end(display, self.battle_id, "Bombing raid does no damage")
+	self.who_won = .DRAW
+	self.battle_result_description = .NO_BATTLE
+	battle_records_add_result_to_battle(
+		battle_tracker_get_battle_records(self.battle_tracker),
+		self.attacker,
+		self.battle_id,
+		self.defender,
+		self.attacker_lost_tuv,
+		self.defender_lost_tuv,
+		self.battle_result_description,
+		battle_results_new(cast(^I_Battle)&self.abstract_battle, self.game_data),
+	)
+	self.is_over = true
+	battle_tracker_remove_battle(
+		self.battle_tracker,
+		cast(^I_Battle)&self.abstract_battle,
+		self.game_data,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#getSbrRolls(Unit, GamePlayer)
+//
+//   public static int getSbrRolls(final Unit unit, final GamePlayer gamePlayer) {
+//     return unit.getUnitAttachment().getAttackRolls(gamePlayer);
+//   }
+strategic_bombing_raid_battle_get_sbr_rolls_unit :: proc(
+	unit:        ^Unit,
+	game_player: ^Game_Player,
+) -> i32 {
+	return unit_attachment_get_attack_rolls_with_player(
+		unit_get_unit_attachment(unit),
+		game_player,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#notifyAaHits
+//
+//   private void notifyAaHits(IDelegateBridge bridge, DiceRoll dice,
+//                             CasualtyDetails casualties, String currentTypeAa) {
+//     bridge.getDisplayChannelBroadcaster().casualtyNotification(
+//         battleId,
+//         NOTIFY_PREFIX + currentTypeAa + CASUALTIES_SUFFIX,
+//         dice, attacker,
+//         new ArrayList<>(casualties.getKilled()),
+//         new ArrayList<>(casualties.getDamaged()),
+//         Map.of());
+//     final Thread t = new Thread(() -> { try { ...lambda$7... } catch ... });
+//     t.start();
+//     final Player attacker = bridge.getRemotePlayer(this.attacker);
+//     attacker.confirmOwnCasualties(battleId, "Press space to continue");
+//     bridge.leaveDelegateExecution();
+//     Interruptibles.join(t);
+//     bridge.enterDelegateExecution();
+//   }
+//
+// The snapshot harness is single-threaded and the I_Delegate_Bridge vtable
+// does not expose leaveDelegateExecution; mirroring mark_casualties.odin we
+// invoke lambda$7 inline (preserving observable order) and skip leave/enter.
+strategic_bombing_raid_battle_notify_aa_hits :: proc(
+	self:            ^Strategic_Bombing_Raid_Battle,
+	bridge:          ^I_Delegate_Bridge,
+	dice:            ^Dice_Roll,
+	casualties:      ^Casualty_Details,
+	current_type_aa: string,
+) {
+	step := fmt.aprintf(
+		"%s%s%s",
+		BATTLE_STEP_NOTIFY_PREFIX,
+		current_type_aa,
+		BATTLE_STEP_CASUALTIES_SUFFIX,
+	)
+
+	killed_copy: [dynamic]^Unit
+	for u in casualties.killed {
+		append(&killed_copy, u)
+	}
+	damaged_copy: [dynamic]^Unit
+	for u in casualties.damaged {
+		append(&damaged_copy, u)
+	}
+	empty_dependents := make(map[^Unit][dynamic]^Unit)
+
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_casualty_notification(
+		display,
+		self.battle_id,
+		step,
+		dice,
+		self.attacker,
+		killed_copy,
+		damaged_copy,
+		empty_dependents,
+	)
+
+	// Thread body — see lambda$notifyAaHits$7 above.
+	strategic_bombing_raid_battle_lambda__notify_aa_hits__7(self, bridge)
+
+	remote_attacker := i_delegate_bridge_get_remote_player(bridge, self.attacker)
+	if remote_attacker != nil {
+		player_confirm_own_casualties(
+			remote_attacker,
+			self.battle_id,
+			"Press space to continue",
+		)
+	}
+}

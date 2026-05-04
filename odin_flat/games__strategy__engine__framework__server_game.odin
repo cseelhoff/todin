@@ -472,3 +472,234 @@ server_game_wait_for_player_to_finish_step :: proc(self: ^Server_Game) {
 		)
 	}
 }
+
+// games.strategy.engine.framework.ServerGame.SERVER_REMOTE — the static
+// RemoteName used to register/lookup the IServerRemote implementation on
+// the messengers. Java: `static final RemoteName SERVER_REMOTE =
+// new RemoteName("games.strategy.engine.framework.ServerGame.SERVER_REMOTE",
+//                IServerRemote.class);`
+SERVER_GAME_SERVER_REMOTE_NAME :: "games.strategy.engine.framework.ServerGame.SERVER_REMOTE"
+
+server_game_server_remote :: proc() -> ^Remote_Name {
+	return remote_name_new(
+		SERVER_GAME_SERVER_REMOTE_NAME,
+		class_new(
+			"games.strategy.engine.framework.IServerRemote",
+			"IServerRemote",
+		),
+	)
+}
+
+// Adapter for the anonymous IServerRemote installed by the constructor.
+// Java: `final IServerRemote serverRemote =
+//          () -> GameDataWriter.writeToBytes(data, delegateExecutionManager);`
+// The lambda captures `data` and `this` (for delegateExecutionManager).
+Server_Game_Server_Remote_Adapter :: struct {
+	using i_server_remote: I_Server_Remote,
+	target:                ^Server_Game,
+	data:                  ^Game_Data,
+}
+
+@(private = "file")
+sg_server_remote_get_saved_game :: proc(self: ^I_Server_Remote) -> []u8 {
+	w := cast(^Server_Game_Server_Remote_Adapter)self
+	return server_game_lambda_new_0(w.target, w.data)
+}
+
+// Adapter for the anonymous IGameModifiedChannel installed in the
+// constructor. Java's inline subclass keeps `historyWriter` and `this`
+// in its closure, so the adapter struct stores the same pair.
+Server_Game_Game_Modified_Channel_Adapter :: struct {
+	using i_game_modified_channel: I_Game_Modified_Channel,
+	target:                        ^Server_Game,
+	history_writer:                ^History_Writer,
+}
+
+@(private = "file")
+sg_gmc_assert_correct_caller :: proc(w: ^Server_Game_Game_Modified_Channel_Adapter) {
+	if message_context_get_sender() != messengers_get_server_node(w.target.messengers) {
+		panic("Only server can change game data")
+	}
+}
+
+@(private = "file")
+sg_gmc_game_data_changed :: proc(self: ^I_Game_Modified_Channel, change: ^Change) {
+	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
+	sg_gmc_assert_correct_caller(w)
+	game_data_perform_change(w.target.game_data, change)
+	history_writer_add_change(w.history_writer, change)
+}
+
+@(private = "file")
+sg_gmc_start_history_event :: proc(self: ^I_Game_Modified_Channel, event_name: string) {
+	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
+	sg_gmc_assert_correct_caller(w)
+	history_writer_start_event(w.history_writer, event_name)
+}
+
+@(private = "file")
+sg_gmc_start_history_event_with_data :: proc(
+	self: ^I_Game_Modified_Channel,
+	event_name: string,
+	rendering_data: rawptr,
+) {
+	// Java: startHistoryEvent(event); if (renderingData != null)
+	// setRenderingData(renderingData);
+	sg_gmc_start_history_event(self, event_name)
+	if rendering_data != nil {
+		w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
+		sg_gmc_assert_correct_caller(w)
+		history_writer_set_rendering_data(w.history_writer, rendering_data)
+	}
+}
+
+@(private = "file")
+sg_gmc_add_child_to_event :: proc(
+	self: ^I_Game_Modified_Channel,
+	text: string,
+	rendering_data: rawptr,
+) {
+	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
+	sg_gmc_assert_correct_caller(w)
+	ec := new(Event_Child)
+	ec.text = text
+	ec.rendering_data = rendering_data
+	history_writer_add_child_to_event(w.history_writer, ec)
+}
+
+@(private = "file")
+sg_gmc_step_changed :: proc(
+	self: ^I_Game_Modified_Channel,
+	step_name: string,
+	delegate_name: string,
+	player: ^Game_Player,
+	round: i32,
+	display_name: string,
+	loaded_from_saved_game: bool,
+) {
+	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
+	sg_gmc_assert_correct_caller(w)
+	if loaded_from_saved_game {
+		return
+	}
+	history_writer_start_next_step(
+		w.history_writer,
+		step_name,
+		delegate_name,
+		player,
+		display_name,
+	)
+}
+
+@(private = "file")
+sg_gmc_shut_down :: proc(self: ^I_Game_Modified_Channel) {
+	// Java: empty body — "nothing to do, we call this".
+}
+
+// games.strategy.engine.framework.ServerGame#<init>(GameData, Set<Player>,
+//   Map<String, INode>, Messengers, ClientNetworkBridge, LaunchAction,
+//   InGameLobbyWatcherWrapper)
+//
+// Mirrors the Java ServerGame constructor. The parent AbstractGame
+// initialization is inlined onto the embedded `abstract_game` so we
+// don't have to copy from a separately-allocated Abstract_Game; the
+// logic matches abstract_game_new exactly. Then ServerGame's own
+// fields are populated and the registered IGameModifiedChannel /
+// IServerRemote adapters are installed.
+server_game_new :: proc(
+	data:                   ^Game_Data,
+	local_players:          map[^Player]struct{},
+	remote_player_mapping:  map[string]^I_Node,
+	messengers:             ^Messengers,
+	client_network_bridge:  ^Client_Network_Bridge,
+	launch_action:          ^Launch_Action,
+	in_game_lobby_watcher:  ^In_Game_Lobby_Watcher_Wrapper,
+) -> ^Server_Game {
+	self := new(Server_Game)
+
+	// --- AbstractGame init (inlined from abstract_game_new) ---
+	self.game_data = data
+	self.messengers = messengers
+	self.client_network_bridge = client_network_bridge
+	self.is_game_over = false
+	self.first_run = true
+	self.vault = vault_new(messengers.channel_messenger)
+	self.game_players = make(map[^Game_Player]^Player)
+
+	all_players: map[string]^I_Node
+	for k, v in remote_player_mapping {
+		all_players[k] = v
+	}
+	for player in local_players {
+		all_players[player_get_name(player)] = messengers_get_local_node(messengers)
+	}
+	pm := make_Player_Manager(all_players)
+	self.player_manager = new(Player_Manager)
+	self.player_manager^ = pm
+
+	abstract_game_setup_local_players(&self.abstract_game, local_players)
+
+	// --- ServerGame-specific init ---
+	self.launch_action = launch_action
+	self.in_game_lobby_watcher = in_game_lobby_watcher
+	self.random_source = cast(^I_Random_Source)plain_random_source_new()
+	self.delegate_random_source = nil
+	dem := new(Delegate_Execution_Manager)
+	dem^ = make_Delegate_Execution_Manager()
+	self.delegate_execution_manager = dem
+	self.need_to_initialize = true
+	self.delegate_autosaves_enabled = true
+	self.delegate_execution_stopped_latch = count_down_latch_new(1)
+	self.delegate_execution_stopped = false
+	self.stop_game_on_delegate_execution_stop = false
+
+	// Keep a ref to the history writer (Java comment: avoids grabbing
+	// the gameData lock on each broadcast and survives history resets
+	// done by the battle calculator's game-cloning paths).
+	history_writer := game_data_get_history(data).writer
+
+	// Anonymous IGameModifiedChannel — install adapter struct.
+	gmc := new(Server_Game_Game_Modified_Channel_Adapter)
+	gmc.target                        = self
+	gmc.history_writer                = history_writer
+	gmc.game_data_changed             = sg_gmc_game_data_changed
+	gmc.start_history_event           = sg_gmc_start_history_event
+	gmc.start_history_event_with_data = sg_gmc_start_history_event_with_data
+	gmc.add_child_to_event            = sg_gmc_add_child_to_event
+	gmc.step_changed                  = sg_gmc_step_changed
+	gmc.shut_down                     = sg_gmc_shut_down
+	self.game_modified_channel = cast(^I_Game_Modified_Channel)gmc
+	messengers_register_channel_subscriber(
+		messengers,
+		rawptr(gmc),
+		remote_name_new(
+			SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME,
+			class_new(
+				"games.strategy.engine.framework.IGameModifiedChannel",
+				"IGameModifiedChannel",
+			),
+		),
+	)
+
+	server_game_setup_delegate_messaging(self, data)
+	self.random_stats = random_stats_new(messengers.remote_messenger)
+
+	// Import dice stats from history if there is any (e.g. loading a
+	// saved game). The History root is always a History_Node subclass.
+	root := default_tree_model_get_root(&game_data_get_history(data).default_tree_model)
+	server_game_import_dice_stats(self, cast(^History_Node)root)
+
+	// IServerRemote lambda: () -> GameDataWriter.writeToBytes(data, dem).
+	sr := new(Server_Game_Server_Remote_Adapter)
+	sr.target         = self
+	sr.data           = data
+	sr.get_saved_game = sg_server_remote_get_saved_game
+	messengers_register_remote(
+		messengers,
+		rawptr(sr),
+		server_game_server_remote(),
+	)
+
+	return self
+}
+

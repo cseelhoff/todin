@@ -190,3 +190,9 @@ pro_resource_tracker_get_remaining :: proc(self: ^Pro_Resource_Tracker) -> ^Inte
 	return combined
 }
 
+// public boolean hasEnough(final ProPurchaseOption ppo)
+//   return hasEnough(ppo.getCosts());
+pro_resource_tracker_has_enough :: proc(self: ^Pro_Resource_Tracker, ppo: ^Pro_Purchase_Option) -> bool {
+	return pro_resource_tracker_has_enough_amount(self, pro_purchase_option_get_costs(ppo))
+}
+

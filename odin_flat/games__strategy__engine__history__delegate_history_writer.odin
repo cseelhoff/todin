@@ -55,3 +55,35 @@ delegate_history_writer_add_prefix_on_edit_mode :: proc(self: ^Delegate_History_
 	return strings.concatenate({delegate_history_writer_get_event_prefix(self), event_name})
 }
 
+// games.strategy.engine.history.DelegateHistoryWriter#startEvent(java.lang.String,java.lang.Object)
+delegate_history_writer_start_event_with_data :: proc(self: ^Delegate_History_Writer, event_name: string, rendering_data: rawptr) {
+	if self.channel != nil {
+		i_game_modified_channel_start_history_event_with_data(
+			self.channel,
+			delegate_history_writer_add_prefix_on_edit_mode(self, event_name),
+			rendering_data,
+		)
+	}
+}
+
+// games.strategy.engine.history.DelegateHistoryWriter#startEvent(java.lang.String)
+delegate_history_writer_start_event :: proc(self: ^Delegate_History_Writer, event_name: string) {
+	if self.channel != nil {
+		i_game_modified_channel_start_history_event(
+			self.channel,
+			delegate_history_writer_add_prefix_on_edit_mode(self, event_name),
+		)
+	}
+}
+
+// games.strategy.engine.history.DelegateHistoryWriter#addChildToEvent(java.lang.String,java.lang.Object)
+delegate_history_writer_add_child_to_event :: proc(self: ^Delegate_History_Writer, child: string, rendering_data: rawptr) {
+	if self.channel != nil {
+		i_game_modified_channel_add_child_to_event(
+			self.channel,
+			delegate_history_writer_add_prefix_on_edit_mode(self, child),
+			rendering_data,
+		)
+	}
+}
+

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Offensive_Subs_Retreat :: struct {
 	using battle_step: Battle_Step,
 	battle_state:   ^Battle_State,
@@ -40,5 +42,34 @@ offensive_subs_retreat_is_evader_not_present :: proc(self: ^Offensive_Subs_Retre
 		}
 	}
 	return true
+}
+
+// Java: OffensiveSubsRetreat#getName
+//   if (Properties.getSubmersibleSubs(battleState.getGameData().getProperties())) {
+//     return battleState.getPlayer(OFFENSE).getName() + SUBS_SUBMERGE;
+//   } else {
+//     return battleState.getPlayer(OFFENSE).getName() + SUBS_WITHDRAW;
+//   }
+offensive_subs_retreat_get_name :: proc(self: ^Offensive_Subs_Retreat) -> string {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	player := battle_state_get_player(self.battle_state, .OFFENSE)
+	if properties_get_submersible_subs(props) {
+		return fmt.aprintf("%s%s", player.named.base.name, BATTLE_STEP_SUBS_SUBMERGE)
+	}
+	return fmt.aprintf("%s%s", player.named.base.name, BATTLE_STEP_SUBS_WITHDRAW)
+}
+
+// Java: OffensiveSubsRetreat#getOrder
+//   if (Properties.getSubRetreatBeforeBattle(battleState.getGameData().getProperties())) {
+//     return SUB_OFFENSIVE_RETREAT_BEFORE_BATTLE;
+//   } else {
+//     return SUB_OFFENSIVE_RETREAT_AFTER_BATTLE;
+//   }
+offensive_subs_retreat_get_order :: proc(self: ^Offensive_Subs_Retreat) -> Battle_Step_Order {
+	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	if properties_get_sub_retreat_before_battle(props) {
+		return Battle_Step_Order.SUB_OFFENSIVE_RETREAT_BEFORE_BATTLE
+	}
+	return Battle_Step_Order.SUB_OFFENSIVE_RETREAT_AFTER_BATTLE
 }
 

@@ -231,3 +231,40 @@ change_factory_remove_resource_collection :: proc(game_player: ^Game_Player, res
 	}
 	return &composite_change.change
 }
+
+// Java: ChangeFactory#attachmentPropertyChange(IAttachment, Object, String, boolean)
+//   return new ChangeAttachmentChange(attachment, newValue, property, resetFirst);
+change_factory_attachment_property_change_with_reset_first :: proc(
+	attachment: ^I_Attachment,
+	new_value: rawptr,
+	property: string,
+	reset_first: bool,
+) -> ^Change {
+	return change_attachment_change_new_with_clear_first(attachment, new_value, property, reset_first)
+}
+
+// Java: ChangeFactory#markNoMovementChange(Unit)
+//   return unitPropertyChange(
+//       unit, new BigDecimal(unit.getMaxMovementAllowed() + 1), Unit.PropertyName.ALREADY_MOVED);
+// BigDecimal → f64 per the Odin port convention; the property setter
+// receives a heap-allocated f64 value via rawptr (matches how other
+// already_moved / was_in_combat property changes are constructed).
+change_factory_mark_no_movement_change :: proc(unit: ^Unit) -> ^Change {
+	boxed := new(f64)
+	boxed^ = f64(unit_get_max_movement_allowed(unit) + 1)
+	return change_factory_unit_property_change_property_name(unit, rawptr(boxed), .Already_Moved)
+}
+
+// Java: ChangeFactory#moveUnits(Territory, Territory, Collection<Unit>)
+//   return new CompositeChange(List.of(removeUnits(start, units), addUnits(end, units)));
+// Territory implements NamedUnitHolder (which extends UnitHolder), so the
+// Territory pointers are passed through the existing UnitHolder-typed
+// remove/add helpers via the same cast pattern used elsewhere (e.g.
+// move_performer.executeMove).
+change_factory_move_units :: proc(start: ^Territory, end: ^Territory, units: [dynamic]^Unit) -> ^Change {
+	cc := composite_change_new_from_varargs(
+		change_factory_remove_units(cast(^Unit_Holder)start, units),
+		change_factory_add_units(cast(^Unit_Holder)end, units),
+	)
+	return &cc.change
+}

@@ -140,3 +140,28 @@ unit_separator_is_air_with_hit_points_remaining :: proc(unit: ^Unit) -> bool {
 	return unit_attachment_is_air(att) && unit_attachment_get_hit_points(att) > 1
 }
 
+// Lambda $11 in `getComparatorUnitCategories(...)`:
+//   `uc -> uc.getUnitAttachment().getAttack((currentPlayer == null ? uc.getOwner() : currentPlayer))`
+// Captures `currentPlayer`. `unit_attachment_get_attack` in the Odin port
+// is a plain getter that does not consult the player argument, but we
+// still mirror the Java null-coalescing of the captured player to the
+// category owner so the call shape matches.
+unit_separator_lambda_get_comparator_unit_categories_11 :: proc(
+	current_player: ^Game_Player,
+	uc: ^Unit_Category,
+) -> i32 {
+	if uc == nil {
+		return 0
+	}
+	att := unit_category_get_unit_attachment(uc)
+	if att == nil {
+		return 0
+	}
+	player := current_player
+	if player == nil {
+		player = unit_category_get_owner(uc)
+	}
+	_ = player
+	return unit_attachment_get_attack(att)
+}
+

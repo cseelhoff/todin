@@ -1339,3 +1339,208 @@ game_parser_parse_categories :: proc(
 		technology_frontier_list_add_technology_frontier(categories, technology_frontier)
 	}
 }
+
+// Java: private void parseResources(
+//     final org.triplea.map.data.elements.ResourceList resourceList)
+//     throws GameParseException
+//
+//   for each Resource element:
+//     - if isDisplayedFor is null/empty, build a Resource with the
+//       full player list (data.getPlayerList().getPlayers());
+//     - else if isDisplayedFor equalsIgnoreCase("NONE") (the
+//       RESOURCE_IS_DISPLAY_FOR_NONE constant), build the no-players
+//       form via Resource(name, data);
+//     - else split isDisplayedFor on ':' via
+//       parsePlayersFromIsDisplayedFor and pass the resolved players.
+//   then data.getResourceList().addResource(resource).
+//
+// Modeling pragma: `Xml_Resource_List_Resource.is_displayed_for` is a
+// plain `string`; empty string represents Java null/empty (the
+// orElse(...) chain collapses both into the first branch).
+game_parser_parse_resources :: proc(self: ^Game_Parser, resource_list: ^Xml_Resource_List) {
+	for resource in resource_list.resources {
+		name := resource.name
+		is_displayed_for := resource.is_displayed_for
+		if len(is_displayed_for) == 0 {
+			players := player_list_get_players(game_data_get_player_list(self.data))
+			r := resource_new(name, self.data, players[:])
+			resource_list_add_resource(game_data_get_resource_list(self.data), r)
+		} else if strings.equal_fold(is_displayed_for, "NONE") {
+			r := resource_new_simple(name, self.data)
+			resource_list_add_resource(game_data_get_resource_list(self.data), r)
+		} else {
+			players := game_parser_parse_players_from_is_displayed_for(self, is_displayed_for)
+			r := resource_new(name, self.data, players[:])
+			resource_list_add_resource(game_data_get_resource_list(self.data), r)
+		}
+	}
+}
+
+// Java: private void parseProductionRules(
+//     final List<Production.ProductionRule> elements) throws GameParseException
+//   for each: rule = new ProductionRule(current.getName(), data);
+//             parseProductionCosts(rule, current.getCosts());
+//             parseResults(rule, current);
+//             data.getProductionRuleList().addProductionRule(rule).
+// `parseResults` in the Odin port takes the rule-results list directly
+// (see comment at game_parser_parse_results); we pass current.results.
+game_parser_parse_production_rules :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Production_Rule,
+) {
+	for current in elements {
+		name := current.name
+		rule := production_rule_new(name, self.data)
+		game_parser_parse_production_costs(self, rule, current.costs)
+		game_parser_parse_results(self, rule, current.results)
+		production_rule_list_add_production_rule(
+			game_data_get_production_rule_list(self.data),
+			rule,
+		)
+	}
+}
+
+// Java: private void parseRepairRules(
+//     final List<Production.RepairRule> elements) throws GameParseException
+//   for each: rule = new RepairRule(current.getName(), data);
+//             parseRepairCosts(rule, current.getCosts());
+//             parseResults(rule, current);
+//             data.getRepairRules().addRepairRule(rule).
+//
+// Modeling pragma: the 2-arg Java RepairRule(name, data) ctor delegates
+// to the 4-arg one with `new IntegerMap<>()` for both costs and results;
+// the Odin port exposes only the 4-arg `repair_rule_new`, so we pass
+// freshly-allocated empty Integer_Maps to mirror the Java default.
+game_parser_parse_repair_rules :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Production_Repair_Rule,
+) {
+	for current in elements {
+		rule := repair_rule_new(current.name, self.data, integer_map_new(), integer_map_new())
+		game_parser_parse_repair_costs(self, rule, current.costs)
+		game_parser_parse_results(self, rule, current.results)
+		repair_rules_add_repair_rule(game_data_get_repair_rules(self.data), rule)
+	}
+}
+
+// Java: private void parsePlayerTech(final List<Technology.PlayerTech> elements)
+//     throws GameParseException
+//   for each: GamePlayer player = getPlayerId(current.getPlayer());
+//             TechnologyFrontierList categories = player.getTechnologyFrontierList();
+//             parseCategories(current.getCategories(), categories).
+game_parser_parse_player_tech :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Technology_Player_Tech,
+) {
+	for current in elements {
+		player := game_parser_get_player_id(self, current.player)
+		categories := game_player_get_technology_frontier_list(player)
+		game_parser_parse_categories(self, current.categories, categories)
+	}
+}
+
+// Java: private void parseTechs(
+//     final List<Technology.Technologies.TechName> elements,
+//     final TechnologyFrontier allTechsFrontier)
+//
+// For each TechName(name, tech):
+//   - if tech is non-null and not blank, build a GenericTechAdvance
+//     wrapping the predefined advance keyed by `tech`;
+//   - otherwise, try to look up the predefined advance by `name`;
+//     Java catches IllegalArgumentException to fall back to a
+//     bare-name GenericTechAdvance with a null inner advance.
+//
+// Odin pragma: `tech_advance_find_defined_advance_and_create_advance`
+// panics on an unknown name (no IllegalArgumentException), so the
+// Java try/catch is emulated by probing the predefined-technology
+// map up front; only known keys are dispatched, mirroring the Java
+// behavior without unwinding panics.
+game_parser_parse_techs :: proc(
+	self: ^Game_Parser,
+	elements: [dynamic]^Technology_Technologies_Tech_Name,
+	all_techs_frontier: ^Technology_Frontier,
+) {
+	for current in elements {
+		name := current.name
+		tech := current.tech
+		ta: ^Tech_Advance
+		if len(strings.trim_space(tech)) > 0 {
+			inner := tech_advance_find_defined_advance_and_create_advance(tech, self.data)
+			gta := generic_tech_advance_new(name, inner, self.data)
+			ta = cast(^Tech_Advance)gta
+		} else {
+			predefined := tech_advance_new_predefined_technology_map()
+			defer delete(predefined)
+			if _, ok := predefined[name]; ok {
+				ta = tech_advance_find_defined_advance_and_create_advance(name, self.data)
+			} else {
+				gta := generic_tech_advance_new(name, nil, self.data)
+				ta = cast(^Tech_Advance)gta
+			}
+		}
+		technology_frontier_add_advance(all_techs_frontier, ta)
+	}
+}
+
+// Java: private void parseAttachment(
+//     final AttachmentList.Attachment current,
+//     final Map<String, String> foreach) throws GameParseException
+//
+// Resolves the target Attachable via findAttachment (defaulting to
+// "unitType" when current.getType() is null), substitutes foreach
+// variables in the attachment name, applies the legacy spelling
+// fix-up ("ttatchment" -> "ttachment"), constructs the IAttachment
+// via xmlGameElementMapper.newAttachment(...), wires it onto the
+// attachable, applies its options via setOptions, and — when
+// collectAttachmentOrderAndValues is true — appends an
+// (attachment, optionValues) Tuple to data's attachment-order list.
+//
+// The orElseThrow synthetic supplier is `game_parser_lambda_parse_attachment_23`.
+game_parser_parse_attachment :: proc(
+	self: ^Game_Parser,
+	current: ^Attachment_List_Attachment,
+	foreach: map[string]string,
+) {
+	class_name := current.java_class
+	type := current.type
+	if len(type) == 0 {
+		type = "unitType"
+	}
+	attachable := game_parser_find_attachment(self, current, type, foreach)
+	name := game_data_variables_replace_foreach_variables(current.name, foreach)
+	// Only replace if needed, as replaceAll() can be slow.
+	if strings.contains(name, "ttatchment") {
+		name, _ = strings.replace_all(name, "ttatchment", "ttachment")
+	}
+	attachment := xml_game_element_mapper_new_attachment(
+		self.xml_game_element_mapper,
+		class_name,
+		name,
+		attachable,
+		self.data,
+	)
+	if attachment == nil {
+		game_parser_lambda_parse_attachment_23(class_name)
+	}
+	// replace-all to automatically correct legacy (1.8) attachment spelling
+	attachable_add_attachment(attachable, name, attachment)
+
+	attachment_option_values := game_parser_set_options(
+		self,
+		attachment,
+		current.options,
+		foreach,
+	)
+	// keep a list of attachment references in the order they were added
+	if self.collect_attachment_order_and_values {
+		game_data_add_to_attachment_order_and_values(
+			self.data,
+			tuple_new(
+				^I_Attachment,
+				[dynamic]^Tuple(string, string),
+				attachment,
+				attachment_option_values,
+			),
+		)
+	}
+}

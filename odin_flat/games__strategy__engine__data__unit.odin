@@ -1068,3 +1068,25 @@ unit_get_property_or_empty :: proc(self: ^Unit, property_name: string) -> ^Mutab
 	}
 	return unit_lambda_get_property_or_empty_0(self, prop)
 }
+
+// games.strategy.engine.data.Unit#getHowMuchMoreDamageCanThisUnitTake(Territory)
+//
+// Java:
+//   if (!Matches.unitCanBeDamaged().test(this)) return 0;
+//   return Properties.getDamageFromBombingDoneToUnitsInsteadOfTerritories(getData().getProperties())
+//       ? Math.max(0, getHowMuchDamageCanThisUnitTakeTotal(t) - getUnitDamage())
+//       : Integer.MAX_VALUE;
+unit_get_how_much_more_damage_can_this_unit_take :: proc(self: ^Unit, t: ^Territory) -> i32 {
+	if !matches_pred_unit_can_be_damaged(nil, self) {
+		return 0
+	}
+	if properties_get_damage_from_bombing_done_to_units_instead_of_territories(
+		game_data_get_properties(game_data_component_get_data(&self.game_data_component)),
+	) {
+		return max(
+			i32(0),
+			unit_get_how_much_damage_can_this_unit_take_total(self, t) - unit_get_unit_damage(self),
+		)
+	}
+	return max(i32)
+}

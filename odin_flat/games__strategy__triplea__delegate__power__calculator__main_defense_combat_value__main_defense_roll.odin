@@ -26,3 +26,22 @@ main_defense_combat_value_main_defense_roll_get_support_given :: proc(
 	)
 }
 
+// Java: MainDefenseRoll.getRoll(Unit unit)
+//   return RollValue.of(unit.getUnitAttachment().getDefenseRolls(unit.getOwner()))
+//       .add(supportFromFriends.giveSupportToUnit(unit))
+//       .add(supportFromEnemies.giveSupportToUnit(unit));
+main_defense_combat_value_main_defense_roll_get_roll :: proc(
+	self: ^Main_Defense_Combat_Value_Main_Defense_Roll,
+	unit: ^Unit,
+) -> ^Roll_Value {
+	rv := roll_value_of(
+		unit_attachment_get_defense_rolls_with_player(
+			unit_get_unit_attachment(unit),
+			unit_get_owner(unit),
+		),
+	)
+	rv = roll_value_add(rv, available_supports_give_support_to_unit(self.support_from_friends, unit))
+	rv = roll_value_add(rv, available_supports_give_support_to_unit(self.support_from_enemies, unit))
+	return rv
+}
+

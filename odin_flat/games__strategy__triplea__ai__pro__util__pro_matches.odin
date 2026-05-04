@@ -2150,3 +2150,215 @@ pro_matches_territory_has_non_mobile_factory_and_is_not_conquered_owned_land :: 
 	return pro_matches_pred_territory_has_non_mobile_factory_and_is_not_conquered_owned_land, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// lambda$territoryCanMoveSeaUnits$5(player, isCombatMove, t)
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_territory_can_move_sea_units :: proc(
+	player: ^Game_Player,
+	is_combat_move: bool,
+	t: ^Territory,
+) -> bool {
+	props := game_data_get_properties(game_player_get_data(player))
+	naval_may_not_non_com_into_controlled :=
+		properties_get_ww2_v2(props) ||
+		properties_get_naval_units_may_not_non_combat_move_into_controlled_sea_zones(props)
+	if !is_combat_move && naval_may_not_non_com_into_controlled {
+		ew_p, ew_c := matches_is_territory_enemy_and_not_unowned_water(player)
+		if ew_p(ew_c, t) {
+			return false
+		}
+	}
+	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
+	if !p1(c1, t) {
+		return false
+	}
+	p2, c2 := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		player, is_combat_move, false, true, false, false,
+	)
+	return p2(c2, t)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$territoryCanMoveSpecificLandUnit$1(player, isCombatMove, unit, t)
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_territory_can_move_specific_land_unit :: proc(
+	player: ^Game_Player,
+	is_combat_move: bool,
+	unit: ^Unit,
+	t: ^Territory,
+) -> bool {
+	props := game_data_get_properties(game_player_get_data(player))
+	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
+	if !p1(c1, t) {
+		return false
+	}
+	p2, c2 := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		player, is_combat_move, true, false, false, false,
+	)
+	if !p2(c2, t) {
+		return false
+	}
+	disallowed := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory(t)
+	pu, cu := matches_unit_is_of_types(disallowed)
+	return !pu(cu, unit)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$territoryCanPotentiallyMoveSpecificLandUnit$2(player, u, t)
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_territory_can_potentially_move_specific_land_unit :: proc(
+	player: ^Game_Player,
+	u: ^Unit,
+	t: ^Territory,
+) -> bool {
+	props := game_data_get_properties(game_player_get_data(player))
+	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
+	if !p1(c1, t) {
+		return false
+	}
+	p2, c2 := matches_territory_is_passable_and_not_restricted(player)
+	if !p2(c2, t) {
+		return false
+	}
+	disallowed := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory(t)
+	pu, cu := matches_unit_is_of_types(disallowed)
+	return !pu(cu, u)
+}
+
+// ---------------------------------------------------------------------------
+// lambda$unitHasLessMovementThan$19(unit, u)
+//   == u -> u.getMovementLeft().compareTo(unit.getMovementLeft()) < 0
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_unit_has_less_movement_than :: proc(unit: ^Unit, u: ^Unit) -> bool {
+	return unit_get_movement_left(u) < unit_get_movement_left(unit)
+}
+
+// ---------------------------------------------------------------------------
+// territoryCanLandAirUnits(player, isCombatMove, enemyTerritories,
+//                          alliedTerritories) -> Predicate<Territory>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_land_air_units :: struct {
+	player:             ^Game_Player,
+	is_combat_move:     bool,
+	enemy_territories:  [dynamic]^Territory,
+	allied_territories: [dynamic]^Territory,
+}
+
+pro_matches_pred_territory_can_land_air_units :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_land_air_units)ctx_ptr
+	for at in ctx.allied_territories {
+		if at == t {
+			return true
+		}
+	}
+	land_p, land_c := matches_air_can_land_on_this_allied_non_conquered_land_territory(ctx.player)
+	if !land_p(land_c, t) {
+		return false
+	}
+	pass_p, pass_c := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		ctx.player, ctx.is_combat_move, false, false, true, true,
+	)
+	if !pass_p(pass_c, t) {
+		return false
+	}
+	for et in ctx.enemy_territories {
+		if et == t {
+			return false
+		}
+	}
+	if !ctx.is_combat_move {
+		nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+		eu_p, eu_c := matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(ctx.player)
+		if nbnw_p(nbnw_c, t) || eu_p(eu_c, t) {
+			return false
+		}
+	}
+	return true
+}
+
+pro_matches_territory_can_land_air_units :: proc(
+	player: ^Game_Player,
+	is_combat_move: bool,
+	enemy_territories: [dynamic]^Territory,
+	allied_territories: [dynamic]^Territory,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_land_air_units)
+	ctx.player = player
+	ctx.is_combat_move = is_combat_move
+	ctx.enemy_territories = enemy_territories
+	ctx.allied_territories = allied_territories
+	return pro_matches_pred_territory_can_land_air_units, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryCanMoveAirUnits(data, player, isCombatMove) -> Predicate<Territory>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_move_air_units :: struct {
+	data:           ^Game_State,
+	player:         ^Game_Player,
+	is_combat_move: bool,
+}
+
+pro_matches_pred_territory_can_move_air_units :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_move_air_units)ctx_ptr
+	props := game_state_get_properties(ctx.data)
+	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
+	if !p1(c1, t) {
+		return false
+	}
+	p2, c2 := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		ctx.player, ctx.is_combat_move, false, false, true, false,
+	)
+	return p2(c2, t)
+}
+
+pro_matches_territory_can_move_air_units :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	is_combat_move: bool,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_move_air_units)
+	ctx.data = data
+	ctx.player = player
+	ctx.is_combat_move = is_combat_move
+	return pro_matches_pred_territory_can_move_air_units, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryCanMoveLandUnits(player, isCombatMove) -> Predicate<Territory>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_move_land_units :: struct {
+	player:         ^Game_Player,
+	is_combat_move: bool,
+}
+
+pro_matches_pred_territory_can_move_land_units :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_move_land_units)ctx_ptr
+	props := game_data_get_properties(game_player_get_data(ctx.player))
+	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
+	if !p1(c1, t) {
+		return false
+	}
+	p2, c2 := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
+		ctx.player, ctx.is_combat_move, true, false, false, false,
+	)
+	return p2(c2, t)
+}
+
+pro_matches_territory_can_move_land_units :: proc(
+	player: ^Game_Player,
+	is_combat_move: bool,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_move_land_units)
+	ctx.player = player
+	ctx.is_combat_move = is_combat_move
+	return pro_matches_pred_territory_can_move_land_units, rawptr(ctx)
+}
+

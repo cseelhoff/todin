@@ -84,3 +84,46 @@ move_batcher_merge_sequences :: proc(
 		clear(&other_sequence)
 	}
 }
+
+// Public addMove(List<Unit>, Route) overload. The bare
+// `move_batcher_add_move` name is taken by the private
+// addMove(MoveDescription) helper, so this overload uses a
+// `_units_route` suffix to disambiguate.
+move_batcher_add_move_units_route :: proc(
+	self: ^Move_Batcher,
+	units: []^Unit,
+	route: ^Route,
+) {
+	move_batcher_add_move(self, move_description_new_units_route(units, route))
+}
+
+move_batcher_add_transport_load :: proc(
+	self: ^Move_Batcher,
+	unit: ^Unit,
+	route: ^Route,
+	transport: ^Unit,
+) {
+	units := make([dynamic]^Unit)
+	append(&units, unit)
+	units_to_sea_transports := make(map[^Unit]^Unit)
+	units_to_sea_transports[unit] = transport
+	move_batcher_add_move(
+		self,
+		move_description_new_with_sea_transports(units[:], route, units_to_sea_transports),
+	)
+}
+
+move_batcher_batch_moves :: proc(self: ^Move_Batcher) -> [dynamic]^Move_Description {
+	moves := make([dynamic]^Move_Description)
+	for i := 0; i < len(self.move_sequences); i += 1 {
+		sequence := &self.move_sequences[i]
+		if len(sequence^) > 0 {
+			tail := self.move_sequences[i + 1:]
+			move_batcher_merge_sequences(sequence, tail)
+			for m in sequence^ {
+				append(&moves, m)
+			}
+		}
+	}
+	return moves
+}

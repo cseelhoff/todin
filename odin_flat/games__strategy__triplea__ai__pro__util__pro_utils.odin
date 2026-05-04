@@ -414,3 +414,110 @@ pro_utils_get_live_enemy_capitals :: proc(
 	return filtered
 }
 
+// Port of ProUtils.getPlayerProduction — sums TerritoryAttachment
+// production over `data.getMap().getTerritories()` for territories
+// owned by `player` that pass `Matches.territoryCanCollectIncomeFrom(player)`,
+// then multiplies by the PU multiplier from game properties.
+pro_utils_get_player_production :: proc(player: ^Game_Player, data: ^Game_State) -> f64 {
+	can_collect_pred, can_collect_ctx := matches_territory_can_collect_income_from(player)
+	production: i32 = 0
+	territories := game_map_get_territories(game_state_get_map(data))
+	for place in territories {
+		if territory_is_owned_by(place, player) && can_collect_pred(can_collect_ctx, place) {
+			production += territory_attachment_static_get_production(place)
+		}
+	}
+	production *= properties_get_pu_multiplier(game_state_get_properties(data))
+	return f64(production)
+}
+
+// Port of ProUtils.getClosestEnemyLandTerritoryDistance — distance to
+// the closest enemy land territory within 9 hops of `t`, restricted to
+// routes that `ProMatches.territoryCanPotentiallyMoveLandUnits(player)`
+// allows. Returns -1 when none is reachable within 10.
+pro_utils_get_closest_enemy_land_territory_distance :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	t: ^Territory,
+) -> i32 {
+	can_move_pred, can_move_ctx := pro_matches_territory_can_potentially_move_land_units(player)
+	game_map := game_state_get_map(data)
+	land_territories := game_map_get_neighbors_distance_predicate(
+		game_map,
+		t,
+		9,
+		can_move_pred,
+		can_move_ctx,
+	)
+	defer delete(land_territories)
+	potential := pro_utils_get_potential_enemy_players(player)
+	defer delete(potential)
+	owned_pred, owned_ctx := matches_is_territory_owned_by_any_of(potential)
+	min_distance: i32 = 10
+	for enemy_land_territory in land_territories {
+		if !owned_pred(owned_ctx, enemy_land_territory) {
+			continue
+		}
+		distance := game_map_get_distance_predicate(
+			game_map,
+			t,
+			enemy_land_territory,
+			can_move_pred,
+			can_move_ctx,
+		)
+		if distance < min_distance {
+			min_distance = distance
+		}
+	}
+	return min_distance < 10 ? min_distance : -1
+}
+
+// Port of ProUtils.getClosestEnemyOrNeutralLandTerritoryDistance —
+// closest enemy land territory within 9 hops of `t`, filtered to those
+// with positive entry in `territory_value_map`; neutral land adds +1
+// to the candidate distance before comparing.
+pro_utils_get_closest_enemy_or_neutral_land_territory_distance :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	t: ^Territory,
+	territory_value_map: map[^Territory]f64,
+) -> i32 {
+	can_move_pred, can_move_ctx := pro_matches_territory_can_potentially_move_land_units(player)
+	game_map := game_state_get_map(data)
+	land_territories := game_map_get_neighbors_distance_predicate(
+		game_map,
+		t,
+		9,
+		can_move_pred,
+		can_move_ctx,
+	)
+	defer delete(land_territories)
+	enemies := pro_utils_get_enemy_players(player)
+	defer delete(enemies)
+	owned_pred, owned_ctx := matches_is_territory_owned_by_any_of(enemies)
+	min_distance: i32 = 10
+	for enemy_land_territory in land_territories {
+		if !owned_pred(owned_ctx, enemy_land_territory) {
+			continue
+		}
+		v, ok := territory_value_map[enemy_land_territory]
+		if !ok || v <= 0 {
+			continue
+		}
+		distance := game_map_get_distance_predicate(
+			game_map,
+			t,
+			enemy_land_territory,
+			can_move_pred,
+			can_move_ctx,
+		)
+		if pro_utils_is_neutral_land(enemy_land_territory) {
+			distance += 1
+		}
+		if distance < min_distance {
+			min_distance = distance
+		}
+	}
+	return min_distance < 10 ? min_distance : -1
+}
+

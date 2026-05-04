@@ -23,3 +23,9 @@ server_game_1_assert_correct_caller :: proc(self: ^Server_Game_1) {
 	}
 }
 
+// games.strategy.engine.framework.ServerGame$1#startHistoryEvent(java.lang.String)
+server_game_1_start_history_event :: proc(self: ^Server_Game_1, event: string) {
+	server_game_1_assert_correct_caller(self)
+	history_writer_start_event(self.history_writer, event)
+}
+

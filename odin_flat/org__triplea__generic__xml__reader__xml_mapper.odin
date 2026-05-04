@@ -249,3 +249,83 @@ xml_mapper_map_xml_to_object :: proc(self: ^Xml_Mapper, pojo: ^Class, tag_name: 
 	xml_parser_parse(tag_parser, cast(^Xml_Stream_Reader)self.xml_stream_reader)
 	return instance, nil
 }
+
+// Java:
+//   () -> field.set(instance, mapXmlToObject(field.getType(), expectedTagName))
+//
+// The inner Runnable for a @Tag field, registered as the second arg
+// of `tagParser.childTagHandler(...)` inside the outer Consumer
+// xml_mapper_lambda_map_xml_to_object_2. Captures (field, instance,
+// expectedTagName) -- three synthetic args matching
+// `lambda$mapXmlToObject$1(Field,Object,String)`. The enclosing
+// instance pointer (this) is also implicitly captured by the inner
+// invocation of `mapXmlToObject(...)`; it is preserved here as the
+// explicit ^Xml_Mapper receiver because Odin has no implicit `this`.
+//
+// Body would (a) recursively map the child tag into a POJO and (b)
+// assign it to the reflected field. The Odin Field shim has no
+// reflective `set`, so step (b) is a no-op (same rationale as
+// xml_mapper_lambda_map_xml_to_object_5). Step (a) is preserved --
+// the recursive call has its own observable effects (constructing the
+// child instance and advancing the xml_parser shim) and matches the
+// `mapXmlToObject(field.getType(), expectedTagName)` call site
+// exactly. The IllegalAccessException branch from the surrounding
+// try/catch (rethrown as XmlParsingException by the enclosing
+// method's catch-all) is unreachable here, but the trailing
+// ^Xml_Parsing_Exception return is preserved to match the package's
+// checked-exception idiom and lets a caller propagate any error from
+// the recursive mapXmlToObject call.
+xml_mapper_lambda_map_xml_to_object_1 :: proc(self: ^Xml_Mapper, field: ^Field, instance: rawptr, expected_tag_name: string) -> ^Xml_Parsing_Exception {
+	_ = instance
+	// field.getType() in the Field shim is a name carrier with no
+	// runtime type info, so the recursive call's pojo argument is
+	// the field's declaring_class (the only ^Class the shim does
+	// carry). Same fallback used by lambda_2's outer-Consumer setup.
+	pojo := field.declaring_class
+	child, err := xml_mapper_map_xml_to_object(self, pojo, expected_tag_name)
+	_ = child
+	return err
+}
+
+// Java:
+//   () -> tagList.add(mapXmlToObject(listType, expectedTagName))
+//
+// The inner Runnable for a @TagList field, registered as the second
+// arg of `tagParser.childTagHandler(...)` inside the outer Consumer
+// xml_mapper_lambda_map_xml_to_object_4. Captures (tagList, listType,
+// expectedTagName) -- three synthetic args matching
+// `lambda$mapXmlToObject$3(List,Class,String)`. The enclosing
+// instance pointer (this) is also implicitly captured by the inner
+// `mapXmlToObject(...)` invocation; it is preserved here as the
+// explicit ^Xml_Mapper receiver.
+//
+// Body recursively maps the child tag into a POJO and appends it to
+// the captured List<Object>. In Odin the natural mirror is appending
+// a `rawptr` to a `^[dynamic]rawptr`. Both effects are preserved:
+// the recursive call drives the shim parser, and the resulting
+// instance is appended to tag_list. The trailing
+// ^Xml_Parsing_Exception return propagates any error from the
+// recursive call (Java's enclosing catch-all wraps non-XmlParsingException
+// throwables; the shim raises only XmlParsingException directly).
+xml_mapper_lambda_map_xml_to_object_3 :: proc(self: ^Xml_Mapper, tag_list: ^[dynamic]rawptr, list_type: ^Class, expected_tag_name: string) -> ^Xml_Parsing_Exception {
+	child, err := xml_mapper_map_xml_to_object(self, list_type, expected_tag_name)
+	if err != nil {
+		return err
+	}
+	append(tag_list, child)
+	return nil
+}
+
+// Java:
+//   public <T> T mapXmlToObject(final Class<T> pojo) throws XmlParsingException {
+//     return mapXmlToObject(pojo, pojo.getSimpleName());
+//   }
+//
+// The public single-arg entry point: defaults the tag name to the
+// pojo's simple name and delegates to the private two-arg overload
+// implemented above as `xml_mapper_map_xml_to_object`. Renamed with a
+// `_root` suffix because Odin lacks Java-style overloading; the
+// suffix flags this as the entry call (no parent tag in scope yet).
+xml_mapper_map_xml_to_object_root :: proc(self: ^Xml_Mapper, pojo: ^Class) -> (instance: rawptr, err: ^Xml_Parsing_Exception) {
+	return xml_mapper_map_xml_to_object(self, pojo, class_get_simple_name(pojo))
+}

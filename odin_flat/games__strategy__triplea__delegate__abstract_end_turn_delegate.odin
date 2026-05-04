@@ -460,3 +460,45 @@ abstract_end_turn_delegate_lambda__get_single_neighbor_blockades_then_highest_to
 	}
 	return territory_attachment_get_production(t.territory_attachment)
 }
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#canPlayerCollectIncome(GamePlayer, GameMap)
+// Java:
+//   private static boolean canPlayerCollectIncome(final GamePlayer player, final GameMap gameMap) {
+//     return TerritoryAttachment.doWeHaveEnoughCapitalsToProduce(player, gameMap);
+//   }
+abstract_end_turn_delegate_can_player_collect_income :: proc(
+	player: ^Game_Player,
+	game_map: ^Game_Map,
+) -> bool {
+	return territory_attachment_do_we_have_enough_capitals_to_produce(player, game_map)
+}
+
+// games.strategy.triplea.delegate.AbstractEndTurnDelegate#getProduction(Collection<Territory>, GameState)
+// Java:
+//   public static int getProduction(final Collection<Territory> territories, final GameState data) {
+//     int value = 0;
+//     for (final Territory current : territories) {
+//       if (Matches.territoryCanCollectIncomeFrom(current.getOwner()).test(current)) {
+//         value += TerritoryAttachment.get(current).map(TerritoryAttachment::getProduction).orElse(0);
+//       }
+//     }
+//     return value;
+//   }
+// `data` is unused in the Java body (the predicate pulls properties via
+// the player's GameData reference), so it is accepted for signature
+// fidelity and ignored.
+abstract_end_turn_delegate_get_production :: proc(
+	territories: [dynamic]^Territory,
+	data: ^Game_State,
+) -> i32 {
+	_ = data
+	value: i32 = 0
+	for current in territories {
+		pred, ctx := matches_territory_can_collect_income_from(territory_get_owner(current))
+		defer free(ctx)
+		if pred(ctx, current) {
+			value += territory_attachment_static_get_production(current)
+		}
+	}
+	return value
+}

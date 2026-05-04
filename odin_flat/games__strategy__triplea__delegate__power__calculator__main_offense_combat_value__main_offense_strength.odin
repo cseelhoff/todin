@@ -31,3 +31,37 @@ main_offense_combat_value_main_offense_strength_get_support_given :: proc(
 		self.support_from_enemies,
 	)
 }
+
+// Java: MainOffenseStrength.getStrength(Unit)
+//   final UnitAttachment ua = unit.getUnitAttachment();
+//   int strength = ua.getAttack(unit.getOwner());
+//   if (ua.getIsMarine() != 0 && unit.getWasAmphibious()) {
+//     strength += ua.getIsMarine();
+//   }
+//   return StrengthValue.of(gameDiceSides, strength)
+//       .add(TerritoryEffectHelper.getTerritoryCombatBonus(unit.getType(), territoryEffects, false))
+//       .add(supportFromFriends.giveSupportToUnit(unit))
+//       .add(supportFromEnemies.giveSupportToUnit(unit));
+main_offense_combat_value_main_offense_strength_get_strength :: proc(
+	self: ^Main_Offense_Combat_Value_Main_Offense_Strength,
+	unit: ^Unit,
+) -> ^Strength_Value {
+	ua := unit_get_unit_attachment(unit)
+	strength: i32 = unit_attachment_get_attack(ua)
+	is_marine := unit_attachment_get_is_marine(ua)
+	if is_marine != 0 && unit_get_was_amphibious(unit) {
+		strength += is_marine
+	}
+	sv := strength_value_of(i32(self.game_dice_sides), strength)
+	sv = strength_value_add(
+		sv,
+		territory_effect_helper_get_territory_combat_bonus(
+			unit_get_type(unit),
+			self.territory_effects,
+			false,
+		),
+	)
+	sv = strength_value_add(sv, available_supports_give_support_to_unit(self.support_from_friends, unit))
+	sv = strength_value_add(sv, available_supports_give_support_to_unit(self.support_from_enemies, unit))
+	return sv
+}
