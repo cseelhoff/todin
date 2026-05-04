@@ -578,3 +578,26 @@ pro_territory_get_all_defenders_for_carrier_calcs :: proc(
 pro_territory_put_amphib_attack_map :: proc(self: ^Pro_Territory, transport: ^Unit, amphib_units: [dynamic]^Unit) {
 	self.amphib_attack_map[transport] = amphib_units
 }
+
+// games.strategy.triplea.ai.pro.data.ProTerritory#estimateBattleResult(ProOddsCalculator, GamePlayer)
+pro_territory_estimate_battle_result :: proc(
+	self: ^Pro_Territory,
+	calc: ^Pro_Odds_Calculator,
+	player: ^Game_Player,
+) {
+	bombarding_units := make([dynamic]^Unit)
+	for u, _ in self.bombard_territory_map {
+		append(&bombarding_units, u)
+	}
+	pro_territory_set_battle_result(
+		self,
+		pro_odds_calculator_estimate_attack_battle_results(
+			calc,
+			self.pro_data,
+			self.territory,
+			pro_territory_get_units(self),
+			pro_territory_get_max_enemy_defenders(self, player),
+			bombarding_units,
+		),
+	)
+}

@@ -208,6 +208,67 @@ trigger_attachment_get_triggers :: proc(
 }
 
 // ---------------------------------------------------------------------------
+// collectAndFireTriggers(Set<GamePlayer>, Predicate<TriggerAttachment>,
+//                        IDelegateBridge, String beforeOrAfter, String stepName)
+//
+// Collects all triggers for the given players matching `triggerMatch`,
+// gathers and tests every condition they reference, filters to the
+// satisfied subset, then fires them with the standard
+// FireTriggerParams(beforeOrAfter, stepName, true, true, true, true).
+// `getMatches` is inlined because Java's predicate carries a captured
+// ctx (`isSatisfiedMatch`) that does not fit `collection_utils_get_matches`'
+// `proc(rawptr) -> bool` signature.
+// ---------------------------------------------------------------------------
+trigger_attachment_collect_and_fire_triggers :: proc(
+	players: map[^Game_Player]struct {},
+	trigger_match: proc(rawptr, ^Trigger_Attachment) -> bool,
+	trigger_match_ctx: rawptr,
+	bridge: ^I_Delegate_Bridge,
+	before_or_after: string,
+	step_name: string,
+) {
+	to_fire_possible := trigger_attachment_collect_for_all_triggers_matching(
+		players,
+		trigger_match,
+		trigger_match_ctx,
+	)
+	if len(to_fire_possible) == 0 {
+		return
+	}
+	tested_conditions := trigger_attachment_collect_tests_for_all_triggers_simple(
+		to_fire_possible,
+		bridge,
+	)
+	satisfied_pred, satisfied_ctx := abstract_trigger_attachment_is_satisfied_match(
+		tested_conditions,
+	)
+	to_fire_tested_and_satisfied: [dynamic]^Trigger_Attachment
+	defer delete(to_fire_tested_and_satisfied)
+	for t in to_fire_possible {
+		if satisfied_pred(satisfied_ctx, t) {
+			append(&to_fire_tested_and_satisfied, t)
+		}
+	}
+	if len(to_fire_tested_and_satisfied) == 0 {
+		return
+	}
+	to_fire_set := make(map[^Trigger_Attachment]struct {})
+	defer delete(to_fire_set)
+	for t in to_fire_tested_and_satisfied {
+		to_fire_set[t] = {}
+	}
+	params := fire_trigger_params_new(
+		before_or_after,
+		step_name,
+		true,
+		true,
+		true,
+		true,
+	)
+	trigger_attachment_fire_triggers(to_fire_set, tested_conditions, bridge, params)
+}
+
+// ---------------------------------------------------------------------------
 // collectForAllTriggersMatching(Set<GamePlayer>, Predicate<TriggerAttachment>)
 // Streams every player's matching triggers into one Set.
 // ---------------------------------------------------------------------------

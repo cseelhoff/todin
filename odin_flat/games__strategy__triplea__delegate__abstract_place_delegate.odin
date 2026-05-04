@@ -2363,3 +2363,467 @@ abstract_place_delegate_get_units_to_be_placed :: proc(
 	delete(placeable_units2)
 	return limited, true
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#checkProduction(Territory,Collection,GamePlayer)
+// Test whether the territory has the factory resources to support the placement.
+abstract_place_delegate_check_production :: proc(
+	self:   ^Abstract_Place_Delegate,
+	to:     ^Territory,
+	units:  [dynamic]^Unit,
+	player: ^Game_Player,
+) -> Maybe(string) {
+	producers := abstract_place_delegate_get_all_producers_3(self, to, player, units)
+	defer delete(producers)
+	if len(producers) == 0 {
+		return fmt.aprintf("No factory in or adjacent to %s", territory_to_string(to))
+	}
+	// if it's an original factory then unlimited production
+	cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(self, to, units, player)
+	for i := 1; i < len(producers); i += 1 {
+		j := i
+		for j > 0 && cmp_fn(cmp_ctx, producers[j], producers[j - 1]) < 0 {
+			tmp := producers[j]
+			producers[j] = producers[j - 1]
+			producers[j - 1] = tmp
+			j -= 1
+		}
+	}
+	free(cmp_ctx)
+	if !abstract_place_delegate_get_can_all_units_with_requires_units_be_placed_correctly(self, units, to) {
+		return "Cannot place more units which require units, than production capacity of territories with the required units"
+	}
+	max_units_to_be_placed := abstract_place_delegate_get_max_units_to_be_placed(self, units, to, player)
+	if max_units_to_be_placed != -1 && max_units_to_be_placed < i32(len(units)) {
+		return fmt.aprintf("Cannot place %d more units in %s", len(units), territory_to_string(to))
+	}
+	return nil
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#canUnitsBePlaced(Territory,Collection,GamePlayer)
+// Returns Optional.empty() if the units can be placed in `to`; otherwise an error.
+abstract_place_delegate_can_units_be_placed :: proc(
+	self:   ^Abstract_Place_Delegate,
+	to:     ^Territory,
+	units:  [dynamic]^Unit,
+	player: ^Game_Player,
+) -> Maybe(string) {
+	allowed_units, allowed_ok := abstract_place_delegate_get_units_to_be_placed(self, to, units, player)
+	defer delete(allowed_units)
+	if !allowed_ok {
+		return fmt.aprintf("Cannot place these units in %s", territory_to_string(to))
+	}
+	// allowedUnits.containsAll(units)
+	for u in units {
+		found := false
+		for a in allowed_units {
+			if a == u {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.aprintf("Cannot place these units in %s", territory_to_string(to))
+		}
+	}
+	// Stacking limits over the full collection.
+	existing_at_to: [dynamic]^Unit
+	if existing, ok := self.produced[to]; ok {
+		existing_at_to = make([dynamic]^Unit)
+		for u in existing {
+			append(&existing_at_to, u)
+		}
+	} else {
+		existing_at_to = make([dynamic]^Unit)
+	}
+	defer delete(existing_at_to)
+	filtered_units := unit_stacking_limit_filter_filter_units(
+		units,
+		UNIT_STACKING_LIMIT_FILTER_PLACEMENT_LIMIT,
+		player,
+		to,
+		existing_at_to,
+	)
+	defer delete(filtered_units)
+	if len(units) != len(filtered_units) {
+		return fmt.aprintf("Cannot place these units in %s", territory_to_string(to))
+	}
+	construction_map := abstract_place_delegate_how_many_of_each_construction_can_place(self, to, to, units, player)
+	defer delete(construction_map)
+	for current_unit in units {
+		if !matches_pred_unit_is_construction(nil, current_unit) {
+			continue
+		}
+		ua := unit_get_unit_attachment(current_unit)
+		ct := unit_attachment_get_construction_type(ua)
+		construction_map[ct] = construction_map[ct] - 1
+	}
+	for _, v in construction_map {
+		if v < 0 {
+			return fmt.aprintf("Too many constructions in %s", territory_to_string(to))
+		}
+	}
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	capitals_list_owned := territory_attachment_get_all_currently_owned_capitals(player, game_data_get_map(data))
+	defer delete(capitals_list_owned)
+	to_in_capitals := false
+	for c in capitals_list_owned {
+		if c == to {
+			to_in_capitals = true
+			break
+		}
+	}
+	if !to_in_capitals && abstract_place_delegate_is_placement_in_capital_restricted(player) {
+		return "Cannot place these units outside of the capital"
+	}
+	if territory_is_water(to) {
+		can_land := abstract_place_delegate_validate_new_air_can_land_on_carriers(to, units)
+		if _, has := can_land.?; has {
+			return can_land
+		}
+	} else {
+		// make sure we own the territory
+		if !territory_is_owned_by(to, player) {
+			if game_step_properties_helper_is_bid(data) {
+				pa := player_attachment_get(territory_get_owner(to))
+				gives_control := false
+				if pa != nil {
+					for gp in player_attachment_get_give_unit_control(pa) {
+						if gp == player {
+							gives_control = true
+							break
+						}
+					}
+				}
+				if !gives_control {
+					owned_p, owned_c := matches_unit_is_owned_by(player)
+					any_owned := false
+					for u in to.unit_collection.units {
+						if owned_p(owned_c, u) {
+							any_owned = true
+							break
+						}
+					}
+					free(owned_c)
+					if !any_owned {
+						return abstract_place_delegate_get_error_message_you_do_not_own(to)
+					}
+				}
+			} else {
+				return abstract_place_delegate_get_error_message_you_do_not_own(to)
+			}
+		}
+		// make sure all units are land
+		if len(units) == 0 {
+			return "Can't place sea units on land"
+		}
+		all_not_sea := true
+		for u in units {
+			if !matches_pred_unit_is_not_sea(nil, u) {
+				all_not_sea = false
+				break
+			}
+		}
+		if !all_not_sea {
+			return "Can't place sea units on land"
+		}
+	}
+	// make sure we can place consuming units
+	if !abstract_place_delegate_can_we_consume_units(self, units, to, nil) {
+		return "Not Enough Units To Upgrade or Be Consumed"
+	}
+	// no further restrictions if game disables them
+	if !abstract_place_delegate_has_unit_placement_restrictions(self) {
+		return nil
+	}
+	territory_production := territory_attachment_static_get_production(to)
+	for current_unit in units {
+		ua := unit_get_unit_attachment(current_unit)
+		required_production := unit_attachment_get_can_only_be_placed_in_territory_valued_at_x(ua)
+		if required_production != -1 && required_production > territory_production {
+			return fmt.aprintf(
+				"Cannot place these units in %s due to Unit Placement Restrictions on Territory Value",
+				territory_to_string(to),
+			)
+		}
+		if unit_attachment_unit_placement_restrictions_contain(ua, to) {
+			return fmt.aprintf(
+				"Cannot place these units in %s due to Unit Placement Restrictions",
+				territory_to_string(to),
+			)
+		}
+		only_orig_p, only_orig_c := matches_unit_can_only_place_in_original_territories()
+		if only_orig_p(only_orig_c, current_unit) {
+			orig_p, orig_c := matches_territory_is_originally_owned_by(player)
+			is_orig := orig_p(orig_c, to)
+			free(orig_c)
+			if !is_orig {
+				return fmt.aprintf(
+					"Cannot place these units in %s as territory is not originally owned",
+					territory_to_string(to),
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getPlaceableUnits(Collection,Territory)
+// Java:
+//   final Optional<String> error = canProduce(to, units, player);
+//   if (error.isPresent()) return new PlaceableUnits(error.get());
+//   final Collection<Unit> placeableUnits = getUnitsToBePlaced(to, units, player);
+//   final int maxUnits = getMaxUnitsToBePlaced(placeableUnits, to, player);
+//   return new PlaceableUnits(placeableUnits, maxUnits);
+abstract_place_delegate_get_placeable_units :: proc(
+	self:  ^Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	to:    ^Territory,
+) -> ^Placeable_Units {
+	result := new(Placeable_Units)
+	error := abstract_place_delegate_can_produce_to(self, to, units, self.player)
+	if msg, has := error.?; has {
+		placeable_units_init_error(result, msg)
+		return result
+	}
+	placeable_units, _ := abstract_place_delegate_get_units_to_be_placed(self, to, units, self.player)
+	max_units := abstract_place_delegate_get_max_units_to_be_placed(self, placeable_units, to, self.player)
+	placeable_units_init_units(result, placeable_units, max_units)
+	return result
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#isValidPlacement(Collection,Territory,GamePlayer)
+// Java body translated 1:1: chains the placement validation predicates and
+// returns the first error message encountered, or nil if every check passes.
+abstract_place_delegate_is_valid_placement :: proc(
+	self:   ^Abstract_Place_Delegate,
+	units:  [dynamic]^Unit,
+	at:     ^Territory,
+	player: ^Game_Player,
+) -> Maybe(string) {
+	// do we hold enough units
+	error := abstract_place_delegate_player_has_enough_units(units, player)
+	if _, has := error.?; has {
+		return error
+	}
+	// can we produce that much
+	error = abstract_place_delegate_can_produce_to(self, at, units, player)
+	if _, has := error.?; has {
+		return error
+	}
+	// can we produce that much
+	error = abstract_place_delegate_check_production(self, at, units, player)
+	if _, has := error.?; has {
+		return error
+	}
+	// can we place it
+	return abstract_place_delegate_can_units_be_placed(self, at, units, player)
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#placeUnits(java.util.Collection,games.strategy.engine.data.Territory)
+// Greedy placement: validates, sorts producers by best-producer comparator,
+// then walks producers consuming units up to each producer's max. Reports
+// "Not enough unit production territories available" via the bridge display
+// channel when units remain unplaced, and plays the appropriate placement
+// sound clip. Returns Optional.empty() on success; any earlier validation
+// error short-circuits and is returned as-is.
+abstract_place_delegate_place_units :: proc(
+	self:  ^Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	at:    ^Territory,
+) -> Maybe(string) {
+	if len(units) == 0 {
+		return nil
+	}
+	error := abstract_place_delegate_is_valid_placement(self, units, at, self.player)
+	if _, has := error.?; has {
+		return error
+	}
+	producers := abstract_place_delegate_get_all_producers(self, at, self.player, units, false)
+	cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(self, at, units, self.player)
+	for i := 1; i < len(producers); i += 1 {
+		j := i
+		for j > 0 && cmp_fn(cmp_ctx, producers[j], producers[j - 1]) < 0 {
+			tmp := producers[j]
+			producers[j] = producers[j - 1]
+			producers[j - 1] = tmp
+			j -= 1
+		}
+	}
+	free(cmp_ctx)
+	max_placeable_map := abstract_place_delegate_get_max_units_to_be_placed_map(self, units, at, self.player)
+	defer free(max_placeable_map)
+
+	// sort both producers and units so that the "to/at" territory comes first,
+	// and so that all constructions come first (constructions must be produced
+	// in the same territory they are going into).
+	units_left_to_place := make([dynamic]^Unit)
+	for u in units {
+		append(&units_left_to_place, u)
+	}
+	construction_cmp := abstract_place_delegate_get_unit_construction_comparator()
+	for i := 1; i < len(units_left_to_place); i += 1 {
+		j := i
+		for j > 0 && construction_cmp(units_left_to_place[j], units_left_to_place[j - 1]) < 0 {
+			tmp := units_left_to_place[j]
+			units_left_to_place[j] = units_left_to_place[j - 1]
+			units_left_to_place[j - 1] = tmp
+			j -= 1
+		}
+	}
+
+	for len(units_left_to_place) > 0 && len(producers) > 0 {
+		// Get next producer territory
+		producer := producers[0]
+		ordered_remove(&producers, 0)
+
+		max_placeable := integer_map_get_int(max_placeable_map, rawptr(producer))
+		if max_placeable == 0 {
+			continue
+		}
+
+		// units may have special restrictions like RequiresUnits
+		units_can_be_placed_by_this_producer := make([dynamic]^Unit)
+		if abstract_place_delegate_has_unit_placement_restrictions(self) {
+			req_p, req_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, producer, false)
+			for u in units_left_to_place {
+				if req_p(req_c, u) {
+					append(&units_can_be_placed_by_this_producer, u)
+				}
+			}
+			free(req_c)
+		} else {
+			for u in units_left_to_place {
+				append(&units_can_be_placed_by_this_producer, u)
+			}
+		}
+
+		hardest_cmp := abstract_place_delegate_get_hardest_to_place_with_requires_units_restrictions()
+		for i := 1; i < len(units_can_be_placed_by_this_producer); i += 1 {
+			j := i
+			for j > 0 && hardest_cmp(units_can_be_placed_by_this_producer[j], units_can_be_placed_by_this_producer[j - 1]) < 0 {
+				tmp := units_can_be_placed_by_this_producer[j]
+				units_can_be_placed_by_this_producer[j] = units_can_be_placed_by_this_producer[j - 1]
+				units_can_be_placed_by_this_producer[j - 1] = tmp
+				j -= 1
+			}
+		}
+		max_for_this_producer := abstract_place_delegate_get_max_units_to_be_placed_from(
+			self, producer, units_can_be_placed_by_this_producer, at, self.player,
+		)
+		// don't forget that -1 == infinite
+		if max_for_this_producer == -1 || max_for_this_producer >= i32(len(units_can_be_placed_by_this_producer)) {
+			abstract_place_delegate_perform_place_from(
+				self, producer, units_can_be_placed_by_this_producer, at, self.player,
+			)
+			for moved in units_can_be_placed_by_this_producer {
+				for i := len(units_left_to_place) - 1; i >= 0; i -= 1 {
+					if units_left_to_place[i] == moved {
+						ordered_remove(&units_left_to_place, i)
+					}
+				}
+			}
+			delete(units_can_be_placed_by_this_producer)
+			continue
+		}
+		needed_extra := i32(len(units_can_be_placed_by_this_producer)) - max_for_this_producer
+		if max_placeable > max_for_this_producer {
+			abstract_place_delegate_free_placement_capacity(
+				self, producer, needed_extra, units_can_be_placed_by_this_producer, at, self.player,
+			)
+			new_max_for_this_producer := abstract_place_delegate_get_max_units_to_be_placed_from(
+				self, producer, units_can_be_placed_by_this_producer, at, self.player,
+			)
+			if new_max_for_this_producer != max_placeable && needed_extra > new_max_for_this_producer {
+				panic(fmt.aprintf(
+					"getMaxUnitsToBePlaced originally returned: %d, \nWhich is not the same as it is returning after using freePlacementCapacity: %d, \nFor territory: %s, Current Producer: %s",
+					max_placeable,
+					new_max_for_this_producer,
+					default_named_get_name(&at.named_attachable.default_named),
+					default_named_get_name(&producer.named_attachable.default_named),
+				))
+			}
+		}
+		// CollectionUtils.getNMatches(unitsCanBePlacedByThisProducer, maxPlaceable, it -> true)
+		placed_units := make([dynamic]^Unit)
+		taken: i32 = 0
+		for u in units_can_be_placed_by_this_producer {
+			if taken >= max_placeable {
+				break
+			}
+			if abstract_place_delegate_lambda_place_units_1(u) {
+				append(&placed_units, u)
+				taken += 1
+			}
+		}
+		abstract_place_delegate_perform_place_from(self, producer, placed_units, at, self.player)
+		for moved in placed_units {
+			for i := len(units_left_to_place) - 1; i >= 0; i -= 1 {
+				if units_left_to_place[i] == moved {
+					ordered_remove(&units_left_to_place, i)
+				}
+			}
+		}
+		delete(placed_units)
+		delete(units_can_be_placed_by_this_producer)
+	}
+	delete(producers)
+
+	bridge := abstract_delegate_get_bridge(&self.abstract_delegate)
+	if len(units_left_to_place) > 0 {
+		display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+		send_to := make([dynamic]^Game_Player)
+		append(&send_to, self.player)
+		exclude := make([dynamic]^Game_Player)
+		i_display_report_message_to_players(
+			display,
+			send_to,
+			exclude,
+			"Not enough unit production territories available",
+			"Unit Placement Canceled",
+		)
+		delete(send_to)
+		delete(exclude)
+	}
+	delete(units_left_to_place)
+
+	// play a sound
+	sound := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+	infra_p, infra_c := matches_unit_is_infrastructure()
+	has_infra := false
+	for u in units {
+		if infra_p(infra_c, u) {
+			has_infra = true
+			break
+		}
+	}
+	if has_infra {
+		headless_sound_channel_play_sound_for_all(sound, "placed_infrastructure", self.player)
+	} else {
+		sea_p, sea_c := matches_unit_is_sea()
+		has_sea := false
+		for u in units {
+			if sea_p(sea_c, u) {
+				has_sea = true
+				break
+			}
+		}
+		if has_sea {
+			headless_sound_channel_play_sound_for_all(sound, "placed_sea", self.player)
+		} else {
+			air_p, air_c := matches_unit_is_air()
+			has_air := false
+			for u in units {
+				if air_p(air_c, u) {
+					has_air = true
+					break
+				}
+			}
+			if has_air {
+				headless_sound_channel_play_sound_for_all(sound, "placed_air", self.player)
+			} else {
+				headless_sound_channel_play_sound_for_all(sound, "placed_land", self.player)
+			}
+		}
+	}
+	return nil
+}

@@ -506,3 +506,105 @@ route_get_fuel_costs_and_units_charged_flat_fuel_cost :: proc(
 	}
 	return movement_charge, units_charged_flat_fuel_cost
 }
+
+// Java: Route#getFuelChanges(Collection<Unit>, Route, GamePlayer, GameData)
+//   final CompositeChange changes = new CompositeChange();
+//   final Tuple<ResourceCollection, Set<Unit>> tuple =
+//       Route.getFuelCostsAndUnitsChargedFlatFuelCost(units, route, player, data, false);
+//   if (!tuple.getFirst().isEmpty()) {
+//     changes.add(ChangeFactory.removeResourceCollection(player, tuple.getFirst()));
+//     for (final Unit unit : tuple.getSecond()) {
+//       changes.add(ChangeFactory.unitPropertyChange(
+//           unit, Boolean.TRUE, Unit.PropertyName.CHARGED_FLAT_FUEL_COST));
+//     }
+//   }
+//   return changes;
+route_get_fuel_changes :: proc(
+	units: []^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Change {
+	changes := composite_change_new()
+	cost, charged_units := route_get_fuel_costs_and_units_charged_flat_fuel_cost(
+		units,
+		route,
+		player,
+		data,
+		false,
+	)
+	if !resource_collection_is_empty(cost) {
+		composite_change_add(
+			changes,
+			change_factory_remove_resource_collection(player, cost),
+		)
+		for unit in charged_units {
+			boxed := new(bool)
+			boxed^ = true
+			composite_change_add(
+				changes,
+				change_factory_unit_property_change_property_name(
+					unit,
+					rawptr(boxed),
+					.Charged_Flat_Fuel_Cost,
+				),
+			)
+		}
+	}
+	return &changes.change
+}
+
+// Java: Route#getMovementFuelCostCharge(Collection<Unit>, Route, GamePlayer, GameData)
+//   return Route.getFuelCostsAndUnitsChargedFlatFuelCost(units, route, player, data, false)
+//       .getFirst();
+route_get_movement_fuel_cost_charge :: proc(
+	units: []^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Resource_Collection {
+	cost, _ := route_get_fuel_costs_and_units_charged_flat_fuel_cost(
+		units,
+		route,
+		player,
+		data,
+		false,
+	)
+	return cost
+}
+
+// Java: Route#getScrambleFuelCostCharge(Collection<Unit>, Territory, Territory, GameData)
+// Calculates how much fuel each player needs to scramble the specified units.
+// Builds a one-step out-and-back route, sums per-unit movement fuel cost (out)
+// plus flat-fuel return-trip cost, and aggregates by owning player.
+route_get_scramble_fuel_cost_charge :: proc(
+	units: []^Unit,
+	from: ^Territory,
+	to: ^Territory,
+	data: ^Game_Data,
+) -> map[^Game_Player]^Resource_Collection {
+	result: map[^Game_Player]^Resource_Collection
+	to_route := route_new_from_start_and_steps(from, to)
+	return_route := route_new_from_start_and_steps(to, from)
+	for unit in units {
+		player := unit_get_owner(unit)
+		cost := resource_collection_new(data)
+		unit_list := []^Unit{unit}
+		movement := route_get_movement_fuel_cost_charge(unit_list, to_route, player, data)
+		resource_collection_add(cost, movement)
+		flat, _ := route_get_fuel_costs_and_units_charged_flat_fuel_cost(
+			unit_list,
+			return_route,
+			player,
+			data,
+			true,
+		)
+		resource_collection_add(cost, flat)
+		if existing, ok := result[player]; ok {
+			resource_collection_add(existing, cost)
+		} else if !resource_collection_is_empty(cost) {
+			result[player] = cost
+		}
+	}
+	return result
+}

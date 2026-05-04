@@ -497,3 +497,155 @@ pro_odds_calculator_calculate_battle_results_2 :: proc(
 	)
 }
 
+// Java: ProOddsCalculator#estimateAttackBattleResults
+//   final ProBattleResult result =
+//       checkIfNoAttackersOrDefenders(proData, t, attackingUnits, defendingUnits, true);
+//   if (result != null) return result;
+//   final double strengthDifference =
+//       ProBattleUtils.estimateStrengthDifference(t, attackingUnits, defendingUnits);
+//   if (strengthDifference < 45) {
+//     return new ProBattleResult(0, -999, false, List.of(), defendingUnits, 1);
+//   }
+//   return callBattleCalc(proData, t, attackingUnits, defendingUnits, bombardingUnits);
+pro_odds_calculator_estimate_attack_battle_results :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	result := pro_odds_calculator_check_if_no_attackers_or_defenders(
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		true,
+	)
+	if result != nil {
+		return result
+	}
+
+	strength_difference := pro_battle_utils_estimate_strength_difference(
+		t,
+		attacking_units,
+		defending_units,
+	)
+	if strength_difference < 45 {
+		return pro_battle_result_new(
+			0,
+			-999,
+			false,
+			make([dynamic]^Unit),
+			defending_units,
+			1,
+		)
+	}
+	return pro_odds_calculator_call_battle_calc_5(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+	)
+}
+
+// Java: ProOddsCalculator#estimateDefendBattleResults(ProData, Territory, ...)
+//   final ProBattleResult result =
+//       checkIfNoAttackersOrDefenders(proData, t, attackingUnits, defendingUnits, true);
+//   if (result != null) return result;
+//   final double strengthDifference =
+//       ProBattleUtils.estimateStrengthDifference(t, attackingUnits, defendingUnits);
+//   if (strengthDifference > 55) {
+//     final boolean isLandAndCanOnlyBeAttackedByAir =
+//         !t.isWater() && !attackingUnits.isEmpty()
+//             && attackingUnits.stream().allMatch(Matches.unitIsAir());
+//     return new ProBattleResult(
+//         100 + strengthDifference,
+//         999 + strengthDifference,
+//         !isLandAndCanOnlyBeAttackedByAir,
+//         attackingUnits,
+//         List.of(),
+//         1);
+//   }
+//   return callBattleCalc(proData, t, attackingUnits, defendingUnits, bombardingUnits);
+pro_odds_calculator_estimate_defend_battle_results :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	result := pro_odds_calculator_check_if_no_attackers_or_defenders(
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		true,
+	)
+	if result != nil {
+		return result
+	}
+
+	strength_difference := pro_battle_utils_estimate_strength_difference(
+		t,
+		attacking_units,
+		defending_units,
+	)
+	if strength_difference > 55 {
+		air_p, air_c := matches_unit_is_air()
+		all_air := true
+		for u in attacking_units {
+			if !air_p(air_c, u) {
+				all_air = false
+				break
+			}
+		}
+		is_land_and_can_only_be_attacked_by_air :=
+			!territory_is_water(t) && len(attacking_units) > 0 && all_air
+		return pro_battle_result_new(
+			100 + strength_difference,
+			999 + strength_difference,
+			!is_land_and_can_only_be_attacked_by_air,
+			attacking_units,
+			make([dynamic]^Unit),
+			1,
+		)
+	}
+	return pro_odds_calculator_call_battle_calc_5(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+	)
+}
+
+
+// Java: ProOddsCalculator#estimateDefendBattleResults(ProData, ProTerritory, Collection<Unit>)
+//   return estimateDefendBattleResults(
+//       proData, proTerritory.getTerritory(), proTerritory.getMaxEnemyUnits(),
+//       defenders, proTerritory.getMaxEnemyBombardUnits());
+pro_odds_calculator_estimate_defend_battle_results_3 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	pro_territory: ^Pro_Territory,
+	defenders: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	bombard_set := pro_territory_get_max_enemy_bombard_units(pro_territory)
+	bombarding_units := make([dynamic]^Unit)
+	for u, _ in bombard_set {
+		append(&bombarding_units, u)
+	}
+	return pro_odds_calculator_estimate_defend_battle_results(
+		self,
+		pro_data,
+		pro_territory_get_territory(pro_territory),
+		pro_territory_get_max_enemy_units(pro_territory),
+		defenders,
+		bombarding_units,
+	)
+}

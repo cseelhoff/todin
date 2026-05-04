@@ -46,6 +46,79 @@ Player :: struct {
                 self: ^Player,
                 possible_units_to_attack: map[^Territory][dynamic]^Unit,
         ) -> map[^Territory]map[^Unit]Integer_Map_Resource,
+        select_casualties: proc(
+                self: ^Player,
+                select_from: [dynamic]^Unit,
+                dependents: map[^Unit][dynamic]^Unit,
+                count: i32,
+                message: string,
+                dice: ^Dice_Roll,
+                hit: ^Game_Player,
+                friendly_units: [dynamic]^Unit,
+                enemy_units: [dynamic]^Unit,
+                amphibious: bool,
+                amphibious_land_attackers: [dynamic]^Unit,
+                default_casualties: ^Casualty_List,
+                battle_id: Uuid,
+                battlesite: ^Territory,
+                allow_multiple_hits_per_unit: bool,
+        ) -> ^Casualty_Details,
+        report_error: proc(self: ^Player, error: string),
+        select_attack_units: proc(self: ^Player, unit_territory: ^Territory) -> bool,
+        select_attack_subs: proc(self: ^Player, unit_territory: ^Territory) -> bool,
+        select_attack_transports: proc(self: ^Player, unit_territory: ^Territory) -> bool,
+        scramble_units_query: proc(
+                self: ^Player,
+                scramble_to: ^Territory,
+                possible_scramblers: map[^Territory]^Tuple([dynamic]^Unit, [dynamic]^Unit),
+        ) -> map[^Territory][dynamic]^Unit,
+}
+
+// games.strategy.engine.player.Player#selectAttackUnits(Territory)
+//   Vtable dispatch through the proc field. AI/snapshot harness
+//   implementations may leave the field nil; mirroring Java's
+//   AbstractAi default we return true so the caller proceeds to
+//   resolve the battle (matches AbstractAi#selectAttackUnits).
+player_select_attack_units :: proc(self: ^Player, unit_territory: ^Territory) -> bool {
+        if self != nil && self.select_attack_units != nil {
+                return self.select_attack_units(self, unit_territory)
+        }
+        return true
+}
+
+// games.strategy.engine.player.Player#selectAttackSubs(Territory)
+//   Vtable dispatch. Default to true (Java AbstractAi default).
+player_select_attack_subs :: proc(self: ^Player, unit_territory: ^Territory) -> bool {
+        if self != nil && self.select_attack_subs != nil {
+                return self.select_attack_subs(self, unit_territory)
+        }
+        return true
+}
+
+// games.strategy.engine.player.Player#selectAttackTransports(Territory)
+//   Vtable dispatch. Default to true (Java AbstractAi default).
+player_select_attack_transports :: proc(self: ^Player, unit_territory: ^Territory) -> bool {
+        if self != nil && self.select_attack_transports != nil {
+                return self.select_attack_transports(self, unit_territory)
+        }
+        return true
+}
+
+// games.strategy.engine.player.Player#scrambleUnitsQuery(Territory, Map)
+//   Vtable dispatch. AI/snapshot harness implementations may leave
+//   the field nil; mirroring Java's AbstractAi default
+//   (returns null = no scrambling) we return an empty map so the
+//   caller's `toScramble == null` check (translated to len()==0)
+//   short-circuits the scramble for that destination.
+player_scramble_units_query :: proc(
+        self: ^Player,
+        scramble_to: ^Territory,
+        possible_scramblers: map[^Territory]^Tuple([dynamic]^Unit, [dynamic]^Unit),
+) -> map[^Territory][dynamic]^Unit {
+        if self != nil && self.scramble_units_query != nil {
+                return self.scramble_units_query(self, scramble_to, possible_scramblers)
+        }
+        return make(map[^Territory][dynamic]^Unit)
 }
 
 // games.strategy.engine.player.Player#getNumberOfFightersToMoveToNewCarrier(Collection, Territory)
@@ -62,6 +135,13 @@ player_get_number_of_fighters_to_move_to_new_carrier :: proc(
                 return self.get_number_of_fighters_to_move_to_new_carrier(self, fighters_that_can_be_moved, from)
         }
         return make([dynamic]^Unit)
+}
+
+// games.strategy.engine.player.Player#selectBombardingTerritory(Unit, Territory, Collection, boolean)
+player_select_bombarding_territory :: proc(
+	self: ^Player,
+	unit: ^Unit,
+	unit_territory: ^Territory,
 	territories: [dynamic]^Territory,
 	none_available: bool,
 ) -> ^Territory {
@@ -175,5 +255,59 @@ player_select_kamikaze_suicide_attacks :: proc(
 		return self.select_kamikaze_suicide_attacks(self, possible_units_to_attack)
 	}
 	return make(map[^Territory]map[^Unit]Integer_Map_Resource)
+}
+
+// games.strategy.engine.player.Player#selectCasualties(...)
+//   Vtable dispatch. Concrete AI (AbstractAi/DummyPlayer) and human
+//   implementations install `select_casualties`. When the field is
+//   nil (snapshot harness with no installed dispatcher), fall back to
+//   the supplied `default_casualties` echoed into a new
+//   Casualty_Details — matching the Java AbstractAi default.
+player_select_casualties :: proc(
+	self: ^Player,
+	select_from: [dynamic]^Unit,
+	dependents: map[^Unit][dynamic]^Unit,
+	count: i32,
+	message: string,
+	dice: ^Dice_Roll,
+	hit: ^Game_Player,
+	friendly_units: [dynamic]^Unit,
+	enemy_units: [dynamic]^Unit,
+	amphibious: bool,
+	amphibious_land_attackers: [dynamic]^Unit,
+	default_casualties: ^Casualty_List,
+	battle_id: Uuid,
+	battlesite: ^Territory,
+	allow_multiple_hits_per_unit: bool,
+) -> ^Casualty_Details {
+	if self != nil && self.select_casualties != nil {
+		return self.select_casualties(
+			self,
+			select_from,
+			dependents,
+			count,
+			message,
+			dice,
+			hit,
+			friendly_units,
+			enemy_units,
+			amphibious,
+			amphibious_land_attackers,
+			default_casualties,
+			battle_id,
+			battlesite,
+			allow_multiple_hits_per_unit,
+		)
+	}
+	return casualty_details_new_auto_calculated(true)
+}
+
+// games.strategy.engine.player.Player#reportError(java.lang.String)
+//   Vtable dispatch. Nil dispatch is benign no-op (matches the
+//   AbstractAi behaviour of swallowing errors during automated runs).
+player_report_error :: proc(self: ^Player, error: string) {
+	if self != nil && self.report_error != nil {
+		self.report_error(self, error)
+	}
 }
 

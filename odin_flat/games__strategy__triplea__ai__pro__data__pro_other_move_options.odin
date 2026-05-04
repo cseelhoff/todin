@@ -12,6 +12,17 @@ pro_other_move_options_new :: proc() -> ^Pro_Other_Move_Options {
 	return self
 }
 
+pro_other_move_options_new_with_moves :: proc(
+	move_map_list: [dynamic]map[^Territory]^Pro_Territory,
+	player:        ^Game_Player,
+	is_attacker:   bool,
+) -> ^Pro_Other_Move_Options {
+	self := new(Pro_Other_Move_Options)
+	self.max_move_map = pro_other_move_options_new_max_move_map(move_map_list, player, is_attacker)
+	self.move_maps = pro_other_move_options_new_move_maps(move_map_list)
+	return self
+}
+
 pro_other_move_options_get_max :: proc(self: ^Pro_Other_Move_Options, t: ^Territory) -> ^Pro_Territory {
 	return self.max_move_map[t]
 }

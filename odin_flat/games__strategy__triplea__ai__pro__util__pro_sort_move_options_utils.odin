@@ -8,27 +8,48 @@ Pro_Sort_Move_Options_Utils :: struct {}
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProSortMoveOptionsUtils
 
+// Java lambda$removeWinningTerritories$5 captures (attackMap, calc, player)
+// from the enclosing removeWinningTerritories method. Predicate<Territory>
+// test body: estimate the pending battle if not yet computed, then accept
+// only the territories where the attacker is not currently winning.
+@(private = "file")
+Pro_Sort_Move_Options_Utils_Remove_Winning_Territories_Ctx :: struct {
+	player:     ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	calc:       ^Pro_Odds_Calculator,
+}
+
+@(private = "file")
+pro_sort_move_options_utils_lambda_remove_winning_territories_5 :: proc(
+	ctx: rawptr,
+	t: ^Territory,
+) -> bool {
+	c := cast(^Pro_Sort_Move_Options_Utils_Remove_Winning_Territories_Ctx)ctx
+	patd := c.attack_map[t]
+	if pro_territory_get_battle_result(patd) == nil {
+		pro_territory_estimate_battle_result(patd, c.calc, c.player)
+	}
+	return !pro_territory_is_currently_wins(patd)
+}
+
 // Java: private static Collection<Territory> removeWinningTerritories(
 //           Collection<Territory> territories, GamePlayer player,
 //           Map<Territory, ProTerritory> attackMap, ProOddsCalculator calc)
-//   territories.stream().filter(t -> {
-//     ProTerritory patd = attackMap.get(t);
-//     if (patd.getBattleResult() == null) patd.estimateBattleResult(calc, player);
-//     return !patd.isCurrentlyWins();
-//   }).collect(Collectors.toList());
+//   territories.stream().filter(t -> { ... }).collect(Collectors.toList());
 pro_sort_move_options_utils_remove_winning_territories :: proc(
 	territories: map[^Territory]struct {},
 	player: ^Game_Player,
 	attack_map: map[^Territory]^Pro_Territory,
 	calc: ^Pro_Odds_Calculator,
 ) -> [dynamic]^Territory {
+	ctx := Pro_Sort_Move_Options_Utils_Remove_Winning_Territories_Ctx {
+		player     = player,
+		attack_map = attack_map,
+		calc       = calc,
+	}
 	result: [dynamic]^Territory
 	for t, _ in territories {
-		patd := attack_map[t]
-		if pro_territory_get_battle_result(patd) == nil {
-			pro_territory_estimate_battle_result(patd, calc, player)
-		}
-		if !pro_territory_is_currently_wins(patd) {
+		if pro_sort_move_options_utils_lambda_remove_winning_territories_5(&ctx, t) {
 			append(&result, t)
 		}
 	}

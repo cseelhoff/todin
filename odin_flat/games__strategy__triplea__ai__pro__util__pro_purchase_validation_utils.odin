@@ -485,3 +485,135 @@ pro_purchase_validation_utils_lambda_remove_invalid_purchase_options_1 :: proc(
 		combined,
 	)
 }
+
+// I_Delegate_Bridge vtable adapters that forward to a concrete
+// Pro_Dummy_Delegate_Bridge held in `concrete`. AbstractDelegate's
+// setDelegateBridgeAndPlayer stores the bridge and dispatches
+// `bridge.getData()` / `bridge.getGamePlayer()` through the vtable
+// during canUnitsBePlaced; the dummy bridge backs both.
+@(private="file")
+pro_purchase_validation_utils_pdb_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
+	return pro_dummy_delegate_bridge_get_data(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+}
+@(private="file")
+pro_purchase_validation_utils_pdb_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
+	return pro_dummy_delegate_bridge_get_game_player(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+}
+@(private="file")
+pro_purchase_validation_utils_pdb_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
+	pro_dummy_delegate_bridge_add_change(cast(^Pro_Dummy_Delegate_Bridge)self.concrete, change)
+}
+
+// Mirrors Java's static
+//   boolean canUnitsBePlaced(
+//       ProData proData, List<Unit> units, GamePlayer player,
+//       Territory t, Territory factoryTerritory, boolean isBid)
+// which validates whether `units` can legally be placed in `t` by the
+// factory at `factoryTerritory` for `player`. Java fetches the
+// place/placeBid AbstractPlaceDelegate from the GameData, requires
+// that every unit's "requiresUnits" prerequisite be satisfied by the
+// factory territory's start-of-step units when t differs from the
+// factory (non-bid only), wires up a ProDummyDelegateBridge so the
+// delegate can call getData()/getGamePlayer(), then defers to
+// AbstractPlaceDelegate.canUnitsBePlaced. Fighters being placed onto
+// new carriers in a sea zone are filtered out before validation —
+// they ride along with the carrier in placeUnits — so only the
+// non-air subset is checked here. Finally, even a clean placement is
+// rejected if the units' consumesUnits requirements are not already
+// present in the territory.
+pro_purchase_validation_utils_can_units_be_placed :: proc(
+	pro_data: ^Pro_Data,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+	t: ^Territory,
+	factory_territory: ^Territory,
+	is_bid: bool,
+) -> bool {
+	data := game_player_get_data(player)
+	delegate_name := is_bid ? "placeBid" : "place"
+	place_delegate := cast(^Abstract_Place_Delegate)game_data_get_delegate(data, delegate_name)
+	if !is_bid && t != factory_territory {
+		units_at_factory := abstract_place_delegate_units_at_start_of_step_in_territory(
+			place_delegate,
+			factory_territory,
+		)
+		req_pred, req_ctx := matches_unit_which_requires_units_has_required_units_in_list(
+			units_at_factory,
+		)
+		all_match := true
+		for u in units {
+			if !req_pred(req_ctx, u) {
+				all_match = false
+				break
+			}
+		}
+		if !all_match {
+			return false
+		}
+	}
+	dummy := pro_dummy_delegate_bridge_new(pro_data_get_pro_ai(pro_data), player, data)
+	bridge := new(I_Delegate_Bridge)
+	bridge.concrete = rawptr(dummy)
+	bridge.get_data = pro_purchase_validation_utils_pdb_get_data
+	bridge.get_game_player = pro_purchase_validation_utils_pdb_get_game_player
+	bridge.add_change = pro_purchase_validation_utils_pdb_add_change
+	abstract_delegate_set_delegate_bridge_and_player_no_websocket(
+		&place_delegate.abstract_delegate,
+		bridge,
+	)
+	error: Maybe(string)
+	if pro_purchase_validation_utils_is_placing_fighters_on_new_carriers(t, units) {
+		not_air_pred, not_air_ctx := matches_unit_is_not_air()
+		non_air_units := make([dynamic]^Unit, 0, len(units))
+		defer delete(non_air_units)
+		for u in units {
+			if not_air_pred(not_air_ctx, u) {
+				append(&non_air_units, u)
+			}
+		}
+		error = abstract_place_delegate_can_units_be_placed(place_delegate, t, non_air_units, player)
+	} else {
+		error = abstract_place_delegate_can_units_be_placed(place_delegate, t, units, player)
+	}
+	if _, has := error.?; has {
+		return false
+	}
+	return pro_purchase_validation_utils_units_to_consume_are_all_present(
+		pro_data,
+		player,
+		t,
+		units,
+	)
+}
+
+// Mirrors the Java synthetic
+//   lambda$findPurchaseOptionsForTerritory$0(
+//       GamePlayer player, ProData proData, Territory t,
+//       Territory factoryTerritory, boolean isBid, ProPurchaseOption ppo)
+// which is the body of the canUsePurchaseOption Predicate built inside
+// findPurchaseOptionsForTerritory. The lambda's captured variables are
+// promoted to ordinary parameters in the synthetic method, so this
+// proc takes them all explicitly and returns whether ppo's temp units
+// would be placeable in t (or buildable from factoryTerritory).
+pro_purchase_validation_utils_lambda_find_purchase_options_for_territory_0 :: proc(
+	player: ^Game_Player,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	factory_territory: ^Territory,
+	is_bid: bool,
+	ppo: ^Pro_Purchase_Option,
+) -> bool {
+	units := unit_type_create_temp(
+		pro_purchase_option_get_unit_type(ppo),
+		pro_purchase_option_get_quantity(ppo),
+		player,
+	)
+	return pro_purchase_validation_utils_can_units_be_placed(
+		pro_data,
+		units,
+		player,
+		t,
+		factory_territory,
+		is_bid,
+	)
+}

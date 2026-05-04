@@ -127,3 +127,44 @@ i_battle_is_empty :: proc(self: ^I_Battle) -> bool {
 	ab := cast(^Abstract_Battle)self
 	return len(ab.attacking_units) == 0
 }
+
+// games.strategy.triplea.delegate.battle.IBattle#cancelBattle(IDelegateBridge)
+// Polymorphic dispatch through the Abstract_Battle discriminators
+// (mirrors Java's runtime-resolved virtual call). AbstractBattle's
+// default implementation is empty; only MustFightBattle overrides it
+// to call endBattle(bridge). NonFightingBattle / FinishedBattle /
+// AirBattle / StrategicBombingRaidBattle inherit the empty default.
+i_battle_cancel_battle :: proc(self: ^I_Battle, bridge: ^I_Delegate_Bridge) {
+	ab := cast(^Abstract_Battle)self
+	if ab.is_must_fight_battle {
+		must_fight_battle_end_battle(cast(^Must_Fight_Battle)self, bridge)
+	}
+	// All other I_Battle subtypes inherit AbstractBattle.cancelBattle's empty body.
+}
+
+// games.strategy.triplea.delegate.battle.IBattle#addAttackChange(Route, Collection<Unit>, Map<Unit,Set<Unit>>)
+// Polymorphic dispatch using the same Abstract_Battle discriminators
+// pattern as battle_tracker_add_empty_battle_dispatch_attack_change.
+// The remaining I_Battle subtypes — Air_Battle and
+// Strategic_Bombing_Raid_Battle — are reached only through bombing/
+// air-battle pathways (BattleTracker#addBombingBattle / #addAirBattle),
+// and the call sites that flow through this thunk only construct
+// MustFightBattle / NonFightingBattle / FinishedBattle (the same set
+// served by add_empty_battle_dispatch_attack_change).
+i_battle_add_attack_change :: proc(
+	self: ^I_Battle,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	targets: map[^Unit]map[^Unit]struct{},
+) -> ^Change {
+	ab := cast(^Abstract_Battle)self
+	if ab.is_must_fight_battle {
+		return must_fight_battle_add_attack_change(cast(^Must_Fight_Battle)self, route, units, targets)
+	}
+	if ab.is_finished_battle {
+		// finished_battle's signature takes `^map[...]` (pointer);
+		// targets is local so we can take its address safely.
+		return finished_battle_add_attack_change(cast(^Finished_Battle)self, route, units, &targets)
+	}
+	return non_fighting_battle_add_attack_change(cast(^Non_Fighting_Battle)self, route, units, targets)
+}

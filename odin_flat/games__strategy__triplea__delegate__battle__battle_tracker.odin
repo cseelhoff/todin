@@ -1306,6 +1306,109 @@ battle_tracker_capture_or_destroy_units :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#addBattle(
+//     Route, Collection<Unit>, GamePlayer, IDelegateBridge,
+//     UndoableMove, Collection<Unit>)
+//
+// Java: trampoline to the 9-arg overload with bombing=false, targets=null,
+// airBattleCompleted=false.
+battle_tracker_add_battle_6 :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+	units_not_unloaded_til_end_of_route: [dynamic]^Unit,
+) {
+	battle_tracker_add_battle(
+		self,
+		route,
+		units,
+		false,
+		game_player,
+		bridge,
+		change_tracker,
+		units_not_unloaded_til_end_of_route,
+		nil,
+		false,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#addBattle(
+//     Route, Collection<Unit>, boolean, GamePlayer, IDelegateBridge,
+//     UndoableMove, Collection<Unit>, Map<Unit,Set<Unit>>, boolean)
+//
+// Java: when bombing, dispatches to either an AIR_RAID air battle (if the
+// territory could host air-battle defenders and air battles haven't yet
+// completed for this attack) or a strategic-bombing battle, then marks
+// units as having been in combat. Otherwise, optionally creates a
+// preceding AIR_BATTLE for escort-capable units, queues the must-fight
+// battle change, and — if any land or sea units are present — also
+// records an empty battle for any blitzed/conquered territories along
+// the route.
+battle_tracker_add_battle :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	bombing: bool,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+	units_not_unloaded_til_end_of_route: [dynamic]^Unit,
+	targets: ^map[^Unit]map[^Unit]struct{},
+	air_battle_completed: bool,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	end := route_get_end(route)
+	if bombing {
+		if !air_battle_completed &&
+		   properties_get_raids_may_be_preceeded_by_air_battles(game_data_get_properties(data)) &&
+		   air_battle_territory_could_possibly_have_air_battle_defenders(end, game_player, data, true) {
+			battle_tracker_add_air_battle(self, route, units, game_player, data, .AIR_RAID)
+		} else {
+			battle_tracker_add_bombing_battle(self, route, units, game_player, data, targets)
+		}
+		battle_tracker_mark_was_in_combat(units, bridge, change_tracker)
+	} else {
+		if !air_battle_completed &&
+		   properties_get_battles_may_be_preceeded_by_air_battles(game_data_get_properties(data)) &&
+		   air_battle_territory_could_possibly_have_air_battle_defenders(end, game_player, data, false) {
+			escort_p, escort_c := air_battle_attacking_ground_sea_battle_escorts()
+			escorts: [dynamic]^Unit
+			defer delete(escorts)
+			for u in units {
+				if escort_p(escort_c, u) {
+					append(&escorts, u)
+				}
+			}
+			battle_tracker_add_air_battle(self, route, escorts, game_player, data, .AIR_BATTLE)
+		}
+		change := battle_tracker_add_must_fight_battle_change(self, route, units, game_player, data)
+		battle_tracker_add_change(bridge, change_tracker, change)
+		land_p, land_c := matches_unit_is_land()
+		sea_p, sea_c := matches_unit_is_sea()
+		any_land_or_sea := false
+		for u in units {
+			if land_p(land_c, u) || sea_p(sea_c, u) {
+				any_land_or_sea = true
+				break
+			}
+		}
+		if any_land_or_sea {
+			battle_tracker_add_empty_battle(
+				self,
+				route,
+				units,
+				game_player,
+				bridge,
+				change_tracker,
+				units_not_unloaded_til_end_of_route,
+			)
+		}
+	}
+}
+
 // games.strategy.triplea.delegate.battle.BattleTracker#addAirBattle(Route, Collection<Unit>, GamePlayer, GameData, IBattle$BattleType)
 //
 // Java:
@@ -1778,3 +1881,243 @@ battle_tracker_add_must_fight_battle_change :: proc(
 	return change
 }
 
+
+// Polymorphic dispatch helper for BattleTracker#addEmptyBattle.
+// Java resolves `nonFight.addAttackChange(route, units, null)` virtually;
+// in Odin we route to the concrete proc using Abstract_Battle's
+// is_must_fight_battle / is_finished_battle discriminators (the
+// remaining NORMAL-typed I_Battle subtype is NonFightingBattle).
+battle_tracker_add_empty_battle_dispatch_attack_change :: proc(
+	battle: ^I_Battle,
+	route: ^Route,
+	units: [dynamic]^Unit,
+) -> ^Change {
+	ab := cast(^Abstract_Battle)battle
+	if ab.is_must_fight_battle {
+		return must_fight_battle_add_attack_change(cast(^Must_Fight_Battle)battle, route, units, nil)
+	}
+	if ab.is_finished_battle {
+		return finished_battle_add_attack_change(cast(^Finished_Battle)battle, route, units, nil)
+	}
+	return non_fighting_battle_add_attack_change(cast(^Non_Fighting_Battle)battle, route, units, nil)
+}
+
+// File-scope predicate composer for BattleTracker#addEmptyBattle:
+//   conquerable(t) =
+//       Matches.territoryIsEmptyOfCombatUnits(player).test(t)
+//       && (Matches.isTerritoryNotUnownedWaterAndCanBeTakenOverBy(player).test(t)
+//           || Matches.isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted(player).test(t))
+battle_tracker_add_empty_battle_is_conquerable :: proc(
+	t: ^Territory,
+	pa_p: proc(rawptr, ^Territory) -> bool,
+	pa_c: rawptr,
+	pb_p: proc(rawptr, ^Territory) -> bool,
+	pb_c: rawptr,
+	ec_p: proc(rawptr, ^Territory) -> bool,
+	ec_c: rawptr,
+) -> bool {
+	if !ec_p(ec_c, t) {
+		return false
+	}
+	return pa_p(pa_c, t) || pb_p(pb_c, t)
+}
+
+// games.strategy.triplea.delegate.battle.BattleTracker#addEmptyBattle(Route, Collection<Unit>, GamePlayer, IDelegateBridge, UndoableMove, Collection<Unit>)
+//
+// Java: builds an "empty" battle for territories conquered without a
+// fight along a blitz/move route (FinishedBattle for blitzed/middle
+// steps, NonFightingBattle when scrambling/amphibious dependencies
+// require it, else FinishedBattle for the route end). For each
+// conquered territory it records the take-over and, where applicable,
+// invokes BattleTracker#takeOver to perform the ownership change.
+battle_tracker_add_empty_battle :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	game_player: ^Game_Player,
+	bridge: ^I_Delegate_Bridge,
+	change_tracker: ^Undoable_Move,
+	units_not_unloaded_til_end_of_route: [dynamic]^Unit,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	transported_p, transported_c :=
+		matches_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list(
+			units, game_player, false,
+		)
+	can_conquer: [dynamic]^Unit
+	defer delete(can_conquer)
+	for u in units {
+		if !transported_p(transported_c, u) {
+			append(&can_conquer, u)
+		}
+	}
+	not_air_p, not_air_c := matches_unit_is_not_air()
+	any_not_air := false
+	for u in can_conquer {
+		if not_air_p(not_air_c, u) {
+			any_not_air = true
+			break
+		}
+	}
+	if !any_not_air {
+		return
+	}
+	// presentFromStartTilEnd = canConquer minus unitsNotUnloadedTilEndOfRoute.
+	present_from_start_til_end: [dynamic]^Unit
+	defer delete(present_from_start_til_end)
+	for u in can_conquer {
+		skip := false
+		if units_not_unloaded_til_end_of_route != nil {
+			for x in units_not_unloaded_til_end_of_route {
+				if x == u {
+					skip = true
+					break
+				}
+			}
+		}
+		if !skip {
+			append(&present_from_start_til_end, u)
+		}
+	}
+	can_conquer_middle_steps := false
+	for u in present_from_start_til_end {
+		if not_air_p(not_air_c, u) {
+			can_conquer_middle_steps = true
+			break
+		}
+	}
+	scrambling_enabled := properties_get_scramble_rules_in_effect(game_data_get_properties(data))
+	pa_p, pa_c := matches_is_territory_not_unowned_water_and_can_be_taken_over_by(game_player)
+	pb_p, pb_c := matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(game_player)
+	ec_p, ec_c := matches_territory_is_empty_of_combat_units(game_player)
+	conquered_territories: [dynamic]^Territory
+	defer delete(conquered_territories)
+	if can_conquer_middle_steps {
+		// Java: route.getMatches(conquerable) iterates `steps` (start excluded).
+		for t in route.steps {
+			if battle_tracker_add_empty_battle_is_conquerable(t, pa_p, pa_c, pb_p, pb_c, ec_p, ec_c) {
+				append(&conquered_territories, t)
+			}
+		}
+		// In case we begin in enemy territory and blitz out, include start.
+		if route_get_start(route) != route_get_end(route) &&
+		   battle_tracker_add_empty_battle_is_conquerable(
+			   route_get_start(route), pa_p, pa_c, pb_p, pb_c, ec_p, ec_c,
+		   ) {
+			append(&conquered_territories, route_get_start(route))
+		}
+	}
+	// Java: conqueredTerritories.remove(route.getEnd()) — handle end of route below.
+	end := route_get_end(route)
+	{
+		filtered: [dynamic]^Territory
+		for t in conquered_territories {
+			if t != end {
+				append(&filtered, t)
+			}
+		}
+		delete(conquered_territories)
+		conquered_territories = filtered
+	}
+	blitzable_p, blitzable_c := matches_territory_is_blitzable(game_player)
+	enemy_p, enemy_c := matches_is_territory_enemy(game_player)
+	for t in conquered_territories {
+		if blitzable_p(blitzable_c, t) && enemy_p(enemy_c, t) {
+			self.blitzed[t] = {}
+		}
+	}
+	for t in conquered_territories {
+		if enemy_p(enemy_c, t) {
+			self.conquered[t] = {}
+		}
+	}
+	for current in conquered_territories {
+		non_fight := battle_tracker_get_pending_battle(self, current, .NORMAL)
+		// TODO (Java): if we ever want to scramble to a blitzed territory, fix this.
+		if non_fight == nil {
+			fb := finished_battle_new(
+				current,
+				game_player,
+				self,
+				.NORMAL,
+				data,
+				.CONQUERED,
+				.ATTACKER,
+			)
+			non_fight = cast(^I_Battle)fb
+			self.pending_battles[non_fight] = {}
+			battle_records_add_battle(
+				battle_tracker_get_battle_records(self),
+				game_player,
+				i_battle_get_battle_id(non_fight),
+				current,
+				i_battle_get_battle_type(non_fight),
+			)
+		}
+		change := battle_tracker_add_empty_battle_dispatch_attack_change(non_fight, route, units)
+		battle_tracker_add_change(bridge, change_tracker, change)
+		battle_tracker_take_over(self, current, game_player, bridge, change_tracker, units)
+	}
+	// Check the last territory.
+	if battle_tracker_add_empty_battle_is_conquerable(end, pa_p, pa_c, pb_p, pb_c, ec_p, ec_c) {
+		precede := battle_tracker_get_dependent_amphibious_assault(self, route)
+		if precede == nil {
+			precede = battle_tracker_get_pending_bombing_battle(self, end)
+		}
+		// Preceding battle, or scramble-to-kill-transports on amphibious unload → NonFightingBattle.
+		use_non_fighting :=
+			precede != nil ||
+			(scrambling_enabled && route_is_unload(route) && route_has_exactly_one_step(route))
+		if use_non_fighting {
+			non_fight := battle_tracker_get_pending_battle(self, end, .NORMAL)
+			if non_fight == nil {
+				nfb := non_fighting_battle_new(end, game_player, self, data)
+				non_fight = cast(^I_Battle)nfb
+				self.pending_battles[non_fight] = {}
+				battle_records_add_battle(
+					battle_tracker_get_battle_records(self),
+					game_player,
+					i_battle_get_battle_id(non_fight),
+					end,
+					i_battle_get_battle_type(non_fight),
+				)
+			}
+			change := battle_tracker_add_empty_battle_dispatch_attack_change(non_fight, route, units)
+			battle_tracker_add_change(bridge, change_tracker, change)
+			if precede != nil {
+				battle_tracker_add_dependency(self, non_fight, precede)
+			}
+		} else {
+			if enemy_p(enemy_c, end) {
+				if blitzable_p(blitzable_c, end) {
+					self.blitzed[end] = {}
+				}
+				self.conquered[end] = {}
+			}
+			non_fight := battle_tracker_get_pending_battle(self, end, .NORMAL)
+			if non_fight == nil {
+				fb := finished_battle_new(
+					end,
+					game_player,
+					self,
+					.NORMAL,
+					data,
+					.CONQUERED,
+					.ATTACKER,
+				)
+				non_fight = cast(^I_Battle)fb
+				self.pending_battles[non_fight] = {}
+				battle_records_add_battle(
+					battle_tracker_get_battle_records(self),
+					game_player,
+					i_battle_get_battle_id(non_fight),
+					end,
+					i_battle_get_battle_type(non_fight),
+				)
+			}
+			change := battle_tracker_add_empty_battle_dispatch_attack_change(non_fight, route, units)
+			battle_tracker_add_change(bridge, change_tracker, change)
+			battle_tracker_take_over(self, end, game_player, bridge, change_tracker, units)
+		}
+	}
+}

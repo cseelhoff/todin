@@ -1040,6 +1040,27 @@ pro_transport_utils_get_units_to_add_3 :: proc(
 	return pro_transport_utils_get_units_to_add(pro_data, unit, already_moved_units, move_map)
 }
 
+// Java: () -> calc.estimateDefendBattleResults(proData, proTerritory, defendingUnits)
+// Supplier lambda inside `checkTransportDefense` passed to
+// `proTerritory.setBattleResultIfNull(...)`. Captures `calc`, `proData`,
+// `proTerritory`, and `defendingUnits`; we surface those as explicit
+// parameters mirroring the bytecode-synthesized lambda signature
+// `(ProOddsCalculator, ProData, ProTerritory, List)`. The lambda body
+// is a single delegation to `estimateDefendBattleResults`.
+pro_transport_utils_lambda_check_transport_defense_6 :: proc(
+	calc: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	pro_territory: ^Pro_Territory,
+	defending_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_estimate_defend_battle_results_3(
+		calc,
+		pro_data,
+		pro_territory,
+		defending_units,
+	)
+}
+
 // Java: public static boolean checkTransportDefense(
 //     ProData proData, ProOddsCalculator calc, ProTerritory proTerritory)
 //   final List<Unit> defendingUnits =

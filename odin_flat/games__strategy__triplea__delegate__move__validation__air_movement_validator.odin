@@ -953,3 +953,1134 @@ air_movement_validator_max_movement_left_for_these_air_units_being_validated :: 
 	return max_val
 }
 
+// Java: public static final String NOT_ALL_AIR_UNITS_CAN_LAND
+//     = "Not all air units can land";
+// Static field on AirMovementValidator. Used as the warning string
+// passed to MoveValidationResult.addDisallowedUnit by both
+// validateAirCaughtByMovingCarriersAndOwnedAndAlliedAir and
+// getAirThatMustLandOnCarriers.
+@(private = "file")
+NOT_ALL_AIR_UNITS_CAN_LAND :: "Not all air units can land"
+
+// Java: private static boolean canFindLand(
+//     final GameData data, final Unit unit, final Route route) {
+//   final Territory routeEnd = route.getEnd();
+//   final BigDecimal movementLeft = getMovementLeftForAirUnitNotMovedYet(unit, route);
+//   return canFindLand(data, unit, routeEnd, movementLeft);
+// }
+//
+// Odin can't overload, so the 3-arg Route variant is renamed
+// `..._can_find_land_3_route` (sibling of `..._can_find_land_3` for
+// the Territory variant and `..._can_find_land_4` for the
+// 4-arg BigDecimal overload). BigDecimal → f64.
+air_movement_validator_can_find_land_3_route :: proc(
+	data:  ^Game_Data,
+	unit:  ^Unit,
+	route: ^Route,
+) -> bool {
+	route_end := route_get_end(route)
+	movement_left := air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(
+		unit,
+		route,
+	)
+	return air_movement_validator_can_find_land_4(data, unit, route_end, movement_left)
+}
+
+// Java: private static boolean canFindLand(
+//     final GameData data, final Unit unit, final Territory current) {
+//   final BigDecimal movementLeft = unit.getMovementLeft();
+//   return canFindLand(data, unit, current, movementLeft);
+// }
+//
+// 3-arg Territory overload. Forwarded to by the closure-capture
+// predicate `air_movement_validator_unit_can_find_land_predicate`
+// already defined above. BigDecimal → f64.
+air_movement_validator_can_find_land_3 :: proc(
+	data:    ^Game_Data,
+	unit:    ^Unit,
+	current: ^Territory,
+) -> bool {
+	movement_left := unit_get_movement_left(unit)
+	return air_movement_validator_can_find_land_4(data, unit, current, movement_left)
+}
+
+// File-scope trampoline pair bridging the ctx-form
+// Predicate<Territory> produced by `matches_sea_can_move_over` into
+// the bare `proc(^Territory) -> bool` accepted by
+// `game_map_get_route_for_units`. Mirrors the
+// `air_movement_validator_active_can_fly_over` pattern above. Set
+// immediately before each route lookup; lookups are synchronous
+// within the validate proc below.
+@(private = "file")
+air_movement_validator_active_sea_can_move_over: proc(rawptr, ^Territory) -> bool
+
+@(private = "file")
+air_movement_validator_active_sea_can_move_over_ctx: rawptr
+
+@(private = "file")
+air_movement_validator_sea_can_move_over_trampoline :: proc(t: ^Territory) -> bool {
+	return air_movement_validator_active_sea_can_move_over(
+		air_movement_validator_active_sea_can_move_over_ctx,
+		t,
+	)
+}
+
+// Java: private static void validateAirCaughtByMovingCarriersAndOwnedAndAlliedAir(
+//     final MoveValidationResult result,
+//     final List<Territory> landingSpots,
+//     final Collection<Territory> potentialCarrierOrigins,
+//     final Map<Unit, Collection<Unit>> movedCarriersAndTheirFighters,
+//     final Collection<Unit> airThatMustLandOnCarriers,
+//     final Collection<Unit> airNotToConsider,
+//     final GamePlayer player,
+//     final Route route,
+//     final GameData data) { ... }
+//
+// Java mutates the `Collection` parameters
+// (`potentialCarrierOrigins`, `airThatMustLandOnCarriers`,
+// `airNotToConsider`, and the `movedCarriersAndTheirFighters` map)
+// and the caller observes those mutations. Odin's [dynamic]^T is a
+// header-by-value type, so we accept those four as `^[dynamic]^T` /
+// `^map[..]..` to preserve the "modifies caller's collection"
+// semantics. `landingSpots` is read-only here; pass [dynamic]^T.
+air_movement_validator_validate_air_caught_by_moving_carriers_and_owned_and_allied_air :: proc(
+	result:                            ^Move_Validation_Result,
+	landing_spots:                     [dynamic]^Territory,
+	potential_carrier_origins:         ^[dynamic]^Territory,
+	moved_carriers_and_their_fighters: ^map[^Unit][dynamic]^Unit,
+	air_that_must_land_on_carriers:    ^[dynamic]^Unit,
+	air_not_to_consider:               ^[dynamic]^Unit,
+	player:                            ^Game_Player,
+	route:                             ^Route,
+	data:                              ^Game_Data,
+) {
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	air_p, air_c := matches_unit_is_air()
+	can_land_carrier_p, can_land_carrier_c := matches_unit_can_land_on_carrier()
+	allied_p, allied_c := matches_is_unit_allied(player)
+
+	// ownedCarrierMatch:           owned AND carrier
+	// ownedAirMatch:               owned AND air AND canLandOnCarrier
+	// alliedNotOwnedAirMatch:      !owned AND allied AND air AND canLandOnCarrier
+	// alliedNotOwnedCarrierMatch:  !owned AND allied AND carrier
+	// — open-coded inline since Odin lacks predicate composition.
+
+	route_end := route_get_end(route)
+	gs := &data.game_state
+	are_neutrals_passable_by_air := air_movement_validator_are_neutrals_passable_by_air(gs)
+	landing_spots_with_carrier_capacity :=
+		air_movement_validator_populate_static_allied_and_building_carrier_capacity(
+			landing_spots[:],
+			moved_carriers_and_their_fighters^,
+			player,
+			data,
+		)
+	movement_left_for_air_to_validate :=
+		air_movement_validator_get_movement_left_for_validating_air(
+			air_that_must_land_on_carriers^[:],
+			player,
+			route,
+		)
+	defer delete(movement_left_for_air_to_validate)
+
+	for landing_spot in landing_spots {
+		// since we are here, no point looking at this place twice
+		for j := 0; j < len(potential_carrier_origins^); j += 1 {
+			if potential_carrier_origins^[j] == landing_spot {
+				ordered_remove(potential_carrier_origins, j)
+				break
+			}
+		}
+
+		air_can_reach: [dynamic]^Unit
+		for air in air_that_must_land_on_carriers^ {
+			ml := movement_left_for_air_to_validate[air]
+			if air_movement_validator_can_air_reach_this_spot(
+				air,
+				gs,
+				player,
+				route_end,
+				ml,
+				landing_spot,
+				are_neutrals_passable_by_air,
+			) {
+				append(&air_can_reach, air)
+			}
+		}
+		if len(air_can_reach) == 0 {
+			delete(air_can_reach)
+			continue
+		}
+
+		// units in landing spot, minus moved carriers, minus
+		// airNotToConsider, minus fighters travelling with already-moved
+		// carriers.
+		units_in_landing_spot: [dynamic]^Unit
+		for u in territory_get_unit_collection(landing_spot).units {
+			if _, mv := moved_carriers_and_their_fighters^[u]; mv {
+				continue
+			}
+			skip := false
+			for ant in air_not_to_consider^ {
+				if ant == u {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			for _, ftrs in moved_carriers_and_their_fighters^ {
+				found := false
+				for f in ftrs {
+					if f == u {
+						found = true
+						break
+					}
+				}
+				if found {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+			append(&units_in_landing_spot, u)
+		}
+
+		// ownedCarrierMatch
+		owned_carriers_in_landing_spot: [dynamic]^Unit
+		for u in units_in_landing_spot {
+			if owned_p(owned_c, u) && carrier_p(carrier_c, u) {
+				append(&owned_carriers_in_landing_spot, u)
+			}
+		}
+
+		// owned air here, but exclude any air that can fly to allied
+		// land. unitCanFindLand(data, landingSpot).negate()
+		ucfl_p, ucfl_ctx := air_movement_validator_unit_can_find_land(
+			data,
+			landing_spot,
+		)
+		air_in_landing_spot: [dynamic]^Unit
+		for u in units_in_landing_spot {
+			if owned_p(owned_c, u) &&
+			   air_p(air_c, u) &&
+			   can_land_carrier_p(can_land_carrier_c, u) {
+				if !ucfl_p(ucfl_ctx, u) {
+					append(&air_in_landing_spot, u)
+				}
+			}
+		}
+		// add allied air (it can't fly away)
+		for u in units_in_landing_spot {
+			if !owned_p(owned_c, u) &&
+			   allied_p(allied_c, u) &&
+			   air_p(air_c, u) &&
+			   can_land_carrier_p(can_land_carrier_c, u) {
+				append(&air_in_landing_spot, u)
+			}
+		}
+
+		landing_spot_capacity := integer_map_get_int(
+			landing_spots_with_carrier_capacity,
+			rawptr(landing_spot),
+		)
+		landing_spot_capacity += air_movement_validator_carrier_capacity(
+			owned_carriers_in_landing_spot[:],
+			landing_spot,
+		)
+		landing_spot_capacity -= air_movement_validator_carrier_cost(
+			air_in_landing_spot[:],
+		)
+
+		// airIter
+		ai := 0
+		for ai < len(air_can_reach) {
+			air := air_can_reach[ai]
+			cost := air_movement_validator_carrier_cost_unit(air)
+			if landing_spot_capacity >= cost {
+				landing_spot_capacity -= cost
+				for k := 0; k < len(air_that_must_land_on_carriers^); k += 1 {
+					if air_that_must_land_on_carriers^[k] == air {
+						ordered_remove(air_that_must_land_on_carriers, k)
+						break
+					}
+				}
+				ordered_remove(&air_can_reach, ai)
+			} else {
+				ai += 1
+			}
+		}
+		if len(air_that_must_land_on_carriers^) == 0 {
+			return
+		}
+
+		// now bring carriers here
+		ci := 0
+		for ci < len(potential_carrier_origins^) {
+			carrier_spot := potential_carrier_origins^[ci]
+			units_in_carrier_spot: [dynamic]^Unit
+			for u in territory_get_unit_collection(carrier_spot).units {
+				if _, mv := moved_carriers_and_their_fighters^[u]; mv {
+					continue
+				}
+				skip := false
+				for ant in air_not_to_consider^ {
+					if ant == u {
+						skip = true
+						break
+					}
+				}
+				if skip {
+					continue
+				}
+				for _, ftrs in moved_carriers_and_their_fighters^ {
+					found := false
+					for f in ftrs {
+						if f == u {
+							found = true
+							break
+						}
+					}
+					if found {
+						skip = true
+						break
+					}
+				}
+				if skip {
+					continue
+				}
+				append(&units_in_carrier_spot, u)
+			}
+
+			owned_carriers_in_carrier_spot: [dynamic]^Unit
+			for u in units_in_carrier_spot {
+				if owned_p(owned_c, u) && carrier_p(carrier_c, u) {
+					append(&owned_carriers_in_carrier_spot, u)
+				}
+			}
+			if len(owned_carriers_in_carrier_spot) == 0 {
+				ordered_remove(potential_carrier_origins, ci)
+				continue
+			}
+
+			ucfl2_p, ucfl2_ctx := air_movement_validator_unit_can_find_land(
+				data,
+				carrier_spot,
+			)
+			owned_air_in_carrier_spot: [dynamic]^Unit
+			for u in units_in_carrier_spot {
+				if owned_p(owned_c, u) &&
+				   air_p(air_c, u) &&
+				   can_land_carrier_p(can_land_carrier_c, u) {
+					if !ucfl2_p(ucfl2_ctx, u) {
+						append(&owned_air_in_carrier_spot, u)
+					}
+				}
+			}
+			allied_not_owned_air_in_carrier_spot: [dynamic]^Unit
+			for u in units_in_carrier_spot {
+				if !owned_p(owned_c, u) &&
+				   allied_p(allied_c, u) &&
+				   air_p(air_c, u) &&
+				   can_land_carrier_p(can_land_carrier_c, u) {
+					append(&allied_not_owned_air_in_carrier_spot, u)
+				}
+			}
+
+			must_move_with_map := move_validator_carrier_must_move_with(
+				owned_carriers_in_carrier_spot,
+				territory_get_unit_collection(carrier_spot).units,
+				player,
+			)
+
+			carrier_spot_capacity := integer_map_get_int(
+				landing_spots_with_carrier_capacity,
+				rawptr(carrier_spot),
+			)
+			if !integer_map_contains_key(
+				landing_spots_with_carrier_capacity,
+				rawptr(carrier_spot),
+			) {
+				// allied carrier capacity for territory:
+				// alliedNotOwnedCarrierMatch
+				allied_not_owned_carriers: [dynamic]^Unit
+				for u in territory_get_unit_collection(carrier_spot).units {
+					if !owned_p(owned_c, u) &&
+					   allied_p(allied_c, u) &&
+					   carrier_p(carrier_c, u) {
+						append(&allied_not_owned_carriers, u)
+					}
+				}
+				carrier_spot_capacity = air_movement_validator_carrier_capacity(
+					allied_not_owned_carriers[:],
+					carrier_spot,
+				)
+				delete(allied_not_owned_carriers)
+				integer_map_put(
+					landing_spots_with_carrier_capacity,
+					rawptr(carrier_spot),
+					carrier_spot_capacity,
+				)
+			}
+
+			if len(allied_not_owned_air_in_carrier_spot) > 0 ||
+			   len(must_move_with_map) > 0 {
+				if len(must_move_with_map) == 0 {
+					carrier_spot_capacity -= air_movement_validator_carrier_cost(
+						allied_not_owned_air_in_carrier_spot[:],
+					)
+					for u in allied_not_owned_air_in_carrier_spot {
+						append(air_not_to_consider, u)
+					}
+					if carrier_spot_capacity > 0 {
+						oi := 0
+						for oi < len(owned_air_in_carrier_spot) {
+							air := owned_air_in_carrier_spot[oi]
+							cost := air_movement_validator_carrier_cost_unit(
+								air,
+							)
+							if carrier_spot_capacity >= cost {
+								carrier_spot_capacity -= cost
+								append(air_not_to_consider, air)
+								ordered_remove(&owned_air_in_carrier_spot, oi)
+							} else {
+								oi += 1
+							}
+						}
+					}
+					integer_map_put(
+						landing_spots_with_carrier_capacity,
+						rawptr(carrier_spot),
+						carrier_spot_capacity,
+					)
+				} else {
+					// remove fighters that already moved out from
+					// must_move_with_map values
+					for k, _ in must_move_with_map {
+						old_list := must_move_with_map[k]
+						new_list: [dynamic]^Unit
+						for u in old_list {
+							already_moved := false
+							for _, ftrs in moved_carriers_and_their_fighters^ {
+								for f in ftrs {
+									if f == u {
+										already_moved = true
+										break
+									}
+								}
+								if already_moved {
+									break
+								}
+							}
+							if !already_moved {
+								append(&new_list, u)
+							}
+						}
+						delete(old_list)
+						must_move_with_map[k] = new_list
+					}
+					// alliedNotOwnedAirInCarrierSpot.removeAll(airMovingWith)
+					for _, air_moving_with in must_move_with_map {
+						for u in air_moving_with {
+							k := 0
+							for k < len(allied_not_owned_air_in_carrier_spot) {
+								if allied_not_owned_air_in_carrier_spot[k] == u {
+									ordered_remove(
+										&allied_not_owned_air_in_carrier_spot,
+										k,
+									)
+								} else {
+									k += 1
+								}
+							}
+						}
+					}
+					carrier_spot_capacity -= air_movement_validator_carrier_cost(
+						allied_not_owned_air_in_carrier_spot[:],
+					)
+					for u in allied_not_owned_air_in_carrier_spot {
+						append(air_not_to_consider, u)
+					}
+					integer_map_put(
+						landing_spots_with_carrier_capacity,
+						rawptr(carrier_spot),
+						carrier_spot_capacity,
+					)
+				}
+			}
+
+			air_movement_validator_active_sea_can_move_over,
+			air_movement_validator_active_sea_can_move_over_ctx =
+				matches_sea_can_move_over(player)
+			optional_to_landing_spot := game_map_get_route_for_units(
+				game_state_get_map(gs),
+				carrier_spot,
+				landing_spot,
+				air_movement_validator_sea_can_move_over_trampoline,
+				owned_carriers_in_carrier_spot,
+				player,
+			)
+			if optional_to_landing_spot == nil {
+				ci += 1
+				continue
+			}
+			mv_route_p, mv_route_c := matches_unit_has_enough_movement_for_route(
+				optional_to_landing_spot,
+			)
+			carriers_that_can_reach: [dynamic]^Unit
+			for u in owned_carriers_in_carrier_spot {
+				if mv_route_p(mv_route_c, u) {
+					append(&carriers_that_can_reach, u)
+				}
+			}
+			if len(carriers_that_can_reach) == 0 {
+				ci += 1
+				continue
+			}
+			carriers_that_cant_reach: [dynamic]^Unit
+			for u in owned_carriers_in_carrier_spot {
+				in_can_reach := false
+				for c2 in carriers_that_can_reach {
+					if c2 == u {
+						in_can_reach = true
+						break
+					}
+				}
+				if !in_can_reach {
+					append(&carriers_that_cant_reach, u)
+				}
+			}
+			all_carriers: [dynamic]^Unit
+			for u in carriers_that_cant_reach {
+				append(&all_carriers, u)
+			}
+			for u in carriers_that_can_reach {
+				append(&all_carriers, u)
+			}
+
+			carriers_to_move := make(map[^Unit][dynamic]^Unit)
+			carrier_full: [dynamic]^Unit
+			for carrier in all_carriers {
+				air_moving_with: [dynamic]^Unit
+				if allied_moving_with, ok := must_move_with_map[carrier]; ok {
+					for u in allied_moving_with {
+						append(&air_moving_with, u)
+					}
+				}
+				cap := air_movement_validator_carrier_capacity_unit(
+					carrier,
+					carrier_spot,
+				)
+				cap -= air_movement_validator_carrier_cost(air_moving_with[:])
+				oi := 0
+				for oi < len(owned_air_in_carrier_spot) {
+					air := owned_air_in_carrier_spot[oi]
+					cost := air_movement_validator_carrier_cost_unit(air)
+					if cap >= cost {
+						cap -= cost
+						append(&air_moving_with, air)
+						ordered_remove(&owned_air_in_carrier_spot, oi)
+					} else {
+						oi += 1
+					}
+				}
+				carriers_to_move[carrier] = air_moving_with
+				if cap <= 0 {
+					append(&carrier_full, carrier)
+				}
+			}
+
+			// if carrier_full contains all of all_carriers
+			all_full := true
+			for c2 in all_carriers {
+				in_full := false
+				for cf in carrier_full {
+					if cf == c2 {
+						in_full = true
+						break
+					}
+				}
+				if !in_full {
+					all_full = false
+					break
+				}
+			}
+			if all_full {
+				ordered_remove(potential_carrier_origins, ci)
+				continue
+			}
+			cant_full := true
+			for c2 in carriers_that_cant_reach {
+				in_full := false
+				for cf in carrier_full {
+					if cf == c2 {
+						in_full = true
+						break
+					}
+				}
+				if !in_full {
+					cant_full = false
+					break
+				}
+			}
+			if cant_full {
+				ordered_remove(potential_carrier_origins, ci)
+				// no `continue` — Java falls through to "ok now lets
+				// move them" after iter.remove().
+			}
+
+			// move them
+			for carrier in carriers_that_can_reach {
+				moved_carriers_and_their_fighters^[carrier] =
+					carriers_to_move[carrier]
+				landing_spot_capacity +=
+					air_movement_validator_carrier_capacity_unit(
+						carrier,
+						carrier_spot,
+					)
+				landing_spot_capacity -= air_movement_validator_carrier_cost(
+					carriers_to_move[carrier][:],
+				)
+			}
+
+			// reachIter
+			ri := 0
+			for ri < len(air_can_reach) {
+				air := air_can_reach[ri]
+				cost := air_movement_validator_carrier_cost_unit(air)
+				if landing_spot_capacity >= cost {
+					landing_spot_capacity -= cost
+					for k := 0; k < len(air_that_must_land_on_carriers^); k += 1 {
+						if air_that_must_land_on_carriers^[k] == air {
+							ordered_remove(air_that_must_land_on_carriers, k)
+							break
+						}
+					}
+					ordered_remove(&air_can_reach, ri)
+				} else {
+					ri += 1
+				}
+			}
+			if len(air_that_must_land_on_carriers^) == 0 {
+				return
+			}
+
+			if !cant_full {
+				ci += 1
+			}
+			// if cant_full: we already removed at ci above; do not advance.
+		}
+	}
+
+	// anyone left over cannot land
+	for air in air_that_must_land_on_carriers^ {
+		move_validation_result_add_disallowed_unit(
+			result,
+			NOT_ALL_AIR_UNITS_CAN_LAND,
+			air,
+		)
+	}
+}
+
+// Java: private static Collection<Unit> getAirThatMustLandOnCarriers(
+//     final GameData data,
+//     final Collection<Unit> ownedAir,
+//     final Route route,
+//     final MoveValidationResult result) { ... }
+//
+// Iterates the supplied owned air units, partitioning them into those
+// that can find land along the supplied route and those that cannot.
+// Units that cannot find land but can land on a carrier are returned;
+// units that cannot find land and cannot land on a carrier are
+// recorded as disallowed via the supplied MoveValidationResult.
+air_movement_validator_get_air_that_must_land_on_carriers :: proc(
+	data:      ^Game_Data,
+	owned_air: []^Unit,
+	route:     ^Route,
+	result:    ^Move_Validation_Result,
+) -> [dynamic]^Unit {
+	air_that_must_land_on_carriers := make([dynamic]^Unit, 0)
+	can_land_on_carriers, can_land_on_carriers_ctx := matches_unit_can_land_on_carrier()
+	for unit in owned_air {
+		if !air_movement_validator_can_find_land_3_route(data, unit, route) {
+			if can_land_on_carriers(can_land_on_carriers_ctx, unit) {
+				append(&air_that_must_land_on_carriers, unit)
+			} else {
+				// not everything can land on a carrier (i.e. bombers)
+				move_validation_result_add_disallowed_unit(
+					result,
+					NOT_ALL_AIR_UNITS_CAN_LAND,
+					unit,
+				)
+			}
+		}
+	}
+	return air_that_must_land_on_carriers
+}
+
+// Java: synthetic lambda body for `unitCanFindLand`:
+//   private static Predicate<Unit> unitCanFindLand(GameData data, Territory current) {
+//     return u -> canFindLand(data, u, current);   // lambda$unitCanFindLand$3
+//   }
+//
+// The captured-variable form has signature
+// `(GameData, Territory, Unit) -> boolean`, where the first two
+// arguments are the lambda's captured state and the last is the
+// predicate input. The body forwards to the 3-arg Territory overload
+// of canFindLand.
+air_movement_validator_lambda_unit_can_find_land_3 :: proc(
+	data:    ^Game_Data,
+	current: ^Territory,
+	u:       ^Unit,
+) -> bool {
+	return air_movement_validator_can_find_land_3(data, u, current)
+}
+
+// Java: static MoveValidationResult validateAirCanLand(
+//     final Collection<Unit> units, final Route route,
+//     final GamePlayer player, final MoveValidationResult result) { ... }
+//
+// Verifies every owned air unit ending the route has somewhere to
+// land — friendly land at the destination, carriers already there or
+// moving with us, or carriers reachable from nearby sea territories.
+// Disallowed units are recorded on the supplied
+// MoveValidationResult, which is mutated and returned (Java returns
+// the same instance it was given).
+air_movement_validator_validate_air_can_land :: proc(
+	units:  []^Unit,
+	route:  ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	data := game_player_get_data(player)
+	gs := &data.game_state
+
+	// First check if we even need to check (Java short-circuit cascade).
+	if air_movement_validator_get_edit_mode(gs) {
+		return result
+	}
+	any_air := false
+	{
+		air_p, air_c := matches_unit_is_air()
+		for u in units {
+			if air_p(air_c, u) {
+				any_air = true
+				break
+			}
+		}
+	}
+	if !any_air {
+		return result
+	}
+	if route_has_no_steps(route) {
+		return result
+	}
+	{
+		can_land_land_p, can_land_land_c :=
+			matches_air_can_land_on_this_allied_non_conquered_land_territory(player)
+		if can_land_land_p(can_land_land_c, route_get_end(route)) {
+			return result
+		}
+	}
+	if properties_get_kamikaze_airplanes(game_data_get_properties(data)) {
+		return result
+	}
+
+	// Find which aircraft cannot find friendly land to land on.
+	air_to_validate := air_movement_validator_get_air_units_to_validate(
+		units,
+		route,
+		player,
+	)
+	defer delete(air_to_validate)
+	owned_air_that_must_land_on_carriers :=
+		air_movement_validator_get_air_that_must_land_on_carriers(
+			data,
+			air_to_validate[:],
+			route,
+			result,
+		)
+	defer delete(owned_air_that_must_land_on_carriers)
+	if len(owned_air_that_must_land_on_carriers) == 0 {
+		return result
+	}
+
+	route_end := route_get_end(route)
+	route_start := route_get_start(route)
+
+	// airAlliedNotOwned = !owned AND allied AND air AND canLandOnCarrier.
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	allied_p, allied_c := matches_is_unit_allied(player)
+	air_p, air_c := matches_unit_is_air()
+	can_land_carrier_p, can_land_carrier_c := matches_unit_can_land_on_carrier()
+
+	air_must_land_set: [dynamic]^Unit
+	for u in route_end.unit_collection.units {
+		if !owned_p(owned_c, u) &&
+		   allied_p(allied_c, u) &&
+		   air_p(air_c, u) &&
+		   can_land_carrier_p(can_land_carrier_c, u) {
+			already := false
+			for x in air_must_land_set {
+				if x == u {
+					already = true
+					break
+				}
+			}
+			if !already {
+				append(&air_must_land_set, u)
+			}
+		}
+	}
+	for u in units {
+		if !owned_p(owned_c, u) &&
+		   allied_p(allied_c, u) &&
+		   air_p(air_c, u) &&
+		   can_land_carrier_p(can_land_carrier_c, u) {
+			already := false
+			for x in air_must_land_set {
+				if x == u {
+					already = true
+					break
+				}
+			}
+			if !already {
+				append(&air_must_land_set, u)
+			}
+		}
+	}
+
+	// movingCarriersAtStartLocationBeingMoved
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	moving_carriers_at_start: [dynamic]^Unit
+	for u in units {
+		if carrier_p(carrier_c, u) {
+			append(&moving_carriers_at_start, u)
+		}
+	}
+	if len(moving_carriers_at_start) > 0 {
+		// MoveValidator.carrierMustMoveWith(units, routeStart, player)
+		units_dyn: [dynamic]^Unit
+		for u in units {
+			append(&units_dyn, u)
+		}
+		carrier_to_allied_cargo := move_validator_carrier_must_move_with_units_territory(
+			units_dyn,
+			route_start,
+			player,
+		)
+		for _, allied_air_on_carrier in carrier_to_allied_cargo {
+			for u in allied_air_on_carrier {
+				already := false
+				for x in air_must_land_set {
+					if x == u {
+						already = true
+						break
+					}
+				}
+				if !already {
+					append(&air_must_land_set, u)
+				}
+			}
+		}
+		for k, v in carrier_to_allied_cargo {
+			_ = k
+			delete(v)
+		}
+		delete(carrier_to_allied_cargo)
+		delete(units_dyn)
+	}
+	// add owned air last (lowest movement validated first)
+	for u in owned_air_that_must_land_on_carriers {
+		already := false
+		for x in air_must_land_set {
+			if x == u {
+				already = true
+				break
+			}
+		}
+		if !already {
+			append(&air_must_land_set, u)
+		}
+	}
+
+	// sort by getLowestToHighestMovementComparatorIncludingUnitsNotYetMoved(route).
+	{
+		n := len(air_must_land_set)
+		for i := 1; i < n; i += 1 {
+			j := i
+			for j > 0 {
+				a := air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(
+					air_must_land_set[j],
+					route,
+				)
+				b := air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(
+					air_must_land_set[j - 1],
+					route,
+				)
+				if a < b {
+					air_must_land_set[j], air_must_land_set[j - 1] =
+						air_must_land_set[j - 1], air_must_land_set[j]
+					j -= 1
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	// carriersAtEnd: friendly carriers at routeEnd + moving carriers we brought.
+	carriers_at_end: [dynamic]^Unit
+	{
+		friendly_at_end := air_movement_validator_get_friendly(route_end, player, data)
+		defer delete(friendly_at_end)
+		for u in friendly_at_end {
+			if carrier_p(carrier_c, u) {
+				append(&carriers_at_end, u)
+			}
+		}
+	}
+	for u in moving_carriers_at_start {
+		append(&carriers_at_end, u)
+	}
+
+	moved_carriers_and_their_fighters: map[^Unit][dynamic]^Unit
+	for carrier in carriers_at_end {
+		moved_carriers_and_their_fighters[carrier] = make([dynamic]^Unit)
+	}
+
+	air_not_to_consider: [dynamic]^Unit
+	for u in air_must_land_set {
+		append(&air_not_to_consider, u)
+	}
+
+	// removeAll(whatAirCanLandOnTheseCarriers(carriersAtEnd, ...))
+	can_land_on_those := air_movement_validator_what_air_can_land_on_these_carriers(
+		carriers_at_end[:],
+		air_must_land_set[:],
+		route_end,
+	)
+	{
+		filtered: [dynamic]^Unit
+		for u in air_must_land_set {
+			drop := false
+			for x in can_land_on_those {
+				if x == u {
+					drop = true
+					break
+				}
+			}
+			if !drop {
+				append(&filtered, u)
+			}
+		}
+		delete(air_must_land_set)
+		air_must_land_set = filtered
+	}
+	delete(can_land_on_those)
+	if len(air_must_land_set) == 0 {
+		delete(air_not_to_consider)
+		delete(moving_carriers_at_start)
+		delete(carriers_at_end)
+		for k, v in moved_carriers_and_their_fighters {
+			_ = k
+			delete(v)
+		}
+		delete(moved_carriers_and_their_fighters)
+		delete(air_must_land_set)
+		return result
+	}
+
+	// figure out the max remaining movement of our air and our carriers.
+	max_movement_left_air := i32(
+		air_movement_validator_max_movement_left_for_these_air_units_being_validated(
+			air_must_land_set[:],
+			route,
+			player,
+		),
+	)
+	max_movement_left_carriers := i32(
+		air_movement_validator_max_movement_left_for_all_owned_carriers(player, gs),
+	)
+
+	// landingSpots = [routeEnd] ∪ neighbors(routeEnd, maxAirMv, airCanFlyOver),
+	// then drop anything that isn't seaCanMoveOver, then sort by distance.
+	landing_spots: [dynamic]^Territory
+	append(&landing_spots, route_end)
+	{
+		fly_p, fly_c := matches_air_can_fly_over(
+			player,
+			air_movement_validator_are_neutrals_passable_by_air(gs),
+		)
+		neighbors := game_map_get_neighbors_distance_predicate(
+			game_data_get_map(data),
+			route_end,
+			max_movement_left_air,
+			fly_p,
+			fly_c,
+		)
+		for t in neighbors {
+			present := false
+			for x in landing_spots {
+				if x == t {
+					present = true
+					break
+				}
+			}
+			if !present {
+				append(&landing_spots, t)
+			}
+		}
+		delete(neighbors)
+	}
+	sea_p, sea_c := matches_sea_can_move_over(player)
+	{
+		filtered: [dynamic]^Territory
+		for t in landing_spots {
+			if sea_p(sea_c, t) {
+				append(&filtered, t)
+			}
+		}
+		delete(landing_spots)
+		landing_spots = filtered
+	}
+	{
+		gm := game_data_get_map(data)
+		n := len(landing_spots)
+		for i := 1; i < n; i += 1 {
+			j := i
+			for j > 0 {
+				t1 := landing_spots[j]
+				t2 := landing_spots[j - 1]
+				less := false
+				if t1 != t2 {
+					d1 := game_map_get_distance_predicate(
+						gm,
+						route_end,
+						t1,
+						sea_p,
+						sea_c,
+					)
+					d2 := game_map_get_distance_predicate(
+						gm,
+						route_end,
+						t2,
+						sea_p,
+						sea_c,
+					)
+					if d1 == d2 {
+						less = false
+					} else if d1 < 0 {
+						less = false
+					} else if d2 < 0 {
+						less = true
+					} else {
+						less = d1 < d2
+					}
+				}
+				if less {
+					landing_spots[j], landing_spots[j - 1] =
+						landing_spots[j - 1], landing_spots[j]
+					j -= 1
+				} else {
+					break
+				}
+			}
+		}
+	}
+
+	// potentialCarrierOrigins = LinkedHashSet(landingSpots) ∪
+	//                            getNeighbors(landingSpots, maxOwnedCarrierMv, seaCanMoveOver)
+	// minus routeEnd, minus territories that don't have an owned carrier.
+	potential_carrier_origins: [dynamic]^Territory
+	for t in landing_spots {
+		present := false
+		for x in potential_carrier_origins {
+			if x == t {
+				present = true
+				break
+			}
+		}
+		if !present {
+			append(&potential_carrier_origins, t)
+		}
+	}
+	{
+		frontier: map[^Territory]struct{}
+		for t in landing_spots {
+			frontier[t] = {}
+		}
+		more := game_map_get_neighbors_set_distance_predicate(
+			game_data_get_map(data),
+			frontier,
+			max_movement_left_carriers,
+			sea_p,
+			sea_c,
+		)
+		for t in more {
+			present := false
+			for x in potential_carrier_origins {
+				if x == t {
+					present = true
+					break
+				}
+			}
+			if !present {
+				append(&potential_carrier_origins, t)
+			}
+		}
+		delete(more)
+		delete(frontier)
+	}
+	{
+		filtered: [dynamic]^Territory
+		for t in potential_carrier_origins {
+			if t != route_end {
+				append(&filtered, t)
+			}
+		}
+		delete(potential_carrier_origins)
+		potential_carrier_origins = filtered
+	}
+	{
+		owned_carrier_p, owned_carrier_c := matches_territory_has_owned_carrier(player)
+		filtered: [dynamic]^Territory
+		for t in potential_carrier_origins {
+			if owned_carrier_p(owned_carrier_c, t) {
+				append(&filtered, t)
+			}
+		}
+		delete(potential_carrier_origins)
+		potential_carrier_origins = filtered
+	}
+
+	air_movement_validator_validate_air_caught_by_moving_carriers_and_owned_and_allied_air(
+		result,
+		landing_spots,
+		&potential_carrier_origins,
+		&moved_carriers_and_their_fighters,
+		&air_must_land_set,
+		&air_not_to_consider,
+		player,
+		route,
+		data,
+	)
+
+	delete(landing_spots)
+	delete(potential_carrier_origins)
+	delete(moving_carriers_at_start)
+	delete(carriers_at_end)
+	delete(air_not_to_consider)
+	delete(air_must_land_set)
+	for k, v in moved_carriers_and_their_fighters {
+		_ = k
+		delete(v)
+	}
+	delete(moved_carriers_and_their_fighters)
+	return result
+}
+

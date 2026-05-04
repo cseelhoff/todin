@@ -1750,3 +1750,317 @@ pro_purchase_ai_place_defenders :: proc(
 		delete(units_to_place)
 	}
 }
+
+// Synthetic capturing lambda from `ProPurchaseAi.purchaseFactory`:
+//
+//     purchaseFactoryTerritories.removeIf(
+//         t -> !ProBattleUtils.territoryHasLocalLandSuperiority(
+//             proData, t, ProBattleUtils.MEDIUM_RANGE, player, purchaseTerritories));
+//
+// The Java lambda captures the enclosing `purchaseTerritories` map; `proData`
+// and `player` are fields of `ProPurchaseAi`, so they are accessed through the
+// owner pointer here.
+pro_purchase_ai_lambda_purchase_factory_2 :: proc(
+	this:                 ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	t:                    ^Territory,
+) -> bool {
+	return !pro_battle_utils_territory_has_local_land_superiority(
+		this.pro_data, t, 3, this.player, purchase_territories,
+	)
+}
+
+// `ProPurchaseAi.prioritizeLandTerritories(Map<Territory, ProPurchaseTerritory>)`.
+// Build the ordered list of `Pro_Place_Territory`s where land units should be
+// purchased: keep only land place territories with strategic value >= 1 that
+// can be held, then prefer those that have an enemy neighbor, are surrounded
+// by 3+ potential-enemy-owned land tiles within range 9, or fail the
+// short-range local land superiority check. Sort the survivors by descending
+// strategic value (matching Java's
+// `Comparator.comparingDouble(ProPlaceTerritory::getStrategicValue).reversed()`).
+pro_purchase_ai_prioritize_land_territories :: proc(
+	self:                 ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> [dynamic]^Pro_Place_Territory {
+	pro_logger_info("Prioritize land territories to place")
+
+	prioritized_land_territories: [dynamic]^Pro_Place_Territory
+	for _, ppt in purchase_territories {
+		for place_territory in ppt.can_place_territories {
+			t := pro_place_territory_get_territory(place_territory)
+			if territory_is_water(t) {
+				continue
+			}
+			if pro_place_territory_get_strategic_value(place_territory) < 1 {
+				continue
+			}
+			if !pro_place_territory_is_can_hold(place_territory) {
+				continue
+			}
+
+			gm := game_data_get_map(self.data)
+
+			enemy_pred, enemy_ctx := pro_matches_territory_is_enemy_land(self.player)
+			enemy_neighbors := game_map_get_neighbors_predicate(
+				gm, t, enemy_pred, enemy_ctx,
+			)
+			has_enemy_neighbors := len(enemy_neighbors) > 0
+			delete(enemy_neighbors)
+
+			land_pred, land_ctx :=
+				pro_matches_territory_can_potentially_move_land_units(self.player)
+			nearby_land_territories := game_map_get_neighbors_distance_predicate(
+				gm, t, 9, land_pred, land_ctx,
+			)
+			potential_enemies := pro_utils_get_potential_enemy_players(self.player)
+			owned_pred, owned_ctx := matches_is_territory_owned_by_any_of(potential_enemies)
+			num_nearby_enemy_territories: i32 = 0
+			for n in nearby_land_territories {
+				if owned_pred(owned_ctx, n) {
+					num_nearby_enemy_territories += 1
+				}
+			}
+			delete(nearby_land_territories)
+
+			has_local_land_superiority :=
+				pro_battle_utils_territory_has_local_land_superiority_4(
+					self.pro_data, t, 2, self.player,
+				)
+
+			if has_enemy_neighbors ||
+			   num_nearby_enemy_territories >= 3 ||
+			   !has_local_land_superiority {
+				append(&prioritized_land_territories, place_territory)
+			}
+		}
+	}
+
+	slice.sort_by(
+		prioritized_land_territories[:],
+		pro_purchase_ai_lambda_purchase_units_with_remaining_production_strategic_desc,
+	)
+	for place_territory in prioritized_land_territories {
+		pro_logger_debug(
+			fmt.tprintf(
+				"%s strategicValue=%v",
+				pro_place_territory_to_string(place_territory),
+				pro_place_territory_get_strategic_value(place_territory),
+			),
+		)
+	}
+	return prioritized_land_territories
+}
+
+// `ProPurchaseAi.prioritizeSeaTerritories(Map<Territory, ProPurchaseTerritory>)`.
+// Collect every water `Pro_Place_Territory` with positive strategic value
+// that can be held, score each by combining transport count, defender count,
+// and the need for additional defenders (driven by the enemy attack
+// estimate and the territory-local naval superiority check), overwrite the
+// place territory's strategic value with that score, then return the list
+// sorted by descending strategic value.
+pro_purchase_ai_prioritize_sea_territories :: proc(
+	self:                 ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> [dynamic]^Pro_Place_Territory {
+	pro_logger_info("Prioritize sea territories")
+
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
+		self.territory_manager,
+	)
+
+	sea_place_territories := make(map[^Pro_Place_Territory]struct{})
+	defer delete(sea_place_territories)
+	for _, ppt in purchase_territories {
+		for place_territory in ppt.can_place_territories {
+			t := pro_place_territory_get_territory(place_territory)
+			if territory_is_water(t) &&
+			   pro_place_territory_get_strategic_value(place_territory) > 0 &&
+			   pro_place_territory_is_can_hold(place_territory) {
+				sea_place_territories[place_territory] = struct{}{}
+			}
+		}
+	}
+
+	pro_logger_debug("Determine sea place value:")
+	owned_pred, owned_ctx := matches_unit_is_owned_by(self.player)
+	transport_pred, transport_ctx := matches_unit_is_sea_transport()
+	not_transport_pred, not_transport_ctx := matches_unit_is_not_sea_transport()
+	for place_territory in sea_place_territories {
+		t := pro_place_territory_get_territory(place_territory)
+
+		// Find number of local naval units.
+		units: [dynamic]^Unit
+		for u in pro_place_territory_get_defending_units(place_territory) {
+			append(&units, u)
+		}
+		place_units := pro_purchase_utils_get_place_units(t, purchase_territories)
+		for u in place_units {
+			append(&units, u)
+		}
+		delete(place_units)
+
+		num_my_transports: i32 = 0
+		for u in units {
+			if owned_pred(owned_ctx, u) && transport_pred(transport_ctx, u) {
+				num_my_transports += 1
+			}
+		}
+		num_sea_defenders: i32 = 0
+		for u in units {
+			if not_transport_pred(not_transport_ctx, u) {
+				num_sea_defenders += 1
+			}
+		}
+
+		// Determine needed defense strength.
+		need_defenders: i32 = 0
+		max_attack := pro_other_move_options_get_max(enemy_attack_options, t)
+		if max_attack != nil {
+			max_units_list: [dynamic]^Unit
+			for u, _ in pro_territory_get_max_units(max_attack) {
+				append(&max_units_list, u)
+			}
+			strength_difference := pro_battle_utils_estimate_strength_difference(
+				t, max_units_list, units,
+			)
+			delete(max_units_list)
+			if strength_difference > 50 {
+				need_defenders = 1
+			}
+		}
+		empty_purchase := make(map[^Territory]^Pro_Purchase_Territory)
+		empty_units: [dynamic]^Unit
+		has_local_naval_superiority :=
+			pro_battle_utils_territory_has_local_naval_superiority(
+				self.pro_data,
+				self.calc,
+				t,
+				self.player,
+				empty_purchase,
+				empty_units,
+			)
+		delete(empty_purchase)
+		delete(empty_units)
+		if !has_local_naval_superiority {
+			need_defenders = 1
+		}
+
+		// Calculate sea value for prioritization.
+		territory_value :=
+			pro_place_territory_get_strategic_value(place_territory) *
+			(1.0 + f64(num_my_transports) + 0.1 * f64(num_sea_defenders)) /
+			(1.0 + 3.0 * f64(need_defenders))
+		pro_logger_debug(
+			fmt.tprintf(
+				"%s, value=%v, strategicValue=%v, numMyTransports=%v, numSeaDefenders=%v, needDefenders=%v",
+				territory_to_string(t),
+				territory_value,
+				pro_place_territory_get_strategic_value(place_territory),
+				num_my_transports,
+				num_sea_defenders,
+				need_defenders,
+			),
+		)
+		pro_place_territory_set_strategic_value(place_territory, territory_value)
+
+		delete(units)
+	}
+
+	// Sort territories by value (descending).
+	sorted_territories: [dynamic]^Pro_Place_Territory
+	for k in sea_place_territories {
+		append(&sorted_territories, k)
+	}
+	slice.sort_by(
+		sorted_territories[:],
+		pro_purchase_ai_lambda_purchase_units_with_remaining_production_strategic_desc,
+	)
+	pro_logger_debug("Sorted sea territories:")
+	for place_territory in sorted_territories {
+		pro_logger_debug(
+			fmt.tprintf(
+				"%s value=%v",
+				pro_place_territory_to_string(place_territory),
+				pro_place_territory_get_strategic_value(place_territory),
+			),
+		)
+	}
+	return sorted_territories
+}
+
+// `ProPurchaseAi.addUnitsToPlaceTerritory(ProPlaceTerritory, List<Unit>,
+// Map<Territory, ProPurchaseTerritory>)`. For each purchase territory whose
+// `can_place_territories` contains `place_territory` and that still has
+// remaining unit production, place every construction unit (which does not
+// consume production) and then up to `remaining_unit_production` of the
+// non-construction units. Mirrors Java's mutation of `units_to_place`: the
+// caller's list shrinks as units are placed. The pointer parameter mirrors
+// Java's pass-by-reference semantics on a `final List<Unit>`.
+pro_purchase_ai_add_units_to_place_territory :: proc(
+	self:                 ^Pro_Purchase_Ai,
+	place_territory:      ^Pro_Place_Territory,
+	units_to_place:       ^[dynamic]^Unit,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) {
+	for _, purchase_territory in purchase_territories {
+		for ppt in purchase_territory.can_place_territories {
+			if !pro_place_territory_equals(place_territory, ppt) {
+				continue
+			}
+			if pro_purchase_territory_get_remaining_unit_production(purchase_territory) <= 0 {
+				continue
+			}
+			if !pro_purchase_validation_utils_can_units_be_placed(
+				self.pro_data,
+				units_to_place^,
+				self.player,
+				pro_place_territory_get_territory(ppt),
+				pro_purchase_territory_get_territory(purchase_territory),
+				self.is_bid,
+			) {
+				continue
+			}
+
+			// Split into constructions vs the rest, dropping constructions
+			// from `units_to_place` (Java: unitsToPlace.removeAll(constructions)).
+			construction_pred, construction_ctx := matches_unit_is_construction()
+			constructions: [dynamic]^Unit
+			remaining: [dynamic]^Unit
+			for u in units_to_place^ {
+				if construction_pred(construction_ctx, u) {
+					append(&constructions, u)
+				} else {
+					append(&remaining, u)
+				}
+			}
+			delete(units_to_place^)
+			units_to_place^ = remaining
+			pro_purchase_ai_add_units_to_place(self, ppt, constructions)
+			delete(constructions)
+
+			// Place at most `remaining_unit_production` of the non-construction
+			// units, then drop them from `units_to_place` (Java: subList +
+			// units.clear()).
+			rem_prod := pro_purchase_territory_get_remaining_unit_production(
+				purchase_territory,
+			)
+			num_units := rem_prod
+			if i32(len(units_to_place^)) < num_units {
+				num_units = i32(len(units_to_place^))
+			}
+			placed: [dynamic]^Unit
+			for i in 0 ..< int(num_units) {
+				append(&placed, units_to_place[i])
+			}
+			pro_purchase_ai_add_units_to_place(self, ppt, placed)
+			delete(placed)
+
+			leftover: [dynamic]^Unit
+			for i in int(num_units) ..< len(units_to_place^) {
+				append(&leftover, units_to_place[i])
+			}
+			delete(units_to_place^)
+			units_to_place^ = leftover
+		}
+	}
+}

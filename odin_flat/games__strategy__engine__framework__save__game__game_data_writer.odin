@@ -69,3 +69,30 @@ game_data_writer_write_to_file :: proc(
 	game_data_writer_write_to_output_stream(game_data, fout, delegate_execution_manager)
 }
 
+// Java:
+//   public static byte[] writeToBytes(GameData gameData,
+//                                     DelegateExecutionManager dem) {
+//     try {
+//       return IoUtils.writeToMemory(
+//           outputStream ->
+//               GameDataWriter.writeToOutputStream(gameData, outputStream, dem));
+//     } catch (IOException e) { throw new IllegalStateException(e); }
+//   }
+//
+// Odin port: Throwing_Consumer cannot capture environment, so the
+// io_utils_write_to_memory call is inlined here, mirroring its body
+// (allocate Output_Stream, run the lambda, copy out the byte buffer).
+// The lambda body itself routes through game_data_writer_lambda_write_to_bytes_0.
+// write_to_output_stream never raises in the harness, so the catch
+// arm is unreachable.
+game_data_writer_write_to_bytes :: proc(
+	game_data: ^Game_Data,
+	delegate_execution_manager: ^Delegate_Execution_Manager,
+) -> []u8 {
+	os := output_stream_new()
+	game_data_writer_lambda_write_to_bytes_0(game_data, delegate_execution_manager, os)
+	out := make([]u8, len(os.data))
+	for b, i in os.data { out[i] = b }
+	return out
+}
+

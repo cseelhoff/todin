@@ -1569,3 +1569,1080 @@ battle_delegate_setup_territories_abandoned_to_the_enemy :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#doKamikazeSuicideAttacks()
+// KamikazeSuicideAttacks: enemies of the current player decide attacks against
+// the current player's units in any kamikaze-zone territory whose owner is an
+// enemy of the current player; resources from PlayerAttachment fund the
+// targeted attacks. Faithful port of the Java instance method.
+battle_delegate_do_kamikaze_suicide_attacks :: proc(self: ^Battle_Delegate) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	properties := game_data_get_properties(data)
+	if !properties_get_use_kamikaze_suicide_attacks(properties) {
+		return
+	}
+	// the current player is not the one who is doing these attacks; it is the
+	// enemies of this player who will do attacks.
+	is_at_war_pred, is_at_war_ctx := matches_is_at_war(self.player)
+	enemies: [dynamic]^Game_Player
+	for p in player_list_get_players(game_data_get_player_list(data)) {
+		if is_at_war_pred(is_at_war_ctx, p) {
+			append(&enemies, p)
+		}
+	}
+	if len(enemies) == 0 {
+		return
+	}
+	// canBeAttackedDefault = unitIsOwnedBy(player) AND unitIsSea() AND
+	//   unitIsNotSeaTransportButCouldBeCombatSeaTransport() AND unitCanEvade().negate()
+	owned_pred, owned_ctx := matches_unit_is_owned_by(self.player)
+	sea_pred, sea_ctx := matches_unit_is_sea()
+	not_st_pred, not_st_ctx := matches_unit_is_not_sea_transport_but_could_be_combat_sea_transport()
+	evade_pred, evade_ctx := matches_unit_can_evade()
+
+	only_where_battles := properties_get_kamikaze_suicide_attacks_only_where_battles_are(
+		properties,
+	)
+	pending_battles := battle_tracker_get_pending_battle_sites_without_bombing(
+		self.battle_tracker,
+	)
+	done_by_current_owner := properties_get_kamikaze_suicide_attacks_done_by_current_territory_owner(
+		properties,
+	)
+
+	// kamikazeZonesByEnemy: enemy → list of kamikaze territories.
+	kamikaze_zones_by_enemy := make(map[^Game_Player][dynamic]^Territory)
+	game_map := game_data_get_map(data)
+	for t in game_map_get_territories(game_map) {
+		ta := territory_attachment_get(t)
+		if ta == nil || !territory_attachment_get_kamikaze_zone(ta) {
+			continue
+		}
+		owner: ^Game_Player
+		if !done_by_current_owner {
+			owner = territory_attachment_get_original_owner(ta)
+		} else {
+			owner = territory_get_owner(t)
+		}
+		if owner == nil {
+			continue
+		}
+		is_enemy := false
+		for e in enemies {
+			if e == owner {
+				is_enemy = true
+				break
+			}
+		}
+		if !is_enemy {
+			continue
+		}
+		// require at least one current-player-owned unit in the territory
+		any_player_owned := false
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if owned_pred(owned_ctx, u) {
+				any_player_owned = true
+				break
+			}
+		}
+		if !any_player_owned {
+			continue
+		}
+		// if no battle or amphibious from here, ignore it
+		if only_where_battles {
+			_, in_pending := pending_battles[t]
+			if !in_pending {
+				water_pred, water_ctx := matches_territory_is_water()
+				if !water_pred(water_ctx, t) {
+					continue
+				}
+				amphib := false
+				land_pred, land_ctx := matches_territory_is_land()
+				land_neighbors := game_map_get_neighbors_predicate(
+					game_map,
+					t,
+					land_pred,
+					land_ctx,
+				)
+				for neighbor in land_neighbors {
+					battle := battle_tracker_get_pending_battle(
+						self.battle_tracker,
+						neighbor,
+						.NORMAL,
+					)
+					if battle == nil {
+						finished := battle_tracker_get_finished_battles_unit_attack_from_map(
+							self.battle_tracker,
+						)
+						if where_from, ok := finished[neighbor]; ok {
+							if _, has_t := where_from[t]; has_t {
+								amphib = true
+								break
+							}
+						}
+						continue
+					}
+					if i_battle_is_amphibious(battle) {
+						// MustFightBattle / NonFightingBattle both extend
+						// DependentBattle (see scramble_logic.odin for the
+						// same unchecked-cast pattern).
+						db := cast(^Dependent_Battle)battle
+						amphib_terrs := dependent_battle_get_amphibious_attack_territories(db)
+						for at in amphib_terrs {
+							if at == t {
+								amphib = true
+								break
+							}
+						}
+						if amphib {
+							break
+						}
+					}
+				}
+				if !amphib {
+					continue
+				}
+			}
+		}
+		list, ok := kamikaze_zones_by_enemy[owner]
+		if !ok {
+			list = make([dynamic]^Territory)
+		}
+		append(&list, t)
+		kamikaze_zones_by_enemy[owner] = list
+	}
+	if len(kamikaze_zones_by_enemy) == 0 {
+		return
+	}
+	for current_enemy, kamikaze_zones in kamikaze_zones_by_enemy {
+		pa := player_attachment_get(current_enemy)
+		if pa == nil {
+			continue
+		}
+		suicide_attack_targets := player_attachment_get_suicide_attack_targets(pa)
+		use_targets := len(suicide_attack_targets) > 0
+		of_types_pred: proc(rawptr, ^Unit) -> bool
+		of_types_ctx: rawptr
+		if use_targets {
+			of_types_pred, of_types_ctx = matches_unit_is_of_types(suicide_attack_targets)
+		}
+		// See if the player has any attack tokens.
+		resources_and_attack_values := player_attachment_get_suicide_attack_resources(pa)
+		if len(resources_and_attack_values) == 0 {
+			continue
+		}
+		player_resource_collection := resource_collection_get_resources_copy(
+			game_player_get_resources(current_enemy),
+		)
+		attack_tokens := make(Integer_Map_Resource)
+		for possible, _ in resources_and_attack_values {
+			amount := player_resource_collection[possible]
+			if amount > 0 {
+				attack_tokens[possible] = amount
+			}
+		}
+		if len(attack_tokens) == 0 {
+			continue
+		}
+		// Now let the enemy decide if they will do attacks.
+		possible_units_to_attack := make(map[^Territory][dynamic]^Unit)
+		for t in kamikaze_zones {
+			valid_targets: [dynamic]^Unit
+			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+				if use_targets {
+					if !owned_pred(owned_ctx, u) {
+						continue
+					}
+					if !of_types_pred(of_types_ctx, u) {
+						continue
+					}
+				} else {
+					if !owned_pred(owned_ctx, u) {
+						continue
+					}
+					if !sea_pred(sea_ctx, u) {
+						continue
+					}
+					if !not_st_pred(not_st_ctx, u) {
+						continue
+					}
+					if evade_pred(evade_ctx, u) {
+						continue
+					}
+				}
+				append(&valid_targets, u)
+			}
+			if len(valid_targets) > 0 {
+				possible_units_to_attack[t] = valid_targets
+			}
+		}
+		remote := i_delegate_bridge_get_remote_player(self.bridge, current_enemy)
+		attacks := player_select_kamikaze_suicide_attacks(remote, possible_units_to_attack)
+		if len(attacks) == 0 {
+			continue
+		}
+		// Validate: chosen units must be in possibleUnitsToAttack and resource
+		// totals must remain positive.
+		for t, unit_map in attacks {
+			possible, has_t := possible_units_to_attack[t]
+			if !has_t {
+				fmt.panicf("Player has chosen illegal units during Kamikaze Suicide Attacks")
+			}
+			for u, _ in unit_map {
+				contained := false
+				for pu in possible {
+					if pu == u {
+						contained = true
+						break
+					}
+				}
+				if !contained {
+					fmt.panicf(
+						"Player has chosen illegal units during Kamikaze Suicide Attacks",
+					)
+				}
+			}
+			for _, resource_map in unit_map {
+				// IntegerMap.subtract: subtract value-by-value.
+				for r, n in resource_map {
+					attack_tokens[r] = attack_tokens[r] - n
+				}
+			}
+		}
+		// IntegerMap.isPositive(): all values strictly > 0.
+		all_positive := true
+		for _, v in attack_tokens {
+			if v <= 0 {
+				all_positive = false
+				break
+			}
+		}
+		if !all_positive {
+			fmt.panicf("Player has chosen illegal resource during Kamikaze Suicide Attacks")
+		}
+		for t, unit_map in attacks {
+			location := t
+			for unit_under_fire, number_of_attacks in unit_map {
+				if len(number_of_attacks) == 0 {
+					continue
+				}
+				total_values: i32 = 0
+				for _, v in number_of_attacks {
+					total_values += v
+				}
+				if total_values > 0 {
+					battle_delegate_fire_kamikaze_suicide_attacks(
+						self,
+						unit_under_fire,
+						number_of_attacks,
+						resources_and_attack_values,
+						current_enemy,
+						location,
+					)
+				}
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#scramblingCleanup()
+//   Returns scrambled units to their origin or to a player-selected
+//   landing territory. Mirrors the Java private void method one-to-one.
+battle_delegate_scrambling_cleanup :: proc(self: ^Battle_Delegate) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	if !properties_get_scramble_rules_in_effect(game_data_get_properties(data)) {
+		return
+	}
+	must_return_to_base := properties_get_scrambled_units_return_to_base(
+		game_data_get_properties(data),
+	)
+	for t in game_map_get_territories(game_data_get_map(data)) {
+		carrier_cost_of_current_terr: i32 = 0
+		uc := territory_get_unit_collection(t)
+		was_scrambled := make([dynamic]^Unit)
+		for u in unit_collection_get_units(uc) {
+			if matches_pred_unit_was_scrambled(nil, u) {
+				append(&was_scrambled, u)
+			}
+		}
+		for u in was_scrambled {
+			owner := unit_get_owner(u)
+			change := composite_change_new()
+			landing_terr: ^Territory = nil
+			history_text: string
+			ally_p, ally_c := matches_is_territory_allied(unit_get_owner(u))
+			if !must_return_to_base ||
+			   !ally_p(ally_c, unit_get_originated_from(u)) {
+				possible := battle_delegate_where_can_air_land(
+					u,
+					t,
+					owner,
+					&data.game_state,
+					self.battle_tracker,
+					carrier_cost_of_current_terr,
+				)
+				if len(possible) > 1 {
+					unit_list := make([dynamic]^Unit)
+					append(&unit_list, u)
+					text := fmt.aprintf(
+						"Select territory for air units to land. (Current territory is %s): %s",
+						default_named_get_name(&t.named_attachable.default_named),
+						my_formatter_units_to_text(unit_list),
+					)
+					remote := i_delegate_bridge_get_remote_player(self.bridge, owner)
+					landing_terr = player_select_territory_for_air_to_land(
+						remote,
+						possible,
+						t,
+						text,
+					)
+				} else if len(possible) == 1 {
+					landing_terr = possible[0]
+				}
+				if landing_terr == nil || landing_terr == t {
+					carrier_cost_of_current_terr += air_movement_validator_carrier_cost(
+						[]^Unit{u},
+					)
+					history_text = strings.concatenate(
+						{
+							"Scrambled unit stays in territory ",
+							default_named_get_name(&t.named_attachable.default_named),
+						},
+					)
+				} else {
+					history_text = fmt.aprintf(
+						"Moving scrambled unit from %s to %s",
+						default_named_get_name(&t.named_attachable.default_named),
+						default_named_get_name(&landing_terr.named_attachable.default_named),
+					)
+				}
+			} else {
+				landing_terr = unit_get_originated_from(u)
+				history_text = fmt.aprintf(
+					"Moving scrambled unit from %s  back to originating territory: %s",
+					default_named_get_name(&t.named_attachable.default_named),
+					default_named_get_name(&landing_terr.named_attachable.default_named),
+				)
+			}
+			if landing_terr != nil && landing_terr != t {
+				move_units := make([dynamic]^Unit)
+				append(&move_units, u)
+				composite_change_add(
+					change,
+					change_factory_move_units(t, landing_terr, move_units),
+				)
+				route := route_new_from_start_and_steps(t, landing_terr)
+				composite_change_add(
+					change,
+					route_get_fuel_changes([]^Unit{u}, route, owner, data),
+				)
+			}
+			composite_change_add(
+				change,
+				change_factory_unit_property_change_property_name(
+					u,
+					nil,
+					.Originated_From,
+				),
+			)
+			boxed_false := new(bool)
+			boxed_false^ = false
+			composite_change_add(
+				change,
+				change_factory_unit_property_change_property_name(
+					u,
+					rawptr(boxed_false),
+					.Was_Scrambled,
+				),
+			)
+			if !composite_change_is_empty(change) {
+				i_delegate_history_writer_start_event(
+					i_delegate_bridge_get_history_writer(self.bridge),
+					history_text,
+					rawptr(u),
+				)
+				i_delegate_bridge_add_change(self.bridge, &change.change)
+			}
+		}
+	}
+}
+
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#setupUnitsInSameTerritoryBattles(BattleTracker, IDelegateBridge)
+//
+// Set up the battles where the battle occurs because units are in the
+// same territory. Faithful port of the Java private static method.
+battle_delegate_setup_units_in_same_territory_battles :: proc(
+	battle_tracker: ^Battle_Tracker,
+	bridge: ^I_Delegate_Bridge,
+) {
+	player := i_delegate_bridge_get_game_player(bridge)
+	data := i_delegate_bridge_get_data(bridge)
+	ignore_transports := properties_get_ignore_transport_in_movement(
+		game_data_get_properties(data),
+	)
+	st_pred, st_ctx := matches_unit_is_sea_transport_but_not_combat_sea_transport()
+	sea_pred, sea_ctx := matches_unit_is_sea()
+	evade_pred, evade_ctx := matches_unit_can_evade()
+	hou_p, hou_c := matches_territory_has_units_owned_by(player)
+	heu_p, heu_c := matches_territory_has_enemy_units(player)
+	enemy_terr_p, enemy_terr_c := matches_is_territory_enemy_and_not_unowned_water(player)
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	en_unit_p, en_unit_c := matches_enemy_unit(player)
+	infra_p, infra_c := matches_unit_is_infrastructure()
+
+	battle_territories := make([dynamic]^Territory)
+	defer delete(battle_territories)
+	for t in game_map_get_territories(game_data_get_map(data)) {
+		any_own_enemy := hou_p(hou_c, t) && heu_p(heu_c, t)
+		enemy_and_own := enemy_terr_p(enemy_terr_c, t) && hou_p(hou_c, t)
+		if any_own_enemy || enemy_and_own {
+			append(&battle_territories, t)
+		}
+	}
+
+	for territory in battle_territories {
+		territory_units := unit_collection_get_units(territory_get_unit_collection(territory))
+		attacking_units := make([dynamic]^Unit)
+		for u in territory_units {
+			if owned_p(owned_c, u) {
+				append(&attacking_units, u)
+			}
+		}
+		transport_map := transport_tracker_transporting(territory_units)
+		dependants := make(map[^Unit]struct{})
+		defer delete(dependants)
+		for transport, transported in transport_map {
+			in_attack := false
+			for au in attacking_units {
+				if au == transport {
+					in_attack = true
+					break
+				}
+			}
+			if !in_attack {
+				continue
+			}
+			for tu in transported {
+				dependants[tu] = {}
+			}
+		}
+		for au in attacking_units {
+			delete_key(&dependants, au)
+		}
+		for u in dependants {
+			append(&attacking_units, u)
+		}
+		enemy_units := make([dynamic]^Unit)
+		for u in territory_units {
+			if en_unit_p(en_unit_c, u) {
+				append(&enemy_units, u)
+			}
+		}
+		bombing_battle := battle_tracker_get_pending_bombing_battle(battle_tracker, territory)
+		if bombing_battle != nil {
+			bombing_attackers := i_battle_get_attacking_units(bombing_battle)
+			kept := make([dynamic]^Unit)
+			for u in attacking_units {
+				if !slice.contains(bombing_attackers[:], u) {
+					append(&kept, u)
+				}
+			}
+			delete(attacking_units)
+			attacking_units = kept
+		}
+		all_infra := len(attacking_units) > 0
+		for u in attacking_units {
+			if !infra_p(infra_c, u) {
+				all_infra = false
+				break
+			}
+		}
+		if all_infra {
+			continue
+		}
+		battle := battle_tracker_get_pending_battle(battle_tracker, territory, .NORMAL)
+		if battle == nil {
+			all_enemy_infra := true
+			for u in enemy_units {
+				if !infra_p(infra_c, u) {
+					all_enemy_infra = false
+					break
+				}
+			}
+			if all_enemy_infra {
+				battle_delegate_land_paratroopers(player, territory, bridge)
+			}
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(bridge),
+				strings.concatenate(
+					{
+						player.named.base.name,
+						" creates battle in territory ",
+						territory.named.base.name,
+					},
+				),
+			)
+			battle_tracker_add_battle_6(
+				battle_tracker,
+				cast(^Route)route_scripted_new(territory),
+				attacking_units,
+				player,
+				bridge,
+				nil,
+				nil,
+			)
+			battle = battle_tracker_get_pending_battle(battle_tracker, territory, .NORMAL)
+		}
+		if battle == nil {
+			continue
+		}
+		if bombing_battle != nil {
+			battle_tracker_add_dependency(battle_tracker, battle, bombing_battle)
+		}
+		if i_battle_is_empty(battle) {
+			i_battle_add_attack_change(
+				battle,
+				cast(^Route)route_scripted_new(territory),
+				attacking_units,
+				nil,
+			)
+		}
+		battle_attackers := i_battle_get_attacking_units(battle)
+		all_present := true
+		for u in attacking_units {
+			if !slice.contains(battle_attackers[:], u) {
+				all_present = false
+				break
+			}
+		}
+		if !all_present {
+			need := make([dynamic]^Unit)
+			for u in attacking_units {
+				if !slice.contains(battle_attackers[:], u) {
+					append(&need, u)
+				}
+			}
+			dep_of_attackers := i_battle_get_dependent_units(battle, battle_attackers)
+			defer delete(dep_of_attackers)
+			filtered_need := make([dynamic]^Unit)
+			for u in need {
+				if !slice.contains(dep_of_attackers[:], u) {
+					append(&filtered_need, u)
+				}
+			}
+			delete(need)
+			need = filtered_need
+			if territory_is_water(territory) {
+				land_p, land_c := matches_unit_is_land()
+				kept := make([dynamic]^Unit)
+				for u in need {
+					if !land_p(land_c, u) {
+						append(&kept, u)
+					}
+				}
+				delete(need)
+				need = kept
+			} else {
+				kept := make([dynamic]^Unit)
+				for u in need {
+					if !sea_pred(sea_ctx, u) {
+						append(&kept, u)
+					}
+				}
+				delete(need)
+				need = kept
+			}
+			if len(need) > 0 {
+				i_battle_add_attack_change(
+					battle,
+					cast(^Route)route_scripted_new(territory),
+					need,
+					nil,
+				)
+			}
+		}
+		// Stalemate detection.
+		all_attackers_st := len(attacking_units) > 0
+		for u in attacking_units {
+			if !(st_pred(st_ctx, u) && sea_pred(sea_ctx, u)) {
+				all_attackers_st = false
+				break
+			}
+		}
+		all_enemies_st := len(enemy_units) > 0
+		for u in enemy_units {
+			if !(st_pred(st_ctx, u) && sea_pred(sea_ctx, u)) {
+				all_enemies_st = false
+				break
+			}
+		}
+		atk1_p, atk1_c := matches_unit_has_attack_value_of_at_least(1)
+		def1_p, def1_c := matches_unit_has_defend_value_of_at_least(1)
+		all_attackers_no_attack := len(attacking_units) > 0
+		for u in attacking_units {
+			if atk1_p(atk1_c, u) {
+				all_attackers_no_attack = false
+				break
+			}
+		}
+		all_enemies_no_def := len(enemy_units) > 0
+		for u in enemy_units {
+			if def1_p(def1_c, u) {
+				all_enemies_no_def = false
+				break
+			}
+		}
+		stalemate :=
+			(ignore_transports && all_attackers_st && all_enemies_st) ||
+			(all_attackers_no_attack && all_enemies_no_def)
+		if stalemate {
+			results := battle_results_new_with_who_won(battle, .DRAW, data)
+			battle_records_add_result_to_battle(
+				battle_tracker_get_battle_records(battle_tracker),
+				player,
+				i_battle_get_battle_id(battle),
+				nil,
+				0,
+				0,
+				.STALEMATE,
+				results,
+			)
+			i_battle_cancel_battle(battle, bridge)
+			battle_tracker_remove_battle(battle_tracker, battle, data)
+			continue
+		}
+		if len(attacking_units) > 0 {
+			remote_player := i_delegate_bridge_get_remote_player(bridge)
+			is_water := territory_is_water(territory)
+			props := game_data_get_properties(data)
+			if (is_water && properties_get_sea_battles_may_be_ignored(props)) ||
+			   (!is_water && properties_get_land_battles_may_be_ignored(props)) {
+				if !player_select_attack_units(remote_player, territory) {
+					results := battle_results_new_with_who_won(battle, .NOT_FINISHED, data)
+					battle_records_add_result_to_battle(
+						battle_tracker_get_battle_records(battle_tracker),
+						player,
+						i_battle_get_battle_id(battle),
+						nil,
+						0,
+						0,
+						.NO_BATTLE,
+						results,
+					)
+					i_battle_cancel_battle(battle, bridge)
+					battle_tracker_remove_battle(battle_tracker, battle, data)
+				}
+				continue
+			}
+			all_enemies_st_only := len(enemy_units) > 0
+			for u in enemy_units {
+				if !(st_pred(st_ctx, u) && sea_pred(sea_ctx, u)) {
+					all_enemies_st_only = false
+					break
+				}
+			}
+			if ignore_transports && all_enemies_st_only {
+				if !player_select_attack_transports(remote_player, territory) {
+					results := battle_results_new_with_who_won(battle, .NOT_FINISHED, data)
+					battle_records_add_result_to_battle(
+						battle_tracker_get_battle_records(battle_tracker),
+						player,
+						i_battle_get_battle_id(battle),
+						nil,
+						0,
+						0,
+						.NO_BATTLE,
+						results,
+					)
+					i_battle_cancel_battle(battle, bridge)
+					battle_tracker_remove_battle(battle_tracker, battle, data)
+				}
+				continue
+			}
+			can_passthrough_p, can_passthrough_c := matches_unit_can_be_moved_through_by_enemies()
+			all_enemies_passthrough := len(enemy_units) > 0
+			for u in enemy_units {
+				if !can_passthrough_p(can_passthrough_c, u) {
+					all_enemies_passthrough = false
+					break
+				}
+			}
+			if all_enemies_passthrough {
+				if !player_select_attack_subs(remote_player, territory) {
+					results := battle_results_new_with_who_won(battle, .NOT_FINISHED, data)
+					battle_records_add_result_to_battle(
+						battle_tracker_get_battle_records(battle_tracker),
+						player,
+						i_battle_get_battle_id(battle),
+						nil,
+						0,
+						0,
+						.NO_BATTLE,
+						results,
+					)
+					i_battle_cancel_battle(battle, bridge)
+					battle_tracker_remove_battle(battle_tracker, battle, data)
+				}
+				continue
+			}
+			all_enemies_ts := len(enemy_units) > 0
+			for u in enemy_units {
+				is_st_or_sub :=
+					(st_pred(st_ctx, u) && sea_pred(sea_ctx, u)) || evade_pred(evade_ctx, u)
+				if !is_st_or_sub {
+					all_enemies_ts = false
+					break
+				}
+			}
+			if ignore_transports && all_enemies_ts {
+				if !player_select_attack_units(remote_player, territory) {
+					results := battle_results_new_with_who_won(battle, .NOT_FINISHED, data)
+					battle_records_add_result_to_battle(
+						battle_tracker_get_battle_records(battle_tracker),
+						player,
+						i_battle_get_battle_id(battle),
+						nil,
+						0,
+						0,
+						.NO_BATTLE,
+						results,
+					)
+					i_battle_cancel_battle(battle, bridge)
+					battle_tracker_remove_battle(battle_tracker, battle, data)
+				}
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#doScrambling()
+//
+// Faithful port of the private void method. Looks at every territory the
+// scramble logic determines is a viable scramble destination, prompts the
+// defender for which units to scramble, validates max-count and fuel, then
+// applies the resulting unit moves and battle creations / dependencies.
+battle_delegate_do_scrambling :: proc(self: ^Battle_Delegate) {
+	data := i_delegate_bridge_get_data(self.bridge)
+	if !properties_get_scramble_rules_in_effect(game_data_get_properties(data)) {
+		return
+	}
+	pending_battle_sites := battle_tracker_get_battle_listing_from_pending_battles(self.battle_tracker)
+	territories_with_battles := battle_listing_get_normal_battles_including_air_battles(pending_battle_sites)
+	if properties_get_can_scramble_into_air_battles(game_data_get_properties(data)) {
+		extra := battle_listing_get_strategic_bombing_raids_including_air_battles(pending_battle_sites)
+		for t in extra {
+			territories_with_battles[t] = {}
+		}
+	}
+	scramble_logic := scramble_logic_new(
+		&data.game_state,
+		self.player,
+		territories_with_battles,
+		self.battle_tracker,
+	)
+	all_dest := scramble_logic_get_units_that_can_scramble_by_destination(scramble_logic)
+	for to, scramblers in all_dest {
+		// scramblers.entrySet().removeIf(...)
+		drop_keys := make([dynamic]^Territory)
+		defer delete(drop_keys)
+		for from, tup in scramblers {
+			from_units := unit_collection_get_units(territory_get_unit_collection(from))
+			kept := make([dynamic]^Unit)
+			for u in tup.second {
+				if slice.contains(from_units[:], u) {
+					append(&kept, u)
+				}
+			}
+			delete(tup.second)
+			tup.second = kept
+			if len(tup.second) == 0 {
+				append(&drop_keys, from)
+			}
+		}
+		for from in drop_keys {
+			delete_key(&scramblers, from)
+		}
+
+		scrambled_here := false
+		defender := player_list_get_null_player(game_data_get_player_list(data))
+		if len(scramblers) > 0 {
+			if battle_tracker_has_pending_non_bombing_battle(self.battle_tracker, to) {
+				defender = abstract_battle_find_defender(to, self.player, &data.game_state)
+			}
+			if game_player_is_null(defender) {
+				for from in scramblers {
+					candidate := abstract_battle_find_defender(from, self.player, &data.game_state)
+					if !game_player_is_null(candidate) {
+						defender = candidate
+						break
+					}
+				}
+				if game_player_is_null(defender) {
+					defender = player_list_get_null_player(game_data_get_player_list(data))
+				}
+			}
+			if game_player_is_null(defender) {
+				continue
+			}
+			remote := i_delegate_bridge_get_remote_player(self.bridge, defender)
+			to_scramble := player_scramble_units_query(remote, to, scramblers)
+			if to_scramble == nil {
+				continue
+			}
+			for k, _ in to_scramble {
+				if _, ok := scramblers[k]; !ok {
+					fmt.panicf("Trying to scramble from illegal territory")
+				}
+			}
+			for from, _ in scramblers {
+				units, has_units := to_scramble[from]
+				if !has_units {
+					continue
+				}
+				max_allowed := scramble_logic_get_max_scramble_count(scramblers[from].first)
+				if i32(len(units)) > max_allowed {
+					fmt.panicf(
+						"Trying to scramble %d out of %s, but max allowed is %d",
+						len(units),
+						from.named.base.name,
+						max_allowed,
+					)
+				}
+			}
+			player_fuel_cost := make(map[^Game_Player]^Resource_Collection)
+			defer delete(player_fuel_cost)
+			for from, units in to_scramble {
+				cost_map := route_get_scramble_fuel_cost_charge(units[:], from, to, data)
+				for p, cost in cost_map {
+					if existing, has := player_fuel_cost[p]; has {
+						resource_collection_add(existing, cost)
+					} else {
+						player_fuel_cost[p] = cost
+					}
+				}
+			}
+			for p, cost in player_fuel_cost {
+				copy_im := resource_collection_get_resources_copy(cost)
+				if !resource_collection_has(game_player_get_resources(p), &copy_im) {
+					fmt.panicf("Not enough fuel to scramble, player: %s", p.named.base.name)
+				}
+			}
+
+			change := composite_change_new()
+			for t, scrambling in to_scramble {
+				if len(scrambling) == 0 {
+					continue
+				}
+				number_scrambled := i32(len(scrambling))
+				airbase_pred, airbase_ctx := scramble_logic_get_airbase_that_can_scramble_predicate(scramble_logic)
+				airbases := make([dynamic]^Unit)
+				for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+					if airbase_pred(airbase_ctx, u) {
+						append(&airbases, u)
+					}
+				}
+				max_can_scramble := scramble_logic_get_max_scramble_count(airbases)
+				if max_can_scramble != max(i32) {
+					for airbase in airbases {
+						allowed_scramble := unit_get_max_scramble_count(airbase)
+						if allowed_scramble > 0 {
+							new_allowed: i32
+							if allowed_scramble >= number_scrambled {
+								new_allowed = allowed_scramble - number_scrambled
+								number_scrambled = 0
+							} else {
+								new_allowed = 0
+								number_scrambled -= allowed_scramble
+							}
+							boxed := new(i32)
+							boxed^ = new_allowed
+							composite_change_add(
+								change,
+								change_factory_unit_property_change_property_name(
+									airbase,
+									rawptr(boxed),
+									.Max_Scramble_Count,
+								),
+							)
+						}
+						if number_scrambled <= 0 {
+							break
+						}
+					}
+				}
+				delete(airbases)
+				for u in scrambling {
+					composite_change_add(
+						change,
+						change_factory_unit_property_change_property_name(
+							u,
+							rawptr(t),
+							.Originated_From,
+						),
+					)
+					boxed_true := new(bool)
+					boxed_true^ = true
+					composite_change_add(
+						change,
+						change_factory_unit_property_change_property_name(
+							u,
+							rawptr(boxed_true),
+							.Was_Scrambled,
+						),
+					)
+					route := route_new_from_start_and_steps(t, to)
+					composite_change_add(
+						change,
+						route_get_fuel_changes([]^Unit{u}, route, unit_get_owner(u), data),
+					)
+				}
+				composite_change_add(
+					change,
+					change_factory_move_units(t, to, scrambling),
+				)
+				history_writer := i_delegate_bridge_get_history_writer(self.bridge)
+				event := fmt.aprintf(
+					"%s scrambles %d units out of %s to defend against the attack in %s",
+					defender.named.base.name,
+					len(scrambling),
+					t.named.base.name,
+					to.named.base.name,
+				)
+				i_delegate_history_writer_start_event(history_writer, event, rawptr(&scrambling))
+				scrambled_here = true
+			}
+			if !composite_change_is_empty(change) {
+				i_delegate_bridge_add_change(self.bridge, &change.change)
+			}
+		}
+		if !scrambled_here {
+			continue
+		}
+		bombing := battle_tracker_get_pending_bombing_battle(self.battle_tracker, to)
+		battle := battle_tracker_get_pending_battle(self.battle_tracker, to, .NORMAL)
+		if battle == nil {
+			to_uc := territory_get_unit_collection(to)
+			owned_p2, owned_c2 := matches_unit_is_owned_by(self.player)
+			attacking_units := make([dynamic]^Unit)
+			for u in unit_collection_get_units(to_uc) {
+				if owned_p2(owned_c2, u) {
+					append(&attacking_units, u)
+				}
+			}
+			if bombing != nil {
+				bombing_attackers := i_battle_get_attacking_units(bombing)
+				kept := make([dynamic]^Unit)
+				for u in attacking_units {
+					if !slice.contains(bombing_attackers[:], u) {
+						append(&kept, u)
+					}
+				}
+				delete(attacking_units)
+				attacking_units = kept
+			}
+			if len(attacking_units) == 0 {
+				continue
+			}
+			history_writer := i_delegate_bridge_get_history_writer(self.bridge)
+			event := strings.concatenate(
+				{
+					defender.named.base.name,
+					" scrambles to create a battle in territory ",
+					to.named.base.name,
+				},
+			)
+			i_delegate_history_writer_start_event(history_writer, event)
+			battle_tracker_add_battle_6(
+				self.battle_tracker,
+				cast(^Route)route_scripted_new(to),
+				attacking_units,
+				self.player,
+				self.bridge,
+				nil,
+				nil,
+			)
+			battle = battle_tracker_get_pending_battle(self.battle_tracker, to, .NORMAL)
+			if battle != nil && (cast(^Abstract_Battle)battle).is_must_fight_battle {
+				mfb := cast(^Must_Fight_Battle)battle
+				transport_p, transport_c := matches_unit_is_sea_transport()
+				any_transport := false
+				for u in attacking_units {
+					if transport_p(transport_c, u) {
+						any_transport = true
+						break
+					}
+				}
+				if any_transport {
+					reload_change := composite_change_new()
+					transport_tracker_reload_transports(attacking_units, reload_change)
+					if !composite_change_is_empty(reload_change) {
+						i_delegate_bridge_add_change(self.bridge, &reload_change.change)
+					}
+				}
+				air_p, air_c := matches_unit_is_air()
+				any_non_air := false
+				for u in attacking_units {
+					if !air_p(air_c, u) {
+						any_non_air = true
+						break
+					}
+				}
+				if any_non_air {
+					attacking_from_map := make(map[^Territory][dynamic]^Unit)
+					predicate_pair: proc(rawptr, ^Territory) -> bool
+					predicate_ctx: rawptr
+					if territory_is_water(to) {
+						predicate_pair, predicate_ctx = matches_territory_is_water()
+					} else {
+						predicate_pair, predicate_ctx = matches_territory_is_land()
+					}
+					neighbors := game_map_get_neighbors_predicate(
+						game_data_get_map(data),
+						to,
+						predicate_pair,
+						predicate_ctx,
+					)
+					for nbr in neighbors {
+						copy_units := make([dynamic]^Unit)
+						for u in attacking_units {
+							append(&copy_units, u)
+						}
+						attacking_from_map[nbr] = copy_units
+					}
+					must_fight_battle_set_attacking_from_map(mfb, attacking_from_map)
+				}
+			}
+		} else if (cast(^Abstract_Battle)battle).is_must_fight_battle {
+			must_fight_battle_reset_defending_units(cast(^Must_Fight_Battle)battle, self.player)
+		}
+		if territory_is_water(to) {
+			land_p, land_c := matches_territory_is_land()
+			neighbors := game_map_get_neighbors_predicate(
+				game_data_get_map(data),
+				to,
+				land_p,
+				land_c,
+			)
+			amphib_p, amphib_c := matches_battle_is_amphibious_with_units_attacking_from(to)
+			for nbr in neighbors {
+				adjacent_battle := battle_tracker_get_pending_battle(
+					self.battle_tracker,
+					nbr,
+					.NORMAL,
+				)
+				if adjacent_battle == nil {
+					continue
+				}
+				if amphib_p(amphib_c, adjacent_battle) {
+					battle_tracker_add_dependency(self.battle_tracker, adjacent_battle, battle)
+				}
+				if (cast(^Abstract_Battle)adjacent_battle).is_must_fight_battle {
+					must_fight_battle_reset_defending_units(
+						cast(^Must_Fight_Battle)adjacent_battle,
+						self.player,
+					)
+				}
+			}
+		}
+	}
+}

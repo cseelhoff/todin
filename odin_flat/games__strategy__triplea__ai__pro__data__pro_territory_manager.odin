@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:slice"
 
 Pro_Territory_Manager :: struct {
@@ -1749,5 +1750,664 @@ pro_territory_manager_lambda_find_scramble_options_0 :: proc(
 	append(&one, unit)
 	empty: [dynamic]^Unit
 	return pro_battle_utils_estimate_strength(to, one, empty, false)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#populatePotentialAttackOptions()
+// Delegates to the static find_potential_attack_options helper, passing the
+// potential_attack_options sub-maps and a pointer to its transport_list so
+// the helper's amphib pass can append in place.
+pro_territory_manager_populate_potential_attack_options :: proc(self: ^Pro_Territory_Manager) {
+	pro_territory_manager_find_potential_attack_options(
+		self.pro_data,
+		self.player,
+		pro_data_get_my_unit_territories(self.pro_data),
+		pro_my_move_options_get_territory_map(self.potential_attack_options),
+		pro_my_move_options_get_unit_move_map(self.potential_attack_options),
+		pro_my_move_options_get_transport_move_map(self.potential_attack_options),
+		pro_my_move_options_get_bombard_map(self.potential_attack_options),
+		&self.potential_attack_options.transport_list,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#populateDefenseOptions(List<Territory>)
+// Delegates to the static find_defend_options helper with the defend_options
+// sub-maps; transport_list is taken by pointer so the helper's amphib pass
+// can mutate the underlying dynamic array, and is_checking_enemy_attacks is
+// false to mirror the Java call site.
+pro_territory_manager_populate_defense_options :: proc(
+	self:                ^Pro_Territory_Manager,
+	cleared_territories: [dynamic]^Territory,
+) {
+	pro_territory_manager_find_defend_options(
+		self.pro_data,
+		self.player,
+		pro_data_get_my_unit_territories(self.pro_data),
+		pro_my_move_options_get_territory_map(self.defend_options),
+		pro_my_move_options_get_unit_move_map(self.defend_options),
+		pro_my_move_options_get_transport_move_map(self.defend_options),
+		&self.defend_options.transport_list,
+		cleared_territories,
+		false,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findAlliedAttackOptions(GamePlayer)
+//
+// Instance helper. For each ally (in turn order) gather their unit
+// territories and run the static find_attack_options pass with empty
+// enemy/allied/check lists; the per-ally attack maps are aggregated into
+// a Pro_Other_Move_Options keyed by the receiving player (is_attacker=true).
+pro_territory_manager_find_allied_attack_options :: proc(
+	self:   ^Pro_Territory_Manager,
+	player: ^Game_Player,
+) -> ^Pro_Other_Move_Options {
+	data := pro_data_get_data(self.pro_data)
+	allied_players := pro_utils_get_allied_players_in_turn_order(player)
+	defer delete(allied_players)
+	allied_attack_maps: [dynamic]map[^Territory]^Pro_Territory
+
+	for allied_player in allied_players {
+		has_units_p, has_units_c := matches_territory_has_units_owned_by(allied_player)
+		allied_unit_territories := make([dynamic]^Territory)
+		for t in game_map_get_territories(game_data_get_map(data)) {
+			if has_units_p(has_units_c, t) {
+				append(&allied_unit_territories, t)
+			}
+		}
+		attack_map := make(map[^Territory]^Pro_Territory)
+		unit_attack_map := make(map[^Unit]map[^Territory]struct {})
+		transport_attack_map := make(map[^Unit]map[^Territory]struct {})
+		bombard_map := make(map[^Unit]map[^Territory]struct {})
+		transport_map_list: [dynamic]^Pro_Transport
+		append(&allied_attack_maps, attack_map)
+		empty_enemy: [dynamic]^Territory
+		empty_allied: [dynamic]^Territory
+		empty_check: [dynamic]^Territory
+		pro_territory_manager_find_attack_options(
+			self.pro_data,
+			allied_player,
+			allied_unit_territories,
+			attack_map,
+			unit_attack_map,
+			transport_attack_map,
+			bombard_map,
+			&transport_map_list,
+			empty_enemy,
+			empty_allied,
+			empty_check,
+			false,
+			false,
+		)
+	}
+	return pro_other_move_options_new_with_moves(allied_attack_maps, player, true)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findEnemyAttackOptions(
+//     ProData, GamePlayer, Collection<Territory>, Collection<Territory>)
+//
+// Static helper. Walks each enemy in turn order, building the player's
+// attack-options map with `is_checking_enemy_attacks=true` and
+// `is_ignoring_relationships=true`; after each pass the conquered land
+// territories are added to alliedTerritories and removed from the
+// running enemyTerritories list, mirroring the Java accumulator.
+pro_territory_manager_find_enemy_attack_options :: proc(
+	pro_data:             ^Pro_Data,
+	player:               ^Game_Player,
+	cleared_territories:  [dynamic]^Territory,
+	territories_to_check: [dynamic]^Territory,
+) -> ^Pro_Other_Move_Options {
+	data := pro_data_get_data(pro_data)
+	enemy_players := pro_utils_get_enemy_players_in_turn_order(player)
+	defer delete(enemy_players)
+	enemy_attack_maps: [dynamic]map[^Territory]^Pro_Territory
+	allied_territories := make(map[^Territory]struct {})
+	defer delete(allied_territories)
+	enemy_territories := make([dynamic]^Territory)
+	for t in cleared_territories {
+		append(&enemy_territories, t)
+	}
+	land_p, land_c := matches_territory_is_land()
+
+	for enemy_player in enemy_players {
+		has_units_p, has_units_c := matches_territory_has_units_owned_by(enemy_player)
+		enemy_unit_territories := make([dynamic]^Territory)
+		for t in game_map_get_territories(game_data_get_map(data)) {
+			if !has_units_p(has_units_c, t) {
+				continue
+			}
+			in_cleared := false
+			for ct in cleared_territories {
+				if ct == t {
+					in_cleared = true
+					break
+				}
+			}
+			if !in_cleared {
+				append(&enemy_unit_territories, t)
+			}
+		}
+		attack_map := make(map[^Territory]^Pro_Territory)
+		unit_attack_map := make(map[^Unit]map[^Territory]struct {})
+		transport_attack_map := make(map[^Unit]map[^Territory]struct {})
+		bombard_map := make(map[^Unit]map[^Territory]struct {})
+		transport_map_list: [dynamic]^Pro_Transport
+		append(&enemy_attack_maps, attack_map)
+		// Java passes new ArrayList<>(alliedTerritories) — copy.
+		allied_list := make([dynamic]^Territory)
+		for t in allied_territories {
+			append(&allied_list, t)
+		}
+		pro_territory_manager_find_attack_options(
+			pro_data,
+			enemy_player,
+			enemy_unit_territories,
+			attack_map,
+			unit_attack_map,
+			transport_attack_map,
+			bombard_map,
+			&transport_map_list,
+			enemy_territories,
+			allied_list,
+			territories_to_check,
+			true,
+			true,
+		)
+		// alliedTerritories.addAll(getMatches(attackMap.keySet(), territoryIsLand()));
+		for t, _ in attack_map {
+			if land_p(land_c, t) {
+				allied_territories[t] = {}
+			}
+		}
+		// enemyTerritories.removeAll(alliedTerritories);
+		new_enemy := make([dynamic]^Territory)
+		for t in enemy_territories {
+			if !(t in allied_territories) {
+				append(&new_enemy, t)
+			}
+		}
+		delete(enemy_territories)
+		enemy_territories = new_enemy
+	}
+	return pro_other_move_options_new_with_moves(enemy_attack_maps, player, true)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#findEnemyDefendOptions(
+//     ProData, GamePlayer)
+//
+// Static helper. Cleared territories are this player's friendly land
+// (Matches.isTerritoryAllied). Each enemy's defend pass runs against
+// every territory they own, with `is_checking_enemy_attacks=true`, and
+// the per-enemy move maps feed a Pro_Other_Move_Options keyed by the
+// receiving player with `is_attacker=false`.
+pro_territory_manager_find_enemy_defend_options :: proc(
+	pro_data: ^Pro_Data,
+	player:   ^Game_Player,
+) -> ^Pro_Other_Move_Options {
+	data := pro_data_get_data(pro_data)
+	enemy_players := pro_utils_get_enemy_players_in_turn_order(player)
+	defer delete(enemy_players)
+	enemy_move_maps: [dynamic]map[^Territory]^Pro_Territory
+
+	allied_p, allied_c := matches_is_territory_allied(player)
+	cleared_territories := make([dynamic]^Territory)
+	for t in game_map_get_territories(game_data_get_map(data)) {
+		if allied_p(allied_c, t) {
+			append(&cleared_territories, t)
+		}
+	}
+
+	for enemy_player in enemy_players {
+		has_units_p, has_units_c := matches_territory_has_units_owned_by(enemy_player)
+		enemy_unit_territories := make([dynamic]^Territory)
+		for t in game_map_get_territories(game_data_get_map(data)) {
+			if has_units_p(has_units_c, t) {
+				append(&enemy_unit_territories, t)
+			}
+		}
+		move_map := make(map[^Territory]^Pro_Territory)
+		unit_move_map := make(map[^Unit]map[^Territory]struct {})
+		transport_move_map := make(map[^Unit]map[^Territory]struct {})
+		transport_map_list: [dynamic]^Pro_Transport
+		append(&enemy_move_maps, move_map)
+		pro_territory_manager_find_defend_options(
+			pro_data,
+			enemy_player,
+			enemy_unit_territories,
+			move_map,
+			unit_move_map,
+			transport_move_map,
+			&transport_map_list,
+			cleared_territories,
+			true,
+		)
+	}
+	return pro_other_move_options_new_with_moves(enemy_move_maps, player, false)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#removeTerritoriesThatCantBeConquered(
+//     GamePlayer, Map<Territory, ProTerritory>, Map<Unit, Set<Territory>>,
+//     Map<Unit, Set<Territory>>, ProOtherMoveOptions, ProOtherMoveOptions, boolean)
+//
+// Instance helper (uses calc + pro_data fields). For every attack target
+// estimates the max-attack outcome with/without amphib, applies the
+// allied-strafing rescue path for enemy capitals/factories, then drops
+// every territory whose adjusted max win% falls below the win threshold
+// (or whose strafing path leaves no land remaining), removing each
+// dropped Territory from unit_attack_map and transport_attack_map's
+// per-unit destination sets just like Java's HashMap value mutation.
+pro_territory_manager_remove_territories_that_cant_be_conquered :: proc(
+	self:                      ^Pro_Territory_Manager,
+	player:                    ^Game_Player,
+	attack_map:                map[^Territory]^Pro_Territory,
+	unit_attack_map:           map[^Unit]map[^Territory]struct {},
+	transport_attack_map:      map[^Unit]map[^Territory]struct {},
+	allied_attack_options:     ^Pro_Other_Move_Options,
+	enemy_defend_options:      ^Pro_Other_Move_Options,
+	is_ignoring_relationships: bool,
+) -> [dynamic]^Pro_Territory {
+	pro_logger_info("Removing territories that can't be conquered")
+	data := pro_data_get_data(self.pro_data)
+	game_map := game_data_get_map(data)
+
+	territories_to_remove := make([dynamic]^Territory)
+	has_infra_p, has_infra_c := pro_matches_territory_has_infra_factory_and_is_land()
+
+	for t, patd in attack_map {
+		// Defenders: ignoring-relationships → t.units minus patd.maxUnits;
+		// otherwise → patd.getMaxEnemyDefenders(player).
+		defenders: [dynamic]^Unit
+		if is_ignoring_relationships {
+			uc := territory_get_unit_collection(t)
+			max_units_set := pro_territory_get_max_units(patd)
+			for u in unit_collection_get_units(uc) {
+				if !(u in max_units_set) {
+					append(&defenders, u)
+				}
+			}
+		} else {
+			defenders = pro_territory_get_max_enemy_defenders(patd, player)
+		}
+
+		// patd.setMaxBattleResult(calc.estimateAttackBattleResults(proData, t, max_units, defenders, Set.of()))
+		max_units_list := make([dynamic]^Unit)
+		for u in pro_territory_get_max_units(patd) {
+			append(&max_units_list, u)
+		}
+		empty_bombard: [dynamic]^Unit
+		first_result := pro_odds_calculator_estimate_attack_battle_results(
+			self.calc,
+			self.pro_data,
+			t,
+			max_units_list,
+			defenders,
+			empty_bombard,
+		)
+		pro_territory_set_max_battle_result(patd, first_result)
+
+		// Add amphib units if can't win without them.
+		if pro_battle_result_get_win_percentage(pro_territory_get_max_battle_result(patd)) <
+			   pro_data_get_win_percentage(self.pro_data) &&
+		   len(pro_territory_get_max_amphib_units(patd)) > 0 {
+			combined := make(map[^Unit]struct {})
+			for u in pro_territory_get_max_units(patd) {
+				combined[u] = {}
+			}
+			for u in pro_territory_get_max_amphib_units(patd) {
+				combined[u] = {}
+			}
+			combined_list := make([dynamic]^Unit)
+			for u in combined {
+				append(&combined_list, u)
+			}
+			bombard_list := make([dynamic]^Unit)
+			for u in pro_territory_get_max_bombard_units(patd) {
+				append(&bombard_list, u)
+			}
+			amphib_result := pro_odds_calculator_estimate_attack_battle_results(
+				self.calc,
+				self.pro_data,
+				t,
+				combined_list,
+				defenders,
+				bombard_list,
+			)
+			pro_territory_set_max_battle_result(patd, amphib_result)
+			pro_territory_set_need_amphib_units(patd, true)
+			delete(combined)
+		}
+
+		// Strafing / allied-attack rescue for enemy capital or factory.
+		att := territory_attachment_get(t)
+		is_capital := att != nil && territory_attachment_is_capital(att)
+		is_enemy_capital_or_factory :=
+			!pro_utils_is_neutral_land(t) && (is_capital || has_infra_p(has_infra_c, t))
+		if pro_battle_result_get_win_percentage(pro_territory_get_max_battle_result(patd)) <
+			   self.pro_data.min_win_percentage &&
+		   is_enemy_capital_or_factory &&
+		   pro_other_move_options_get_max(allied_attack_options, t) != nil {
+
+			allied_attack := pro_other_move_options_get_max(allied_attack_options, t)
+			allied_units := make(map[^Unit]struct {})
+			for u in pro_territory_get_max_units(allied_attack) {
+				allied_units[u] = {}
+			}
+			for u in pro_territory_get_max_amphib_units(allied_attack) {
+				allied_units[u] = {}
+			}
+			if len(allied_units) > 0 {
+				// CollectionUtils.getAny(alliedUnits).getOwner()
+				allied_player: ^Game_Player
+				for u in allied_units {
+					allied_player = unit_get_owner(u)
+					break
+				}
+				capital := territory_attachment_get_first_owned_capital_or_first_unowned_capital(
+					allied_player,
+					game_map,
+				)
+				if capital != nil {
+					capital_neighbors := game_map_get_neighbors(game_map, capital)
+					if !(t in capital_neighbors) {
+						// Build additionalEnemyDefenders from each enemyDefendOption whose
+						// owner takes a turn before allied_player in the turn order.
+						additional_enemy_defenders := make(map[^Unit]struct {})
+						players_in_order := pro_utils_get_other_players_in_turn_order(player)
+						defer delete(players_in_order)
+						all_options := pro_other_move_options_get_all(enemy_defend_options, t)
+						for enemy_defend_option in all_options {
+							enemy_units := make(map[^Unit]struct {})
+							for u in pro_territory_get_max_units(enemy_defend_option) {
+								enemy_units[u] = {}
+							}
+							for u in pro_territory_get_max_amphib_units(enemy_defend_option) {
+								enemy_units[u] = {}
+							}
+							if len(enemy_units) > 0 {
+								enemy_player: ^Game_Player
+								for u in enemy_units {
+									enemy_player = unit_get_owner(u)
+									break
+								}
+								if pro_utils_is_players_turn_first(
+									players_in_order,
+									enemy_player,
+									allied_player,
+								) {
+									for u in enemy_units {
+										additional_enemy_defenders[u] = {}
+									}
+								}
+							}
+							delete(enemy_units)
+						}
+
+						// enemyDefendersBeforeStrafe = defenders ∪ additional
+						before_set := make(map[^Unit]struct {})
+						for u in defenders {
+							before_set[u] = {}
+						}
+						for u in additional_enemy_defenders {
+							before_set[u] = {}
+						}
+						before_list := make([dynamic]^Unit)
+						for u in before_set {
+							append(&before_list, u)
+						}
+
+						allied_units_list := make([dynamic]^Unit)
+						for u in allied_units {
+							append(&allied_units_list, u)
+						}
+						allied_bombard_list := make([dynamic]^Unit)
+						for u in pro_territory_get_max_bombard_units(allied_attack) {
+							append(&allied_bombard_list, u)
+						}
+
+						strafe_check := pro_odds_calculator_estimate_attack_battle_results(
+							self.calc,
+							self.pro_data,
+							t,
+							allied_units_list,
+							before_list,
+							allied_bombard_list,
+						)
+
+						if pro_battle_result_get_win_percentage(strafe_check) <
+						   pro_data_get_win_percentage(self.pro_data) {
+							pro_territory_set_strafing(patd, true)
+
+							combined_set := make(map[^Unit]struct {})
+							for u in pro_territory_get_max_units(patd) {
+								combined_set[u] = {}
+							}
+							for u in pro_territory_get_max_amphib_units(patd) {
+								combined_set[u] = {}
+							}
+							combined_list := make([dynamic]^Unit)
+							for u in combined_set {
+								append(&combined_list, u)
+							}
+							patd_bombard_list := make([dynamic]^Unit)
+							for u in pro_territory_get_max_bombard_units(patd) {
+								append(&patd_bombard_list, u)
+							}
+							strafe_result :=
+								pro_odds_calculator_call_battle_calc_with_retreat_air(
+									self.calc,
+									self.pro_data,
+									t,
+									combined_list,
+									defenders,
+									patd_bombard_list,
+								)
+
+							after_set := make(map[^Unit]struct {})
+							for u in pro_battle_result_get_average_defenders_remaining(
+								strafe_result,
+							) {
+								after_set[u] = {}
+							}
+							for u in additional_enemy_defenders {
+								after_set[u] = {}
+							}
+							after_list := make([dynamic]^Unit)
+							for u in after_set {
+								append(&after_list, u)
+							}
+
+							allied_units_list2 := make([dynamic]^Unit)
+							for u in allied_units {
+								append(&allied_units_list2, u)
+							}
+							allied_bombard_list2 := make([dynamic]^Unit)
+							for u in pro_territory_get_max_bombard_units(allied_attack) {
+								append(&allied_bombard_list2, u)
+							}
+							r2 := pro_odds_calculator_estimate_attack_battle_results(
+								self.calc,
+								self.pro_data,
+								t,
+								allied_units_list2,
+								after_list,
+								allied_bombard_list2,
+							)
+							pro_territory_set_max_battle_result(patd, r2)
+
+							ap_name := default_named_get_name(
+								&allied_player.named_attachable.default_named,
+							)
+							pro_logger_debug(
+								fmt.aprintf(
+									"Checking strafing territory: %s, alliedPlayer=%s, maxWin%%=%v, maxAttackers=%d, maxDefenders=%d",
+									territory_to_string(t),
+									ap_name,
+									pro_battle_result_get_win_percentage(
+										pro_territory_get_max_battle_result(patd),
+									),
+									len(allied_units),
+									len(after_set),
+								),
+							)
+							delete(combined_set)
+							delete(after_set)
+						}
+						delete(before_set)
+						delete(additional_enemy_defenders)
+					}
+				}
+			}
+			delete(allied_units)
+		}
+
+		max_pct := pro_battle_result_get_win_percentage(pro_territory_get_max_battle_result(patd))
+		if max_pct < self.pro_data.min_win_percentage ||
+		   (pro_territory_is_strafing(patd) &&
+				   (max_pct < pro_data_get_win_percentage(self.pro_data) ||
+						   !pro_battle_result_is_has_land_unit_remaining(
+							   pro_territory_get_max_battle_result(patd),
+						   ))) {
+			append(&territories_to_remove, t)
+		}
+	}
+
+	// Java: Collections.sort(territoriesToRemove);  — Territory natural order.
+	slice.sort_by(territories_to_remove[:], proc(a, b: ^Territory) -> bool {
+		return territory_compare_to(a, b) < 0
+	})
+
+	// Build the result list as attackMap.values() minus removed entries,
+	// while pruning each removed territory from unit/transport attack maps.
+	remove_set := make(map[^Pro_Territory]struct {})
+	defer delete(remove_set)
+	for t in territories_to_remove {
+		pt := attack_map[t]
+		remove_set[pt] = {}
+		combined := make(map[^Unit]struct {})
+		for u in pro_territory_get_max_units(pt) {
+			combined[u] = {}
+		}
+		for u in pro_territory_get_max_amphib_units(pt) {
+			combined[u] = {}
+		}
+		pro_logger_debug(
+			fmt.aprintf(
+				"Removing territory that we can't successfully attack: %s, maxWin%%=%v, maxAttackers=%d",
+				territory_to_string(t),
+				pro_battle_result_get_win_percentage(pro_territory_get_max_battle_result(pt)),
+				len(combined),
+			),
+		)
+		delete(combined)
+		t_local := t
+		for _, territories in unit_attack_map {
+			delete_key(&territories, t_local)
+		}
+		for _, territories in transport_attack_map {
+			delete_key(&territories, t_local)
+		}
+	}
+
+	result := make([dynamic]^Pro_Territory)
+	for _, v in attack_map {
+		if !(v in remove_set) {
+			append(&result, v)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#populateAttackOptions()
+// Sets attack_options via the static find_attack_options helper (empty
+// enemy/allied/check lists, not checking enemy attacks, not ignoring
+// relationships), then runs the bombing pass and refreshes
+// allied_attack_options.
+pro_territory_manager_populate_attack_options :: proc(self: ^Pro_Territory_Manager) {
+	empty_enemy: [dynamic]^Territory
+	empty_allied: [dynamic]^Territory
+	empty_check: [dynamic]^Territory
+	pro_territory_manager_find_attack_options(
+		self.pro_data,
+		self.player,
+		pro_data_get_my_unit_territories(self.pro_data),
+		pro_my_move_options_get_territory_map(self.attack_options),
+		pro_my_move_options_get_unit_move_map(self.attack_options),
+		pro_my_move_options_get_transport_move_map(self.attack_options),
+		pro_my_move_options_get_bombard_map(self.attack_options),
+		&self.attack_options.transport_list,
+		empty_enemy,
+		empty_allied,
+		empty_check,
+		false,
+		false,
+	)
+	pro_territory_manager_find_bombing_options(self)
+	self.allied_attack_options = pro_territory_manager_find_allied_attack_options(
+		self,
+		self.player,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#populateEnemyAttackOptions(
+//     Collection<Territory>, Collection<Territory>)
+pro_territory_manager_populate_enemy_attack_options :: proc(
+	self:                 ^Pro_Territory_Manager,
+	cleared_territories:  [dynamic]^Territory,
+	territories_to_check: [dynamic]^Territory,
+) {
+	self.enemy_attack_options = pro_territory_manager_find_enemy_attack_options(
+		self.pro_data,
+		self.player,
+		cleared_territories,
+		territories_to_check,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#populateEnemyDefenseOptions()
+pro_territory_manager_populate_enemy_defense_options :: proc(self: ^Pro_Territory_Manager) {
+	pro_territory_manager_find_scramble_options(
+		self.pro_data,
+		self.player,
+		pro_my_move_options_get_territory_map(self.attack_options),
+	)
+	self.enemy_defend_options = pro_territory_manager_find_enemy_defend_options(
+		self.pro_data,
+		self.player,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#removePotentialTerritoriesThatCantBeConquered()
+// Delegates to the multi-arg instance helper using potential_attack_options
+// with is_ignoring_relationships=true (per Java).
+pro_territory_manager_remove_potential_territories_that_cant_be_conquered :: proc(
+	self: ^Pro_Territory_Manager,
+) -> [dynamic]^Pro_Territory {
+	return pro_territory_manager_remove_territories_that_cant_be_conquered(
+		self,
+		self.player,
+		pro_my_move_options_get_territory_map(self.potential_attack_options),
+		pro_my_move_options_get_unit_move_map(self.potential_attack_options),
+		pro_my_move_options_get_transport_move_map(self.potential_attack_options),
+		self.allied_attack_options,
+		self.enemy_defend_options,
+		true,
+	)
+}
+
+// games.strategy.triplea.ai.pro.data.ProTerritoryManager#removeTerritoriesThatCantBeConquered()
+// No-arg public overload. Suffix _0 disambiguates from the multi-arg
+// instance helper of the same Java name already ported above.
+pro_territory_manager_remove_territories_that_cant_be_conquered_0 :: proc(
+	self: ^Pro_Territory_Manager,
+) -> [dynamic]^Pro_Territory {
+	return pro_territory_manager_remove_territories_that_cant_be_conquered(
+		self,
+		self.player,
+		pro_my_move_options_get_territory_map(self.attack_options),
+		pro_my_move_options_get_unit_move_map(self.attack_options),
+		pro_my_move_options_get_transport_move_map(self.attack_options),
+		self.allied_attack_options,
+		self.enemy_defend_options,
+		false,
+	)
 }
 

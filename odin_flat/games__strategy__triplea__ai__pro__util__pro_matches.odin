@@ -2790,3 +2790,35 @@ pro_matches_unit_cant_be_moved_and_is_allied_defender :: proc(
 	return pro_matches_pred_unit_cant_be_moved_and_is_allied_defender, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// unitCantBeMovedAndIsAlliedDefenderAndNotInfra(player, t) -> Predicate<Unit>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender_and_not_infra :: struct {
+	player: ^Game_Player,
+	t:      ^Territory,
+}
+
+pro_matches_pred_unit_cant_be_moved_and_is_allied_defender_and_not_infra :: proc(
+	ctx_ptr: rawptr,
+	u: ^Unit,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender_and_not_infra)ctx_ptr
+	base_p, base_c := pro_matches_unit_cant_be_moved_and_is_allied_defender(ctx.player, ctx.t)
+	if !base_p(base_c, u) {
+		return false
+	}
+	ni_p, ni_c := matches_unit_is_not_infrastructure()
+	return ni_p(ni_c, u)
+}
+
+pro_matches_unit_cant_be_moved_and_is_allied_defender_and_not_infra :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender_and_not_infra)
+	ctx.player = player
+	ctx.t = t
+	return pro_matches_pred_unit_cant_be_moved_and_is_allied_defender_and_not_infra, rawptr(ctx)
+}
+

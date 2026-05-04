@@ -1,6 +1,7 @@
 package game
 
 import "core:math"
+import "core:slice"
 
 Pro_Territory_Value_Utils :: struct {}
 
@@ -674,4 +675,535 @@ pro_territory_value_utils_find_territory_attack_value :: proc(
 		value += tuv_swing
 	}
 	return value
+}
+
+// Adapter ctx + trampoline for the Java BiPredicate<Territory,Territory>
+//   (t1, t2) ->
+//       ProMatches.territoryCanPotentiallyMoveLandUnits(player).test(t2)
+//           && ProMatches.noCanalsBetweenTerritories(player).test(t1, t2);
+// constructed inside findLandValue. Captures `player`. Delegates to the
+// already-defined synthetic
+// pro_territory_value_utils_lambda_find_land_value_2 (which inlines the
+// two ProMatches predicates against stack-local ctx structs).
+Pro_Territory_Value_Utils_Find_Land_Value_2_Ctx :: struct {
+	player: ^Game_Player,
+}
+
+pro_territory_value_utils_lambda_find_land_value_2_trampoline :: proc(
+	ctx_ptr: rawptr,
+	t1: ^Territory,
+	t2: ^Territory,
+) -> bool {
+	c := cast(^Pro_Territory_Value_Utils_Find_Land_Value_2_Ctx)ctx_ptr
+	return pro_territory_value_utils_lambda_find_land_value_2(c.player, t1, t2)
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #findLandValue(ProData, Territory, GamePlayer, int,
+//       Map<Territory,Double>, List<Territory>, List<Territory>)
+// Java:
+//   if (territoriesThatCantBeHeld.contains(t)) return 0.0;
+//   final List<Double> values = new ArrayList<>();
+//   final GameData data = proData.getData();
+//   final Collection<Territory> nearbyEnemyCapitalsAndFactories =
+//       findNearbyEnemyCapitalsAndFactories(t, enemyCapitalsAndFactoriesMap.keySet());
+//   final BiPredicate<Territory, Territory> routeCond =
+//       (t1, t2) ->
+//           ProMatches.territoryCanPotentiallyMoveLandUnits(player).test(t2)
+//               && ProMatches.noCanalsBetweenTerritories(player).test(t1, t2);
+//   for (final Territory enemyCapitalOrFactory : nearbyEnemyCapitalsAndFactories) {
+//     final int distance = data.getMap().getDistance(t, enemyCapitalOrFactory, routeCond);
+//     if (distance > 0) {
+//       values.add(enemyCapitalsAndFactoriesMap.get(enemyCapitalOrFactory) / Math.pow(2, distance));
+//     }
+//   }
+//   values.sort(Collections.reverseOrder());
+//   double capitalOrFactoryValue = 0;
+//   for (int i = 0; i < values.size(); i++) {
+//     capitalOrFactoryValue += values.get(i) / Math.pow(2, i);
+//   }
+//   double nearbyEnemyValue = 0;
+//   final Set<Territory> nearbyTerritories = data.getMap().getNeighbors(t, 2, routeCond);
+//   final List<Territory> nearbyEnemyTerritories =
+//       CollectionUtils.getMatches(nearbyTerritories,
+//           ProMatches.territoryIsEnemyOrCantBeHeld(player, territoriesThatCantBeHeld));
+//   nearbyEnemyTerritories.removeAll(territoriesToAttack);
+//   for (final Territory nearbyEnemyTerritory : nearbyEnemyTerritories) {
+//     final int distance = data.getMap().getDistance(t, nearbyEnemyTerritory, routeCond);
+//     if (distance > 0) {
+//       double value = TerritoryAttachment.getProduction(nearbyEnemyTerritory);
+//       if (ProUtils.isNeutralLand(nearbyEnemyTerritory)) {
+//         value = findTerritoryAttackValue(proData, player, nearbyEnemyTerritory) / 3;
+//       } else if (ProMatches.territoryIsAlliedLandAndHasNoEnemyNeighbors(player)
+//           .test(nearbyEnemyTerritory)) {
+//         value *= 0.1;
+//       }
+//       if (value > 0) {
+//         nearbyEnemyValue += (value / Math.pow(2, distance));
+//       }
+//     }
+//   }
+//   final int landMassSize = 1 + data.getMap().getNeighbors(t, 6, routeCond).size();
+//   double value = nearbyEnemyValue * landMassSize / maxLandMassSize + capitalOrFactoryValue;
+//   if (ProMatches.territoryHasInfraFactoryAndIsLand().test(t)) value *= 1.1;
+//   return value;
+//
+// Notes:
+// - `enemyCapitalsAndFactoriesMap.keySet()` is mirrored as the keys of
+//   the `map[^Territory]f64` map; we pass it as a Set<Territory>-shaped
+//   `map[^Territory]struct{}` (the shape that
+//   `pro_territory_value_utils_find_nearby_enemy_capitals_and_factories`
+//   accepts) by materializing a transient set view.
+// - `routeCond` is a capturing BiPredicate; we use the rawptr-ctx form
+//   per llm-instructions.md, paired with the trampoline above.
+// - `Collections.reverseOrder()` on `List<Double>` is rendered as
+//   `slice.sort` ascending then a reverse iteration via index
+//   `len-1-i`, which yields descending order without an extra reverse
+//   pass.
+// - `CollectionUtils.getMatches` and `removeAll(territoriesToAttack)` are
+//   inlined as a filter-then-skip loop (the same pattern used by
+//   findEnemyCapitalsAndFactoriesValue / findSeaTerritoryValues above).
+@(private = "file")
+pro_territory_value_utils_find_land_value :: proc(
+	pro_data:                         ^Pro_Data,
+	t:                                ^Territory,
+	player:                           ^Game_Player,
+	max_land_mass_size:               i32,
+	enemy_capitals_and_factories_map: map[^Territory]f64,
+	territories_that_cant_be_held:    [dynamic]^Territory,
+	territories_to_attack:            [dynamic]^Territory,
+) -> f64 {
+	for tt in territories_that_cant_be_held {
+		if tt == t {
+			return 0.0
+		}
+	}
+
+	values := make([dynamic]f64)
+	defer delete(values)
+	data := pro_data_get_data(pro_data)
+	game_map := game_data_get_map(data)
+
+	enemy_keys := make(map[^Territory]struct {})
+	defer delete(enemy_keys)
+	for k in enemy_capitals_and_factories_map {
+		enemy_keys[k] = {}
+	}
+	nearby_enemy_capitals_and_factories :=
+		pro_territory_value_utils_find_nearby_enemy_capitals_and_factories(t, &enemy_keys)
+	defer delete(nearby_enemy_capitals_and_factories)
+
+	route_cond_ctx := new(Pro_Territory_Value_Utils_Find_Land_Value_2_Ctx)
+	route_cond_ctx.player = player
+
+	for enemy_cap_or_factory in nearby_enemy_capitals_and_factories {
+		distance := game_map_get_distance_bipredicate(
+			game_map,
+			t,
+			enemy_cap_or_factory,
+			pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+			rawptr(route_cond_ctx),
+		)
+		if distance > 0 {
+			append(
+				&values,
+				enemy_capitals_and_factories_map[enemy_cap_or_factory] /
+				math.pow(2.0, f64(distance)),
+			)
+		}
+	}
+
+	slice.sort(values[:])
+	capital_or_factory_value: f64 = 0
+	n := len(values)
+	for i in 0 ..< n {
+		// descending order via reverse index
+		capital_or_factory_value += values[n - 1 - i] / math.pow(2.0, f64(i))
+	}
+
+	nearby_enemy_value: f64 = 0
+	nearby_territories := game_map_get_neighbors_distance_bipredicate(
+		game_map,
+		t,
+		2,
+		pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+		rawptr(route_cond_ctx),
+	)
+	defer delete(nearby_territories)
+
+	enemy_or_cant_pred, enemy_or_cant_ctx := pro_matches_territory_is_enemy_or_cant_be_held(
+		player,
+		territories_that_cant_be_held,
+	)
+	allied_no_enemy_pred, allied_no_enemy_ctx :=
+		pro_matches_territory_is_allied_land_and_has_no_enemy_neighbors(player)
+
+	for nearby_enemy_territory in nearby_territories {
+		if !enemy_or_cant_pred(enemy_or_cant_ctx, nearby_enemy_territory) {
+			continue
+		}
+		// removeAll(territoriesToAttack)
+		in_attack := false
+		for at in territories_to_attack {
+			if at == nearby_enemy_territory {
+				in_attack = true
+				break
+			}
+		}
+		if in_attack {
+			continue
+		}
+		distance := game_map_get_distance_bipredicate(
+			game_map,
+			t,
+			nearby_enemy_territory,
+			pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+			rawptr(route_cond_ctx),
+		)
+		if distance > 0 {
+			value := f64(territory_attachment_static_get_production(nearby_enemy_territory))
+			if pro_utils_is_neutral_land(nearby_enemy_territory) {
+				value =
+					pro_territory_value_utils_find_territory_attack_value(
+						pro_data,
+						player,
+						nearby_enemy_territory,
+					) /
+					3.0
+			} else if allied_no_enemy_pred(allied_no_enemy_ctx, nearby_enemy_territory) {
+				value *= 0.1
+			}
+			if value > 0 {
+				nearby_enemy_value += value / math.pow(2.0, f64(distance))
+			}
+		}
+	}
+
+	land_mass_neighbors := game_map_get_neighbors_distance_bipredicate(
+		game_map,
+		t,
+		6,
+		pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+		rawptr(route_cond_ctx),
+	)
+	defer delete(land_mass_neighbors)
+	land_mass_size: i32 = 1 + i32(len(land_mass_neighbors))
+
+	value :=
+		nearby_enemy_value * f64(land_mass_size) / f64(max_land_mass_size) +
+		capital_or_factory_value
+	is_land_pred, is_land_ctx := pro_matches_territory_has_infra_factory_and_is_land()
+	if is_land_pred(is_land_ctx, t) {
+		value *= 1.1
+	}
+	return value
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #findWaterValue(ProData, Territory, GamePlayer, int,
+//       Map<Territory,Double>, List<Territory>, List<Territory>,
+//       Map<Territory,Double>)
+// Java:
+//   final GameState data = proData.getData();
+//   if (territoriesThatCantBeHeld.contains(t)
+//       || data.getMap().getNeighbors(t, Matches.territoryIsWater()).isEmpty()) {
+//     return 0.0;
+//   }
+//   final List<Double> values = new ArrayList<>();
+//   final Collection<Territory> nearbyEnemyCapitalsAndFactories =
+//       findNearbyEnemyCapitalsAndFactories(t, enemyCapitalsAndFactoriesMap.keySet());
+//   for (final Territory enemyCapitalOrFactory : nearbyEnemyCapitalsAndFactories) {
+//     final Optional<Route> optionalRoute =
+//         data.getMap().getRouteForUnits(t, enemyCapitalOrFactory,
+//             ProMatches.territoryCanMoveSeaUnits(player, true), Set.of(), player);
+//     if (optionalRoute.isEmpty()) continue;
+//     final int distance = optionalRoute.get().numberOfSteps();
+//     if (distance > 0) {
+//       values.add(enemyCapitalsAndFactoriesMap.get(enemyCapitalOrFactory)
+//           / Math.pow(2, distance));
+//     }
+//   }
+//   values.sort(Collections.reverseOrder());
+//   double capitalOrFactoryValue = 0;
+//   for (int i = 0; i < values.size(); i++) {
+//     capitalOrFactoryValue += values.get(i) / Math.pow(2, i);
+//   }
+//   double nearbyLandValue = 0;
+//   final Set<Territory> nearbyTerritories = data.getMap()
+//       .getNeighborsIgnoreEnd(t, 3, ProMatches.territoryCanMoveSeaUnits(player, true));
+//   final List<Territory> nearbyLandTerritories = CollectionUtils.getMatches(
+//       nearbyTerritories, ProMatches.territoryCanPotentiallyMoveLandUnits(player));
+//   nearbyLandTerritories.removeAll(territoriesToAttack);
+//   for (final Territory nearbyLandTerritory : nearbyLandTerritories) {
+//     final Optional<Route> optionalRoute = data.getMap().getRouteForUnits(...);
+//     if (optionalRoute.isEmpty()) continue;
+//     final int distance = optionalRoute.get().numberOfSteps();
+//     if (distance > 0 && distance <= 3) {
+//       if (ProMatches.territoryIsEnemyOrCantBeHeld(player, territoriesThatCantBeHeld)
+//           .test(nearbyLandTerritory)) {
+//         double value = TerritoryAttachment.getProduction(nearbyLandTerritory);
+//         if (ProUtils.isNeutralLand(nearbyLandTerritory)) {
+//           value = findTerritoryAttackValue(proData, player, nearbyLandTerritory);
+//         }
+//         nearbyLandValue += value;
+//       }
+//       if (!territoryValueMap.containsKey(nearbyLandTerritory)) {
+//         final double value = findLandValue(...);
+//         territoryValueMap.put(nearbyLandTerritory, value);
+//       }
+//       nearbyLandValue += territoryValueMap.get(nearbyLandTerritory);
+//     }
+//   }
+//   return capitalOrFactoryValue / 100 + nearbyLandValue / 10;
+//
+// Notes:
+// - `territoryValueMap` is mutated (memoization cache for findLandValue
+//   results), so it is passed as `^map[^Territory]f64` to ensure growth
+//   is observed by the caller.
+// - `enemyCapitalsAndFactoriesMap.keySet()` is materialized as a
+//   transient `map[^Territory]struct{}` for the
+//   `findNearbyEnemyCapitalsAndFactories` helper, mirroring the same
+//   pattern used by `find_land_value` above.
+// - `data.getMap().getRouteForUnits(...)` is bypassed in favor of
+//   constructing a `Route_Finder` directly via
+//   `route_finder_new_with_units_player` + `find_route_by_cost_pair`,
+//   the same pattern used by `calculate_territory_value_to_targets`
+//   (the sea-units predicate is the rawptr-ctx form that Route_Finder
+//   itself takes).
+// - `Set.of()` (empty unmodifiable Set<Unit>) is mirrored as the
+//   zero-value `[dynamic]^Unit`.
+// - `Collections.reverseOrder()` over `List<Double>` is rendered as
+//   `slice.sort` ascending then a reverse-index iteration to walk the
+//   sorted slice in descending order.
+// - `CollectionUtils.getMatches(...)` and `removeAll(territoriesToAttack)`
+//   are inlined as a filter-then-skip loop, matching the surrounding
+//   procs in this file.
+@(private = "file")
+pro_territory_value_utils_find_water_value :: proc(
+	pro_data:                         ^Pro_Data,
+	t:                                ^Territory,
+	player:                           ^Game_Player,
+	max_land_mass_size:               i32,
+	enemy_capitals_and_factories_map: map[^Territory]f64,
+	territories_that_cant_be_held:    [dynamic]^Territory,
+	territories_to_attack:            [dynamic]^Territory,
+	territory_value_map:              ^map[^Territory]f64,
+) -> f64 {
+	data := pro_data_get_data(pro_data)
+	game_map := game_data_get_map(data)
+
+	for tt in territories_that_cant_be_held {
+		if tt == t {
+			return 0.0
+		}
+	}
+	water_pred, water_ctx := matches_territory_is_water()
+	water_neighbors := game_map_get_neighbors_predicate(game_map, t, water_pred, water_ctx)
+	defer delete(water_neighbors)
+	if len(water_neighbors) == 0 {
+		return 0.0
+	}
+
+	// Determine value based on enemy factory distance
+	values := make([dynamic]f64)
+	defer delete(values)
+
+	enemy_keys := make(map[^Territory]struct {})
+	defer delete(enemy_keys)
+	for k in enemy_capitals_and_factories_map {
+		enemy_keys[k] = {}
+	}
+	nearby_enemy_capitals_and_factories :=
+		pro_territory_value_utils_find_nearby_enemy_capitals_and_factories(t, &enemy_keys)
+	defer delete(nearby_enemy_capitals_and_factories)
+
+	sea_pred, sea_ctx := pro_matches_territory_can_move_sea_units(player, true)
+	empty_units: [dynamic]^Unit
+
+	for enemy_cap_or_factory in nearby_enemy_capitals_and_factories {
+		rf := route_finder_new_with_units_player(
+			game_map,
+			sea_pred,
+			sea_ctx,
+			empty_units,
+			player,
+		)
+		optional_route := route_finder_find_route_by_cost_pair(rf, t, enemy_cap_or_factory)
+		if optional_route == nil {
+			continue
+		}
+		distance := route_number_of_steps(optional_route)
+		if distance > 0 {
+			append(
+				&values,
+				enemy_capitals_and_factories_map[enemy_cap_or_factory] /
+				math.pow(2.0, f64(distance)),
+			)
+		}
+	}
+	slice.sort(values[:])
+	capital_or_factory_value: f64 = 0
+	n := len(values)
+	for i in 0 ..< n {
+		// descending order via reverse index
+		capital_or_factory_value += values[n - 1 - i] / math.pow(2.0, f64(i))
+	}
+
+	// Determine value based on nearby territory production
+	nearby_land_value: f64 = 0
+	nearby_territories := game_map_get_neighbors_ignore_end(
+		game_map,
+		t,
+		3,
+		sea_pred,
+		sea_ctx,
+	)
+	defer delete(nearby_territories)
+
+	can_move_land_pred, can_move_land_ctx := pro_matches_territory_can_potentially_move_land_units(player)
+	enemy_or_cant_pred, enemy_or_cant_ctx := pro_matches_territory_is_enemy_or_cant_be_held(
+		player,
+		territories_that_cant_be_held,
+	)
+
+	for nearby_land_territory in nearby_territories {
+		if !can_move_land_pred(can_move_land_ctx, nearby_land_territory) {
+			continue
+		}
+		// removeAll(territoriesToAttack)
+		in_attack := false
+		for at in territories_to_attack {
+			if at == nearby_land_territory {
+				in_attack = true
+				break
+			}
+		}
+		if in_attack {
+			continue
+		}
+		rf := route_finder_new_with_units_player(
+			game_map,
+			sea_pred,
+			sea_ctx,
+			empty_units,
+			player,
+		)
+		optional_route := route_finder_find_route_by_cost_pair(rf, t, nearby_land_territory)
+		if optional_route == nil {
+			continue
+		}
+		distance := route_number_of_steps(optional_route)
+		if distance > 0 && distance <= 3 {
+			if enemy_or_cant_pred(enemy_or_cant_ctx, nearby_land_territory) {
+				value := f64(territory_attachment_static_get_production(nearby_land_territory))
+				if pro_utils_is_neutral_land(nearby_land_territory) {
+					value = pro_territory_value_utils_find_territory_attack_value(
+						pro_data,
+						player,
+						nearby_land_territory,
+					)
+				}
+				nearby_land_value += value
+			}
+			if _, has := territory_value_map[nearby_land_territory]; !has {
+				v := pro_territory_value_utils_find_land_value(
+					pro_data,
+					nearby_land_territory,
+					player,
+					max_land_mass_size,
+					enemy_capitals_and_factories_map,
+					territories_that_cant_be_held,
+					territories_to_attack,
+				)
+				territory_value_map[nearby_land_territory] = v
+			}
+			nearby_land_value += territory_value_map[nearby_land_territory]
+		}
+	}
+
+	return capital_or_factory_value / 100.0 + nearby_land_value / 10.0
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #findTerritoryValues(ProData, GamePlayer, List<Territory>,
+//       List<Territory>, Set<Territory>) -> Map<Territory, Double>
+// Java:
+//   final int maxLandMassSize = findMaxLandMassSize(player);
+//   final Map<Territory, Double> enemyCapitalsAndFactoriesMap =
+//       findEnemyCapitalsAndFactoriesValue(player, maxLandMassSize,
+//           territoriesThatCantBeHeld, territoriesToAttack);
+//   final Map<Territory, Double> territoryValueMap = new HashMap<>();
+//   for (final Territory t : territoriesToCheck) {
+//     if (!t.isWater()) {
+//       final double value = findLandValue(proData, t, player,
+//           maxLandMassSize, enemyCapitalsAndFactoriesMap,
+//           territoriesThatCantBeHeld, territoriesToAttack);
+//       territoryValueMap.put(t, value);
+//     }
+//   }
+//   for (final Territory t : territoriesToCheck) {
+//     if (t.isWater()) {
+//       final double value = findWaterValue(proData, t, player,
+//           maxLandMassSize, enemyCapitalsAndFactoriesMap,
+//           territoriesThatCantBeHeld, territoriesToAttack,
+//           territoryValueMap);
+//       territoryValueMap.put(t, value);
+//     }
+//   }
+//   return territoryValueMap;
+//
+// Notes:
+// - `territoriesToCheck` is a `Set<Territory>`; mirrored as the
+//   `map[^Territory]struct{}` shape used elsewhere in this file.
+// - The land pass runs first (populating the cache) so the water
+//   pass's `findWaterValue` can reuse the cached land values via the
+//   `territory_value_map` parameter (mutated by reference).
+pro_territory_value_utils_find_territory_values :: proc(
+	pro_data:                      ^Pro_Data,
+	player:                        ^Game_Player,
+	territories_that_cant_be_held: [dynamic]^Territory,
+	territories_to_attack:         [dynamic]^Territory,
+	territories_to_check:          map[^Territory]struct {},
+) -> map[^Territory]f64 {
+	max_land_mass_size := pro_territory_value_utils_find_max_land_mass_size(player)
+	enemy_capitals_and_factories_map :=
+		pro_territory_value_utils_find_enemy_capitals_and_factories_value(
+			player,
+			max_land_mass_size,
+			territories_that_cant_be_held,
+			territories_to_attack,
+		)
+	defer delete(enemy_capitals_and_factories_map)
+
+	territory_value_map := make(map[^Territory]f64)
+	for t in territories_to_check {
+		if !territory_is_water(t) {
+			value := pro_territory_value_utils_find_land_value(
+				pro_data,
+				t,
+				player,
+				max_land_mass_size,
+				enemy_capitals_and_factories_map,
+				territories_that_cant_be_held,
+				territories_to_attack,
+			)
+			territory_value_map[t] = value
+		}
+	}
+	for t in territories_to_check {
+		if territory_is_water(t) {
+			value := pro_territory_value_utils_find_water_value(
+				pro_data,
+				t,
+				player,
+				max_land_mass_size,
+				enemy_capitals_and_factories_map,
+				territories_that_cant_be_held,
+				territories_to_attack,
+				&territory_value_map,
+			)
+			territory_value_map[t] = value
+		}
+	}
+	return territory_value_map
 }

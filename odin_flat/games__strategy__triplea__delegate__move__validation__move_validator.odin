@@ -12,6 +12,29 @@ MOVE_VALIDATOR_CANT_MOVE_THROUGH_IMPASSABLE :: "Can't move through impassable te
 // games.strategy.triplea.delegate.move.validation.MoveValidator#CANNOT_VIOLATE_NEUTRALITY
 MOVE_VALIDATOR_CANNOT_VIOLATE_NEUTRALITY :: "Cannot violate neutrality"
 
+// String constants from MoveValidator.java referenced inside the
+// validate{Combat,Transport,...} chains.
+MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_IN_A_PREVIOUS_PHASE ::
+	"Transport has already unloaded units in a previous phase"
+MOVE_VALIDATOR_TRANSPORT_MAY_NOT_UNLOAD_TO_FRIENDLY_TERRITORIES_UNTIL_AFTER_COMBAT_IS_RESOLVED ::
+	"Transport may not unload to friendly territories until after combat is resolved"
+MOVE_VALIDATOR_ENEMY_SUBMARINE_PREVENTING_UNESCORTED_AMPHIBIOUS_ASSAULT_LANDING ::
+	"Enemy Submarine Preventing Unescorted Amphibious Assault Landing"
+MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_TO :: "Transport has already unloaded units to "
+MOVE_VALIDATOR_CANNOT_LOAD_AND_UNLOAD_AN_ALLIED_TRANSPORT_IN_THE_SAME_ROUND ::
+	"Cannot load and unload an allied transport in the same round"
+MOVE_VALIDATOR_CANT_MOVE_THROUGH_RESTRICTED :: "Can't move through restricted territories"
+MOVE_VALIDATOR_TRANSPORT_CANNOT_LOAD_AND_UNLOAD_AFTER_COMBAT ::
+	"Transport cannot both load AND unload after being in combat"
+MOVE_VALIDATOR_TRANSPORT_CANNOT_LOAD_AFTER_COMBAT :: "Transport cannot load after being in combat"
+MOVE_VALIDATOR_NOT_ALL_UNITS_CAN_BLITZ :: "Not all units can blitz"
+MOVE_VALIDATOR_CANNOT_BLITZ_OUT_OF_BATTLE_INTO_ENEMY_TERRITORY ::
+	"Cannot blitz out of a battle into enemy territory"
+MOVE_VALIDATOR_NOT_ALL_UNITS_CAN_BLITZ_OUT_OF_EMPTY_ENEMY_TERRITORY ::
+	"Not all units can blitz out of empty enemy territory"
+MOVE_VALIDATOR_CANNOT_BLITZ_OUT_OF_BATTLE_FURTHER_INTO_ENEMY_TERRITORY ::
+	"Cannot blitz out of a battle further into enemy territory"
+
 Move_Validator :: struct {
 	data:          ^Game_Data,
 	is_non_combat: bool,
@@ -2281,3 +2304,1177 @@ move_validator_non_paratroopers_present :: proc(
 	return !move_validator_all_land_units_have_air_transport(units)
 }
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateFirst
+// Java (private):
+//   private MoveValidationResult validateFirst(
+//       final Collection<Unit> units, final Route route,
+//       final GamePlayer player, final MoveValidationResult result) { ... }
+move_validator_validate_first :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	if move_validation_result_has_error(
+		move_validator_validate_first_units(units, route, result),
+	) {
+		return result
+	}
+	if move_validation_result_has_error(
+		move_validator_validate_first_route(self, route, units, player, result),
+	) {
+		return result
+	}
+	if !edit_delegate_get_edit_mode(game_data_get_properties(self.data)) {
+		// matches = units filtered by NOT(unitIsBeingTransportedByOrIsDependentOfSomeUnitInThisList)
+		bt_p, bt_c := matches_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list(
+			units,
+			player,
+			true,
+		)
+		matches: [dynamic]^Unit
+		defer delete(matches)
+		for u in units {
+			if !bt_p(bt_c, u) {
+				append(&matches, u)
+			}
+		}
+		owned_p, owned_c := matches_unit_is_owned_by(player)
+		all_owned := true
+		for u in matches {
+			if !owned_p(owned_c, u) {
+				all_owned = false
+				break
+			}
+		}
+		if len(matches) == 0 || !all_owned {
+			move_validation_result_set_error(
+				result,
+				fmt.aprintf(
+					"Player, %s, is not owner of all the units: %s",
+					player.named.base.name,
+					my_formatter_units_to_text_no_owner_simple(units),
+				),
+			)
+			return result
+		}
+	}
+	return result
+}
+
+// Adapter for route.allMatchMiddleSteps(Matches.isTerritoryEnemy(player).negate()).
+// route_all_match_middle_steps takes a non-context predicate, but
+// matches_is_territory_enemy is player-bound — so we materialize the
+// middle steps and check inline (used inside validateCombat).
+move_validator_route_all_middle_not_enemy :: proc(
+	route: ^Route,
+	player: ^Game_Player,
+) -> bool {
+	middle := route_get_middle_steps(route)
+	defer delete(middle)
+	if len(middle) == 0 {
+		return false
+	}
+	enemy_p, enemy_c := matches_is_territory_enemy(player)
+	for t in middle {
+		if enemy_p(enemy_c, t) {
+			return false
+		}
+	}
+	return true
+}
+
+move_validator_route_any_step_is_enemy :: proc(route: ^Route, player: ^Game_Player) -> bool {
+	enemy_p, enemy_c := matches_is_territory_enemy(player)
+	for t in route.steps {
+		if enemy_p(enemy_c, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateCombat
+// Java (private): mirrors the long combat-move sanity chain on lines
+// 398..573 of MoveValidator.java.
+move_validator_validate_combat :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	props := game_data_get_properties(self.data)
+	if edit_delegate_get_edit_mode(props) {
+		return result
+	}
+	// route.getSteps()
+	steps := route_get_steps(route)
+	defer delete(steps)
+	move_into_p, move_into_c := matches_territory_owner_relationship_type_can_move_into_during_combat_move(
+		player,
+	)
+	for t in steps {
+		if !move_into_p(move_into_c, t) {
+			return move_validation_result_set_error_return_result(
+				result,
+				fmt.aprintf(
+					"Cannot move into territories owned by %s during Combat Movement Phase",
+					territory_get_owner(t).named.base.name,
+				),
+			)
+		}
+	}
+
+	// Contested-enemy block 1.
+	all_units_can_attack_from_contested := properties_get_all_units_can_attack_from_contested_territories(
+		props,
+	)
+	start := route_get_start(route)
+	at_war_p, at_war_c := matches_is_at_war(player)
+	any_route_enemy := move_validator_route_any_step_is_enemy(route, player)
+	all_middle_not_enemy := move_validator_route_all_middle_not_enemy(route, player)
+	air_p, air_c := matches_unit_is_air()
+	if !all_units_can_attack_from_contested &&
+	   !territory_is_water(start) &&
+	   at_war_p(at_war_c, territory_get_owner(start)) &&
+	   any_route_enemy && !all_middle_not_enemy {
+		blitz_p, blitz_c := matches_territory_is_blitzable(player)
+		all_air := true
+		for u in units {
+			if !air_p(air_c, u) {
+				all_air = false
+				break
+			}
+		}
+		if !blitz_p(blitz_c, start) && !all_air {
+			return move_validation_result_set_error_return_result(
+				result,
+				MOVE_VALIDATOR_CANNOT_BLITZ_OUT_OF_BATTLE_FURTHER_INTO_ENEMY_TERRITORY,
+			)
+		}
+		// disallowed = unitCanBlitz().negate().and(unitIsNotAir())
+		can_blitz_p, can_blitz_c := matches_unit_can_blitz()
+		not_air_p, not_air_c := matches_unit_is_not_air()
+		for u in units {
+			if !can_blitz_p(can_blitz_c, u) && not_air_p(not_air_c, u) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					MOVE_VALIDATOR_NOT_ALL_UNITS_CAN_BLITZ_OUT_OF_EMPTY_ENEMY_TERRITORY,
+					u,
+				)
+			}
+		}
+	}
+
+	// Contested-enemy block 2 (start owned by us, moving into enemy).
+	if !all_units_can_attack_from_contested &&
+	   !territory_is_water(start) &&
+	   !at_war_p(at_war_c, territory_get_owner(start)) &&
+	   any_route_enemy && !all_middle_not_enemy {
+		blitz_p, blitz_c := matches_territory_is_blitzable(player)
+		all_air := true
+		for u in units {
+			if !air_p(air_c, u) {
+				all_air = false
+				break
+			}
+		}
+		if !blitz_p(blitz_c, start) && !all_air {
+			return move_validation_result_set_error_return_result(
+				result,
+				MOVE_VALIDATOR_CANNOT_BLITZ_OUT_OF_BATTLE_INTO_ENEMY_TERRITORY,
+			)
+		}
+	}
+
+	// AA / units that can't move during combat unless transported.
+	cnm_p, cnm_c := matches_unit_can_not_move_during_combat_move()
+	any_cnm := false
+	for u in units {
+		if cnm_p(cnm_c, u) {
+			any_cnm = true
+			break
+		}
+	}
+	end := route_get_end(route)
+	if any_cnm && (!territory_is_water(start) || !territory_is_water(end)) {
+		for u in units {
+			if cnm_p(cnm_c, u) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Cannot move AA guns in combat movement phase",
+					u,
+				)
+			}
+		}
+	}
+
+	// Neutral in middle stops land units.
+	if move_validator_non_air_passing_through_neutral_territory(route, units, props) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Must stop land units when passing through neutral territories",
+		)
+	}
+
+	// Land-unit blitz checks over enemy steps.
+	land_p, land_c := matches_unit_is_land()
+	any_land := false
+	for u in units {
+		if land_p(land_c, u) {
+			any_land = true
+			break
+		}
+	}
+	if any_land && route_has_steps(route) {
+		bt := abstract_move_delegate_get_battle_tracker(self.data)
+		enemy_count: i32 = 0
+		all_enemy_blitzable := true
+		blitz_p, blitz_c := matches_territory_is_blitzable(player)
+		middle := route_get_middle_steps(route)
+		defer delete(middle)
+		for current in middle {
+			if territory_is_water(current) {
+				continue
+			}
+			if game_player_is_at_war(territory_get_owner(current), player) ||
+			   battle_tracker_was_conquered(bt, current) {
+				enemy_count += 1
+				all_enemy_blitzable = all_enemy_blitzable && blitz_p(blitz_c, current)
+			}
+		}
+		if enemy_count > 0 && !all_enemy_blitzable {
+			if move_validator_non_paratroopers_present(player, units) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot blitz on that route",
+				)
+			}
+		} else if all_enemy_blitzable && !(territory_is_water(start) || territory_is_water(end)) {
+			can_blitz_p, can_blitz_c := matches_unit_can_blitz()
+			units_without_dependents := move_validator_find_non_dependent_units(
+				units,
+				route,
+				air_transport_dependents,
+			)
+			defer delete(units_without_dependents)
+			non_blitzing_units: [dynamic]^Unit
+			defer delete(non_blitzing_units)
+			for u in units_without_dependents {
+				if !(can_blitz_p(can_blitz_c, u) || air_p(air_c, u)) {
+					append(&non_blitzing_units, u)
+				}
+			}
+			// Remove units that gain blitz via abilities.
+			gained := unit_attachment_get_units_which_receives_ability_when_with(
+				units,
+				ABILITY_CAN_BLITZ,
+				game_data_get_unit_type_list(self.data),
+			)
+			defer delete(gained)
+			{
+				i := 0
+				for i < len(non_blitzing_units) {
+					removed := false
+					for g in gained {
+						if non_blitzing_units[i] == g {
+							ordered_remove(&non_blitzing_units, i)
+							removed = true
+							break
+						}
+					}
+					if !removed {
+						i += 1
+					}
+				}
+			}
+			// Compute lostBlitz unit-types over either allTerritories or steps.
+			was_start_fought_over := battle_tracker_was_conquered(bt, start) ||
+				battle_tracker_was_blitzed(bt, start)
+			territories_for_lost_blitz: [dynamic]^Territory
+			if was_start_fought_over {
+				territories_for_lost_blitz = route_get_all_territories(route)
+			} else {
+				territories_for_lost_blitz = route_get_steps(route)
+			}
+			defer delete(territories_for_lost_blitz)
+			lost_blitz_types := territory_effect_helper_get_unit_types_that_lost_blitz(
+				territories_for_lost_blitz,
+			)
+			defer delete(lost_blitz_types)
+			for u in units {
+				if _, ok := lost_blitz_types[unit_get_type(u)]; ok {
+					already := false
+					for n in non_blitzing_units {
+						if n == u {
+							already = true
+							break
+						}
+					}
+					if !already {
+						append(&non_blitzing_units, u)
+					}
+				}
+			}
+			// Java's "no enemy/non-friendly territory and not fought over" cleanup:
+			// nonBlitzingUnits.removeIf(not(Unit::getWasInCombat))
+			//   IFF !wasStartFoughtOver && !route.anyMatch(notEndOrFriendlyTerrs)
+			//                          && !route.anyMatch(notEndWasFought)
+			any_not_end_or_friendly := false
+			any_not_end_was_fought := false
+			friendly_p, friendly_c := matches_is_territory_friendly(player)
+			fought_p, fought_c := matches_territory_was_fought_over(bt)
+			for t in route.steps {
+				is_not_end := t != end
+				if is_not_end && !friendly_p(friendly_c, t) {
+					any_not_end_or_friendly = true
+				}
+				if is_not_end && fought_p(fought_c, t) {
+					any_not_end_was_fought = true
+				}
+			}
+			if !was_start_fought_over && !any_not_end_or_friendly && !any_not_end_was_fought {
+				i := 0
+				for i < len(non_blitzing_units) {
+					if !unit_get_was_in_combat(non_blitzing_units[i]) {
+						ordered_remove(&non_blitzing_units, i)
+					} else {
+						i += 1
+					}
+				}
+			}
+			if len(non_blitzing_units) > 0 {
+				// potentialLandTransports = units \ nonBlitzingUnits
+				potential_land_transports: [dynamic]^Unit
+				defer delete(potential_land_transports)
+				for u in units {
+					in_nb := false
+					for n in non_blitzing_units {
+						if n == u {
+							in_nb = true
+							break
+						}
+					}
+					if !in_nb {
+						append(&potential_land_transports, u)
+					}
+				}
+				disallowed := move_validator_check_land_transports(
+					self,
+					player,
+					potential_land_transports,
+					non_blitzing_units,
+				)
+				defer delete(disallowed)
+				for u in disallowed {
+					move_validation_result_add_disallowed_unit(
+						result,
+						MOVE_VALIDATOR_NOT_ALL_UNITS_CAN_BLITZ,
+						u,
+					)
+				}
+			}
+		}
+	}
+
+	// Aircraft / neutral fly-over.
+	any_air_unit := false
+	for u in units {
+		if air_p(air_c, u) {
+			any_air_unit = true
+			break
+		}
+	}
+	if route_has_steps(route) &&
+	   any_air_unit &&
+	   (!properties_get_neutral_flyover_allowed(props) ||
+		   properties_get_neutrals_impassable(props)) {
+		nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+		any_neutral_middle := false
+		middle := route_get_middle_steps(route)
+		defer delete(middle)
+		for t in middle {
+			if nbnw_p(nbnw_c, t) {
+				any_neutral_middle = true
+				break
+			}
+		}
+		moved_p, moved_c := matches_unit_has_moved()
+		any_air_moved := false
+		for u in units {
+			if air_p(air_c, u) && moved_p(moved_c, u) {
+				any_air_moved = true
+				break
+			}
+		}
+		if any_neutral_middle ||
+		   (nbnw_p(nbnw_c, start) && any_air_moved) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Air units cannot fly over neutral territories",
+			)
+		}
+	}
+
+	// No conquered, non-blitzed, non-water on route.
+	all_air2 := true
+	for u in units {
+		if !air_p(air_c, u) {
+			all_air2 = false
+			break
+		}
+	}
+	if move_validator_has_conquered_non_blitzed_non_water_on_route(route, self.data) &&
+	   !all_air2 {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Cannot move through newly captured territories",
+		)
+	}
+
+	// "Units cannot participate in multiple battles" combat-state check.
+	wic_p, wic_c := matches_unit_was_in_combat()
+	wut_p, wut_c := matches_unit_was_unloaded_this_turn()
+	any_wic := false
+	any_wut := false
+	for u in units {
+		if !any_wic && wic_p(wic_c, u) {
+			any_wic = true
+		}
+		if !any_wut && wut_p(wut_c, u) {
+			any_wut = true
+		}
+		if any_wic && any_wut {
+			break
+		}
+	}
+	enemy_passable_p, enemy_passable_c :=
+		matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(player)
+	end_uc := territory_get_unit_collection(end)
+	if any_wic && any_wut && enemy_passable_p(enemy_passable_c, end) && len(end_uc.units) != 0 {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Units cannot participate in multiple battles",
+		)
+	}
+
+	// Invasion in combat phase.
+	enemy_terr_p, enemy_terr_c := matches_is_territory_enemy(player)
+	if route_is_unload(route) && enemy_terr_p(enemy_terr_c, end) {
+		can_invade_p, can_invade_c := matches_unit_can_invade()
+		for u in units {
+			if !can_invade_p(can_invade_c, u) {
+				transport := unit_get_transported_by(u)
+				move_validation_result_add_disallowed_unit(
+					result,
+					fmt.aprintf(
+						"%s can't invade from %s",
+						unit_get_type(u).named.base.name,
+						unit_get_type(transport).named.base.name,
+					),
+					u,
+				)
+			}
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateNonCombat
+// Java (private): non-combat move validation chain on lines 574..651.
+move_validator_validate_non_combat :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	props := game_data_get_properties(self.data)
+	if edit_delegate_get_edit_mode(props) {
+		return result
+	}
+	if route_any_match(route, move_validator_lambda_validate_basic_pred_impassable) {
+		return move_validation_result_set_error_return_result(
+			result,
+			MOVE_VALIDATOR_CANT_MOVE_THROUGH_IMPASSABLE,
+		)
+	}
+	// route.anyMatch(territoryIsPassableAndNotRestricted(player))
+	any_passable := false
+	pass_p, pass_c := matches_territory_is_passable_and_not_restricted(player)
+	for t in route.steps {
+		if pass_p(pass_c, t) {
+			any_passable = true
+			break
+		}
+	}
+	if !any_passable {
+		return move_validation_result_set_error_return_result(
+			result,
+			MOVE_VALIDATOR_CANT_MOVE_THROUGH_RESTRICTED,
+		)
+	}
+	// neutralOrEnemy = territoryIsNeutralButNotWater() OR isTerritoryEnemyAndNotUnownedWaterOrImpassableOrRestricted(player)
+	nbnw_p, nbnw_c := matches_territory_is_neutral_but_not_water()
+	enemy_passable_p, enemy_passable_c :=
+		matches_is_territory_enemy_and_not_unowned_water_or_impassable_or_restricted(player)
+	is_neutral_or_enemy :: proc(
+		t: ^Territory,
+		nbnw_p: proc(rawptr, ^Territory) -> bool, nbnw_c: rawptr,
+		enemy_passable_p: proc(rawptr, ^Territory) -> bool, enemy_passable_c: rawptr,
+	) -> bool {
+		return nbnw_p(nbnw_c, t) || enemy_passable_p(enemy_passable_c, t)
+	}
+	naval_may_not_non_com_into_controlled :=
+		properties_get_ww2_v2(props) ||
+		properties_get_naval_units_may_not_non_combat_move_into_controlled_sea_zones(props)
+	end := route_get_end(route)
+	if is_neutral_or_enemy(end, nbnw_p, nbnw_c, enemy_passable_p, enemy_passable_c) {
+		if !territory_is_water(end) || naval_may_not_non_com_into_controlled {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Cannot advance units to battle in non combat",
+			)
+		}
+	}
+	// Subs can't move under destroyers.
+	can_through_p, can_through_c := matches_unit_can_move_through_enemies()
+	all_can_through := true
+	for u in units {
+		if !can_through_p(can_through_c, u) {
+			all_can_through = false
+			break
+		}
+	}
+	if all_can_through && move_validator_enemy_destroyer_on_path(self, route, player) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Cannot move submarines under destroyers",
+		)
+	}
+	// Can't advance to battle unless: only ignored units on route, only air to sea,
+	// or only units that can enter territories with enemy units during NCM.
+	enemy_unit_p, enemy_unit_c := matches_enemy_unit(player)
+	sub_p, sub_c := matches_unit_is_submerged()
+	enemy_unit_not_sub :: proc(
+		u: ^Unit,
+		enemy_unit_p: proc(rawptr, ^Unit) -> bool, enemy_unit_c: rawptr,
+		sub_p: proc(rawptr, ^Unit) -> bool, sub_c: rawptr,
+	) -> bool {
+		return enemy_unit_p(enemy_unit_c, u) && !sub_p(sub_c, u)
+	}
+	any_enemy_not_sub := false
+	for u in territory_get_unit_collection(end).units {
+		if enemy_unit_not_sub(u, enemy_unit_p, enemy_unit_c, sub_p, sub_c) {
+			any_enemy_not_sub = true
+			break
+		}
+	}
+	air_p, air_c := matches_unit_is_air()
+	all_air := true
+	for u in units {
+		if !air_p(air_c, u) {
+			all_air = false
+			break
+		}
+	}
+	subs_can_end_ncm := properties_get_subs_can_end_non_combat_move_with_enemies(props)
+	all_can_through2 := true
+	for u in units {
+		if !can_through_p(can_through_c, u) {
+			all_can_through2 = false
+			break
+		}
+	}
+	if any_enemy_not_sub &&
+	   !move_validator_only_ignored_units_on_path(self, route, player, false) &&
+	   !(territory_is_water(end) && all_air) &&
+	   !(subs_can_end_ncm && all_can_through2) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Cannot advance to battle in non combat",
+		)
+	}
+	// Now check movement over neutral/enemy territories during noncombat.
+	sea_p, sea_c := matches_unit_is_sea()
+	any_sea := false
+	for u in units {
+		if sea_p(sea_c, u) {
+			any_sea = true
+			break
+		}
+	}
+	water_p, water_c := matches_territory_is_water()
+	any_water_in_route := false
+	for t in route.steps {
+		if water_p(water_c, t) {
+			any_water_in_route = true
+			break
+		}
+	}
+	any_neutral_or_enemy_in_route := false
+	for t in route.steps {
+		if is_neutral_or_enemy(t, nbnw_p, nbnw_c, enemy_passable_p, enemy_passable_c) {
+			any_neutral_or_enemy_in_route = true
+			break
+		}
+	}
+	non_paratroopers := move_validator_non_paratroopers_present(player, units)
+	if all_air || (!any_sea && !non_paratroopers) {
+		// Air-only flow check for neutral non-water along route.
+		any_neutral_non_water := false
+		for t in route.steps {
+			if nbnw_p(nbnw_c, t) && !water_p(water_c, t) {
+				any_neutral_non_water = true
+				break
+			}
+		}
+		if any_neutral_non_water &&
+		   (!properties_get_neutral_flyover_allowed(props) ||
+			   properties_get_neutrals_impassable(props)) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Air units cannot fly over neutral territories in non combat",
+			)
+		}
+	} else if any_sea || any_water_in_route {
+		if naval_may_not_non_com_into_controlled && any_neutral_or_enemy_in_route {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Cannot move units through neutral or enemy territories in non combat",
+			)
+		}
+	} else {
+		if any_neutral_or_enemy_in_route {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Cannot move units through neutral or enemy territories in non combat",
+			)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateNonEnemyUnitsOnPath
+// Java (private): lines 684..717 of MoveValidator.java.
+move_validator_validate_non_enemy_units_on_path :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	if edit_delegate_get_edit_mode(game_data_get_properties(self.data)) {
+		return result
+	}
+	if move_validator_no_enemy_units_on_path_middle_steps(self, route, player) {
+		return result
+	}
+	air_p, air_c := matches_unit_is_air()
+	all_air := true
+	for u in units {
+		if !air_p(air_c, u) {
+			all_air = false
+			break
+		}
+	}
+	if all_air {
+		return result
+	}
+	bt_p, bt_c := matches_unit_is_being_transported()
+	matches_units: [dynamic]^Unit
+	defer delete(matches_units)
+	for u in units {
+		if !bt_p(bt_c, u) {
+			append(&matches_units, u)
+		}
+	}
+	if len(matches_units) > 0 {
+		can_through_p, can_through_c := matches_unit_can_move_through_enemies()
+		all_can_through := true
+		for u in matches_units {
+			if !can_through_p(can_through_c, u) {
+				all_can_through = false
+				break
+			}
+		}
+		if all_can_through {
+			if move_validator_enemy_destroyer_on_path(self, route, player) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot move submarines under destroyers",
+				)
+			}
+			return result
+		}
+	}
+	if move_validator_only_ignored_units_on_path(self, route, player, true) {
+		return result
+	}
+	if move_validator_non_paratroopers_present(player, units) {
+		return move_validation_result_set_error_return_result(result, "Enemy units on path")
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateTransport
+// Java (private): lines 1146..1378 of MoveValidator.java.
+move_validator_validate_transport :: proc(
+	self: ^Move_Validator,
+	undoable_moves: [dynamic]^Undoable_Move,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	units_to_sea_transports: map[^Unit]^Unit,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	air_p, air_c := matches_unit_is_air()
+	all_air := true
+	for u in units {
+		if !air_p(air_c, u) {
+			all_air = false
+			break
+		}
+	}
+	if !route_has_water(route) || all_air {
+		return result
+	}
+	// loadingNonSeaTransportsOnly:
+	//   !unitsToSeaTransports.isEmpty()
+	//     && unitsToSeaTransports.values().noneMatch(unitIsSea().and(unitCanTransport()))
+	sea_p, sea_c := matches_unit_is_sea()
+	can_transport_p, can_transport_c := matches_unit_can_transport()
+	loading_non_sea_only := false
+	if len(units_to_sea_transports) > 0 {
+		any_sea_transport := false
+		for _, t in units_to_sea_transports {
+			if sea_p(sea_c, t) && can_transport_p(can_transport_c, t) {
+				any_sea_transport = true
+				break
+			}
+		}
+		loading_non_sea_only = !any_sea_transport
+	}
+	if loading_non_sea_only {
+		return result
+	}
+	props := game_data_get_properties(self.data)
+	is_edit_mode := edit_delegate_get_edit_mode(props)
+	route_end := route_get_end(route)
+	route_start := route_get_start(route)
+	if !is_edit_mode && route_is_unload(route) {
+		if route_has_more_than_one_step(route) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Unloading units must stop where they are unloaded",
+			)
+		}
+		loaded_allied := transport_tracker_get_units_loaded_on_allied_transports_this_turn(units)
+		defer delete(loaded_allied)
+		for u in loaded_allied {
+			move_validation_result_add_disallowed_unit(
+				result,
+				MOVE_VALIDATOR_CANNOT_LOAD_AND_UNLOAD_AN_ALLIED_TRANSPORT_IN_THE_SAME_ROUND,
+				u,
+			)
+		}
+		empty_to_load: [dynamic]^Unit
+		defer delete(empty_to_load)
+		transports_map := transport_utils_map_transports(route, units, empty_to_load)
+		defer delete(transports_map)
+		transports: [dynamic]^Unit
+		defer delete(transports)
+		for _, t in transports_map {
+			append(&transports, t)
+		}
+		is_scrambling_or_kamikaze :=
+			properties_get_scramble_rules_in_effect(props) ||
+			properties_get_use_kamikaze_suicide_attacks(props)
+		subs_prevent_unescorted := properties_get_submarines_prevent_unescorted_amphibious_assaults(
+			props,
+		)
+		enemy_of_p, enemy_of_c := matches_unit_is_enemy_of(player)
+		can_through_p, can_through_c := matches_unit_can_be_moved_through_by_enemies()
+		owned_p, owned_c := matches_unit_is_owned_by(player)
+		non_xport_combat_p, non_xport_combat_c := matches_unit_is_not_sea_transport_but_could_be_combat_sea_transport()
+		// enemySubMatch = unitIsEnemyOf(player) AND unitCanBeMovedThroughByEnemies()
+		// ownedSeaNonTransportMatch = ownedBy(player) AND unitIsSea() AND unitIsNotSeaTransportButCouldBeCombatSeaTransport()
+		territory_has_enemy_sub :: proc(
+			t: ^Territory,
+			enemy_of_p: proc(rawptr, ^Unit) -> bool, enemy_of_c: rawptr,
+			can_through_p: proc(rawptr, ^Unit) -> bool, can_through_c: rawptr,
+		) -> bool {
+			for u in territory_get_unit_collection(t).units {
+				if enemy_of_p(enemy_of_c, u) && can_through_p(can_through_c, u) {
+					return true
+				}
+			}
+			return false
+		}
+		territory_has_owned_sea_non_xport :: proc(
+			t: ^Territory,
+			owned_p: proc(rawptr, ^Unit) -> bool, owned_c: rawptr,
+			sea_p: proc(rawptr, ^Unit) -> bool, sea_c: rawptr,
+			nxc_p: proc(rawptr, ^Unit) -> bool, nxc_c: rawptr,
+		) -> bool {
+			for u in territory_get_unit_collection(t).units {
+				if owned_p(owned_c, u) &&
+				   sea_p(sea_c, u) &&
+				   nxc_p(nxc_c, u) {
+					return true
+				}
+			}
+			return false
+		}
+		t_has_enemy_units_p, t_has_enemy_units_c := matches_territory_has_enemy_units(player)
+		t_is_enemy_p, t_is_enemy_c := matches_is_territory_enemy_and_not_unowned_water(player)
+		t_empty_combat_p, t_empty_combat_c := matches_territory_is_empty_of_combat_units(player)
+		bt := abstract_move_delegate_get_battle_tracker(self.data)
+		for transport in transports {
+			if !self.is_non_combat {
+				if t_has_enemy_units_p(t_has_enemy_units_c, route_end) ||
+				   t_is_enemy_p(t_is_enemy_c, route_end) {
+					// amphibious assault
+					if subs_prevent_unescorted &&
+					   !territory_has_owned_sea_non_xport(
+						   route_start,
+						   owned_p, owned_c,
+						   sea_p, sea_c,
+						   non_xport_combat_p, non_xport_combat_c,
+					   ) &&
+					   territory_has_enemy_sub(
+						   route_start,
+						   enemy_of_p, enemy_of_c,
+						   can_through_p, can_through_c,
+					   ) {
+						transporting := unit_get_transporting(transport)
+						defer delete(transporting)
+						for u in transporting {
+							move_validation_result_add_disallowed_unit(
+								result,
+								MOVE_VALIDATOR_ENEMY_SUBMARINE_PREVENTING_UNESCORTED_AMPHIBIOUS_ASSAULT_LANDING,
+								u,
+							)
+						}
+					}
+				} else if !battle_tracker_was_conquered(bt, route_end) &&
+				   (is_scrambling_or_kamikaze ||
+					   !t_empty_combat_p(t_empty_combat_c, route_start)) {
+					transporting := unit_get_transporting(transport)
+					defer delete(transporting)
+					for u in transporting {
+						move_validation_result_add_disallowed_unit(
+							result,
+							MOVE_VALIDATOR_TRANSPORT_MAY_NOT_UNLOAD_TO_FRIENDLY_TERRITORIES_UNTIL_AFTER_COMBAT_IS_RESOLVED,
+							u,
+						)
+					}
+				}
+			}
+			if transport_tracker_has_transport_unloaded_in_previous_phase(transport) {
+				transporting := unit_get_transporting(transport)
+				defer delete(transporting)
+				for u in transporting {
+					move_validation_result_add_disallowed_unit(
+						result,
+						MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_IN_A_PREVIOUS_PHASE,
+						u,
+					)
+				}
+			} else if transport_tracker_is_transport_unload_restricted_to_another_territory(
+				transport,
+				route_end,
+			) {
+				already_unloaded_to := move_validator_get_territory_transport_has_unloaded_to(
+					undoable_moves,
+					transport,
+				)
+				if already_unloaded_to != nil {
+					transporting := unit_get_transporting(transport)
+					defer delete(transporting)
+					for u in transporting {
+						move_validation_result_add_disallowed_unit(
+							result,
+							fmt.aprintf(
+								"%s%s",
+								MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_TO,
+								already_unloaded_to.named.base.name,
+							),
+							u,
+						)
+					}
+				}
+			} else if transport_tracker_is_transport_unload_restricted_in_non_combat(transport) {
+				transporting := unit_get_transporting(transport)
+				defer delete(transporting)
+				for u in transporting {
+					move_validation_result_add_disallowed_unit(
+						result,
+						MOVE_VALIDATOR_TRANSPORT_CANNOT_LOAD_AND_UNLOAD_AFTER_COMBAT,
+						u,
+					)
+				}
+			}
+		}
+	}
+	// land/landAndAir collections.
+	land_p, land_c := matches_unit_is_land()
+	land: [dynamic]^Unit
+	defer delete(land)
+	land_and_air: [dynamic]^Unit
+	defer delete(land_and_air)
+	for u in units {
+		if land_p(land_c, u) {
+			append(&land, u)
+		}
+		if land_p(land_c, u) || air_p(air_c, u) {
+			append(&land_and_air, u)
+		}
+	}
+	can_be_xport_p, can_be_xport_c := matches_unit_can_be_transported()
+	for u in land {
+		if !can_be_xport_p(can_be_xport_c, u) {
+			move_validation_result_add_disallowed_unit(
+				result,
+				"Not all units can be transported",
+				u,
+			)
+		}
+	}
+	// "go sea land sea" guard.
+	if !is_edit_mode &&
+	   route_has_land(route) &&
+	   !(territory_is_water(route_start) || territory_is_water(route_end)) &&
+	   move_validator_non_paratroopers_present(player, land_and_air) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Invalid move, only start or end can be land when route has water.",
+		)
+	}
+	if !is_edit_mode &&
+	   !territory_is_water(route_end) &&
+	   !territory_is_water(route_start) &&
+	   move_validator_non_paratroopers_present(player, land_and_air) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Must stop units at a transport on route",
+		)
+	}
+	if territory_is_water(route_end) && territory_is_water(route_start) {
+		for unit in units {
+			ua := unit_get_unit_attachment(unit)
+			if unit_attachment_get_transport_capacity(ua) != -1 {
+				holding := unit_get_transporting(unit)
+				defer delete(holding)
+				for h in holding {
+					found := false
+					for u in units {
+						if u == h {
+							found = true
+							break
+						}
+					}
+					if !found {
+						move_validation_result_add_disallowed_unit(
+							result,
+							"Transports cannot leave their units",
+							unit,
+						)
+						break
+					}
+				}
+			}
+			if unit_attachment_get_transport_cost(ua) != -1 {
+				transport := unit_get_transported_by(unit)
+				if transport != nil {
+					found := false
+					for u in units {
+						if u == transport {
+							found = true
+							break
+						}
+					}
+					if !found {
+						move_validation_result_add_disallowed_unit(
+							result,
+							"Unit must stay with its transport while moving",
+							unit,
+						)
+					}
+				}
+			}
+		}
+	}
+	if route_is_load(route) {
+		if !is_edit_mode &&
+		   !route_has_exactly_one_step(route) &&
+		   move_validator_non_paratroopers_present(player, land_and_air) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Units cannot move before loading onto transports",
+			)
+		}
+		// enemyNonSubmerged check at route end.
+		enemy_unit_p, enemy_unit_c := matches_enemy_unit(player)
+		sub_p, sub_c := matches_unit_is_submerged()
+		any_enemy_non_sub_at_end := false
+		for u in territory_get_unit_collection(route_end).units {
+			if enemy_unit_p(enemy_unit_c, u) && !sub_p(sub_c, u) {
+				any_enemy_non_sub_at_end = true
+				break
+			}
+		}
+		if !properties_get_units_can_load_in_hostile_sea_zones(props) &&
+		   any_enemy_non_sub_at_end &&
+		   move_validator_non_paratroopers_present(player, land_and_air) &&
+		   !move_validator_only_ignored_units_on_path(self, route, player, false) {
+			bt := abstract_move_delegate_get_battle_tracker(self.data)
+			end_units := territory_get_unit_collection(route_end).units
+			if !battle_tracker_did_all_these_players_just_go_to_war_this_turn(
+				bt,
+				player,
+				end_units,
+			) {
+				return move_validation_result_set_error_return_result(
+					result,
+					"Cannot load when enemy sea units are present",
+				)
+			}
+		}
+		if !is_edit_mode {
+			for base_unit in land {
+				if unit_has_moved(base_unit) {
+					move_validation_result_add_disallowed_unit(
+						result,
+						"Units cannot move before loading onto transports",
+						base_unit,
+					)
+				}
+				transport, ok := units_to_sea_transports[base_unit]
+				if !ok {
+					continue
+				}
+				if transport_tracker_has_transport_unloaded_in_previous_phase(transport) {
+					move_validation_result_add_disallowed_unit(
+						result,
+						MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_IN_A_PREVIOUS_PHASE,
+						base_unit,
+					)
+				} else if transport_tracker_is_transport_load_restricted_after_combat(transport) {
+					move_validation_result_add_disallowed_unit(
+						result,
+						MOVE_VALIDATOR_TRANSPORT_CANNOT_LOAD_AFTER_COMBAT,
+						base_unit,
+					)
+				} else if transport_tracker_is_transport_unload_restricted_to_another_territory(
+					transport,
+					route_end,
+				) {
+					already_unloaded_to: ^Territory =
+						move_validator_get_territory_transport_has_unloaded_to(
+							undoable_moves,
+							transport,
+						)
+					for _, transport_to_load in units_to_sea_transports {
+						if !transport_tracker_is_transport_unload_restricted_to_another_territory(
+							transport_to_load,
+							route_end,
+						) {
+							ua := unit_get_unit_attachment(base_unit)
+							if transport_tracker_get_available_capacity(transport_to_load) >=
+							   unit_attachment_get_transport_cost(ua) {
+								already_unloaded_to = nil
+								break
+							}
+						}
+					}
+					if already_unloaded_to != nil {
+						move_validation_result_add_disallowed_unit(
+							result,
+							fmt.aprintf(
+								"%s%s",
+								MOVE_VALIDATOR_TRANSPORT_HAS_ALREADY_UNLOADED_UNITS_TO,
+								already_unloaded_to.named.base.name,
+							),
+							base_unit,
+						)
+					}
+				}
+			}
+		}
+		// not all land mapped → "Not enough transports" / unresolved.
+		all_mapped := true
+		for u in land {
+			if _, ok := units_to_sea_transports[u]; !ok {
+				all_mapped = false
+				break
+			}
+		}
+		if !all_mapped {
+			units_to_load_categories := unit_separator_categorize_default(land)
+			defer delete(units_to_load_categories)
+			if len(units_to_sea_transports) == 0 || len(units_to_load_categories) == 1 {
+				for unit in land {
+					if _, ok := units_to_sea_transports[unit]; ok {
+						continue
+					}
+					ua := unit_get_unit_attachment(unit)
+					if unit_attachment_get_transport_cost(ua) != -1 {
+						move_validation_result_add_disallowed_unit(
+							result,
+							"Not enough transports",
+							unit,
+						)
+					}
+				}
+			} else {
+				for unit in land {
+					ua := unit_get_unit_attachment(unit)
+					if unit_attachment_get_transport_cost(ua) != -1 {
+						move_validation_result_add_unresolved_unit(
+							result,
+							"Not enough transports",
+							unit,
+						)
+					}
+				}
+			}
+		}
+	}
+	return result
+}
+
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateFuel
+// Java: private MoveValidationResult validateFuel(Collection<Unit>, Route,
+//       GamePlayer, MoveValidationResult)
+move_validator_validate_fuel :: proc(
+	self: ^Move_Validator,
+	units: []^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	props := game_data_get_properties(self.data)
+	if edit_delegate_get_edit_mode(props) {
+		return result
+	}
+	if !properties_get_use_fuel_cost(props) {
+		return result
+	}
+	fuel_cost := route_get_movement_fuel_cost_charge(units, route, player, self.data)
+	resources_copy := resource_collection_get_resources_copy(fuel_cost)
+	if resource_collection_has(game_player_get_resources(player), &resources_copy) {
+		return result
+	}
+	return move_validation_result_set_error_return_result(
+		result,
+		fmt.aprintf(
+			"Not enough resources to perform this move, you need: %v for this move",
+			fuel_cost,
+		),
+	)
+}

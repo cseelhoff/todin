@@ -2024,4 +2024,318 @@ must_fight_battle_clear_waiting_to_die_and_damaged_changes_into :: proc(
 	clear(&self.killed_during_current_round)
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#endBattle(IDelegateBridge)
+//
+// Java (private):
+//   clearWaitingToDieAndDamagedChangesInto(bridge, OFFENSE, DEFENSE);
+//   isOver = true;
+//   battleTracker.removeBattle(this, bridge.getData());
+//   final CompositeChange clearAlliedAir =
+//       TransportTracker.clearTransportedByForAlliedAirOnCarrier(
+//           attackingUnits, battleSite, attacker, gameData);
+//   if (!clearAlliedAir.isEmpty()) bridge.addChange(clearAlliedAir);
+//   final CompositeChange clearAlliedAirRetreated =
+//       TransportTracker.clearTransportedByForAlliedAirOnCarrier(
+//           attackingUnitsRetreated, battleSite, attacker, gameData);
+//   if (!clearAlliedAirRetreated.isEmpty()) bridge.addChange(clearAlliedAirRetreated);
+must_fight_battle_end_battle :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_clear_waiting_to_die_and_damaged_changes_into(
+		self,
+		bridge,
+		.OFFENSE,
+		.DEFENSE,
+	)
+	self.is_over = true
+	battle_tracker_remove_battle(self.battle_tracker, cast(^I_Battle)self, self.game_data)
+
+	clear_allied_air := transport_tracker_clear_transported_by_for_allied_air_on_carrier(
+		self.attacking_units,
+		self.battle_site,
+		self.attacker,
+		&self.game_data.game_state,
+	)
+	if !composite_change_is_empty(clear_allied_air) {
+		i_delegate_bridge_add_change(bridge, &clear_allied_air.change)
+	}
+	clear_allied_air_retreated := transport_tracker_clear_transported_by_for_allied_air_on_carrier(
+		self.attacking_units_retreated,
+		self.battle_site,
+		self.attacker,
+		&self.game_data.game_state,
+	)
+	if !composite_change_is_empty(clear_allied_air_retreated) {
+		i_delegate_bridge_add_change(bridge, &clear_allied_air_retreated.change)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#defenderWins(IDelegateBridge)
+//
+// Java:
+//   endBattle(bridge);
+//   whoWon = WhoWon.DEFENDER;
+//   bridge.getDisplayChannelBroadcaster().battleEnd(battleId, defender.getName() + " win");
+//   if (Properties.getAbandonedTerritoriesMayBeTakenOverImmediately(...)) { ... }
+//   bridge.getHistoryWriter().addChildToEvent(defender.getName() + " win", new ArrayList<>(defendingUnits));
+//   battleResultDescription = LOST;
+//   showCasualties(bridge);
+//   if (!headless) battleTracker.getBattleRecords().addResultToBattle(...);
+//   checkDefendingPlanesCanLand();
+//   BattleTracker.captureOrDestroyUnits(battleSite, defender, defender, bridge, null);
+//   if (!headless) bridge.getSoundChannelBroadcaster().playSoundForAll(CLIP_BATTLE_FAILURE, attacker);
+must_fight_battle_defender_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_end_battle(self, bridge)
+	self.who_won = .DEFENDER
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_battle_end(
+		display,
+		self.battle_id,
+		fmt.aprintf("%s win", self.defender.base.name),
+	)
+	if properties_get_abandoned_territories_may_be_taken_over_immediately(
+		game_data_get_properties(self.game_data),
+	) {
+		ni_p, ni_c := matches_unit_is_not_infrastructure()
+		// defendingUnits.stream().noneMatch(unitIsNotInfrastructure())
+		any_non_infra := false
+		for u in self.defending_units {
+			if ni_p(ni_c, u) {
+				any_non_infra = true
+				break
+			}
+		}
+		if !any_non_infra {
+			site_units := unit_collection_get_units(
+				territory_get_unit_collection(self.battle_site),
+			)
+			defer delete(site_units)
+			ally_of_attacker_units: [dynamic]^Unit
+			for u in site_units {
+				if ni_p(ni_c, u) {
+					append(&ally_of_attacker_units, u)
+				}
+			}
+			if len(ally_of_attacker_units) > 0 {
+				abandoned_to_player := unit_utils_find_player_with_most_units(
+					ally_of_attacker_units,
+				)
+				writer := i_delegate_bridge_get_history_writer(bridge)
+				msg := fmt.aprintf(
+					"%s takes over %s as there are no defenders left",
+					abandoned_to_player.base.name,
+					self.battle_site.base.name,
+				)
+				history_writer_add_child_to_event(writer, msg, ally_of_attacker_units)
+				battle_tracker_take_over(
+					self.battle_tracker,
+					self.battle_site,
+					abandoned_to_player,
+					bridge,
+					nil,
+					ally_of_attacker_units,
+				)
+			}
+		} else {
+			battle_tracker_take_over(
+				self.battle_tracker,
+				self.battle_site,
+				self.defender,
+				bridge,
+				nil,
+				self.defending_units,
+			)
+		}
+	}
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	defending_copy: [dynamic]^Unit
+	for u in self.defending_units {
+		append(&defending_copy, u)
+	}
+	history_writer_add_child_to_event(
+		writer,
+		fmt.aprintf("%s win", self.defender.base.name),
+		defending_copy,
+	)
+	self.battle_result_description = .LOST
+	must_fight_battle_show_casualties(self, bridge)
+	if !self.headless {
+		battle_records_add_result_to_battle(
+			battle_tracker_get_battle_records(self.battle_tracker),
+			self.attacker,
+			self.battle_id,
+			self.defender,
+			self.attacker_lost_tuv,
+			self.defender_lost_tuv,
+			self.battle_result_description,
+			battle_results_new(cast(^I_Battle)&self.abstract_battle, self.game_data),
+		)
+	}
+	must_fight_battle_check_defending_planes_can_land(self)
+	battle_tracker_capture_or_destroy_units(self.battle_site, self.defender, self.defender, bridge, nil)
+	if !self.headless {
+		channel := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+		headless_sound_channel_play_sound_for_all(channel, "battle_failure", self.attacker)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#nobodyWins(IDelegateBridge)
+//
+// Java:
+//   endBattle(bridge);
+//   whoWon = WhoWon.DRAW;
+//   bridge.getDisplayChannelBroadcaster().battleEnd(battleId, "Stalemate");
+//   bridge.getHistoryWriter().addChildToEvent(defender.getName() + " and " + attacker.getName() + " reach a stalemate");
+//   battleResultDescription = STALEMATE;
+//   showCasualties(bridge);
+//   if (!headless) {
+//     battleTracker.getBattleRecords().addResultToBattle(...);
+//     bridge.getSoundChannelBroadcaster().playSoundForAll(CLIP_BATTLE_STALEMATE, attacker);
+//   }
+//   checkDefendingPlanesCanLand();
+must_fight_battle_nobody_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_end_battle(self, bridge)
+	self.who_won = .DRAW
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_battle_end(display, self.battle_id, "Stalemate")
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	history_writer_add_child_to_event(
+		writer,
+		fmt.aprintf(
+			"%s and %s reach a stalemate",
+			self.defender.base.name,
+			self.attacker.base.name,
+		),
+	)
+	self.battle_result_description = .STALEMATE
+	must_fight_battle_show_casualties(self, bridge)
+	if !self.headless {
+		battle_records_add_result_to_battle(
+			battle_tracker_get_battle_records(self.battle_tracker),
+			self.attacker,
+			self.battle_id,
+			self.defender,
+			self.attacker_lost_tuv,
+			self.defender_lost_tuv,
+			self.battle_result_description,
+			battle_results_new(cast(^I_Battle)&self.abstract_battle, self.game_data),
+		)
+		channel := i_delegate_bridge_get_sound_channel_broadcaster(bridge)
+		headless_sound_channel_play_sound_for_all(channel, "battle_stalemate", self.attacker)
+	}
+	must_fight_battle_check_defending_planes_can_land(self)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#attackerWins(IDelegateBridge)
+//
+// Java:
+//   endBattle(bridge);
+//   whoWon = WhoWon.ATTACKER;
+//   bridge.getDisplayChannelBroadcaster().battleEnd(battleId, attacker.getName() + " win");
+//   if (headless) return;
+//   if (attackingUnits.stream().anyMatch(Matches.unitIsNotAir())) {
+//     if (Matches.isTerritoryEnemyAndNotUnownedWater(attacker).test(battleSite))
+//       battleTracker.addToConquered(battleSite);
+//     battleTracker.takeOver(battleSite, attacker, bridge, null, attackingUnits);
+//     battleResultDescription = CONQUERED;
+//   } else {
+//     battleResultDescription = WON_WITHOUT_CONQUERING;
+//   }
+//   clearTransportedBy(bridge);
+//   bridge.getHistoryWriter().addChildToEvent(attacker.getName() + " win", new ArrayList<>(attackingUnits));
+//   showCasualties(bridge);
+//   battleTracker.getBattleRecords().addResultToBattle(...);
+//   SoundUtils.playAttackerWinsAirOrSea(attacker, attackingUnits, battleSite.isWater(), bridge);
+must_fight_battle_attacker_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_end_battle(self, bridge)
+	self.who_won = .ATTACKER
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_battle_end(
+		display,
+		self.battle_id,
+		fmt.aprintf("%s win", self.attacker.base.name),
+	)
+	if self.headless {
+		return
+	}
+
+	// do we need to change ownership
+	not_air_p, not_air_c := matches_unit_is_not_air()
+	any_non_air := false
+	for u in self.attacking_units {
+		if not_air_p(not_air_c, u) {
+			any_non_air = true
+			break
+		}
+	}
+	if any_non_air {
+		ew_p, ew_c := matches_is_territory_enemy_and_not_unowned_water(self.attacker)
+		if ew_p(ew_c, self.battle_site) {
+			battle_tracker_add_to_conquered(self.battle_tracker, self.battle_site)
+		}
+		battle_tracker_take_over(
+			self.battle_tracker,
+			self.battle_site,
+			self.attacker,
+			bridge,
+			nil,
+			self.attacking_units,
+		)
+		self.battle_result_description = .CONQUERED
+	} else {
+		self.battle_result_description = .WON_WITHOUT_CONQUERING
+	}
+
+	abstract_battle_clear_transported_by(&self.abstract_battle, bridge)
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	attacking_copy: [dynamic]^Unit
+	for u in self.attacking_units {
+		append(&attacking_copy, u)
+	}
+	history_writer_add_child_to_event(
+		writer,
+		fmt.aprintf("%s win", self.attacker.base.name),
+		attacking_copy,
+	)
+	must_fight_battle_show_casualties(self, bridge)
+	battle_records_add_result_to_battle(
+		battle_tracker_get_battle_records(self.battle_tracker),
+		self.attacker,
+		self.battle_id,
+		self.defender,
+		self.attacker_lost_tuv,
+		self.defender_lost_tuv,
+		self.battle_result_description,
+		battle_results_new(cast(^I_Battle)&self.abstract_battle, self.game_data),
+	)
+	sound_utils_play_attacker_wins_air_or_sea(
+		self.attacker,
+		self.attacking_units,
+		territory_is_water(self.battle_site),
+		bridge,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#endBattle(IBattle$WhoWon,IDelegateBridge)
+//
+// Java (public, @Override):
+//   switch (whoWon) {
+//     case ATTACKER: attackerWins(bridge); break;
+//     case DEFENDER: defenderWins(bridge); break;
+//     case DRAW:     nobodyWins(bridge);   break;
+//     default: throw new IllegalStateException("WhoWon? " + whoWon);
+//   }
+must_fight_battle_end_battle_who_won :: proc(self: ^Must_Fight_Battle, who_won: I_Battle_Who_Won, bridge: ^I_Delegate_Bridge) {
+	switch who_won {
+	case .ATTACKER:
+		must_fight_battle_attacker_wins(self, bridge)
+	case .DEFENDER:
+		must_fight_battle_defender_wins(self, bridge)
+	case .DRAW:
+		must_fight_battle_nobody_wins(self, bridge)
+	case .NOT_FINISHED:
+		fallthrough
+	case:
+		panic("WhoWon?")
+	}
+}
+
 

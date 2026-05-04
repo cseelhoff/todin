@@ -122,6 +122,70 @@ server_game_should_auto_save_after_end :: proc(self: ^Server_Game, delegate: ^I_
 		delegate.auto_save_annotation.after_step_end
 }
 
+// games.strategy.engine.framework.ServerGame#autoSaveBefore(IDelegate)
+// Java: saveGame(launchAction.getAutoSaveFileUtils()
+//                 .getBeforeStepAutoSaveFile(delegate.getName()));
+server_game_auto_save_before :: proc(self: ^Server_Game, delegate: ^I_Delegate) {
+	server_game_save_game(
+		self,
+		auto_save_file_utils_get_before_step_auto_save_file(
+			launch_action_get_auto_save_file_utils(self.launch_action),
+			i_delegate_get_name(delegate),
+		),
+	)
+}
+
+// games.strategy.engine.framework.ServerGame#autoSaveAfter(String)
+// Java:
+//   final var saveUtils = launchAction.getAutoSaveFileUtils();
+//   saveGame(saveUtils.getAfterStepAutoSaveFile(
+//       saveUtils.getAutoSaveStepName(stepName)));
+server_game_auto_save_after_name :: proc(self: ^Server_Game, step_name: string) {
+	save_utils := launch_action_get_auto_save_file_utils(self.launch_action)
+	server_game_save_game(
+		self,
+		auto_save_file_utils_get_after_step_auto_save_file(
+			save_utils,
+			auto_save_file_utils_get_auto_save_step_name(save_utils, step_name),
+		),
+	)
+}
+
+// games.strategy.engine.framework.ServerGame#autoSaveAfter(IDelegate)
+// Java:
+//   final String typeName = delegate.getClass().getTypeName();
+//   final String stepName = typeName.substring(typeName.lastIndexOf('.') + 1)
+//                                   .replaceFirst("Delegate$", "");
+//   saveGame(launchAction.getAutoSaveFileUtils()
+//                .getAfterStepAutoSaveFile(stepName));
+//
+// The Java idiom uses reflection (`getClass().getTypeName()`) which the
+// Odin port does not carry. Concrete delegates in `XmlGameElementMapper`
+// are looked up by simple class name (e.g. "MoveDelegate"); the same
+// short class name is conventionally stored in `I_Delegate.name` via the
+// initialize path used by the gameparser, so `i_delegate_get_name` is
+// the faithful stand-in here. We still apply the same suffix-strip to
+// match the Java-derived step name byte-for-byte when the delegate name
+// happens to carry the "Delegate" suffix.
+server_game_auto_save_after_delegate :: proc(self: ^Server_Game, delegate: ^I_Delegate) {
+	type_name := i_delegate_get_name(delegate)
+	dot_index := strings.last_index(type_name, ".")
+	step_name := type_name
+	if dot_index != -1 {
+		step_name = type_name[dot_index + 1:]
+	}
+	if strings.has_suffix(step_name, "Delegate") {
+		step_name = step_name[:len(step_name) - len("Delegate")]
+	}
+	server_game_save_game(
+		self,
+		auto_save_file_utils_get_after_step_auto_save_file(
+			launch_action_get_auto_save_file_utils(self.launch_action),
+			step_name,
+		),
+	)
+}
+
 // games.strategy.engine.framework.ServerGame#getCurrentStep()
 // Java: return gameData.getSequence().getStep();
 server_game_get_current_step :: proc(self: ^Server_Game) -> ^Game_Step {
@@ -473,6 +537,91 @@ server_game_wait_for_player_to_finish_step :: proc(self: ^Server_Game) {
 	}
 }
 
+// games.strategy.engine.framework.ServerGame#runStep(boolean)
+// Java drives one full step of the game sequence: short-circuit on
+// already-maxed steps and on game-over checkpoints, run the
+// before/after-start auto-save hooks, start the step, wait for the
+// player, run the after-end auto-save (move steps only), end the step,
+// advance the sequence (recording a new round + saving even/odd
+// round-end files), turn off Edit Mode when transitioning to an AI
+// player, and finally fire the non-move after-end auto-save.
+server_game_run_step :: proc(self: ^Server_Game, step_is_restored_from_saved_game: bool) {
+	if game_step_has_reached_max_run_count(server_game_get_current_step(self)) {
+		game_sequence_next(game_data_get_sequence(self.game_data))
+		return
+	}
+	if self.is_game_over {
+		return
+	}
+	current_step := game_sequence_get_step(game_data_get_sequence(self.game_data))
+	current_delegate := game_step_get_delegate(current_step)
+	if !step_is_restored_from_saved_game &&
+	   server_game_should_auto_save_before_start(self, current_delegate) {
+		server_game_auto_save_before(self, current_delegate)
+	}
+	server_game_start_step(self, step_is_restored_from_saved_game)
+	if !step_is_restored_from_saved_game &&
+	   server_game_should_auto_save_after_start(self, current_delegate) {
+		server_game_auto_save_before(self, current_delegate)
+	}
+	if self.is_game_over {
+		return
+	}
+	server_game_wait_for_player_to_finish_step(self)
+	if self.is_game_over {
+		return
+	}
+	is_move_step := game_step_is_move_step_name(game_step_get_name(current_step))
+	if is_move_step && server_game_should_auto_save_after_end(self, current_delegate) {
+		server_game_auto_save_after_name(self, game_step_get_name(current_step))
+	}
+	server_game_end_step(self)
+	if self.is_game_over {
+		return
+	}
+	if game_sequence_next(game_data_get_sequence(self.game_data)) {
+		round := game_sequence_get_round(game_data_get_sequence(self.game_data))
+		history_writer_start_next_round(
+			history_get_history_writer(game_data_get_history(self.game_data)),
+			round,
+		)
+		save_utils := launch_action_get_auto_save_file_utils(self.launch_action)
+		round_file: Path
+		if round % 2 == 0 {
+			round_file = auto_save_file_utils_get_even_round_auto_save_file(save_utils)
+		} else {
+			round_file = auto_save_file_utils_get_odd_round_auto_save_file(save_utils)
+		}
+		server_game_save_game(self, round_file)
+	}
+	// Turn off Edit Mode if we're transitioning to an AI player to
+	// prevent infinite round combats.
+	if edit_delegate_get_edit_mode(game_data_get_properties(self.game_data)) {
+		new_player := game_step_get_player_id(
+			game_sequence_get_step(game_data_get_sequence(self.game_data)),
+		)
+		if new_player != nil &&
+		   game_player_is_ai(new_player) &&
+		   new_player != game_step_get_player_id(current_step) {
+			text :: "Turning off Edit Mode when switching to AI player"
+			history_writer_start_event(
+				history_get_history_writer(game_data_get_history(self.game_data)),
+				text,
+			)
+			boxed := new(bool)
+			boxed^ = false
+			game_properties_set(
+				game_data_get_properties(self.game_data),
+				"EditMode",
+				rawptr(boxed),
+			)
+		}
+	}
+	if !is_move_step && server_game_should_auto_save_after_end(self, current_delegate) {
+		server_game_auto_save_after_delegate(self, current_delegate)
+	}
+}
+
 // games.strategy.engine.framework.ServerGame.SERVER_REMOTE — the static
 // RemoteName used to register/lookup the IServerRemote implementation on
 // the messengers. Java: `static final RemoteName SERVER_REMOTE =
@@ -815,5 +964,21 @@ server_game_stop_game :: proc(self: ^Server_Game) {
 		success := Exit_Status.Success
 		exit_status_exit(&success)
 	}
+}
+
+// Java: ServerGame.saveGame(Path file).
+//   checkNotNull(file);
+//   final Path parentDir = file.getParent();
+//   if (!Files.exists(parentDir)) {
+//     try { Files.createDirectories(parentDir); }
+//     catch (IOException e) { log.error(..., parentDir.toAbsolutePath(), e); }
+//   }
+//   GameDataWriter.writeToFile(gameData, delegateExecutionManager, file);
+server_game_save_game :: proc(self: ^Server_Game, file: Path) {
+	parent_dir := path_get_parent(file)
+	if !files_exists(parent_dir) {
+		files_create_directories(parent_dir)
+	}
+	game_data_writer_write_to_file(self.game_data, self.delegate_execution_manager, file)
 }
 

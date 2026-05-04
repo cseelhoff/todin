@@ -2,6 +2,89 @@ package game
 
 Aa_Casualty_Selector :: struct {}
 
+// games.strategy.triplea.delegate.battle.casualty.AaCasualtySelector#getAaCasualties(java.util.Collection,java.util.Collection,games.strategy.triplea.delegate.power.calculator.CombatValue,games.strategy.triplea.delegate.power.calculator.CombatValue,java.lang.String,games.strategy.triplea.delegate.DiceRoll,games.strategy.engine.delegate.IDelegateBridge,games.strategy.engine.data.GamePlayer,java.util.UUID,games.strategy.engine.data.Territory)
+aa_casualty_selector_get_aa_casualties :: proc(
+	planes: [dynamic]^Unit,
+	defending_aa: [dynamic]^Unit,
+	planes_combat_value_calculator: ^Combat_Value,
+	aa_combat_value_calculator: ^Combat_Value,
+	text: string,
+	dice: ^Dice_Roll,
+	bridge: ^I_Delegate_Bridge,
+	hit_player: ^Game_Player,
+	battle_id: Uuid,
+	battle_site: ^Territory,
+) -> ^Casualty_Details {
+	if len(planes) == 0 {
+		return casualty_details_new()
+	}
+	data := i_delegate_bridge_get_data(bridge)
+
+	allow_multiple_hits_per_unit := false
+	if len(defending_aa) > 0 {
+		damageable_pred, damageable_ctx := matches_unit_aa_shot_damageable_instead_of_killing_instantly()
+		all_match := true
+		for u in defending_aa {
+			if !damageable_pred(damageable_ctx, u) {
+				all_match = false
+				break
+			}
+		}
+		allow_multiple_hits_per_unit = all_match
+	}
+
+	if edit_delegate_get_edit_mode(game_data_get_properties(data)) ||
+	   properties_get_choose_aa_casualties(game_data_get_properties(data)) {
+		return casualty_selector_select_casualties(
+			hit_player,
+			planes,
+			planes_combat_value_calculator,
+			battle_site,
+			bridge,
+			text,
+			dice,
+			battle_id,
+			false,
+			dice_roll_get_hits(dice),
+			allow_multiple_hits_per_unit,
+		)
+	}
+
+	if dice_roll_get_hits(dice) <= 0 {
+		return casualty_details_new()
+	}
+
+	unit_power_and_rolls_map := aa_power_strength_and_rolls_build(
+		defending_aa,
+		i32(len(planes)),
+		aa_combat_value_calculator,
+	)
+	available_targets := aa_casualty_selector_calculate_available_targets(
+		planes,
+		allow_multiple_hits_per_unit,
+	)
+
+	hit_targets: [dynamic]^Unit
+	if properties_get_low_luck(game_data_get_properties(data)) ||
+	   properties_get_low_luck_aa_only(game_data_get_properties(data)) {
+		hit_targets = aa_casualty_selector_get_low_luck_aa_casualties(
+			available_targets,
+			unit_power_and_rolls_map,
+			dice,
+			bridge,
+		)
+	} else {
+		hit_targets = aa_casualty_selector_calculate_rolled_aa_casualties(
+			available_targets,
+			unit_power_and_rolls_map,
+			dice,
+			bridge,
+		)
+	}
+
+	return aa_casualty_selector_build_casualty_details(available_targets, hit_targets)
+}
+
 aa_casualty_selector_lambda_build_casualty_details_0 :: proc(
 	casualty_details: ^Casualty_Details,
 	unit: ^Unit,

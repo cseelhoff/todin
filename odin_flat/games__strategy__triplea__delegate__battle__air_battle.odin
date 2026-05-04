@@ -347,3 +347,152 @@ air_battle_new :: proc(
 	return self
 }
 
+// games.strategy.triplea.delegate.battle.AirBattle#makeBattle(IDelegateBridge)
+//
+// Java: when this air battle is a bombing run, marks both attacker and
+// defender units as having been in an air battle, then for each strategic
+// bomber finds legal damageable enemy targets in the territory. If multiple
+// targets exist and the "damage units instead of territory" property is on,
+// asks the remote player to pick a target; otherwise picks any. Records the
+// chosen target -> bomber mapping and queues a strategic bombing battle via
+// the BattleTracker. Finally wires up dependencies between the new bombing
+// battle and any pending NORMAL or AIR_BATTLE in the same territory.
+air_battle_make_battle :: proc(self: ^Air_Battle, bridge: ^I_Delegate_Bridge) {
+	// record who was in this battle first, so that they do not take part in
+	// any ground battles
+	if self.is_bombing_run {
+		air_battle_record_units_were_in_air_battle(self.attacking_units, bridge)
+		air_battle_record_units_were_in_air_battle(self.defending_units, bridge)
+	}
+	if self.is_bombing_run {
+		bomber_p, bomber_c := matches_unit_is_strategic_bomber()
+		bombers := make([dynamic]^Unit)
+		defer delete(bombers)
+		for u in self.attacking_units {
+			if bomber_p(bomber_c, u) {
+				append(&bombers, u)
+			}
+		}
+		if len(bombers) > 0 {
+			// enemyTargetsTotal = battleSite.getMatches(
+			//     enemyUnit(bridge.getGamePlayer())
+			//         .and(unitCanBeDamaged())
+			//         .and(unitIsBeingTransported().negate()))
+			enemy_p, enemy_c := matches_enemy_unit(
+				i_delegate_bridge_get_game_player(bridge),
+			)
+			cbd_p, cbd_c := matches_unit_can_be_damaged()
+			bt_p, bt_c := matches_unit_is_being_transported()
+			enemy_targets_total := make([dynamic]^Unit)
+			defer delete(enemy_targets_total)
+			for u in territory_get_units(self.battle_site) {
+				if enemy_p(enemy_c, u) &&
+				   cbd_p(cbd_c, u) &&
+				   !bt_p(bt_c, u) {
+					append(&enemy_targets_total, u)
+				}
+			}
+			for unit in bombers {
+				legal_p, legal_c := matches_unit_is_legal_bombing_target_by(unit)
+				enemy_targets := make([dynamic]^Unit)
+				defer delete(enemy_targets)
+				for u in enemy_targets_total {
+					if legal_p(legal_c, u) {
+						append(&enemy_targets, u)
+					}
+				}
+				if len(enemy_targets) > 0 {
+					target: ^Unit = nil
+					if len(enemy_targets) > 1 &&
+					   properties_get_damage_from_bombing_done_to_units_instead_of_territories(
+						   game_state_get_properties(&self.game_data.game_state),
+					   ) {
+						unit_list := make([dynamic]^Unit)
+						defer delete(unit_list)
+						append(&unit_list, unit)
+						for target == nil {
+							target = player_what_should_bomber_bomb(
+								abstract_battle_get_remote_bridge(bridge),
+								self.battle_site,
+								enemy_targets,
+								unit_list,
+							)
+						}
+					} else {
+						target = enemy_targets[0]
+					}
+					targets_map: map[^Unit]map[^Unit]struct{}
+					targets_ptr: ^map[^Unit]map[^Unit]struct{} = nil
+					if target != nil {
+						targets_map = make(map[^Unit]map[^Unit]struct{})
+						bomber_set := make(map[^Unit]struct{})
+						bomber_set[unit] = {}
+						targets_map[target] = bomber_set
+						targets_ptr = &targets_map
+					}
+					units_arg := make([dynamic]^Unit)
+					defer delete(units_arg)
+					append(&units_arg, unit)
+					battle_tracker_add_battle(
+						self.battle_tracker,
+						&route_scripted_new(self.battle_site).route,
+						units_arg,
+						true,
+						self.attacker,
+						bridge,
+						nil,
+						nil,
+						targets_ptr,
+						true,
+					)
+				}
+			}
+			battle := battle_tracker_get_pending_bombing_battle(
+				self.battle_tracker,
+				self.battle_site,
+			)
+			dependent := battle_tracker_get_pending_battle(
+				self.battle_tracker,
+				self.battle_site,
+				.NORMAL,
+			)
+			if dependent != nil {
+				battle_tracker_add_dependency(self.battle_tracker, dependent, battle)
+			}
+			dependent_air_battle := battle_tracker_get_pending_battle(
+				self.battle_tracker,
+				self.battle_site,
+				.AIR_BATTLE,
+			)
+			if dependent_air_battle != nil {
+				battle_tracker_add_dependency(
+					self.battle_tracker,
+					dependent_air_battle,
+					battle,
+				)
+			}
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.battle.AirBattle#finishBattleAndRemoveFromTrackerHeadless
+air_battle_finish_battle_and_remove_from_tracker_headless :: proc(
+	self: ^Air_Battle,
+	bridge: ^I_Delegate_Bridge,
+) {
+	air_battle_make_battle(self, bridge)
+	self.who_won = .ATTACKER
+	self.battle_result_description = .NO_BATTLE
+	battle_records_remove_battle(
+		battle_tracker_get_battle_records(self.battle_tracker),
+		self.attacker,
+		self.battle_id,
+	)
+	self.is_over = true
+	battle_tracker_remove_battle(
+		self.battle_tracker,
+		cast(^I_Battle)&self.abstract_battle,
+		i_delegate_bridge_get_data(bridge),
+	)
+}
+
