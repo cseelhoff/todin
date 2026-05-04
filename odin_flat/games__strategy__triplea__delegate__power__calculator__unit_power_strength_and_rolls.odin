@@ -66,4 +66,36 @@ unit_power_strength_and_rolls_to_builder :: proc(
 	return b
 }
 
+// Java: private UnitPowerStrengthAndRolls#update(StrengthValue, RollValue)
+unit_power_strength_and_rolls_update :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+	new_strength: ^Strength_Value,
+	new_rolls: ^Roll_Value,
+) -> ^Unit_Power_Strength_And_Rolls {
+	b := unit_power_strength_and_rolls_to_builder(self)
+	b.strength_and_rolls = strength_and_rolls_new(new_strength, new_rolls)
+	b.power = power_calculator_get_value(
+		self.choose_best_roll,
+		self.dice_sides,
+		new_strength,
+		new_rolls,
+	)
+	return unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
+}
 
+// Java: UnitPowerStrengthAndRolls#toZero()
+unit_power_strength_and_rolls_to_zero :: proc(
+	self: ^Unit_Power_Strength_And_Rolls,
+) -> ^Unit_Power_Strength_And_Rolls {
+	new_strength := strength_value_of(self.dice_sides, 0)
+	new_rolls := roll_value_of(0)
+	b := unit_power_strength_and_rolls_to_builder(self)
+	b.strength_and_rolls = strength_and_rolls_new(new_strength, new_rolls)
+	b.power = power_calculator_get_value(
+		self.choose_best_roll,
+		self.dice_sides,
+		new_strength,
+		new_rolls,
+	)
+	return unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
+}

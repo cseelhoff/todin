@@ -12,6 +12,34 @@ air_that_cant_land_util_new :: proc(bridge: ^I_Delegate_Bridge) -> ^Air_That_Can
 	return self
 }
 
+// Java: Collection<Territory> getTerritoriesWhereAirCantLand(GamePlayer player)
+air_that_cant_land_util_get_territories_where_air_cant_land :: proc(
+	self: ^Air_That_Cant_Land_Util,
+	player: ^Game_Player,
+) -> [dynamic]^Territory {
+	data := i_delegate_bridge_get_data(self.bridge)
+	cant_land := make([dynamic]^Territory)
+	air_pred, air_ctx := matches_unit_is_air()
+	owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+	territories := game_map_get_territories(game_data_get_map(data))
+	for current in territories {
+		all_units := unit_holder_get_units(cast(^Unit_Holder)current)
+		air := make([dynamic]^Unit, 0, len(all_units))
+		for u in all_units {
+			if air_pred(air_ctx, u) && owned_pred(owned_ctx, u) {
+				append(&air, u)
+			}
+		}
+		delete(all_units)
+		if len(air) != 0 &&
+		   !air_movement_validator_can_land(air[:], current, player, data) {
+			append(&cant_land, current)
+		}
+		delete(air)
+	}
+	return cant_land
+}
+
 // Java: private void removeAirThatCantLand(
 //         final GamePlayer player, final Territory territory, final Collection<Unit> airUnits)
 // The private 3-arg overload of removeAirThatCantLand. Distinguished

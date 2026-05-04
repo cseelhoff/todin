@@ -258,6 +258,46 @@ pro_purchase_utils_get_units_to_consume :: proc(
 }
 
 
+// Java: public static double getCost(final ProData proData, final Unit unit)
+//   final Resource pus = unit.getData().getResourceList().getResourceOrThrow(Constants.PUS);
+//   final Collection<Unit> units = TransportTracker.transportingAndUnloaded(unit);
+//   units.add(unit);
+//   double cost = 0.0;
+//   for (final Unit u : units) {
+//     final ProductionRule rule = getProductionRule(u.getType(), u.getOwner());
+//     if (rule == null) {
+//       cost += proData.getUnitValue(u.getType());
+//     } else {
+//       cost += ((double) rule.getCosts().getInt(pus)) / rule.getResults().totalValues();
+//     }
+//   }
+//   return cost;
+//
+// Constants.PUS resolves to the literal "PUs" (matches the convention used by
+// ai_utils.odin and other ports). unit.getData() goes through the embedded
+// Game_Data_Component. IntegerMap.getInt → integer_map_get_int (rawptr key);
+// IntegerMap.totalValues → integer_map_total_values.
+pro_purchase_utils_get_cost :: proc(pro_data: ^Pro_Data, unit: ^Unit) -> f64 {
+	data := game_data_component_get_data(&unit.game_data_component)
+	pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
+	units := transport_tracker_transporting_and_unloaded(unit)
+	defer delete(units)
+	append(&units, unit)
+	cost: f64 = 0.0
+	for u in units {
+		rule := pro_purchase_utils_get_production_rule(unit_get_type(u), unit_get_owner(u))
+		if rule == nil {
+			cost += f64(pro_data_get_unit_value(pro_data, unit_get_type(u)))
+		} else {
+			costs := production_rule_get_costs(rule)
+			results := production_rule_get_results(rule)
+			cost += f64(integer_map_get_int(&costs, rawptr(pus))) / f64(integer_map_total_values(&results))
+		}
+	}
+	return cost
+}
+
+
 // Java: private static ProductionRule getProductionRule(UnitType unitType, GamePlayer player)
 // Iterates the player's production frontier and returns the first rule whose
 // results contain `unitType` with a positive count, else nil.

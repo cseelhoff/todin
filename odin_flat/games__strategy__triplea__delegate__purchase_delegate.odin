@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Purchase_Delegate :: struct {
@@ -269,6 +270,153 @@ purchase_delegate_remove_from_player :: proc(
 		}
 	}
 	return strings.to_string(b)
+}
+
+// games.strategy.triplea.delegate.PurchaseDelegate#delegateCurrentlyRequiresUserInput()
+// Java:
+//   if (!canWePurchaseOrRepair()) return false;
+//   return TerritoryAttachment.doWeHaveEnoughCapitalsToProduce(player, getData().getMap());
+purchase_delegate_delegate_currently_requires_user_input :: proc(self: ^Purchase_Delegate) -> bool {
+	if !purchase_delegate_can_we_purchase_or_repair(self) {
+		return false
+	}
+	return territory_attachment_do_we_have_enough_capitals_to_produce(
+		self.player,
+		game_data_get_map(abstract_delegate_get_data(&self.abstract_delegate)),
+	)
+}
+
+// games.strategy.triplea.delegate.PurchaseDelegate#purchase(IntegerMap<ProductionRule>)
+// Validates affordability and per-unit-type build limits, builds CompositeChange
+// for added resources, added units and spent resources, writes a transcript
+// history event ("<player> buy <list>; <remaining>" or "<player> buy nothing;
+// <remaining>"), and commits the change. Returns "" for Java's null (success);
+// returns "Not enough resources" or a build-limit error message on rejection.
+// Empty string "" mirrors Java's @Nullable String null per the abstract trigger
+// attachment convention used elsewhere in odin_flat.
+purchase_delegate_purchase :: proc(
+	self: ^Purchase_Delegate,
+	production_rules: ^Integer_Map,
+) -> string {
+	costs := purchase_delegate_get_costs(production_rules)
+	results := purchase_delegate_get_results(production_rules)
+	if !purchase_delegate_can_afford(self, costs, self.player) {
+		return "Not enough resources"
+	}
+	// check building limits
+	for k, _ in results.map_values {
+		na := cast(^Named_Attachable)k
+		if na.default_named.named.kind != .Unit_Type {
+			continue
+		}
+		type := cast(^Unit_Type)k
+		quantity := integer_map_get_int(results, k)
+		max_built := unit_attachment_get_max_built_per_player(unit_type_get_unit_attachment(type))
+		if max_built == 0 {
+			return fmt.aprintf(
+				"May not build any of this unit right now: %s",
+				type.named.base.name,
+			)
+		} else if max_built > 0 {
+			currently_built: i32 = 0
+			player_uc := game_player_get_unit_collection(self.player)
+			if player_uc != nil {
+				for u in player_uc.units {
+					if unit_get_type(u) == type {
+						currently_built += 1
+					}
+				}
+			}
+			game_map := game_data_get_map(abstract_delegate_get_data(&self.abstract_delegate))
+			for t in game_map_get_territories(game_map) {
+				t_uc := territory_get_unit_collection(t)
+				if t_uc == nil {
+					continue
+				}
+				for u in t_uc.units {
+					if unit_get_type(u) == type && unit_is_owned_by(u, self.player) {
+						currently_built += 1
+					}
+				}
+			}
+			allowed_build := max(i32(0), max_built - currently_built)
+			if quantity > allowed_build {
+				return fmt.aprintf(
+					"May only build %d of %s this turn, may only build %d total",
+					allowed_build,
+					type.named.base.name,
+					max_built,
+				)
+			}
+		}
+	}
+	// remove first, since add logs PUs remaining
+	total_units: [dynamic]^Unit
+	total_unit_types: [dynamic]^Unit_Type
+	total_resources: [dynamic]^Resource
+	changes := composite_change_new()
+	// add changes for added resources, find all added units
+	for k, _ in results.map_values {
+		na := cast(^Named_Attachable)k
+		quantity := integer_map_get_int(results, k)
+		if na.default_named.named.kind != .Unit_Type {
+			resource := cast(^Resource)k
+			composite_change_add(
+				changes,
+				change_factory_change_resources_change(self.player, resource, quantity),
+			)
+			for i: i32 = 0; i < quantity; i += 1 {
+				append(&total_resources, resource)
+			}
+		} else {
+			type := cast(^Unit_Type)k
+			units := unit_type_create_2(type, quantity, self.player)
+			for u in units {
+				append(&total_units, u)
+			}
+			delete(units)
+			for i: i32 = 0; i < quantity; i += 1 {
+				append(&total_unit_types, type)
+			}
+		}
+	}
+	total_all: [dynamic]^Default_Named
+	for ut in total_unit_types {
+		append(&total_all, cast(^Default_Named)ut)
+	}
+	for r in total_resources {
+		append(&total_all, cast(^Default_Named)r)
+	}
+	// add changes for added units
+	if len(total_units) > 0 {
+		composite_change_add(
+			changes,
+			change_factory_add_units(cast(^Unit_Holder)self.player, total_units),
+		)
+	}
+	// add changes for spent resources
+	remaining := purchase_delegate_remove_from_player(self, costs, changes)
+	// add history event
+	transcript_text: string
+	player_name := self.player.named.base.name
+	if len(total_units) > 0 {
+		transcript_text = fmt.aprintf(
+			"%s buy %s; %s",
+			player_name,
+			my_formatter_default_named_to_text_list(total_all, ", ", true),
+			remaining,
+		)
+	} else {
+		transcript_text = fmt.aprintf("%s buy nothing; %s", player_name, remaining)
+	}
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(self.bridge),
+		transcript_text,
+		rawptr(&total_units),
+	)
+	// commit changes
+	i_delegate_bridge_add_change(self.bridge, cast(^Change)changes)
+	return ""
 }
 
 // Java owners covered by this file:

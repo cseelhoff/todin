@@ -166,3 +166,22 @@ pro_non_combat_move_ai_check_can_hold :: proc(
 	return true
 }
 
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#moveAlliedCarriedFighters(Unit, ProTerritory)
+pro_non_combat_move_ai_move_allied_carried_fighters :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	u: ^Unit,
+	to: ^Pro_Territory,
+) {
+	carrier_p, carrier_c := matches_unit_is_carrier()
+	if carrier_p(carrier_c, u) {
+		unit_territory := self.unit_territory_map[u]
+		carrier_must_move_with := move_validator_carrier_must_move_with_territory(
+			unit_territory,
+			self.player,
+		)
+		if fighters, ok := carrier_must_move_with[u]; ok {
+			pro_non_combat_move_ai_lambda__move_allied_carried_fighters__11(to, fighters)
+		}
+	}
+}
+

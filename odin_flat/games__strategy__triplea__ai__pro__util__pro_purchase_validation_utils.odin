@@ -401,3 +401,24 @@ pro_purchase_validation_utils_has_reached_construction_limits :: proc(
 	}
 	return false
 }
+
+// Mirrors Java's private static
+//   boolean hasEnoughResourcesAndProduction(
+//       ProPurchaseOption purchaseOption, ProResourceTracker resourceTracker,
+//       int remainingUnitProduction, int remainingConstructions)
+// which is true iff the resource tracker can pay for the option and
+// the option's quantity fits in the relevant remaining production
+// budget (constructions for constructions, units otherwise).
+pro_purchase_validation_utils_has_enough_resources_and_production :: proc(
+	purchase_option: ^Pro_Purchase_Option,
+	resource_tracker: ^Pro_Resource_Tracker,
+	remaining_unit_production: i32,
+	remaining_constructions: i32,
+) -> bool {
+	limit: i32 =
+		pro_purchase_option_is_construction(purchase_option) \
+		? remaining_constructions \
+		: remaining_unit_production
+	return pro_resource_tracker_has_enough(resource_tracker, purchase_option) &&
+	       pro_purchase_option_get_quantity(purchase_option) <= limit
+}

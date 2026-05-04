@@ -291,3 +291,21 @@ concurrent_battle_calculator_create_workers :: proc(self: ^Concurrent_Battle_Cal
 	return true
 }
 
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#setGameDataInternal(GameData)
+// Java:
+//   private boolean setGameDataInternal(@Nullable final GameData data) {
+//     synchronized (mutexCalcIsRunning) {
+//       cancel();
+//       cancelCurrentOperation.incrementAndGet();
+//       isDataSet = createWorkers(data);
+//       return isDataSet;
+//     }
+//   }
+// `synchronized (mutexCalcIsRunning)` is a no-op in the single-threaded shim.
+concurrent_battle_calculator_set_game_data_internal :: proc(self: ^Concurrent_Battle_Calculator, data: ^Game_Data) -> bool {
+	concurrent_battle_calculator_cancel(self)
+	atomic_integer_increment_and_get(self.cancel_current_operation)
+	self.is_data_set = concurrent_battle_calculator_create_workers(self, data)
+	return self.is_data_set
+}
+

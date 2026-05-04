@@ -303,3 +303,45 @@ unit_utils_get_how_much_can_unit_produce :: proc(
 	return production_capacity
 }
 
+// games.strategy.triplea.UnitUtils#getBiggestProducer(Collection<Unit>, Territory, GamePlayer, boolean)
+// Returns the unit from `units` with the largest production capacity in
+// `producer`, or nil if no factory-or-producing unit owned by `player`
+// (and not being transported, and matching the territory's land/sea
+// side) is present. Mirrors Java semantics: ties keep the first
+// strictly-greater unit; the seed is the first matching factory.
+unit_utils_get_biggest_producer :: proc(
+	units: [dynamic]^Unit,
+	producer: ^Territory,
+	player: ^Game_Player,
+	account_for_damage: bool,
+) -> ^Unit {
+	fact_p, fact_c := matches_unit_is_owned_and_is_factory_or_can_produce_units(player)
+	trans_p, trans_c := matches_unit_is_being_transported()
+	side_p: proc(rawptr, ^Unit) -> bool
+	side_c: rawptr
+	if territory_is_water(producer) {
+		side_p, side_c = matches_unit_is_not_land()
+	} else {
+		side_p, side_c = matches_unit_is_not_sea()
+	}
+	factories: [dynamic]^Unit
+	for u in units {
+		if fact_p(fact_c, u) && !trans_p(trans_c, u) && side_p(side_c, u) {
+			append(&factories, u)
+		}
+	}
+	if len(factories) == 0 {
+		return nil
+	}
+	highest_unit := factories[0]
+	highest_capacity: i32 = min(i32)
+	for u in factories {
+		capacity := unit_utils_get_how_much_can_unit_produce(u, producer, account_for_damage, false)
+		if capacity > highest_capacity {
+			highest_capacity = capacity
+			highest_unit = u
+		}
+	}
+	return highest_unit
+}
+

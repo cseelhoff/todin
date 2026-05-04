@@ -130,3 +130,24 @@ pro_combat_move_ai_lambda__remove_territories_that_arent_worth_attacking__0 :: p
 	return false
 }
 
+// Java: ProCombatMoveAi#lambda$determineTerritoriesThatCanBeBombed$3(Territory)
+//   terr -> !AirBattle.territoryCouldPossiblyHaveAirBattleDefenders(
+//               terr, player, data, true)
+// Captures the enclosing instance's `player` and `data` fields.
+Pro_Combat_Move_Ai_Lambda_Determine_Territories_That_Can_Be_Bombed_3_Ctx :: struct {
+	self: ^Pro_Combat_Move_Ai,
+}
+
+pro_combat_move_ai_lambda__determine_territories_that_can_be_bombed__3 :: proc(
+	ctx: rawptr,
+	terr: ^Territory,
+) -> bool {
+	c := (^Pro_Combat_Move_Ai_Lambda_Determine_Territories_That_Can_Be_Bombed_3_Ctx)(ctx)
+	return !air_battle_territory_could_possibly_have_air_battle_defenders(
+		terr,
+		c.self.player,
+		c.self.data,
+		true,
+	)
+}
+

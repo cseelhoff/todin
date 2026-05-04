@@ -225,25 +225,33 @@ client_setting_get_value :: proc(self: ^Client_Setting) -> (rawptr, bool) {
 	if !present {
 		return client_setting_get_default_value(self)
 	}
+	return client_setting_decode_value_or_else_default(self, encoded)
+}
+
+// Java: private @Nullable T decodeValueOrElseDefault(final String encodedValue)
+//   try { return decodeValue(encodedValue); }
+//   catch (ValueEncodingException e) {
+//       log.info("Failed to decode encoded value: '%s' in client setting '%s'", ...);
+//       resetValue();
+//       return getDefaultValue().orElse(null);
+//   }
+// `@Nullable T` → (rawptr, bool) where the bool models `Optional.isPresent()`
+// after Java's terminal `.orElse(null)` collapse. A nil `decode_value`
+// vtable slot is treated identically to the abstract decoder throwing
+// `ValueEncodingException` — same recovery path. The `log.info` call is
+// the only side effect dropped (no logger wired in the snapshot harness).
+client_setting_decode_value_or_else_default :: proc(self: ^Client_Setting, encoded_value: string) -> (rawptr, bool) {
 	if self.decode_value != nil {
-		v, ok, err := self.decode_value(self, encoded)
+		v, ok, err := self.decode_value(self, encoded_value)
 		if err == nil {
-			if ok {
-				return v, true
-			}
 			// Java's `@Nullable T decodeValue` returning null falls
 			// through `Optional.ofNullable` and propagates as an empty
-			// Optional from `getValue` (no reset).
-			return nil, false
+			// Optional (no reset).
+			return v, ok
 		}
 	}
-	// decodeValue threw (or no decoder): mirror Java's
-	// decodeValueOrElseDefault → resetValue() + return default. The
-	// `resetValue` port is not yet scheduled; inline its observable
-	// effect (clear preference, notify listeners) via setEncodedValue
-	// so we don't introduce a placeholder symbol that would later
-	// collide with the real port.
-	client_setting_set_encoded_value(self, "", false)
+	// decodeValue threw (or no decoder): resetValue() + return default.
+	client_setting_reset_value(self)
 	return client_setting_get_default_value(self)
 }
 

@@ -301,3 +301,49 @@ pro_odds_calculator_call_battle_calc :: proc(
 	)
 }
 
+// Java: ProOddsCalculator#callBattleCalc (private, 6-arg w/ checkSubmerge)
+//   return callBattleCalc(
+//       proData, t, attackingUnits, defendingUnits, bombardingUnits, checkSubmerge, false);
+pro_odds_calculator_call_battle_calc_6 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+	check_submerge: bool,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_call_battle_calc(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		check_submerge,
+		false,
+	)
+}
+
+// Java: ProOddsCalculator#callBattleCalcWithRetreatAir
+//   return callBattleCalc(proData, t, attackingUnits, defendingUnits, bombardingUnits, true, true);
+pro_odds_calculator_call_battle_calc_with_retreat_air :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	t: ^Territory,
+	attacking_units: [dynamic]^Unit,
+	defending_units: [dynamic]^Unit,
+	bombarding_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_call_battle_calc(
+		self,
+		pro_data,
+		t,
+		attacking_units,
+		defending_units,
+		bombarding_units,
+		true,
+		true,
+	)
+}
+

@@ -49,6 +49,17 @@ remote_messenger_get_remote_default :: proc(
 	return remote_messenger_get_remote(self, name, false)
 }
 
+// Java: public void registerRemote(final Object implementor, final RemoteName name) {
+//         unifiedMessenger.addImplementor(name, implementor, false);
+//       }
+remote_messenger_register_remote :: proc(
+	self: ^Remote_Messenger,
+	implementor: rawptr,
+	name: ^Remote_Name,
+) {
+	unified_messenger_add_implementor(self.unified_messenger, name, implementor, false)
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteMessenger
 

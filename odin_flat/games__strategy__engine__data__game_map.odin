@@ -525,14 +525,13 @@ game_map_get_route_for_unit :: proc(
 	self: ^Game_Map,
 	start: ^Territory,
 	end: ^Territory,
-	cond: proc(rawptr, ^Territory) -> bool,
-	cond_ctx: rawptr,
+	cond: proc(^Territory) -> bool,
 	unit: ^Unit,
 	player: ^Game_Player,
 ) -> ^Route {
 	units := make([dynamic]^Unit, 0, 1)
 	append(&units, unit)
-	return game_map_get_route_for_units(self, start, end, cond, cond_ctx, units, player)
+	return game_map_get_route_for_units(self, start, end, cond, units, player)
 }
 
 // Mirrors the private Java helper:
@@ -1039,4 +1038,83 @@ game_map_get_distance_ignore_end_for_condition :: proc(
 		game_map_pred_distance_ignore_end_for_condition,
 		rawptr(ctx),
 	)
+}
+
+// Adapter ctx + trampoline for the combined predicate
+//   Matches.territoryIs(end).or(cond)
+// shared by GameMap.getRoute and GameMap.getRouteForUnits. The combined
+// predicate is `t -> t.equals(end) || cond.test(t)`, which captures
+// `end` and `cond`. We bridge to the rawptr-ctx Predicate shape consumed
+// by RouteFinder (see closure-capture convention in llm-instructions.md).
+// Territory equality follows DefaultNamed.equals — identity/name based
+// — matching how other procs in this file compare territories.
+Game_Map_Ctx_Route_Or :: struct {
+	end:  ^Territory,
+	cond: proc(^Territory) -> bool,
+}
+
+@(private = "file")
+game_map_pred_route_or :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	c := cast(^Game_Map_Ctx_Route_Or)ctx_ptr
+	if t == c.end || (t != nil && c.end != nil && t.named.base.name == c.end.named.base.name) {
+		return true
+	}
+	return c.cond(t)
+}
+
+// Mirrors Java GameMap#getRoute(Territory, Territory, Predicate<Territory>):
+//     return new RouteFinder(this, Matches.territoryIs(end).or(cond))
+//                .findRouteByDistance(start, end);
+// Returns the shortest route (by hop count) between two territories whose
+// covered territories — except start and end — satisfy `cond`. Java's
+// Optional<Route> collapses to a nullable ^Route (nil signals empty).
+// The Predicate parameter is rendered as a bare `proc(^Territory) -> bool`
+// per the Phase B note; we pair it with `end` in a heap-allocated ctx
+// to feed RouteFinder, which expects the rawptr-ctx Predicate shape.
+game_map_get_route :: proc(
+	self: ^Game_Map,
+	start: ^Territory,
+	end: ^Territory,
+	cond: proc(^Territory) -> bool,
+) -> ^Route {
+	assert(start != nil)
+	assert(end != nil)
+	ctx := new(Game_Map_Ctx_Route_Or)
+	ctx.end = end
+	ctx.cond = cond
+	rf := route_finder_new_map_condition(self, game_map_pred_route_or, rawptr(ctx))
+	return route_finder_find_route_by_distance(rf, start, end)
+}
+
+// Mirrors Java GameMap#getRouteForUnits(Territory, Territory,
+// Predicate<Territory>, Collection<Unit>, GamePlayer):
+//     return new RouteFinder(this, Matches.territoryIs(end).or(cond), units, player)
+//                .findRouteByCost(start, end);
+// Returns the route with minimum movement cost (also validating canals).
+// `units` (Java Collection<Unit>) becomes [dynamic]^Unit. Java's
+// Optional<Route> collapses to a nullable ^Route. The Predicate becomes
+// a bare `proc(^Territory) -> bool` (Phase B note), bridged to the
+// rawptr-ctx Predicate shape consumed by RouteFinder via the same
+// `Game_Map_Ctx_Route_Or` adapter used by getRoute above.
+game_map_get_route_for_units :: proc(
+	self: ^Game_Map,
+	start: ^Territory,
+	end: ^Territory,
+	cond: proc(^Territory) -> bool,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^Route {
+	assert(start != nil)
+	assert(end != nil)
+	ctx := new(Game_Map_Ctx_Route_Or)
+	ctx.end = end
+	ctx.cond = cond
+	rf := route_finder_new_with_units_player(
+		self,
+		game_map_pred_route_or,
+		rawptr(ctx),
+		units,
+		player,
+	)
+	return route_finder_find_route_by_cost_pair(rf, start, end)
 }

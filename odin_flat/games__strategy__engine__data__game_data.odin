@@ -813,3 +813,31 @@ game_data_lambda_fix_up_null_players_in_delegates_5 :: proc(self: ^Game_Data, de
 		player_list_get_null_player(self.player_list),
 	)
 }
+// games.strategy.engine.data.GameData#resetHistory()
+//
+// Java:
+//   public void resetHistory() {
+//     setGameHistory(new History(this));
+//     GameStep step = getSequence().getStep();
+//     final boolean oldForceInSwingEventThread = forceInSwingEventThread;
+//     forceInSwingEventThread = false;
+//     getGameHistory()
+//         .getHistoryWriter()
+//         .startNextStep(
+//             step.getName(), step.getDelegateName(), step.getPlayerId(), step.getDisplayName());
+//     forceInSwingEventThread = oldForceInSwingEventThread;
+//   }
+game_data_reset_history :: proc(self: ^Game_Data) {
+        game_data_set_game_history(self, history_new(self))
+        step := game_sequence_get_step(game_data_get_sequence(self))
+        old_force_in_swing_event_thread := self.force_in_swing_event_thread
+        self.force_in_swing_event_thread = false
+        history_writer_start_next_step(
+                history_get_history_writer(game_data_get_history(self)),
+                game_step_get_name(step),
+                game_step_get_delegate_name(step),
+                game_step_get_player_id(step),
+                game_step_get_display_name(step),
+        )
+        self.force_in_swing_event_thread = old_force_in_swing_event_thread
+}

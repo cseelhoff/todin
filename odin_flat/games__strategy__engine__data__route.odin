@@ -152,6 +152,17 @@ route_get_movement_cost :: proc(self: ^Route, unit: ^Unit) -> f64 {
 	return route_find_movement_cost(unit, self.steps[:])
 }
 
+// Mirrors Java Route#findMovementCost(Unit, Collection<Territory>) (private
+// static). Sums TerritoryEffectHelper.getMovementCost(t, unit) over each
+// territory in the collection. BigDecimal → f64; BigDecimal.ZERO → 0.
+route_find_movement_cost :: proc(unit: ^Unit, territories: []^Territory) -> f64 {
+	movement_cost: f64 = 0
+	for t in territories {
+		movement_cost += territory_effect_helper_get_movement_cost(t, unit)
+	}
+	return movement_cost
+}
+
 // Mirrors Java Route#hasSteps(): true when the route has at least one step
 // territory (i.e. `steps` is non-empty).
 route_has_steps :: proc(self: ^Route) -> bool {

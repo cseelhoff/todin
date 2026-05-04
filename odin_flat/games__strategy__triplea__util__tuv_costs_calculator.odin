@@ -187,3 +187,40 @@ tuv_costs_calculator_get_costs_for_tuv_for_all_players_merged_and_averaged :: pr
 	return costs
 }
 
+// Java: public IntegerMap<UnitType> computeCostsForTuv(GamePlayer player)
+// Builds the per-player base costs, fills in missing UnitTypes from the
+// game-wide averaged costs (lazily computed and cached on self.costs_all),
+// then overlays each entry with getTotalTuv(...) which honors XML TUV and
+// consumesUnits sums. Result is a fresh map (Java does `new IntegerMap<>(costs)`).
+tuv_costs_calculator_compute_costs_for_tuv :: proc(
+	self: ^Tuv_Costs_Calculator,
+	player: ^Game_Player,
+) -> map[^Unit_Type]i32 {
+	costs := tuv_costs_calculator_compute_base_costs_for_player(self, player)
+	// since our production frontier may not cover all the units we control,
+	// and not the enemy units, we will add any unit types not in our list,
+	// based on the list for everyone
+	if self.costs_all == nil {
+		self.costs_all =
+			tuv_costs_calculator_get_costs_for_tuv_for_all_players_merged_and_averaged(
+				game_player_get_data(player),
+			)
+	}
+	for ut, cost in self.costs_all {
+		if _, exists := costs[ut]; !exists {
+			costs[ut] = cost
+		}
+	}
+	// Override with XML TUV or consumesUnit sum
+	result := make(map[^Unit_Type]i32)
+	for ut, cost in costs {
+		result[ut] = cost
+	}
+	for unit_type in costs {
+		already_added := make(map[^Unit_Type]struct {})
+		result[unit_type] = tuv_costs_calculator_get_total_tuv(unit_type, costs, already_added)
+		delete(already_added)
+	}
+	return result
+}
+

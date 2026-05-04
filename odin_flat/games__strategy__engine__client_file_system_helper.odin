@@ -120,3 +120,17 @@ client_file_system_helper_get_user_maps_folder :: proc(user_home_root_folder_sup
 	}
 	return maps_folder
 }
+
+// games.strategy.engine.ClientFileSystemHelper#getUserMapsFolder()
+//
+// Java:
+//   public static Path getUserMapsFolder() {
+//     return getUserMapsFolder(ClientFileSystemHelper::getUserRootFolder);
+//   }
+//
+// The method reference `ClientFileSystemHelper::getUserRootFolder` is a
+// non-capturing Supplier<Path>, which maps directly to the bare proc value
+// `client_file_system_helper_get_user_root_folder`.
+client_file_system_helper_get_user_maps_folder_noargs :: proc() -> Path {
+	return client_file_system_helper_get_user_maps_folder(client_file_system_helper_get_user_root_folder)
+}

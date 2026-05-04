@@ -1101,6 +1101,25 @@ unit_attachment_get_attack_rolls_with_player :: proc(self: ^Unit_Attachment, pla
 	return max(i32(0), self.attack_rolls + bonus)
 }
 
+// Java: public int getDefense(final GamePlayer player)
+//   final int bonus = getTechTracker().getDefenseBonus(player, getUnitType());
+//   int defenseValue = defense + bonus;
+//   if (defenseValue > 0 && getIsFirstStrike() && TechTracker.hasSuperSubs(player)) {
+//     final int superSubBonus = Properties.getSuperSubDefenseBonus(getData().getProperties());
+//     defenseValue += superSubBonus;
+//   }
+//   return Math.min(getData().getDiceSides(), Math.max(0, defenseValue));
+unit_attachment_get_defense_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_defense_bonus(player, unit_attachment_get_unit_type(self))
+	defense_value := self.defense + bonus
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	if defense_value > 0 && unit_attachment_get_is_first_strike(self) && tech_tracker_has_super_subs(player) {
+		super_sub_bonus := properties_get_super_sub_defense_bonus(game_data_get_properties(data))
+		defense_value += super_sub_bonus
+	}
+	return min(game_data_get_dice_sides(data), max(i32(0), defense_value))
+}
+
 // Java: public int getDefenseRolls(final GamePlayer player)
 //   final int bonus = getTechTracker().getDefenseRollsBonus(player, getUnitType());
 //   return Math.max(0, defenseRolls + bonus);

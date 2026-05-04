@@ -198,3 +198,48 @@ territory_effect_helper_get_max_movement_cost :: proc(
 	}
 	return max_cost
 }
+
+// games.strategy.triplea.delegate.TerritoryEffectHelper#getMovementCost(Territory, Unit)
+//   public static BigDecimal getMovementCost(final Territory t, final Unit unit) {
+//     return getMaxMovementCost(t, Set.of(unit));
+//   }
+territory_effect_helper_get_movement_cost :: proc(t: ^Territory, unit: ^Unit) -> f64 {
+	units: [dynamic]^Unit
+	append(&units, unit)
+	return territory_effect_helper_get_max_movement_cost(t, units)
+}
+
+// games.strategy.triplea.delegate.TerritoryEffectHelper#getUnitTypesForUnitsNotAllowedIntoTerritory(Collection<Territory>)
+//   public static Set<UnitType> getUnitTypesForUnitsNotAllowedIntoTerritory(
+//       final Collection<Territory> steps) {
+//     final Set<UnitType> unitTypes = new HashSet<>();
+//     for (final Territory location : steps) {
+//       unitTypes.addAll(getUnitTypesForUnitsNotAllowedIntoTerritory(location));
+//     }
+//     return unitTypes;
+//   }
+// `_1` suffix disambiguates from the single-Territory overload above
+// (matches the `territory_effect_attachment_get_1` convention).
+territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory_1 :: proc(
+	steps: [dynamic]^Territory,
+) -> map[^Unit_Type]struct {} {
+	unit_types: map[^Unit_Type]struct {}
+	for location in steps {
+		per := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory(location)
+		for ut in per {
+			unit_types[ut] = {}
+		}
+	}
+	return unit_types
+}
+
+// games.strategy.triplea.delegate.TerritoryEffectHelper#unitTypeKeepsBlitz(UnitType, Territory)
+//   private static boolean unitTypeKeepsBlitz(final UnitType type, final Territory location) {
+//     return !unitTypeLoosesBlitz(type, location);
+//   }
+territory_effect_helper_unit_type_keeps_blitz :: proc(
+	type: ^Unit_Type,
+	location: ^Territory,
+) -> bool {
+	return !territory_effect_helper_unit_type_looses_blitz(type, location)
+}

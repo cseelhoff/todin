@@ -951,3 +951,36 @@ battle_tracker_add_changes_on_take_over_allied_capitol :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#clearFinishedBattles(IDelegateBridge)
+//
+//   for (final IBattle battle : List.copyOf(pendingBattles)) {
+//     if (FinishedBattle.class.isAssignableFrom(battle.getClass())) {
+//       final FinishedBattle finished = (FinishedBattle) battle;
+//       finishedBattlesUnitAttackFromMap.put(
+//           finished.getTerritory(), finished.getAttackingFromMap());
+//       finished.fight(bridge);
+//     }
+//   }
+//
+// Java distinguishes FinishedBattle via runtime class identity. The
+// Odin port uses the `is_finished_battle` discriminator on the
+// embedded Abstract_Battle (set by finished_battle_new). A snapshot
+// of the pending_battles keys is taken before iterating because
+// finished_battle_fight removes entries from the tracker.
+battle_tracker_clear_finished_battles :: proc(self: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	snapshot := make([dynamic]^I_Battle, 0, len(self.pending_battles))
+	defer delete(snapshot)
+	for b, _ in self.pending_battles {
+		append(&snapshot, b)
+	}
+	for battle in snapshot {
+		ab := cast(^Abstract_Battle)battle
+		if ab.is_finished_battle {
+			finished := cast(^Finished_Battle)battle
+			self.finished_battles_unit_attack_from_map[abstract_battle_get_territory(ab)] =
+				finished_battle_get_attacking_from_map(finished)
+			finished_battle_fight(finished, bridge)
+		}
+	}
+}
+

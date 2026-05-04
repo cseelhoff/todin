@@ -9,6 +9,40 @@ Finished_Battle :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.FinishedBattle
 
+// games.strategy.triplea.delegate.battle.FinishedBattle#<init>(
+//     Territory, GamePlayer, BattleTracker, BattleType, GameData,
+//     BattleResultDescription, WhoWon)
+//
+//   super(battleSite, attacker, battleTracker, battleType, data);
+//   this.battleResultDescription = battleResultDescription;
+//   this.whoWon = whoWon;
+//
+// Sets the is_finished_battle discriminator on Abstract_Battle so
+// BattleTracker#clearFinishedBattles (and other callers that Java
+// expressed via `FinishedBattle.class.equals(b.getClass())`) can
+// distinguish a FinishedBattle from MustFightBattle / NonFightingBattle
+// (all three share I_Battle_Battle_Type.NORMAL).
+finished_battle_new :: proc(
+	battle_site: ^Territory,
+	attacker: ^Game_Player,
+	battle_tracker: ^Battle_Tracker,
+	battle_type: I_Battle_Battle_Type,
+	data: ^Game_Data,
+	battle_result_description: Battle_Record_Battle_Result_Description,
+	who_won: I_Battle_Who_Won,
+) -> ^Finished_Battle {
+	self := new(Finished_Battle)
+	self.battle_site = battle_site
+	self.attacker = attacker
+	self.battle_tracker = battle_tracker
+	self.battle_type = battle_type
+	self.game_data = data
+	self.battle_result_description = battle_result_description
+	self.who_won = who_won
+	self.is_finished_battle = true
+	return self
+}
+
 finished_battle_get_attacking_from_map :: proc(self: ^Finished_Battle) -> map[^Territory][dynamic]^Unit {
 	return self.attacking_from_map
 }

@@ -19,6 +19,12 @@ Abstract_Battle :: struct {
 	// sibling under DependentBattle, where neither isAmphibious nor
 	// battle_type is sufficient.
 	is_must_fight_battle: bool,
+	// Discriminator used in place of Java `FinishedBattle.class.equals(b.getClass())`.
+	// Set to true by Finished_Battle constructors only. battle_type
+	// alone is insufficient because FinishedBattle, MustFightBattle,
+	// and NonFightingBattle all share I_Battle_Battle_Type.NORMAL.
+	// BattleTracker#clearFinishedBattles uses this flag.
+	is_finished_battle: bool,
 	battle_type: I_Battle_Battle_Type,
 	is_over: bool,
 	dependent_units: map[^Unit][dynamic]^Unit,
@@ -449,4 +455,68 @@ abstract_battle_find_defender :: proc(
 		return player_list_get_null_player(game_state_get_player_list(data))
 	}
 	return defender
+}
+
+// games.strategy.triplea.delegate.battle.AbstractBattle#<init>(
+//     Territory, GamePlayer, BattleTracker, BattleType, GameData)
+//
+//   this.battleTracker = battleTracker;
+//   this.attacker = attacker;
+//   this.battleSite = battleSite;
+//   territoryEffects = TerritoryEffectHelper.getEffects(battleSite);
+//   this.isBombingRun = battleType.isBombingRun();
+//   this.battleType = battleType;
+//   gameData = data;
+//   defender = findDefender(battleSite, attacker, data);
+//
+// Field defaults that Java initializes inline (round = 1, headless =
+// false, isAmphibious = false, isOver = false, whoWon = NOT_FINISHED,
+// attackerLostTuv = 0, defenderLostTuv = 0, dependentUnits = new
+// HashMap<>(), attackingUnits/defendingUnits/bombardingUnits = new
+// ArrayList<>(), amphibiousLandAttackers = List.of()) are mirrored
+// here. The is_must_fight_battle / is_finished_battle discriminators
+// are left at their zero value (false); subclass constructors set
+// them as needed.
+abstract_battle_new :: proc(
+	battle_site: ^Territory,
+	attacker: ^Game_Player,
+	battle_tracker: ^Battle_Tracker,
+	battle_type: I_Battle_Battle_Type,
+	data: ^Game_Data,
+) -> ^Abstract_Battle {
+	self := new(Abstract_Battle)
+	self.battle_id = uuid_random_uuid()
+	self.headless = false
+	self.round = 1
+	self.is_amphibious = false
+	self.is_over = false
+	self.who_won = .NOT_FINISHED
+	self.attacker_lost_tuv = 0
+	self.defender_lost_tuv = 0
+	self.dependent_units = make(map[^Unit][dynamic]^Unit)
+	self.attacking_units = make([dynamic]^Unit)
+	self.defending_units = make([dynamic]^Unit)
+	self.amphibious_land_attackers = make([dynamic]^Unit)
+	self.bombarding_units = make([dynamic]^Unit)
+	self.battle_tracker = battle_tracker
+	self.attacker = attacker
+	self.battle_site = battle_site
+	self.territory_effects = territory_effect_helper_get_effects(battle_site)
+	self.is_bombing_run = i_battle_battle_type_is_bombing_run(battle_type)
+	self.battle_type = battle_type
+	self.game_data = data
+	self.defender = abstract_battle_find_defender(battle_site, attacker, &data.game_state)
+	return self
+}
+
+// games.strategy.triplea.delegate.battle.AbstractBattle#markDamaged(
+//     java.util.Collection, games.strategy.engine.delegate.IDelegateBridge)
+//
+//   BattleDelegate.markDamaged(damaged, bridge, battleSite);
+abstract_battle_mark_damaged :: proc(
+	self: ^Abstract_Battle,
+	damaged: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+) {
+	battle_delegate_mark_damaged(damaged, bridge, self.battle_site)
 }

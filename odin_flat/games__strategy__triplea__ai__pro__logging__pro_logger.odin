@@ -63,3 +63,23 @@ pro_logger_log_1 :: proc(level: Level, message: string) {
 	pro_logger_log(level, message, nil)
 }
 
+// Static ProLogger.warn(String) — log at WARNING level.
+pro_logger_warn :: proc(message: string) {
+	pro_logger_log_1(.Warning, message)
+}
+
+// Static ProLogger.info(String) — log at FINE level.
+pro_logger_info :: proc(message: string) {
+	pro_logger_log_1(.Fine, message)
+}
+
+// Static ProLogger.debug(String) — log at FINER level.
+pro_logger_debug :: proc(message: string) {
+	pro_logger_log_1(.Finer, message)
+}
+
+// Static ProLogger.trace(String) — log at FINEST level.
+pro_logger_trace :: proc(message: string) {
+	pro_logger_log_1(.Finest, message)
+}
+

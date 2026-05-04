@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Abstract_Trigger_Attachment :: struct {
 	using abstract_conditions_attachment: Abstract_Conditions_Attachment,
 	uses: i32,
@@ -171,5 +173,62 @@ abstract_trigger_attachment_lambda_when_or_default_match_3 :: proc(
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// triggerSetUsedForThisRound(GamePlayer) -> CompositeChange
+//
+// Java:
+//   final CompositeChange change = new CompositeChange();
+//   for (final TriggerAttachment ta :
+//       TriggerAttachment.getTriggers(player, ta -> ta.getUsedThisRound() && ta.getUses() > 0)) {
+//     change.add(ChangeFactory.attachmentPropertyChange(ta, Integer.toString(ta.getUses() - 1), "uses"));
+//     change.add(ChangeFactory.attachmentPropertyChange(ta, false, "usedThisRound"));
+//   }
+//   return change;
+//
+// `lambda$triggerSetUsedForThisRound$1` lives in this file as a bare-proc
+// (non-capturing) predicate; `trigger_attachment_get_triggers` requires
+// the rawptr-paired predicate form, so a tiny adapter forwards to it.
+// ---------------------------------------------------------------------------
+abstract_trigger_attachment_trigger_set_used_for_this_round_adapter :: proc(
+	_: rawptr,
+	ta: ^Trigger_Attachment,
+) -> bool {
+	return abstract_trigger_attachment_lambda_trigger_set_used_for_this_round_1(ta)
+}
+
+abstract_trigger_attachment_trigger_set_used_for_this_round :: proc(
+	player: ^Game_Player,
+) -> ^Composite_Change {
+	change := composite_change_new()
+	triggers := trigger_attachment_get_triggers(
+		player,
+		abstract_trigger_attachment_trigger_set_used_for_this_round_adapter,
+		nil,
+	)
+	for ta in triggers {
+		uses_value := new(string)
+		uses_value^ = fmt.aprintf("%d", ta.uses - 1)
+		composite_change_add(
+			change,
+			change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(ta),
+				rawptr(uses_value),
+				"uses",
+			),
+		)
+		used_value := new(bool)
+		used_value^ = false
+		composite_change_add(
+			change,
+			change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(ta),
+				rawptr(used_value),
+				"usedThisRound",
+			),
+		)
+	}
+	return change
 }
 

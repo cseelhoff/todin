@@ -2362,3 +2362,100 @@ pro_matches_territory_can_move_land_units :: proc(
 	return pro_matches_pred_territory_can_move_land_units, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// territoryCanMoveAirUnitsAndNoAa(data, player, isCombatMove) -> Predicate<Territory>
+//   == territoryCanMoveAirUnits(data, player, isCombatMove)
+//        .and(Matches.territoryHasEnemyAaForFlyOver(player).negate())
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_move_air_units_and_no_aa :: struct {
+	data:           ^Game_State,
+	player:         ^Game_Player,
+	is_combat_move: bool,
+}
+
+pro_matches_pred_territory_can_move_air_units_and_no_aa :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_move_air_units_and_no_aa)ctx_ptr
+	air_p, air_c := pro_matches_territory_can_move_air_units(ctx.data, ctx.player, ctx.is_combat_move)
+	if !air_p(air_c, t) {
+		return false
+	}
+	aa_p, aa_c := matches_territory_has_enemy_aa_for_fly_over(ctx.player)
+	return !aa_p(aa_c, t)
+}
+
+pro_matches_territory_can_move_air_units_and_no_aa :: proc(
+	data: ^Game_State,
+	player: ^Game_Player,
+	is_combat_move: bool,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_move_air_units_and_no_aa)
+	ctx.data = data
+	ctx.player = player
+	ctx.is_combat_move = is_combat_move
+	return pro_matches_pred_territory_can_move_air_units_and_no_aa, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryCanMoveLandUnitsAndIsAllied(player) -> Predicate<Territory>
+//   == Matches.isTerritoryAllied(player).and(territoryCanMoveLandUnits(player, false))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_can_move_land_units_and_is_allied :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_can_move_land_units_and_is_allied :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_can_move_land_units_and_is_allied)ctx_ptr
+	a_p, a_c := matches_is_territory_allied(ctx.player)
+	if !a_p(a_c, t) {
+		return false
+	}
+	l_p, l_c := pro_matches_territory_can_move_land_units(ctx.player, false)
+	return l_p(l_c, t)
+}
+
+pro_matches_territory_can_move_land_units_and_is_allied :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_can_move_land_units_and_is_allied)
+	ctx.player = player
+	return pro_matches_pred_territory_can_move_land_units_and_is_allied, rawptr(ctx)
+}
+
+// ---------------------------------------------------------------------------
+// territoryIsEnemyLand(player) -> Predicate<Territory>
+//   == territoryCanMoveLandUnits(player, false).and(Matches.isTerritoryEnemy(player))
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_territory_is_enemy_land :: struct {
+	player: ^Game_Player,
+}
+
+pro_matches_pred_territory_is_enemy_land :: proc(
+	ctx_ptr: rawptr,
+	t: ^Territory,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_territory_is_enemy_land)ctx_ptr
+	l_p, l_c := pro_matches_territory_can_move_land_units(ctx.player, false)
+	if !l_p(l_c, t) {
+		return false
+	}
+	e_p, e_c := matches_is_territory_enemy(ctx.player)
+	return e_p(e_c, t)
+}
+
+pro_matches_territory_is_enemy_land :: proc(
+	player: ^Game_Player,
+) -> (proc(rawptr, ^Territory) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_territory_is_enemy_land)
+	ctx.player = player
+	return pro_matches_pred_territory_is_enemy_land, rawptr(ctx)
+}
+

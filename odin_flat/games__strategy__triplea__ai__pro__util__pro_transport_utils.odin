@@ -895,4 +895,130 @@ pro_transport_utils_get_unused_carrier_capacity :: proc(
 	return capacity
 }
 
+// Java: public static List<Unit> getUnitsToAdd(
+//     final ProData proData, final Unit unit,
+//     final List<Unit> alreadyMovedUnits,
+//     final Map<Territory, ProTerritory> moveMap)
+//   final Set<Unit> movedUnits = getMovedUnits(alreadyMovedUnits, moveMap);
+//   return findBestUnitsToLandTransport(unit, proData.getUnitTerritory(unit), movedUnits);
+//
+// Builds the set of units already in motion (alreadyMovedUnits ∪ all
+// defenders of every ProTerritory in moveMap) and asks
+// `findBestUnitsToLandTransport` for the best loadout starting from
+// `unit`'s home territory.
+pro_transport_utils_get_units_to_add :: proc(
+	pro_data: ^Pro_Data,
+	unit: ^Unit,
+	already_moved_units: [dynamic]^Unit,
+	move_map: map[^Territory]^Pro_Territory,
+) -> [dynamic]^Unit {
+	moved_units := pro_transport_utils_get_moved_units(already_moved_units, move_map)
+	t := pro_data_get_unit_territory(pro_data, unit)
+	result := pro_transport_utils_find_best_units_to_land_transport(unit, t, moved_units)
+	delete(moved_units)
+	return result
+}
+
+// Java: public static List<Unit> getUnitsToTransportFromTerritories(
+//     final GamePlayer player, final Unit transport,
+//     final Set<Territory> territoriesToLoadFrom,
+//     final Collection<Unit> unitsToIgnore)
+//   return getUnitsToTransportFromTerritories(
+//       player, transport, territoriesToLoadFrom, unitsToIgnore,
+//       ProMatches.unitIsOwnedTransportableUnitAndCanBeLoaded(player, transport, true));
+//
+// Thin wrapper over the 5-arg overload: builds the default
+// "owned transportable unit that can be loaded onto `transport`"
+// predicate (combat-move=true) and forwards.
+pro_transport_utils_get_units_to_transport_from_territories_4 :: proc(
+	player: ^Game_Player,
+	transport: ^Unit,
+	territories_to_load_from: map[^Territory]struct {},
+	units_to_ignore: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	pred, ctx := pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(
+		player,
+		transport,
+		true,
+	)
+	result := pro_transport_utils_get_units_to_transport_from_territories(
+		player,
+		transport,
+		territories_to_load_from,
+		units_to_ignore,
+		pred,
+		ctx,
+	)
+	free(ctx)
+	return result
+}
+
+// Java: public static int getUnusedLocalCarrierCapacity(
+//     final GamePlayer player, final Territory t, final List<Unit> unitsToPlace)
+//   final GameState data = player.getData();
+//   final Set<Territory> nearbyTerritories =
+//       data.getMap().getNeighbors(t, 2,
+//           ProMatches.territoryCanMoveAirUnits(data, player, false));
+//   nearbyTerritories.add(t);
+//   ... sum carrier capacity over each nearby territory's owned units
+//       (with `unitsToPlace` injected for `t`) and subtract the
+//       carrier cost of every owned air unit found nearby.
+//
+// Mirrors the Java byte-for-byte: include `t` itself in the set,
+// include `unitsToPlace` only when iterating `t`, accumulate
+// AirMovementValidator.carrierCapacity for the units present in each
+// territory, then subtract carrierCost for every owned-air unit
+// encountered. Air units with carrierCost == -1 are skipped.
+pro_transport_utils_get_unused_local_carrier_capacity :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+	units_to_place: [dynamic]^Unit,
+) -> i32 {
+	data := game_player_get_data(player)
+	air_pred, air_ctx := pro_matches_territory_can_move_air_units(data, player, false)
+	nearby_territories := game_map_get_neighbors_distance_predicate(
+		game_data_get_map(data),
+		t,
+		2,
+		air_pred,
+		air_ctx,
+	)
+	free(air_ctx)
+	nearby_territories[t] = {}
+
+	owned_by_pred, owned_by_ctx := matches_unit_is_owned_by(player)
+	owned_nearby_units: [dynamic]^Unit
+	capacity: i32 = 0
+	for nearby_territory, _ in nearby_territories {
+		units := territory_get_matches(nearby_territory, owned_by_pred, owned_by_ctx)
+		if nearby_territory == t {
+			for u in units_to_place {
+				append(&units, u)
+			}
+		}
+		for u in units {
+			append(&owned_nearby_units, u)
+		}
+		capacity += air_movement_validator_carrier_capacity(units[:], t)
+		delete(units)
+	}
+	free(owned_by_ctx)
+	delete(nearby_territories)
+
+	owned_air_pred, owned_air_ctx := pro_matches_unit_is_owned_air(player)
+	for u in owned_nearby_units {
+		if !owned_air_pred(owned_air_ctx, u) {
+			continue
+		}
+		ua := unit_get_unit_attachment(u)
+		cost := unit_attachment_get_carrier_cost(ua)
+		if cost != -1 {
+			capacity -= cost
+		}
+	}
+	free(owned_air_ctx)
+	delete(owned_nearby_units)
+	return capacity
+}
+
 

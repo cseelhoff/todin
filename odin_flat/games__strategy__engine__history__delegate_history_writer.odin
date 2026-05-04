@@ -77,7 +77,7 @@ delegate_history_writer_start_event :: proc(self: ^Delegate_History_Writer, even
 }
 
 // games.strategy.engine.history.DelegateHistoryWriter#addChildToEvent(java.lang.String,java.lang.Object)
-delegate_history_writer_add_child_to_event :: proc(self: ^Delegate_History_Writer, child: string, rendering_data: rawptr) {
+delegate_history_writer_add_child_to_event_with_data :: proc(self: ^Delegate_History_Writer, child: string, rendering_data: rawptr) {
 	if self.channel != nil {
 		i_game_modified_channel_add_child_to_event(
 			self.channel,
@@ -85,5 +85,10 @@ delegate_history_writer_add_child_to_event :: proc(self: ^Delegate_History_Write
 			rendering_data,
 		)
 	}
+}
+
+// games.strategy.engine.history.DelegateHistoryWriter#addChildToEvent(java.lang.String)
+delegate_history_writer_add_child_to_event :: proc(self: ^Delegate_History_Writer, child: string) {
+	delegate_history_writer_add_child_to_event_with_data(self, child, nil)
 }
 

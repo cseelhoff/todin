@@ -548,3 +548,63 @@ tech_tracker_get_rocket_distance :: proc(player: ^Game_Player) -> i32 {
 	return tech_tracker_sum_numbers(mapper, "Rockets Advance", advances)
 }
 
+// Java: public static Collection<TechAdvance> getCurrentTechAdvances(
+//     GamePlayer gamePlayer, TechnologyFrontier technologyFrontier)
+//   final TechAttachment attachment = gamePlayer.getTechAttachment();
+//   return TechAdvance.getTechAdvances(technologyFrontier).stream()
+//       .filter(ta -> ta.hasTech(attachment))
+//       .collect(Collectors.toList());
+// Mirrors the inline-expansion already used by the static bonus accessors
+// (tech_tracker_static_current_tech_advances), but takes the frontier as
+// an explicit parameter rather than reading it from data.
+tech_tracker_get_current_tech_advances :: proc(
+	game_player: ^Game_Player,
+	technology_frontier: ^Technology_Frontier,
+) -> [dynamic]^Tech_Advance {
+	result := make([dynamic]^Tech_Advance, 0)
+	if game_player == nil {
+		return result
+	}
+	attachment := game_player_get_tech_attachment(game_player)
+	all := tech_advance_get_tech_advances(technology_frontier, game_player)
+	defer delete(all)
+	for ta in all {
+		if tech_tracker_lambda_get_current_tech_advances_23(attachment, ta) {
+			append(&result, ta)
+		}
+	}
+	return result
+}
+
+// Java: public static int getTechCost(GamePlayer player)
+//   return player.getTechAttachment().getTechCost();
+tech_tracker_get_tech_cost :: proc(player: ^Game_Player) -> i32 {
+	return tech_attachment_get_tech_cost(game_player_get_tech_attachment(player))
+}
+
+// Java: public static boolean hasSuperSubs(GamePlayer player)
+//   return player.getTechAttachment().getSuperSub();
+tech_tracker_has_super_subs :: proc(player: ^Game_Player) -> bool {
+	return tech_attachment_get_super_sub(game_player_get_tech_attachment(player))
+}
+
+// Java: public static boolean hasRocket(GamePlayer player)
+//   return player.getTechAttachment().getRocket();
+tech_tracker_has_rocket :: proc(player: ^Game_Player) -> bool {
+	return tech_attachment_get_rocket(game_player_get_tech_attachment(player))
+}
+
+// Java: public static boolean hasImprovedArtillerySupport(GamePlayer player)
+//   return player.getTechAttachment().getImprovedArtillerySupport();
+tech_tracker_has_improved_artillery_support :: proc(player: ^Game_Player) -> bool {
+	return tech_attachment_get_improved_artillery_support(
+		game_player_get_tech_attachment(player),
+	)
+}
+
+// Java: public static boolean hasParatroopers(GamePlayer player)
+//   return player.getTechAttachment().getParatroopers();
+tech_tracker_has_paratroopers :: proc(player: ^Game_Player) -> bool {
+	return tech_attachment_get_paratroopers(game_player_get_tech_attachment(player))
+}
+

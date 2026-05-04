@@ -103,6 +103,21 @@ unit_comparator_get_lowest_to_highest_movement_comparator :: proc(
 // extracted helper that performs the cache.computeIfAbsent and
 // invokes TransportUtils.getTransportCost on the unit's currently
 // transported units.
+//
+// lambda$1 is the synthetic inner mappingFunction passed to
+// computeIfAbsent: `k -> TransportUtils.getTransportCost(u.getTransporting())`.
+// Its declared parameter is the map key `k` (a Unit), but the body
+// uses the captured outer `u`, so the synthetic signature is
+//   (Unit u, Unit k) -> int
+// and `k` is unused.
+unit_comparator_lambda_get_increasing_capacity_comparator_1 :: proc(
+	u: ^Unit,
+	k: ^Unit,
+) -> i32 {
+	_ = k
+	return transport_utils_get_transport_cost(unit_get_transporting(u))
+}
+
 unit_comparator_lambda_get_increasing_capacity_comparator_2 :: proc(
 	cache: ^map[^Unit]i32,
 	u: ^Unit,

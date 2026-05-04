@@ -110,3 +110,20 @@ ai_political_utils_get_political_actions_towards_war :: proc(
 	}
 	return acceptable_actions
 }
+
+// Java: private static boolean isAcceptableCost(
+//           PoliticalActionAttachment nextAction, GamePlayer player, GameState data)
+// If we have 21 or more PUs and the cost of the action is 10% or less of our
+// total money, then it is an acceptable price.
+ai_political_utils_is_acceptable_cost :: proc(
+	next_action: ^Political_Action_Attachment,
+	player: ^Game_Player,
+	data: ^Game_State,
+) -> bool {
+	owned := game_map_get_territories_owned_by(game_state_get_map(data), player)
+	defer delete(owned)
+	production := f32(abstract_end_turn_delegate_get_production(owned, data))
+	r := resource_list_get_resource_or_throw(game_state_get_resource_list(data), "PUs")
+	cost: i32 = next_action.cost_resources[r]
+	return production >= 21 && f32(cost) <= (production / 10)
+}

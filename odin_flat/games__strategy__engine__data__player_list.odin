@@ -118,3 +118,17 @@ player_list_get_null_player :: proc(self: ^Player_List) -> ^Game_Player {
 player_list_lambda_get_players_that_may_be_disabled_0 :: proc(p: ^Game_Player) -> bool {
 	return !p.is_disabled
 }
+
+// Java: public PlayerList(final GameData data)
+//   super(data);
+//   nullPlayer = createNullPlayer(data);
+// Heap-allocates a Player_List, wires the embedded Game_Data_Component
+// to `data`, initialises the name → player map, and caches the null
+// player produced by `createNullPlayer`.
+player_list_new :: proc(data: ^Game_Data) -> ^Player_List {
+	self := new(Player_List)
+	self.game_data_component = make_Game_Data_Component(data)
+	self.players = make(map[string]^Game_Player)
+	self.null_player = player_list_create_null_player(data)
+	return self
+}

@@ -1544,3 +1544,45 @@ game_parser_parse_attachment :: proc(
 		)
 	}
 }
+
+// Java: private void parseTechnologies(final Technology.Technologies element)
+//   if (element == null) return;
+//   final TechnologyFrontier allTechs = data.getTechnologyFrontier();
+//   parseTechs(element.getTechNames(), allTechs);
+game_parser_parse_technologies :: proc(self: ^Game_Parser, element: ^Technology_Technologies) {
+	if element == nil {
+		return
+	}
+	all_techs := game_data_get_technology_frontier(self.data)
+	game_parser_parse_techs(self, technology_technologies_get_tech_names(element), all_techs)
+}
+
+// Java: public static Optional<GameData> parse(
+//     final Path xmlFile, boolean collectAttachmentOrderAndValues)
+//
+//   log.debug("Parsing game XML: {}", xmlFile.toAbsolutePath());
+//   final Optional<GameData> gameData =
+//       GameParser.parse(xmlFile, new XmlGameElementMapper(),
+//           ProductVersionReader.getCurrentVersion(), collectAttachmentOrderAndValues);
+//   gameData.ifPresent(data -> ...lambda_parse_1...);
+//   return gameData;
+//
+// Modeling pragma: Optional<GameData> -> ^Game_Data (nil = absent).
+// log.debug is dropped (no logger shim). The 4-arg overload at
+// game_parser_parse_4 lives at a higher method_layer; Odin resolves
+// procs at the package level, so the forward reference compiles.
+game_parser_parse_2 :: proc(
+	xml_file: Path,
+	collect_attachment_order_and_values: bool,
+) -> ^Game_Data {
+	game_data := game_parser_parse_4(
+		xml_file,
+		xml_game_element_mapper_new(),
+		product_version_reader_get_current_version(),
+		collect_attachment_order_and_values,
+	)
+	if game_data != nil {
+		game_parser_lambda_parse_1(xml_file, game_data)
+	}
+	return game_data
+}

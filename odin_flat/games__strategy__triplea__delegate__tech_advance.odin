@@ -307,3 +307,53 @@ tech_advance_get_tech_advances_no_player :: proc(technology_frontier: ^Technolog
 	return tech_advance_get_tech_advances(technology_frontier, nil)
 }
 
+// Java: TechAdvance.createWW2V1Advances(TechnologyFrontier) — private
+// static. Adds the WW2v1 set of predefined tech advances to the given
+// frontier. Each `new XAdvance(tf.getData())` Java constructor maps to
+// the file-local make_*_advance factory, mirroring the existing dispatch
+// scheme. `tf.getData()` is `game_data_component_get_data` on the embedded
+// Game_Data_Component (see technology_frontier_add_advance for the same
+// pattern).
+tech_advance_create_ww2_v1_advances :: proc(tf: ^Technology_Frontier) {
+	data := game_data_component_get_data(&tf.game_data_component)
+	technology_frontier_add_advance(tf, make_jet_power_advance(data))
+	technology_frontier_add_advance(tf, make_super_subs_advance(data))
+	technology_frontier_add_advance(tf, make_long_range_aircraft_advance(data))
+	technology_frontier_add_advance(tf, make_rockets_advance(data))
+	technology_frontier_add_advance(tf, make_industrial_technology_advance(data))
+	technology_frontier_add_advance(tf, make_heavy_bomber_advance(data))
+}
+
+// Java: TechAdvance.createWW2V2Advances(TechnologyFrontier) — private
+// static. Adds the WW2v2 set of predefined tech advances. Mirrors the
+// Java method exactly, including the commented-out IndustrialTechnology
+// line which is omitted here as in the source.
+tech_advance_create_ww2_v2_advances :: proc(tf: ^Technology_Frontier) {
+	data := game_data_component_get_data(&tf.game_data_component)
+	technology_frontier_add_advance(tf, make_jet_power_advance(data))
+	technology_frontier_add_advance(tf, make_super_subs_advance(data))
+	technology_frontier_add_advance(tf, make_long_range_aircraft_advance(data))
+	technology_frontier_add_advance(tf, make_rockets_advance(data))
+	technology_frontier_add_advance(tf, make_destroyer_bombard_tech_advance(data))
+	technology_frontier_add_advance(tf, make_heavy_bomber_advance(data))
+}
+
+// Java: TechAdvance.createWW2V3Advances(TechnologyFrontier) — private
+// static. Adds the WW2v3 set of predefined tech advances. Order mirrors
+// the Java method exactly.
+tech_advance_create_ww2_v3_advances :: proc(tf: ^Technology_Frontier) {
+	data := game_data_component_get_data(&tf.game_data_component)
+	technology_frontier_add_advance(tf, make_super_subs_advance(data))
+	technology_frontier_add_advance(tf, make_jet_power_advance(data))
+	technology_frontier_add_advance(tf, make_improved_shipyards_advance(data))
+	technology_frontier_add_advance(tf, make_aa_radar_advance(data))
+	technology_frontier_add_advance(tf, make_long_range_aircraft_advance(data))
+	technology_frontier_add_advance(tf, make_heavy_bomber_advance(data))
+	technology_frontier_add_advance(tf, make_improved_artillery_support_advance(data))
+	technology_frontier_add_advance(tf, make_rockets_advance(data))
+	technology_frontier_add_advance(tf, make_paratroopers_advance(data))
+	technology_frontier_add_advance(tf, make_increased_factory_production_advance(data))
+	technology_frontier_add_advance(tf, make_war_bonds_advance(data))
+	technology_frontier_add_advance(tf, make_mechanized_infantry_advance(data))
+}
+

@@ -1,5 +1,7 @@
 package game
 
+import "core:slice"
+
 // games.strategy.triplea.util.UnitSeparator
 //
 // Utility class with a private constructor and no instance fields.
@@ -163,5 +165,82 @@ unit_separator_lambda_get_comparator_unit_categories_11 :: proc(
 	}
 	_ = player
 	return unit_attachment_get_attack(att)
+}
+
+// Java:
+//   public static Set<UnitCategory> categorize(
+//       final Collection<Unit> units, final SeparatorCategories separatorCategories) {
+//     final Map<UnitCategory, UnitCategory> categories = new HashMap<>();
+//     for (final Unit current : units) { ... }
+//     return new TreeSet<>(categories.keySet());
+//   }
+//
+// HashMap<UnitCategory,UnitCategory> uses UnitCategory.equals/hashCode for
+// keying; the Odin port does the same lookup with a linear scan keyed off
+// `unit_category_equals`. The Java method returns a TreeSet ordered by
+// `UnitCategory.compareTo`; the Odin port returns a [dynamic]^Unit_Category
+// sorted with `unit_category_compare_to`.
+unit_separator_lambda_categorize_sort :: proc(a, b: ^Unit_Category) -> bool {
+	return unit_category_compare_to(a, b) < 0
+}
+
+unit_separator_categorize :: proc(
+	units: [dynamic]^Unit,
+	separator_categories: ^Unit_Separator_Separator_Categories,
+) -> [dynamic]^Unit_Category {
+	categories := make([dynamic]^Unit_Category)
+	sea_pred, sea_ctx := matches_unit_is_sea_transport()
+	dis_pred, dis_ctx := matches_unit_is_disabled()
+	for current in units {
+		unit_movement: f64 = -1
+		if separator_categories.movement ||
+		   (separator_categories.transport_movement && sea_pred(sea_ctx, current)) ||
+		   (separator_categories.movement_for_air_units_only &&
+				   unit_separator_is_air_with_hit_points_remaining(current)) {
+			unit_movement = unit_get_movement_left(current)
+		}
+		unit_transport_cost: i32 = -1
+		if separator_categories.transport_cost {
+			unit_transport_cost = unit_attachment_get_transport_cost(
+				unit_get_unit_attachment(current),
+			)
+		}
+		current_dependents: [dynamic]^Unit
+		if separator_categories.dependents != nil {
+			if deps, ok := separator_categories.dependents[current]; ok {
+				current_dependents = deps
+			}
+		}
+		can_retreat := true
+		if separator_categories.retreat_possibility {
+			// only time a unit can't retreat is if the unit was amphibious
+			can_retreat = !unit_get_was_amphibious(current)
+		}
+		disabled := dis_pred(dis_ctx, current)
+		entry := unit_category_new(
+			current,
+			current_dependents,
+			unit_movement,
+			unit_get_hits(current),
+			unit_get_unit_damage(current),
+			disabled,
+			unit_transport_cost,
+			can_retreat,
+		)
+		stored: ^Unit_Category = nil
+		for c in categories {
+			if unit_category_equals(c, entry) {
+				stored = c
+				break
+			}
+		}
+		if stored != nil {
+			unit_category_add_unit(stored, current)
+		} else {
+			append(&categories, entry)
+		}
+	}
+	slice.sort_by(categories[:], unit_separator_lambda_categorize_sort)
+	return categories
 }
 

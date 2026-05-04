@@ -15,6 +15,8 @@ Player :: struct {
 	get_player_label: proc(self: ^Player) -> string,
 	initialize:       proc(self: ^Player, bridge: ^Player_Bridge, game_player: ^Game_Player),
 	start:            proc(self: ^Player, step_name: string),
+	stop_game:        proc(self: ^Player),
+	select_shore_bombard: proc(self: ^Player, unit_territory: ^Territory) -> bool,
 	select_bombarding_territory: proc(
 		self: ^Player,
 		unit: ^Unit,
@@ -65,5 +67,23 @@ player_get_player_label :: proc(self: ^Player) -> string {
 // games.strategy.engine.player.Player#initialize(PlayerBridge, GamePlayer)
 player_initialize :: proc(self: ^Player, bridge: ^Player_Bridge, game_player: ^Game_Player) {
 	self.initialize(self, bridge, game_player)
+}
+
+// games.strategy.engine.player.Player#stopGame()
+//   Vtable dispatch through the proc field. AI-snapshot harness
+//   instances may leave the field nil (no-op stop semantics in the
+//   single-threaded test loop); we treat a nil dispatch as a no-op
+//   to mirror Java's "best effort" stopGame contract.
+player_stop_game :: proc(self: ^Player) {
+	if self != nil && self.stop_game != nil {
+		self.stop_game(self)
+	}
+}
+
+// games.strategy.engine.player.Player#selectShoreBombard(Territory)
+//   Returns whether the human/AI player chose to fire a shore-
+//   bombardment salvo from the given territory. Vtable dispatch.
+player_select_shore_bombard :: proc(self: ^Player, unit_territory: ^Territory) -> bool {
+	return self.select_shore_bombard(self, unit_territory)
 }
 

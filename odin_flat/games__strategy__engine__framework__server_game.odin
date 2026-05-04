@@ -703,3 +703,27 @@ server_game_new :: proc(
 	return self
 }
 
+// games.strategy.engine.framework.ServerGame#<init>(GameData, Set<Player>,
+//   Map<String, INode>, Messengers, ClientNetworkBridge, LaunchAction)
+//
+// 6-arg overload — Java forwards to the 7-arg constructor with a null
+// InGameLobbyWatcherWrapper.
+server_game_new_2 :: proc(
+	data:                   ^Game_Data,
+	local_players:          map[^Player]struct{},
+	remote_player_mapping:  map[string]^I_Node,
+	messengers:             ^Messengers,
+	client_network_bridge:  ^Client_Network_Bridge,
+	launch_action:          ^Launch_Action,
+) -> ^Server_Game {
+	return server_game_new(
+		data,
+		local_players,
+		remote_player_mapping,
+		messengers,
+		client_network_bridge,
+		launch_action,
+		nil,
+	)
+}
+

@@ -578,3 +578,90 @@ battle_delegate_mark_damaged :: proc(
 	)
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#addBombardmentSources()
+// Java:
+//   final GamePlayer attacker = bridge.getGamePlayer();
+//   final Player remotePlayer = bridge.getRemotePlayer();
+//   final Predicate<Unit> ownedAndCanBombard =
+//       Matches.unitCanBombard(attacker).and(Matches.unitIsOwnedBy(attacker));
+//   final Map<Territory, Collection<IBattle>> adjBombardment = getPossibleBombardingTerritories();
+//   for (final Territory t : adjBombardment.keySet()) {
+//     if (!battleTracker.hasPendingNonBombingBattle(t)) {
+//       Collection<IBattle> battles = adjBombardment.get(t);
+//       if (!battles.isEmpty()) {
+//         final Collection<Unit> bombardUnits =
+//             t.getUnitCollection().getMatches(ownedAndCanBombard);
+//         final List<Unit> listedBombardUnits = new ArrayList<>(bombardUnits);
+//         sortUnitsToBombard(listedBombardUnits);
+//         if (!bombardUnits.isEmpty() && !remotePlayer.selectShoreBombard(t)) continue;
+//         for (final Unit u : listedBombardUnits) {
+//           final IBattle battle = selectBombardingBattle(u, t, battles);
+//           if (battle != null) {
+//             if (Properties.getShoreBombardPerGroundUnitRestricted(getData().getProperties())
+//                 && battle.getAttackingUnits().stream()
+//                        .filter(Matches.unitWasAmphibious()).count()
+//                     <= battle.getBombardingUnits().size()) {
+//               battles.remove(battle);
+//               break;
+//             }
+//             battle.addBombardingUnit(u);
+//           }
+//         }
+//       }
+//     }
+//   }
+battle_delegate_add_bombardment_sources :: proc(self: ^Battle_Delegate) {
+	attacker := i_delegate_bridge_get_game_player(self.bridge)
+	remote_player := i_delegate_bridge_get_remote_player(self.bridge, nil)
+	can_bombard_p, can_bombard_c := matches_unit_can_bombard(attacker)
+	owned_p, owned_c := matches_unit_is_owned_by(attacker)
+	adj_bombardment := battle_delegate_get_possible_bombarding_territories(self)
+	for t in adj_bombardment {
+		if battle_tracker_has_pending_non_bombing_battle(self.battle_tracker, t) {
+			continue
+		}
+		battles := adj_bombardment[t]
+		if len(battles) == 0 {
+			continue
+		}
+		bombard_units: [dynamic]^Unit
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if can_bombard_p(can_bombard_c, u) && owned_p(owned_c, u) {
+				append(&bombard_units, u)
+			}
+		}
+		listed_bombard_units := bombard_units
+		battle_delegate_sort_units_to_bombard(&listed_bombard_units)
+		if len(bombard_units) > 0 && !player_select_shore_bombard(remote_player, t) {
+			continue
+		}
+		for u in listed_bombard_units {
+			battle := battle_delegate_select_bombarding_battle(self, u, t, battles)
+			if battle != nil {
+				if properties_get_shore_bombard_per_ground_unit_restricted(
+					game_data_get_properties(i_delegate_bridge_get_data(self.bridge)),
+				) {
+					attacking_units := i_battle_get_attacking_units(battle)
+					amphib_count: i64 = 0
+					for au in attacking_units {
+						if matches_pred_unit_was_amphibious(nil, au) {
+							amphib_count += 1
+						}
+					}
+					if amphib_count <= i64(len(i_battle_get_bombarding_units(battle))) {
+						for b, idx in battles {
+							if b == battle {
+								ordered_remove(&battles, idx)
+								break
+							}
+						}
+						adj_bombardment[t] = battles
+						break
+					}
+				}
+				i_battle_add_bombarding_unit(battle, u)
+			}
+		}
+	}
+}
+

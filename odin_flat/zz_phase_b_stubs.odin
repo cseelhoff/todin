@@ -12,17 +12,6 @@ game_map_get_distance_bipredicate :: proc(
         return 0
 }
 
-game_map_get_route_for_units :: proc(
-        self: ^Game_Map,
-        start, end: ^Territory,
-        cond: proc(rawptr, ^Territory) -> bool,
-        cond_ctx: rawptr,
-        units: [dynamic]^Unit,
-        player: ^Game_Player,
-) -> ^Route {
-        return nil
-}
-
 battle_tracker_fix_up_null_players :: proc(self: ^Battle_Tracker, null_player: ^Game_Player) {}
 battle_delegate_get_battle_tracker :: proc(self: ^Battle_Delegate) -> ^Battle_Tracker { return self.battle_tracker }
 player_list_get_null_player :: proc(self: ^Player_List) -> ^Game_Player { return self.null_player }

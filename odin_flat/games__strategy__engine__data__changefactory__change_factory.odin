@@ -243,6 +243,24 @@ change_factory_attachment_property_change_with_reset_first :: proc(
 	return change_attachment_change_new_with_clear_first(attachment, new_value, property, reset_first)
 }
 
+// Java: ChangeFactory#markNoMovementChange(Collection<Unit>)
+//   final CompositeChange change = new CompositeChange();
+//   for (Unit u : units) if (u.getMovementLeft().compareTo(BigDecimal.ZERO) >= 0)
+//       change.add(markNoMovementChange(u));
+//   if (change.isEmpty()) return EMPTY_CHANGE; return change;
+// Java's EMPTY_CHANGE is a Change singleton with isEmpty()==true and a
+// no-op perform(); an empty Composite_Change is observationally
+// equivalent, so the empty case simply returns the empty composite.
+change_factory_mark_no_movement_change_collection :: proc(units: [dynamic]^Unit) -> ^Change {
+	cc := composite_change_new()
+	for u in units {
+		if unit_get_movement_left(u) >= 0 {
+			composite_change_add(cc, change_factory_mark_no_movement_change(u))
+		}
+	}
+	return &cc.change
+}
+
 // Java: ChangeFactory#markNoMovementChange(Unit)
 //   return unitPropertyChange(
 //       unit, new BigDecimal(unit.getMaxMovementAllowed() + 1), Unit.PropertyName.ALREADY_MOVED);

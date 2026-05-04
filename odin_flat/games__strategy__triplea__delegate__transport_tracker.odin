@@ -501,3 +501,245 @@ transport_tracker_lambda_mark_transported_by_for_allied_air_on_carrier_2 :: proc
 	append(allied_air, air_unit)
 }
 
+// games.strategy.triplea.delegate.TransportTracker#getAvailableCapacity(
+//     games.strategy.engine.data.Unit)
+//
+// Java:
+//   final UnitAttachment ua = unit.getUnitAttachment();
+//   if (ua.getTransportCapacity() == -1
+//       || (Properties.getPacificTheater(unit.getData().getProperties())
+//           && ua.isDestroyer()
+//           && !unit.getOwner().getName().equals(Constants.PLAYER_NAME_JAPANESE))) {
+//     return 0;
+//   }
+//   final int capacity = ua.getTransportCapacity();
+//   final int used = TransportUtils.getTransportCost(unit.getTransporting());
+//   final int unloaded = TransportUtils.getTransportCost(unit.getUnloaded());
+//   return capacity - used - unloaded;
+transport_tracker_get_available_capacity :: proc(unit: ^Unit) -> i32 {
+	ua := unit_get_unit_attachment(unit)
+	if unit_attachment_get_transport_capacity(ua) == -1 ||
+	   (properties_get_pacific_theater(game_data_get_properties(unit.game_data)) &&
+			   unit_attachment_is_destroyer(ua) &&
+			   unit_get_owner(unit).named.base.name != "Japanese") {
+		return 0
+	}
+	capacity := unit_attachment_get_transport_capacity(ua)
+	used := transport_utils_get_transport_cost(unit_get_transporting_no_args(unit))
+	unloaded := transport_utils_get_transport_cost(unit_get_unloaded(unit))
+	return capacity - used - unloaded
+}
+
+// games.strategy.triplea.delegate.TransportTracker#loadTransportChange(
+//     games.strategy.engine.data.Unit, games.strategy.engine.data.Unit)
+//
+// Java: see TransportTracker.java. Builds a CompositeChange that records
+// TRANSPORTED_BY = transport for the unit, throws if the transport already
+// carries the unit, then sets LOADED_THIS_TURN on both unit and transport,
+// and LOADED_AFTER_COMBAT on the transport when it was previously in combat.
+transport_tracker_load_transport_change :: proc(transport: ^Unit, unit: ^Unit) -> ^Change {
+	transport_tracker_assert_transport(transport)
+	change := composite_change_new()
+	composite_change_add(
+		change,
+		change_factory_unit_property_change_property_name(
+			unit,
+			rawptr(transport),
+			.Transported_By,
+		),
+	)
+	for u in unit_get_transporting_no_args(transport) {
+		if u == unit {
+			panic("Already carrying")
+		}
+	}
+	b_unit_loaded := new(bool)
+	b_unit_loaded^ = true
+	composite_change_add(
+		change,
+		change_factory_unit_property_change_property_name(
+			unit,
+			rawptr(b_unit_loaded),
+			.Loaded_This_Turn,
+		),
+	)
+	b_transport_loaded := new(bool)
+	b_transport_loaded^ = true
+	composite_change_add(
+		change,
+		change_factory_unit_property_change_property_name(
+			transport,
+			rawptr(b_transport_loaded),
+			.Loaded_This_Turn,
+		),
+	)
+	if unit_get_was_in_combat(transport) {
+		b_loaded_after_combat := new(bool)
+		b_loaded_after_combat^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				transport,
+				rawptr(b_loaded_after_combat),
+				.Loaded_After_Combat,
+			),
+		)
+	}
+	return &change.change
+}
+
+// games.strategy.triplea.delegate.TransportTracker#markTransportedByForAlliedAirOnCarrier(
+//     java.util.Collection, games.strategy.engine.data.GamePlayer)
+//
+// Java: iterate `MoveValidator.carrierMustMoveWith(units, units, player)` and
+// for every (carrier, dependencies) entry append TRANSPORTED_BY = carrier
+// changes for every air dependency, gathering those air units into
+// `alliedAir`. The body is shared with the existing inner-loop helper
+// `transport_tracker_lambda_mark_transported_by_for_allied_air_on_carrier_3`.
+transport_tracker_mark_transported_by_for_allied_air_on_carrier :: proc(
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^Allied_Air_Transport_Change {
+	change := composite_change_new()
+	allied_air: [dynamic]^Unit
+	mapping := move_validator_carrier_must_move_with(units, units, player)
+	for carrier, dependencies in mapping {
+		transport_tracker_lambda_mark_transported_by_for_allied_air_on_carrier_3(
+			change,
+			&allied_air,
+			carrier,
+			dependencies,
+		)
+	}
+	result := new(Allied_Air_Transport_Change)
+	result.change = change
+	result.allied_air = allied_air
+	return result
+}
+
+// games.strategy.triplea.delegate.TransportTracker#transportingAndUnloaded(
+//     games.strategy.engine.data.Unit)
+//
+// Java:
+//   final Collection<Unit> units = new ArrayList<>(transport.getTransporting());
+//   units.addAll(transport.getUnloaded());
+//   return units;
+transport_tracker_transporting_and_unloaded :: proc(transport: ^Unit) -> [dynamic]^Unit {
+	units: [dynamic]^Unit
+	for u in unit_get_transporting_no_args(transport) {
+		append(&units, u)
+	}
+	for u in unit_get_unloaded(transport) {
+		append(&units, u)
+	}
+	return units
+}
+
+// games.strategy.triplea.delegate.TransportTracker#unloadTransportChange(
+//     games.strategy.engine.data.Unit, games.strategy.engine.data.Territory, boolean)
+//
+// Java: see TransportTracker.java. Builds the surface-transport unload
+// CompositeChange: UNLOADED_TO, in combat phase also flags
+// UNLOADED_IN_COMBAT_PHASE / UNLOADED_AMPHIBIOUS on both unit and transport,
+// clears TRANSPORTED_BY when not part of a dependent battle, and updates the
+// transport's UNLOADED list with the newly unloaded unit.
+transport_tracker_unload_transport_change :: proc(
+	unit: ^Unit,
+	territory: ^Territory,
+	dependent_battle: bool,
+) -> ^Change {
+	change := composite_change_new()
+	transport := unit_get_transported_by(unit)
+	if transport == nil {
+		return &change.change
+	}
+	transport_tracker_assert_transport(transport)
+	carrying := unit_get_transporting_no_args(transport)
+	contains := false
+	for u in carrying {
+		if u == unit {
+			contains = true
+			break
+		}
+	}
+	if !contains {
+		panic("Not being carried")
+	}
+	new_unloaded: [dynamic]^Unit
+	for u in unit_get_unloaded(transport) {
+		append(&new_unloaded, u)
+	}
+	append(&new_unloaded, unit)
+	composite_change_add(
+		change,
+		change_factory_unit_property_change_property_name(
+			unit,
+			rawptr(territory),
+			.Unloaded_To,
+		),
+	)
+	if !game_step_properties_helper_is_non_combat_move(unit.game_data, true) {
+		b_unit_combat := new(bool)
+		b_unit_combat^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				unit,
+				rawptr(b_unit_combat),
+				.Unloaded_In_Combat_Phase,
+			),
+		)
+		b_unit_amph := new(bool)
+		b_unit_amph^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				unit,
+				rawptr(b_unit_amph),
+				.Unloaded_Amphibious,
+			),
+		)
+		b_transport_combat := new(bool)
+		b_transport_combat^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				transport,
+				rawptr(b_transport_combat),
+				.Unloaded_In_Combat_Phase,
+			),
+		)
+		b_transport_amph := new(bool)
+		b_transport_amph^ = true
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				transport,
+				rawptr(b_transport_amph),
+				.Unloaded_Amphibious,
+			),
+		)
+	}
+	if !dependent_battle {
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				unit,
+				nil,
+				.Transported_By,
+			),
+		)
+	}
+	box_unloaded := new([dynamic]^Unit)
+	box_unloaded^ = new_unloaded
+	composite_change_add(
+		change,
+		change_factory_unit_property_change_property_name(
+			transport,
+			rawptr(box_unloaded),
+			.Unloaded,
+		),
+	)
+	return &change.change
+}
+

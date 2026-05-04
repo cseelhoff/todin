@@ -23,6 +23,16 @@ channel_messenger_get_channel_broadcaster :: proc(self: ^Channel_Messenger, name
 	return cast(^I_Channel_Subscriber)ih
 }
 
+// games.strategy.engine.message.ChannelMessenger#registerChannelSubscriber(java.lang.Object,games.strategy.engine.message.RemoteName)
+// Java verifies channelName.getClazz() is assignable to IChannelSubscriber via
+// reflection, then forwards to unifiedMessenger.addImplementor(...). Reflection
+// is dropped per port rules (Remote_Name's clazz is a plain string here, and
+// callers always pass channel-subscriber descriptors); the registration call
+// is preserved verbatim.
+channel_messenger_register_channel_subscriber :: proc(self: ^Channel_Messenger, subscriber: rawptr, name: ^Remote_Name) {
+	unified_messenger_add_implementor(self.unified_messenger, name, subscriber, true)
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.message.ChannelMessenger
 

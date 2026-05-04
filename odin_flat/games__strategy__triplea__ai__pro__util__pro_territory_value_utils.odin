@@ -1,5 +1,7 @@
 package game
 
+import "core:math"
+
 Pro_Territory_Value_Utils :: struct {}
 
 // Java: ProTerritoryValueUtils.lambda$findMaxLandMassSize$1(
@@ -222,5 +224,135 @@ pro_territory_value_utils_find_nearby_enemy_capitals_and_factories :: proc(
 	}
 	breadth_first_search_traverse(bfs, &visitor.visitor)
 	return found
+}
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils
+//   #findEnemyCapitalsAndFactoriesValue(GamePlayer, int, List<Territory>, List<Territory>)
+// Java:
+//   final GameState data = player.getData();
+//   final List<Territory> allTerritories = data.getMap().getTerritories();
+//   final Set<Territory> enemyCapitalsAndFactories =
+//       new HashSet<>(CollectionUtils.getMatches(allTerritories,
+//           ProMatches.territoryHasInfraFactoryAndIsOwnedByPlayersOrCantBeHeld(
+//               player, ProUtils.getPotentialEnemyPlayers(player), territoriesThatCantBeHeld)));
+//   final int numPotentialEnemyTerritories =
+//       CollectionUtils.countMatches(allTerritories,
+//           Matches.isTerritoryOwnedByAnyOf(ProUtils.getPotentialEnemyPlayers(player)));
+//   if (enemyCapitalsAndFactories.size() * 2 >= numPotentialEnemyTerritories) {
+//       enemyCapitalsAndFactories.clear();
+//   }
+//   enemyCapitalsAndFactories.addAll(ProUtils.getLiveEnemyCapitals(data, player));
+//   enemyCapitalsAndFactories.removeAll(territoriesToAttack);
+//   final Map<Territory, Double> enemyCapitalsAndFactoriesMap = new HashMap<>();
+//   for (final Territory t : enemyCapitalsAndFactories) {
+//     int factoryProduction = 0;
+//     if (ProMatches.territoryHasInfraFactoryAndIsLand().test(t)) {
+//       factoryProduction = TerritoryAttachment.getProduction(t);
+//     }
+//     double playerProduction = 0;
+//     if (TerritoryAttachment.get(t).map(TerritoryAttachment::isCapital).orElse(false)) {
+//       playerProduction = ProUtils.getPlayerProduction(t.getOwner(), data);
+//     }
+//     final int isNeutral = ProUtils.isNeutralLand(t) ? 1 : 0;
+//     final int landMassSize = 1
+//         + data.getMap()
+//             .getNeighbors(t, 6, ProMatches.territoryCanPotentiallyMoveLandUnits(player))
+//             .size();
+//     final double value = Math.sqrt(factoryProduction + Math.sqrt(playerProduction))
+//         * 32 / (1 + 3.0 * isNeutral) * landMassSize / maxLandMassSize;
+//     enemyCapitalsAndFactoriesMap.put(t, value);
+//   }
+//   return enemyCapitalsAndFactoriesMap;
+//
+// `Set<Territory>` is mirrored as `map[^Territory]struct{}`. The
+// CollectionUtils.getMatches/countMatches calls are inlined as direct
+// loops to avoid round-tripping the typed `[dynamic]^Territory` through
+// the rawptr-based collection_utils helpers.
+pro_territory_value_utils_find_enemy_capitals_and_factories_value :: proc(
+	player: ^Game_Player,
+	max_land_mass_size: i32,
+	territories_that_cant_be_held: [dynamic]^Territory,
+	territories_to_attack: [dynamic]^Territory,
+) -> map[^Territory]f64 {
+	data := game_player_get_data(player)
+	game_map := game_data_get_map(data)
+	all_territories := game_map_get_territories(game_map)
+
+	potential_enemies := pro_utils_get_potential_enemy_players(player)
+	defer delete(potential_enemies)
+
+	enemy_capitals_and_factories := make(map[^Territory]struct {})
+	defer delete(enemy_capitals_and_factories)
+
+	factory_pred, factory_ctx :=
+		pro_matches_territory_has_infra_factory_and_is_owned_by_players_or_cant_be_held(
+			player,
+			potential_enemies,
+			territories_that_cant_be_held,
+		)
+	for t in all_territories {
+		if factory_pred(factory_ctx, t) {
+			enemy_capitals_and_factories[t] = {}
+		}
+	}
+
+	owned_pred, owned_ctx := matches_is_territory_owned_by_any_of(potential_enemies)
+	num_potential_enemy_territories: i32 = 0
+	for t in all_territories {
+		if owned_pred(owned_ctx, t) {
+			num_potential_enemy_territories += 1
+		}
+	}
+	if i32(len(enemy_capitals_and_factories)) * 2 >= num_potential_enemy_territories {
+		clear(&enemy_capitals_and_factories)
+	}
+
+	live_capitals := pro_utils_get_live_enemy_capitals(&data.game_state, player)
+	defer delete(live_capitals)
+	for c in live_capitals {
+		enemy_capitals_and_factories[c] = {}
+	}
+	for t in territories_to_attack {
+		delete_key(&enemy_capitals_and_factories, t)
+	}
+
+	enemy_capitals_and_factories_map := make(map[^Territory]f64)
+	is_land_pred, is_land_ctx := pro_matches_territory_has_infra_factory_and_is_land()
+	can_move_pred, can_move_ctx := pro_matches_territory_can_potentially_move_land_units(player)
+	for t in enemy_capitals_and_factories {
+		factory_production: i32 = 0
+		if is_land_pred(is_land_ctx, t) {
+			factory_production = territory_attachment_static_get_production(t)
+		}
+		player_production: f64 = 0
+		att := territory_attachment_get(t)
+		if att != nil && territory_attachment_is_capital(att) {
+			player_production = pro_utils_get_player_production(
+				territory_get_owner(t),
+				&data.game_state,
+			)
+		}
+		is_neutral: i32 = 0
+		if pro_utils_is_neutral_land(t) {
+			is_neutral = 1
+		}
+		neighbors := game_map_get_neighbors_distance_predicate(
+			game_map,
+			t,
+			6,
+			can_move_pred,
+			can_move_ctx,
+		)
+		defer delete(neighbors)
+		land_mass_size: i32 = 1 + i32(len(neighbors))
+		value :=
+			math.sqrt(f64(factory_production) + math.sqrt(player_production)) *
+			32.0 /
+			(1.0 + 3.0 * f64(is_neutral)) *
+			f64(land_mass_size) /
+			f64(max_land_mass_size)
+		enemy_capitals_and_factories_map[t] = value
+	}
+	return enemy_capitals_and_factories_map
 }
 
