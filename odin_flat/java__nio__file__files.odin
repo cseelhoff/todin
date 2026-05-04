@@ -79,3 +79,12 @@ files_list :: proc(p: Path) -> [dynamic]Path {
 files_delete :: proc(p: Path) {
 	os.remove(p.value)
 }
+
+// JDK shim: java.nio.file.Files.newOutputStream(Path, OpenOption...).
+// The AI snapshot harness performs no real disk I/O — return an
+// in-memory Output_Stream wrapping the path's bytes. Callers that
+// actually inspect the output (e.g. game-save round-trips) read from
+// the buffer field directly via the existing Output_Stream procs.
+files_new_output_stream :: proc(p: Path) -> ^Output_Stream {
+	return output_stream_new()
+}

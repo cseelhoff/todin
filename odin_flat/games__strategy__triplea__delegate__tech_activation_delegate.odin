@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Tech_Activation_Delegate :: struct {
@@ -78,4 +79,62 @@ tech_activation_delegate_load_state :: proc(
 		cast(^Base_Delegate_State)state.super_state,
 	)
 	self.need_to_initialize = state.need_to_initialize
+}
+
+// games.strategy.triplea.delegate.TechActivationDelegate#shareTechnology()
+// For each player on the current player's PlayerAttachment.shareTechnology
+// list, intersect the current player's already-acquired tech advances with
+// that player's still-available techs, emit a history event, and grant the
+// shared advances. Java's `CollectionUtils.intersection` is inlined as a
+// typed loop (the rawptr-only collection_utils_intersection would lose
+// the ^Tech_Advance element type), matching the inline-difference pattern
+// used by technology_delegate_get_available_techs.
+tech_activation_delegate_share_technology :: proc(self: ^Tech_Activation_Delegate) {
+	player := self.player
+	bridge := self.bridge
+	pa := player_attachment_get(player)
+	if pa == nil {
+		return
+	}
+	share_with := player_attachment_get_share_technology(pa)
+	if len(share_with) == 0 {
+		return
+	}
+	frontier := game_data_get_technology_frontier(
+		abstract_delegate_get_data(&self.abstract_delegate),
+	)
+	current_advances := tech_tracker_get_current_tech_advances(player, frontier)
+	defer delete(current_advances)
+	for p in share_with {
+		available_techs := technology_delegate_get_available_techs(p, frontier)
+		defer delete(available_techs)
+		to_give := make([dynamic]^Tech_Advance, 0)
+		defer delete(to_give)
+		for ca in current_advances {
+			for at in available_techs {
+				if ca == at {
+					append(&to_give, ca)
+					break
+				}
+			}
+		}
+		if len(to_give) > 0 {
+			advances_text := tech_activation_delegate_advances_as_string(to_give)
+			defer delete(advances_text)
+			event := fmt.aprintf(
+				"%s giving technology to %s: %s",
+				player.named.base.name,
+				p.named.base.name,
+				advances_text,
+			)
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(bridge),
+				event,
+			)
+			delete(event)
+			for advance in to_give {
+				tech_tracker_add_advance(p, bridge, advance)
+			}
+		}
+	}
 }

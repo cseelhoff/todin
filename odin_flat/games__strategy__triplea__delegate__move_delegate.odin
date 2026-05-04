@@ -979,3 +979,83 @@ move_delegate_reset_and_give_bonus_movement :: proc(self: ^Move_Delegate) {
 		i_delegate_bridge_add_change(self.bridge, change_bonus)
 	}
 }
+
+// games.strategy.triplea.delegate.MoveDelegate#removeAirThatCantLand()
+// Java:
+//   final GameData data = getData();
+//   final boolean lhtrCarrierProd =
+//       Properties.getLhtrCarrierProductionRules(data.getProperties())
+//           || Properties.getLandExistingFightersOnNewCarriers(data.getProperties());
+//   boolean hasProducedCarriers = false;
+//   for (final GamePlayer p : GameStepPropertiesHelper.getCombinedTurns(data, player)) {
+//     if (p.anyUnitsMatch(Matches.unitIsCarrier())) { hasProducedCarriers = true; break; }
+//   }
+//   final AirThatCantLandUtil util = new AirThatCantLandUtil(bridge);
+//   util.removeAirThatCantLand(player, lhtrCarrierProd && hasProducedCarriers);
+//   for (final GamePlayer player : data.getPlayerList()) {
+//     if (!player.equals(this.player)) {
+//       util.removeAirThatCantLand(
+//           player,
+//           ((player.anyUnitsMatch(Matches.unitIsCarrier()) || hasProducedCarriers) && lhtrCarrierProd));
+//     }
+//   }
+//
+// `p.anyUnitsMatch(Matches.unitIsCarrier())` is the UnitHolder default
+// method (GamePlayer is a UnitHolder via its embedded UnitCollection).
+// Matches.unitIsCarrier returns the rawptr-style (fn, ctx) Predicate
+// pair, which is incompatible with the no-ctx `unit_holder_any_units_match`
+// signature, so the carrier check is inlined as a manual scan over the
+// player's held units — mirroring the same pattern used in
+// air_that_cant_land_util_get_territories_where_air_cant_land.
+move_delegate_remove_air_that_cant_land :: proc(self: ^Move_Delegate) {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	props := game_data_get_properties(data)
+	lhtr_carrier_prod :=
+		properties_get_lhtr_carrier_production_rules(props) ||
+		properties_get_land_existing_fighters_on_new_carriers(props)
+	has_produced_carriers := false
+	is_carrier_pred, is_carrier_ctx := matches_unit_is_carrier()
+	combined := game_step_properties_helper_get_combined_turns(data, self.player)
+	defer delete(combined)
+	for p in combined {
+		held := unit_holder_get_units(cast(^Unit_Holder)p)
+		any_carrier := false
+		for u in held {
+			if is_carrier_pred(is_carrier_ctx, u) {
+				any_carrier = true
+				break
+			}
+		}
+		delete(held)
+		if any_carrier {
+			has_produced_carriers = true
+			break
+		}
+	}
+	util := air_that_cant_land_util_new(self.bridge)
+	air_that_cant_land_util_remove_air_that_cant_land(
+		util,
+		self.player,
+		lhtr_carrier_prod && has_produced_carriers,
+	)
+	// if edit mode has been on, we need to clean up after all players
+	for player in player_list_get_players(game_data_get_player_list(data)) {
+		if player == self.player {
+			continue
+		}
+		held := unit_holder_get_units(cast(^Unit_Holder)player)
+		any_carrier := false
+		for u in held {
+			if is_carrier_pred(is_carrier_ctx, u) {
+				any_carrier = true
+				break
+			}
+		}
+		delete(held)
+		air_that_cant_land_util_remove_air_that_cant_land(
+			util,
+			player,
+			(any_carrier || has_produced_carriers) && lhtr_carrier_prod,
+		)
+	}
+}

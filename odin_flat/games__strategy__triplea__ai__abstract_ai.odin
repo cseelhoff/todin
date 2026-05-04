@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math/rand"
 
 Abstract_Ai :: struct {
@@ -244,6 +245,111 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 			}
 		}
 		delete(action_choices_other)
+	}
+}
+
+// games.strategy.triplea.ai.AbstractAi#start(java.lang.String)
+//   Dispatches to the appropriate phase handler based on the step name.
+//   Mirrors Java's `final` override; subclasses provide purchase / tech /
+//   move / place via the abstract methods declared further down.
+abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
+	abstract_base_player_start(&self.abstract_base_player, name)
+	game_player := abstract_base_player_get_game_player(&self.abstract_base_player)
+	if game_step_is_bid_step_name(name) {
+		purchase_delegate := cast(^I_Purchase_Delegate)player_bridge_get_remote_delegate(
+			abstract_base_player_get_player_bridge(&self.abstract_base_player),
+		)
+		property_name := fmt.aprintf("%s bid", game_player.named.base.name)
+		bid_amount := game_properties_get_int_with_default(
+			game_data_get_properties(
+				abstract_base_player_get_game_data(&self.abstract_base_player),
+			),
+			property_name,
+			0,
+		)
+		abstract_ai_purchase(
+			self,
+			true,
+			bid_amount,
+			purchase_delegate,
+			abstract_base_player_get_game_data(&self.abstract_base_player),
+			game_player,
+		)
+	} else if game_step_is_purchase_step_name(name) {
+		purchase_delegate := cast(^I_Purchase_Delegate)player_bridge_get_remote_delegate(
+			abstract_base_player_get_player_bridge(&self.abstract_base_player),
+		)
+		pus := resource_list_get_resource_or_throw(
+			game_data_get_resource_list(
+				abstract_base_player_get_game_data(&self.abstract_base_player),
+			),
+			"PUs",
+		)
+		left_to_spend := resource_collection_get_quantity(
+			game_player_get_resources(game_player),
+			pus,
+		)
+		abstract_ai_purchase(
+			self,
+			false,
+			left_to_spend,
+			purchase_delegate,
+			abstract_base_player_get_game_data(&self.abstract_base_player),
+			game_player,
+		)
+	} else if game_step_is_tech_step_name(name) {
+		tech_delegate := cast(^I_Tech_Delegate)player_bridge_get_remote_delegate(
+			abstract_base_player_get_player_bridge(&self.abstract_base_player),
+		)
+		abstract_ai_tech(
+			self,
+			tech_delegate,
+			abstract_base_player_get_game_data(&self.abstract_base_player),
+			game_player,
+		)
+	} else if game_step_is_move_step_name(name) {
+		move_del := cast(^I_Move_Delegate)player_bridge_get_remote_delegate(
+			abstract_base_player_get_player_bridge(&self.abstract_base_player),
+		)
+		if !game_step_properties_helper_is_airborne_move(
+			abstract_base_player_get_game_data(&self.abstract_base_player),
+		) {
+			abstract_ai_move(
+				self,
+				game_step_is_non_combat_move_step_name(name),
+				move_del,
+				abstract_base_player_get_game_data(&self.abstract_base_player),
+				game_player,
+			)
+		}
+	} else if game_step_is_battle_step_name(name) {
+		abstract_ai_battle(
+			self,
+			cast(^I_Battle_Delegate)player_bridge_get_remote_delegate(
+				abstract_base_player_get_player_bridge(&self.abstract_base_player),
+			),
+		)
+	} else if game_step_is_politics_step_name(name) {
+		abstract_ai_political_actions(self)
+	} else if game_step_is_place_step_name(name) {
+		place_del := cast(^I_Abstract_Place_Delegate)player_bridge_get_remote_delegate(
+			abstract_base_player_get_player_bridge(&self.abstract_base_player),
+		)
+		abstract_ai_place(
+			self,
+			game_step_is_bid_step_name(name),
+			place_del,
+			abstract_base_player_get_game_data(&self.abstract_base_player),
+			game_player,
+		)
+	} else if game_step_is_end_turn_step_name(name) {
+		abstract_ai_end_turn(
+			self,
+			cast(^I_Abstract_Forum_Poster_Delegate)player_bridge_get_remote_delegate(
+				abstract_base_player_get_player_bridge(&self.abstract_base_player),
+			),
+			game_player,
+		)
 	}
 }
 

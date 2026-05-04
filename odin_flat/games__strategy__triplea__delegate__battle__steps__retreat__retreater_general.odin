@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Retreater_General :: struct {
 	using retreater: Retreater,
 	battle_state: ^Battle_State,
@@ -225,5 +227,113 @@ retreater_general_compute_dependent_unit_changes :: proc(
 	result := retreater_general_retreat_combat_transported_items(self, retreat_units, retreat_to, list)
 	delete(list)
 	return result
+}
+
+// games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral#computeChanges(games.strategy.engine.data.Territory)
+// Java:
+//   final Collection<Unit> retreatUnits = getRetreatUnits();
+//   final CompositeChange change = new CompositeChange();
+//   final List<RetreatHistoryChild> historyChildren = new ArrayList<>();
+//   change.add(computeDependentUnitChanges(retreatTo, retreatUnits));
+//   final Collection<Unit> airRetreating = CollectionUtils.getMatches(retreatUnits,
+//       Matches.unitIsAir().and(Matches.unitIsOwnedBy(battleState.getPlayer(OFFENSE))));
+//   if (!airRetreating.isEmpty()) {
+//     battleState.retreatUnits(OFFENSE, airRetreating);
+//     final String transcriptText = MyFormatter.unitsToText(airRetreating) + " retreated";
+//     historyChildren.add(RetreatHistoryChild.of(transcriptText, new ArrayList<>(airRetreating)));
+//   }
+//   final Collection<Unit> nonAirRetreating = new HashSet<>(retreatUnits);
+//   nonAirRetreating.removeAll(airRetreating);
+//   nonAirRetreating.addAll(battleState.getDependentUnits(nonAirRetreating));
+//   if (!nonAirRetreating.isEmpty()) {
+//     battleState.retreatUnits(OFFENSE, nonAirRetreating);
+//     historyChildren.add(RetreatHistoryChild.of(
+//         MyFormatter.unitsToText(nonAirRetreating) + " retreated to " + retreatTo.getName(),
+//         new ArrayList<>(nonAirRetreating)));
+//     change.add(ChangeFactory.moveUnits(battleState.getBattleSite(), retreatTo, nonAirRetreating));
+//   }
+//   return RetreatChanges.of(change, historyChildren);
+retreater_general_compute_changes :: proc(
+	self: ^Retreater_General,
+	retreat_to: ^Territory,
+) -> ^Retreater_Retreat_Changes {
+	retreat_units := retreater_general_get_retreat_units(self)
+
+	change := composite_change_new()
+	history_children: [dynamic]^Retreater_Retreat_History_Child
+
+	composite_change_add(
+		change,
+		retreater_general_compute_dependent_unit_changes(self, retreat_to, retreat_units),
+	)
+
+	offense_player := battle_state_get_player(self.battle_state, .OFFENSE)
+	air_p, air_c := matches_unit_is_air()
+	owned_p, owned_c := matches_unit_is_owned_by(offense_player)
+
+	air_retreating: [dynamic]^Unit
+	air_set := make(map[^Unit]bool)
+	defer delete(air_set)
+	for u in retreat_units {
+		if air_p(air_c, u) && owned_p(owned_c, u) {
+			if !(u in air_set) {
+				air_set[u] = true
+				append(&air_retreating, u)
+			}
+		}
+	}
+
+	if len(air_retreating) != 0 {
+		battle_state_retreat_units(self.battle_state, .OFFENSE, air_retreating)
+		transcript := fmt.aprintf("%s retreated", my_formatter_units_to_text(air_retreating))
+		copy_air: [dynamic]^Unit
+		for u in air_retreating {
+			append(&copy_air, u)
+		}
+		append(&history_children, retreat_history_child_of(transcript, copy_air))
+	}
+
+	non_air_seen := make(map[^Unit]bool)
+	defer delete(non_air_seen)
+	non_air_retreating: [dynamic]^Unit
+	for u in retreat_units {
+		if !(u in air_set) && !(u in non_air_seen) {
+			non_air_seen[u] = true
+			append(&non_air_retreating, u)
+		}
+	}
+	deps := battle_state_get_dependent_units(self.battle_state, non_air_retreating)
+	for d in deps {
+		if !(d in non_air_seen) {
+			non_air_seen[d] = true
+			append(&non_air_retreating, d)
+		}
+	}
+	delete(deps)
+
+	if len(non_air_retreating) != 0 {
+		battle_state_retreat_units(self.battle_state, .OFFENSE, non_air_retreating)
+		transcript := fmt.aprintf(
+			"%s retreated to %s",
+			my_formatter_units_to_text(non_air_retreating),
+			retreat_to.named.base.name,
+		)
+		copy_nonair: [dynamic]^Unit
+		for u in non_air_retreating {
+			append(&copy_nonair, u)
+		}
+		append(&history_children, retreat_history_child_of(transcript, copy_nonair))
+		composite_change_add(
+			change,
+			change_factory_move_units(
+				battle_state_get_battle_site(self.battle_state),
+				retreat_to,
+				non_air_retreating,
+			),
+		)
+	}
+
+	delete(retreat_units)
+	return retreat_changes_of(&change.change, history_children)
 }
 

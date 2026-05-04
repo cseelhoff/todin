@@ -162,3 +162,88 @@ pro_data_get_min_cost_per_hit_point_from :: proc(self: ^Pro_Data, land_purchase_
 	}
 	return min_cost_per_hit_point
 }
+
+
+// games.strategy.triplea.ai.pro.ProData#hiddenInitialize(
+//     games.strategy.triplea.ai.pro.AbstractProAi,
+//     games.strategy.engine.data.GameData,
+//     games.strategy.engine.data.GamePlayer,
+//     boolean)
+// Java: stash the AI/data/player references, decide win thresholds based
+// on the LowLuck game property, look up the player's capital, collect
+// territories owned by the player, build the unit→territory map, compute
+// the TUV cost map, build the purchase option map, and finally derive the
+// minimum cost-per-hit-point from the land purchase options.
+pro_data_hidden_initialize :: proc(
+	self: ^Pro_Data,
+	pro_ai: ^Abstract_Pro_Ai,
+	data: ^Game_Data,
+	player: ^Game_Player,
+	is_simulation: bool,
+) {
+	self.pro_ai = pro_ai
+	self.data = data
+	self.player = player
+	self.is_simulation = is_simulation
+
+	if !properties_get_low_luck(game_data_get_properties(data)) {
+		self.win_percentage = 90
+		self.min_win_percentage = 65
+	}
+
+	self.my_capital = territory_attachment_get_first_owned_capital_or_first_unowned_capital(
+		player,
+		game_data_get_map(data),
+	)
+
+	// myUnitTerritories = CollectionUtils.getMatches(
+	//     data.getMap().getTerritories(),
+	//     Matches.territoryHasUnitsOwnedBy(player));
+	has_units_p, has_units_c := matches_territory_has_units_owned_by(player)
+	my_unit_territories := make([dynamic]^Territory)
+	for t in game_map_get_territories(game_data_get_map(data)) {
+		if has_units_p(has_units_c, t) {
+			append(&my_unit_territories, t)
+		}
+	}
+	self.my_unit_territories = my_unit_territories
+
+	self.unit_territory_map = pro_data_new_unit_territory_map(&data.game_state)
+
+	tuv := tuv_costs_calculator_new()
+	self.unit_value_map = tuv_costs_calculator_get_costs_for_tuv(tuv, player)
+
+	self.purchase_options = pro_purchase_option_map_new(player, data)
+	self.min_cost_per_hit_point = pro_data_get_min_cost_per_hit_point_from(
+		self,
+		pro_purchase_option_map_get_land_options(self.purchase_options),
+	)
+}
+
+
+// games.strategy.triplea.ai.pro.ProData#initialize(games.strategy.triplea.ai.pro.AbstractProAi)
+// Java: hiddenInitialize(proAi, proAi.getGameData(), proAi.getGamePlayer(), false);
+pro_data_initialize :: proc(self: ^Pro_Data, pro_ai: ^Abstract_Pro_Ai) {
+	pro_data_hidden_initialize(
+		self,
+		pro_ai,
+		abstract_base_player_get_game_data(&pro_ai.abstract_base_player),
+		abstract_base_player_get_game_player(&pro_ai.abstract_base_player),
+		false,
+	)
+}
+
+
+// games.strategy.triplea.ai.pro.ProData#initializeSimulation(
+//     games.strategy.triplea.ai.pro.AbstractProAi,
+//     games.strategy.engine.data.GameData,
+//     games.strategy.engine.data.GamePlayer)
+// Java: hiddenInitialize(proAi, data, player, true);
+pro_data_initialize_simulation :: proc(
+	self: ^Pro_Data,
+	pro_ai: ^Abstract_Pro_Ai,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	pro_data_hidden_initialize(self, pro_ai, data, player, true)
+}

@@ -228,3 +228,42 @@ check_general_battle_end_has_no_strength_or_rolls :: proc(
 	return !power_strength_and_rolls_has_strength_or_rolls(psar)
 }
 
+// games.strategy.triplea.delegate.battle.steps.change.CheckGeneralBattleEnd#isStalemate
+check_general_battle_end_is_stalemate :: proc(
+	self: ^Check_General_Battle_End,
+) -> bool {
+	if battle_status_is_last_round(battle_state_get_status(self.battle_state)) {
+		return true
+	}
+
+	alive_filter := battle_state_unit_battle_filter_new(.Alive)
+
+	attacker_firing_groups := check_general_battle_end_get_all_firing_groups(self, .OFFENSE)
+	alive_offense := battle_state_filter_units(self.battle_state, alive_filter, .OFFENSE)
+	attacker_ctx := check_general_battle_end_in_any_firing_group(self, attacker_firing_groups)
+	attackers := make([dynamic]^Unit, 0, len(alive_offense))
+	for u in alive_offense {
+		if check_general_battle_end_lambda__in_any_firing_group__0(attacker_ctx, u) {
+			append(&attackers, u)
+		}
+	}
+
+	defender_firing_groups := check_general_battle_end_get_all_firing_groups(self, .DEFENSE)
+	alive_defense := battle_state_filter_units(self.battle_state, alive_filter, .DEFENSE)
+	defender_ctx := check_general_battle_end_in_any_firing_group(self, defender_firing_groups)
+	defenders := make([dynamic]^Unit, 0, len(alive_defense))
+	for u in alive_defense {
+		if check_general_battle_end_lambda__in_any_firing_group__0(defender_ctx, u) {
+			append(&defenders, u)
+		}
+	}
+
+	return(
+		battle_status_is_last_round(battle_state_get_status(self.battle_state)) ||
+		(check_general_battle_end_has_no_strength_or_rolls(self, .OFFENSE, attackers, defenders) &&
+				check_general_battle_end_has_no_strength_or_rolls(self, .DEFENSE, defenders, attackers)) ||
+		(check_general_battle_end_has_no_targets(self, attacker_firing_groups) &&
+				check_general_battle_end_has_no_targets(self, defender_firing_groups)) \
+	)
+}
+

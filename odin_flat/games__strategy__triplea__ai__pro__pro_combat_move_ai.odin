@@ -581,3 +581,94 @@ pro_combat_move_ai_log_attack_moves :: proc(
 	}
 }
 
+// Java: ProCombatMoveAi#determineTerritoriesThatCanBeBombed(
+//     Map<Territory, ProTerritory> attackMap,
+//     Map<Unit, Set<Territory>> sortedUnitAttackOptions,
+//     Set<Unit> alreadyAttackedWithUnits)
+//   final boolean raidsMayBePrecededByAirBattles =
+//       Properties.getRaidsMayBePreceededByAirBattles(data.getProperties());
+//   for (final Map.Entry<Unit, Set<Territory>> bomberEntry :
+//       territoryManager.getAttackOptions().getBomberMoveMap().entrySet()) {
+//     final Unit bomber = bomberEntry.getKey();
+//     if (alreadyAttackedWithUnits.contains(bomber)) {
+//       return; // already attacked bombers cannot move
+//     }
+//     Collection<Territory> bomberTargetTerritories = bomberEntry.getValue();
+//     if (raidsMayBePrecededByAirBattles) {
+//       bomberTargetTerritories =
+//           CollectionUtils.getMatches(
+//               bomberTargetTerritories,
+//               terr -> !AirBattle.territoryCouldPossiblyHaveAirBattleDefenders(
+//                   terr, player, data, true));
+//     }
+//     determineBestBombingAttackForBomber(
+//         attackMap, sortedUnitAttackOptions, bomberTargetTerritories, bomber);
+//   }
+pro_combat_move_ai_determine_territories_that_can_be_bombed :: proc(
+	self: ^Pro_Combat_Move_Ai,
+	attack_map: map[^Territory]^Pro_Territory,
+	sorted_unit_attack_options: map[^Unit]map[^Territory]struct {},
+	already_attacked_with_units: map[^Unit]struct {},
+) {
+	raids_may_be_preceded_by_air_battles :=
+		properties_get_raids_may_be_preceeded_by_air_battles(game_data_get_properties(self.data))
+	attack_options := pro_territory_manager_get_attack_options(self.territory_manager)
+	bomber_move_map := pro_my_move_options_get_bomber_move_map(attack_options)
+	for bomber, terrs in bomber_move_map {
+		if bomber in already_attacked_with_units {
+			return // already attacked bombers cannot move
+		}
+		bomber_target_territories := terrs
+		if raids_may_be_preceded_by_air_battles {
+			lambda_ctx := new(
+				Pro_Combat_Move_Ai_Lambda_Determine_Territories_That_Can_Be_Bombed_3_Ctx,
+			)
+			lambda_ctx.self = self
+			filtered: map[^Territory]struct {}
+			for terr, _ in terrs {
+				if pro_combat_move_ai_lambda__determine_territories_that_can_be_bombed__3(
+					rawptr(lambda_ctx),
+					terr,
+				) {
+					filtered[terr] = struct {}{}
+				}
+			}
+			bomber_target_territories = filtered
+		}
+		pro_combat_move_ai_determine_best_bombing_attack_for_bomber(
+			self,
+			attack_map,
+			sorted_unit_attack_options,
+			bomber_target_territories,
+			bomber,
+		)
+	}
+}
+
+// Java: void doMove(Map<Territory,ProTerritory> attackMap,
+//                  IMoveDelegate moveDel, GameData data, GamePlayer player)
+pro_combat_move_ai_do_move :: proc(
+	self: ^Pro_Combat_Move_Ai,
+	attack_map: map[^Territory]^Pro_Territory,
+	move_del: ^I_Move_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	self.data = data
+	self.player = player
+
+	moves1 := pro_move_utils_calculate_move_routes(self.pro_data, player, attack_map, true)
+	pro_move_utils_do_move(self.pro_data, &moves1, move_del)
+
+	moves2 := pro_move_utils_calculate_amphib_routes(self.pro_data, player, attack_map, true)
+	pro_move_utils_do_move(self.pro_data, &moves2, move_del)
+
+	moves3 := pro_move_utils_calculate_bombard_move_routes(self.pro_data, player, attack_map)
+	pro_move_utils_do_move(self.pro_data, &moves3, move_del)
+
+	self.is_bombing = true
+	moves4 := pro_move_utils_calculate_bombing_routes(self.pro_data, player, attack_map)
+	pro_move_utils_do_move(self.pro_data, &moves4, move_del)
+	self.is_bombing = false
+}
+

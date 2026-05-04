@@ -713,3 +713,372 @@ pro_non_combat_move_ai_find_destination_or_safe_territory_on_the_way :: proc(
 	return destination
 }
 
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#determineIfMoveTerritoriesCanBeHeld()
+pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+) {
+	pro_logger_info("Find max enemy attackers and if territories can be held")
+
+	move_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(self.territory_manager)
+
+	aa_p, aa_c := matches_unit_is_aa_for_anything()
+	factory_p, factory_c := pro_matches_territory_has_infra_factory_and_is_land()
+
+	// Determine which territories can possibly be held
+	for t, patd in move_map {
+		// Check if no enemy attackers
+		enemy_attack_max := pro_other_move_options_get_max(enemy_attack_options, t)
+		if enemy_attack_max == nil {
+			pro_logger_debug(
+				fmt.tprintf(
+					"Territory=%s, CanHold=true since has no enemy attackers",
+					default_named_get_name(&t.named_attachable.default_named),
+				),
+			)
+			continue
+		}
+
+		// Build enemy attacking units (Set<Unit> = max + amphib)
+		enemy_set: map[^Unit]struct {}
+		defer delete(enemy_set)
+		for u, _ in pro_territory_get_max_units(enemy_attack_max) {
+			enemy_set[u] = {}
+		}
+		for u in pro_territory_get_max_amphib_units(enemy_attack_max) {
+			enemy_set[u] = {}
+		}
+		enemy_attacking_units := make([dynamic]^Unit, 0, len(enemy_set))
+		for u, _ in enemy_set {
+			append(&enemy_attacking_units, u)
+		}
+		pro_territory_set_max_enemy_units(patd, enemy_attacking_units)
+		pro_territory_set_max_enemy_bombard_units(
+			patd,
+			pro_territory_get_max_bombard_units(enemy_attack_max),
+		)
+
+		bombarding_list := make([dynamic]^Unit, 0)
+		for u, _ in pro_territory_get_max_bombard_units(enemy_attack_max) {
+			append(&bombarding_list, u)
+		}
+
+		// Check if min defenders can hold it (not considering AA)
+		min_defending_units_and_not_aa := make([dynamic]^Unit, 0)
+		for u, _ in pro_territory_get_cant_move_units(patd) {
+			if !aa_p(aa_c, u) {
+				append(&min_defending_units_and_not_aa, u)
+			}
+		}
+		min_result := pro_odds_calculator_calculate_battle_results(
+			self.calc,
+			self.pro_data,
+			t,
+			enemy_attacking_units,
+			min_defending_units_and_not_aa,
+			bombarding_list,
+		)
+		pro_territory_set_min_battle_result(patd, min_result)
+		if pro_battle_result_get_tuv_swing(min_result) <= 0 &&
+		   len(min_defending_units_and_not_aa) > 0 {
+			pro_logger_debug(
+				fmt.tprintf(
+					"Territory=%s, CanHold=true, MinDefenders=%d, EnemyAttackers=%d, win%%=%f, EnemyTUVSwing=%f, hasLandUnitRemaining=%v",
+					default_named_get_name(&t.named_attachable.default_named),
+					len(min_defending_units_and_not_aa),
+					len(enemy_attacking_units),
+					pro_battle_result_get_win_percentage(min_result),
+					pro_battle_result_get_tuv_swing(min_result),
+					pro_battle_result_is_has_land_unit_remaining(min_result),
+				),
+			)
+			continue
+		}
+
+		// Check if max defenders can hold it (not considering AA)
+		def_set: map[^Unit]struct {}
+		defer delete(def_set)
+		for u, _ in pro_territory_get_max_units(patd) {
+			def_set[u] = {}
+		}
+		for u in pro_territory_get_max_amphib_units(patd) {
+			def_set[u] = {}
+		}
+		for u, _ in pro_territory_get_cant_move_units(patd) {
+			def_set[u] = {}
+		}
+		defending_units_and_not_aa := make([dynamic]^Unit, 0)
+		for u, _ in def_set {
+			if !aa_p(aa_c, u) {
+				append(&defending_units_and_not_aa, u)
+			}
+		}
+		result := pro_odds_calculator_calculate_battle_results(
+			self.calc,
+			self.pro_data,
+			t,
+			enemy_attacking_units,
+			defending_units_and_not_aa,
+			bombarding_list,
+		)
+		is_factory: i32 = 0
+		if factory_p(factory_c, t) {
+			is_factory = 1
+		}
+		is_my_capital: i32 = 0
+		if t == pro_data_get_my_capital(self.pro_data) {
+			is_my_capital = 1
+		}
+		// extraUnits = defendingUnitsAndNotAa - minDefendingUnitsAndNotAa
+		min_set: map[^Unit]struct {}
+		defer delete(min_set)
+		for u in min_defending_units_and_not_aa {
+			min_set[u] = {}
+		}
+		extra_units := make([dynamic]^Unit, 0)
+		for u in defending_units_and_not_aa {
+			if _, in_min := min_set[u]; !in_min {
+				append(&extra_units, u)
+			}
+		}
+		costs := new(Integer_Map_Unit_Type)
+		costs.entries = pro_data_get_unit_value_map(self.pro_data)
+		extra_unit_value := f64(tuv_utils_get_tuv(extra_units, costs))
+		hold_value :=
+			extra_unit_value / 8.0 *
+			(1.0 + 0.5 * f64(is_factory)) *
+			(1.0 + 2.0 * f64(is_my_capital))
+		if len(min_defending_units_and_not_aa) != len(defending_units_and_not_aa) &&
+		   (pro_battle_result_get_tuv_swing(result) - hold_value) <
+			   pro_battle_result_get_tuv_swing(min_result) {
+			pro_logger_debug(
+				fmt.tprintf(
+					"Territory=%s, CanHold=true, MaxDefenders=%d, EnemyAttackers=%d, minTUVSwing=%f, win%%=%f, EnemyTUVSwing=%f, hasLandUnitRemaining=%v, holdValue=%f",
+					default_named_get_name(&t.named_attachable.default_named),
+					len(defending_units_and_not_aa),
+					len(enemy_attacking_units),
+					pro_battle_result_get_tuv_swing(min_result),
+					pro_battle_result_get_win_percentage(result),
+					pro_battle_result_get_tuv_swing(result),
+					pro_battle_result_is_has_land_unit_remaining(result),
+					hold_value,
+				),
+			)
+			continue
+		}
+
+		// Can't hold territory
+		pro_territory_set_can_hold(patd, false)
+		pro_logger_debug(
+			fmt.tprintf(
+				"Can't hold Territory=%s, MaxDefenders=%d, EnemyAttackers=%d, minTUVSwing=%f, win%%=%f, EnemyTUVSwing=%f, hasLandUnitRemaining=%v, holdValue=%f",
+				default_named_get_name(&t.named_attachable.default_named),
+				len(defending_units_and_not_aa),
+				len(enemy_attacking_units),
+				pro_battle_result_get_tuv_swing(min_result),
+				pro_battle_result_get_win_percentage(result),
+				pro_battle_result_get_tuv_swing(result),
+				pro_battle_result_is_has_land_unit_remaining(result),
+				hold_value,
+			),
+		)
+	}
+}
+
+// Closure ctx for the moveConsumablesToFactories validateMove lambda:
+//   r -> { if r==null||!r.hasSteps() return false;
+//          return validator.validateMove(new MoveDescription(List.of(u), r), player).isMoveValid(); }
+@(private = "file")
+Pro_Non_Combat_Move_Ai_Validate_Move_Ctx :: struct {
+	self_ai:   ^Pro_Non_Combat_Move_Ai,
+	validator: ^Move_Validator,
+	u:         ^Unit,
+}
+
+@(private = "file")
+pro_non_combat_move_ai_pred_validate_move :: proc(ctx_ptr: rawptr, r: ^Route) -> bool {
+	ctx := cast(^Pro_Non_Combat_Move_Ai_Validate_Move_Ctx)ctx_ptr
+	if r == nil || !route_has_steps(r) {
+		return false
+	}
+	units := []^Unit{ctx.u}
+	md := move_description_new_units_route(units, r)
+	res := move_validator_validate_move(ctx.validator, md, ctx.self_ai.player)
+	return move_validation_result_is_move_valid(res)
+}
+
+// Closure ctx for the moveConsumablesToFactories desiredDestination predicate:
+//   ProMatches.territoryHasInfraFactoryAndIsLand()
+//     .and(Matches.isTerritoryOwnedBy(player))
+//     .and(t -> canHold(moveMap, t))
+@(private = "file")
+Pro_Non_Combat_Move_Ai_Desired_Dest_Ctx :: struct {
+	self_ai:  ^Pro_Non_Combat_Move_Ai,
+	move_map: map[^Territory]^Pro_Territory,
+	player:   ^Game_Player,
+}
+
+@(private = "file")
+pro_non_combat_move_ai_pred_desired_dest :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	ctx := cast(^Pro_Non_Combat_Move_Ai_Desired_Dest_Ctx)ctx_ptr
+	factory_p, factory_c := pro_matches_territory_has_infra_factory_and_is_land()
+	if !factory_p(factory_c, t) {
+		return false
+	}
+	owned_p, owned_c := matches_is_territory_owned_by(ctx.player)
+	if !owned_p(owned_c, t) {
+		return false
+	}
+	return pro_non_combat_move_ai_lambda__move_consumables_to_factories__13(
+		ctx.self_ai,
+		ctx.move_map,
+		t,
+	)
+}
+
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#moveConsumablesToFactories(boolean,java.util.Map,java.util.Map,games.strategy.triplea.delegate.move.validation.MoveValidator)
+pro_non_combat_move_ai_move_consumables_to_factories :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	is_combat_move: bool,
+	infra_unit_move_map: map[^Unit]map[^Territory]struct {},
+	move_map: map[^Territory]^Pro_Territory,
+	validator: ^Move_Validator,
+) {
+	// First, determine which unit types can be consumed during purchase phase.
+	consumables: map[^Unit_Type]struct {}
+	defer delete(consumables)
+	for option in pro_purchase_option_map_get_all_options(
+		pro_data_get_purchase_options(self.pro_data),
+	) {
+		// Skip construction purchase options, since these can be placed without factory.
+		if pro_purchase_option_is_consumes_units(option) &&
+		   !pro_purchase_option_is_construction(option) {
+			ut := pro_purchase_option_get_unit_type(option)
+			ua := unit_type_get_unit_attachment(ut)
+			for k, _ in unit_attachment_get_consumes_units(ua) {
+				consumables[k] = {}
+			}
+		}
+	}
+
+	if len(consumables) == 0 {
+		return
+	}
+	pro_logger_debug("Move consumable units to factories")
+
+	desired_ctx := new(Pro_Non_Combat_Move_Ai_Desired_Dest_Ctx)
+	desired_ctx.self_ai = self
+	desired_ctx.move_map = move_map
+	desired_ctx.player = self.player
+
+	land_p, land_c := matches_unit_is_land()
+
+	// Snapshot the current keys so we can safely remove from the underlying
+	// map while iterating, mirroring Java's Iterator.remove().
+	keys := make([dynamic]^Unit, 0, len(infra_unit_move_map))
+	defer delete(keys)
+	for u, _ in infra_unit_move_map {
+		append(&keys, u)
+	}
+	mutable_map := infra_unit_move_map
+
+	for u in keys {
+		// Skip non-consumable units and non-land units (for now).
+		if _, ok := consumables[unit_get_type(u)]; !ok {
+			continue
+		}
+		if !land_p(land_c, u) {
+			continue
+		}
+
+		validate_ctx := new(Pro_Non_Combat_Move_Ai_Validate_Move_Ctx)
+		validate_ctx.self_ai = self
+		validate_ctx.validator = validator
+		validate_ctx.u = u
+
+		from := self.unit_territory_map[u]
+		empty_enemy: [dynamic]^Territory
+		can_move_p, can_move_c := pro_matches_territory_can_move_land_units_through(
+			self.player,
+			u,
+			from,
+			is_combat_move,
+			empty_enemy,
+		)
+
+		possible := infra_unit_move_map[u]
+		to := pro_non_combat_move_ai_find_destination_or_safe_territory_on_the_way(
+			self,
+			u,
+			possible,
+			pro_non_combat_move_ai_pred_validate_move,
+			rawptr(validate_ctx),
+			can_move_p,
+			can_move_c,
+			pro_non_combat_move_ai_pred_desired_dest,
+			rawptr(desired_ctx),
+		)
+		if to != nil {
+			if to != from {
+				pro_logger_debug(
+					fmt.tprintf(
+						"Consumable %s moved from %s to %s",
+						default_named_get_name(
+							&unit_get_type(u).named_attachable.default_named,
+						),
+						default_named_get_name(&from.named_attachable.default_named),
+						default_named_get_name(&to.named_attachable.default_named),
+					),
+				)
+			}
+			target_pt, ok := move_map[to]
+			if ok && target_pt != nil {
+				pro_territory_add_unit(target_pt, u)
+			}
+			delete_key(&mutable_map, u)
+		}
+	}
+}
+
+// Java: ProNonCombatMoveAi#doMove(boolean, Map<Territory, ProTerritory>, IMoveDelegate, GameData, GamePlayer)
+//   this.data = data;
+//   this.player = player;
+//   ProMoveUtils.doMove(
+//       proData, ProMoveUtils.calculateMoveRoutes(proData, player, moveMap, isCombatMove), moveDel);
+//   ProMoveUtils.doMove(
+//       proData, ProMoveUtils.calculateAmphibRoutes(proData, player, moveMap, isCombatMove), moveDel);
+pro_non_combat_move_ai_do_move :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	is_combat_move: bool,
+	move_map: map[^Territory]^Pro_Territory,
+	move_del: ^I_Move_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	self.data = data
+	self.player = player
+
+	move_routes := pro_move_utils_calculate_move_routes(self.pro_data, player, move_map, is_combat_move)
+	pro_move_utils_do_move(self.pro_data, &move_routes, move_del)
+
+	amphib_routes := pro_move_utils_calculate_amphib_routes(self.pro_data, player, move_map, is_combat_move)
+	pro_move_utils_do_move(self.pro_data, &amphib_routes, move_del)
+}
+
+// Lambda: moveUnitsToBestTerritories  () -> calc.calculateBattleResults(proData, proTerritory, defendingUnits)
+// Captures: proTerritory, defendingUnits — desugared to (ProTerritory, Collection<Unit>) -> ProBattleResult
+pro_non_combat_move_ai_lambda__move_units_to_best_territories__10 :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	pro_territory: ^Pro_Territory,
+	defending_units: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	return pro_odds_calculator_calculate_battle_results_3(
+		self.calc,
+		self.pro_data,
+		pro_territory,
+		defending_units,
+	)
+}
+

@@ -358,3 +358,16 @@ remove_unprotected_units_remove_unprotected_units :: proc(
 	remove_unprotected_units_check_undefended_transports(self, bridge, side)
 	remove_unprotected_units_check_unprotected_units(self, bridge, side)
 }
+
+// games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits#execute
+// Java:
+//   removeUnprotectedUnits(bridge, DEFENSE);
+//   removeUnprotectedUnits(bridge, OFFENSE);
+remove_unprotected_units_execute :: proc(
+	self: ^Remove_Unprotected_Units,
+	stack: ^Execution_Stack,
+	bridge: ^I_Delegate_Bridge,
+) {
+	remove_unprotected_units_remove_unprotected_units(self, bridge, .DEFENSE)
+	remove_unprotected_units_remove_unprotected_units(self, bridge, .OFFENSE)
+}

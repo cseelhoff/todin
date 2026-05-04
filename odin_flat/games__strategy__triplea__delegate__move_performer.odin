@@ -570,3 +570,276 @@ move_performer_has_conquered_non_blitzed :: proc(self: ^Move_Performer, route: ^
 	}
 	return false
 }
+
+// games.strategy.triplea.delegate.MovePerformer#markMovementChange(Collection,Route,GamePlayer)
+//
+// Builds a CompositeChange that:
+//   1. records the (possibly air-base-discounted) movement cost on every
+//      unit owned by `game_player`,
+//   2. zeroes movement of land units when the move was a combat move
+//      crossing empty neutrals or non-blitzed conquered territory, and
+//   3. zeroes movement of submarines/blockade-runners that ended a
+//      non-combat move adjacent to enemy destroyers (when the
+//      Subs Can End Non Combat Move With Enemies property is on).
+move_performer_mark_movement_change :: proc(
+	self: ^Move_Performer,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	game_player: ^Game_Player,
+) -> ^Change {
+	data := i_delegate_bridge_get_data(self.bridge)
+	change := composite_change_new()
+	// only units owned by us need to be marked
+	relationship_tracker := game_data_get_relationship_tracker(data)
+	route_start := route_get_start(route)
+	route_end := route_get_end(route)
+	owned_pred, owned_ctx := matches_unit_is_owned_by(game_player)
+	for unit in units {
+		if !owned_pred(owned_ctx, unit) {
+			continue
+		}
+		moved := route_get_movement_cost(route, unit)
+		ua := unit_get_unit_attachment(unit)
+		if unit_attachment_is_air(ua) {
+			if territory_attachment_has_air_base(route_start) &&
+			   relationship_tracker_is_allied(
+				   relationship_tracker,
+				   territory_get_owner(route_start),
+				   unit_get_owner(unit),
+			   ) {
+				moved -= 1.0
+			}
+			if route_end != nil &&
+			   territory_attachment_has_air_base(route_end) &&
+			   relationship_tracker_is_allied(
+				   relationship_tracker,
+				   territory_get_owner(route_end),
+				   unit_get_owner(unit),
+			   ) {
+				moved -= 1.0
+			}
+		}
+		boxed := new(f64)
+		boxed^ = moved + unit_get_already_moved(unit)
+		composite_change_add(
+			change,
+			change_factory_unit_property_change_property_name(
+				unit,
+				rawptr(boxed),
+				.Already_Moved,
+			),
+		)
+	}
+	// if neutrals were taken over mark land units with 0 movement
+	// if entered a non-blitzed conquered territory, mark with 0 movement
+	if game_step_properties_helper_is_combat_move(data) {
+		empty_neutral := move_delegate_get_empty_neutral(route)
+		defer delete(empty_neutral)
+		if len(empty_neutral) != 0 || move_performer_has_conquered_non_blitzed(self, route) {
+			land_pred, land_ctx := matches_unit_is_land()
+			for unit in units {
+				if land_pred(land_ctx, unit) {
+					composite_change_add(change, change_factory_mark_no_movement_change(unit))
+				}
+			}
+		}
+	}
+	if route_end != nil &&
+	   properties_get_subs_can_end_non_combat_move_with_enemies(game_data_get_properties(data)) &&
+	   game_step_properties_helper_is_non_combat_move(data, false) {
+		enemy_pred, enemy_ctx := matches_unit_is_enemy_of(game_player)
+		destroyer_pred, destroyer_ctx := matches_unit_is_destroyer()
+		end_units := unit_holder_get_units(cast(^Unit_Holder)route_end)
+		defer delete(end_units)
+		any_enemy_destroyer := false
+		for u in end_units {
+			if enemy_pred(enemy_ctx, u) && destroyer_pred(destroyer_ctx, u) {
+				any_enemy_destroyer = true
+				break
+			}
+		}
+		if any_enemy_destroyer {
+			move_through_pred, move_through_ctx := matches_unit_can_move_through_enemies()
+			for unit in units {
+				if move_through_pred(move_through_ctx, unit) {
+					composite_change_add(change, change_factory_mark_no_movement_change(unit))
+				}
+			}
+		}
+	}
+	return &change.change
+}
+
+// games.strategy.triplea.delegate.MovePerformer#fireAa(games.strategy.engine.data.Route,java.util.Collection)
+//
+//   if (aaInMoveUtil == null) aaInMoveUtil = new AaInMoveUtil();
+//   aaInMoveUtil.initialize(bridge);
+//   final Collection<Unit> unitsToRemove =
+//       aaInMoveUtil.fireAa(
+//           route, units, UnitComparator.getLowestToHighestMovementComparator(), currentMove);
+//   aaInMoveUtil = null;
+//   return unitsToRemove;
+move_performer_fire_aa :: proc(
+	self: ^Move_Performer,
+	route: ^Route,
+	units: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	if self.aa_in_move_util == nil {
+		self.aa_in_move_util = aa_in_move_util_new()
+	}
+	aa_in_move_util_initialize(self.aa_in_move_util, self.bridge)
+	cmp, cmp_ctx := unit_comparator_get_lowest_to_highest_movement_comparator()
+	units_to_remove := aa_in_move_util_fire_aa(
+		self.aa_in_move_util,
+		route,
+		units,
+		cmp,
+		cmp_ctx,
+		self.current_move,
+	)
+	self.aa_in_move_util = nil
+	return units_to_remove
+}
+
+// games.strategy.triplea.delegate.MovePerformer#markTransportsMovement(java.util.Collection,java.util.Map,games.strategy.engine.data.Route)
+//
+// Marks transports and units involved in unloading with no movement left.
+// Mirrors the Java logic: build dependentAirTransportableUnits map (current
+// arrivals + carry-over from airTransportDependents), then on a load route
+// (or paratroopers landing) record load-transport changes; on an unload
+// route (or paratroopers landing) unload non-air units (skipping
+// paratroopers landing into combat/enemy territory until after AA fires)
+// and zero their movement.
+move_performer_mark_transports_movement :: proc(
+	self: ^Move_Performer,
+	arrived: [dynamic]^Unit,
+	transporting: map[^Unit]^Unit,
+	route: ^Route,
+) {
+	data := i_delegate_bridge_get_data(self.bridge)
+
+	// Predicate: Matches.unitIsAirTransport().or(unitIsAirTransportable())
+	at_pred,  at_ctx  := matches_unit_is_air_transport()
+	atp_pred, atp_ctx := matches_unit_is_air_transportable()
+
+	any_paratroop_or_air := false
+	for u in arrived {
+		if at_pred(at_ctx, u) || atp_pred(atp_ctx, u) {
+			any_paratroop_or_air = true
+			break
+		}
+	}
+	paratroops_landing := any_paratroop_or_air &&
+		move_validator_all_land_units_have_air_transport(arrived)
+
+	dependent_air_transportable_units := make(map[^Unit][dynamic]^Unit)
+	for unit in arrived {
+		transport := unit_get_transported_by(unit)
+		if transport != nil {
+			arr, ok := dependent_air_transportable_units[transport]
+			if !ok {
+				arr = make([dynamic]^Unit)
+			}
+			append(&arr, unit)
+			dependent_air_transportable_units[transport] = arr
+		}
+	}
+
+	// add newly created dependents from airTransportDependents
+	for k, v in self.air_transport_dependents {
+		existing, ok := dependent_air_transportable_units[k]
+		if ok {
+			merged := make([dynamic]^Unit)
+			for u in existing { append(&merged, u) }
+			for u in v { append(&merged, u) }
+			dependent_air_transportable_units[k] = merged
+		} else {
+			copied := make([dynamic]^Unit)
+			for u in v { append(&copied, u) }
+			dependent_air_transportable_units[k] = copied
+		}
+	}
+
+	// load the transports
+	if route_is_load(route) || paratroops_landing {
+		// mark transports as having transported
+		for load_unit, transporter in transporting {
+			already_transport := unit_get_transported_by(load_unit)
+			if already_transport != transporter {
+				change := transport_tracker_load_transport_change(transporter, load_unit)
+				undoable_move_add_change(self.current_move, change)
+				undoable_move_load(self.current_move, transporter)
+				i_delegate_bridge_add_change(self.bridge, change)
+			}
+		}
+		if len(transporting) == 0 {
+			for air_transport, transportable_units in dependent_air_transportable_units {
+				for transportable_unit in transportable_units {
+					change := transport_tracker_load_transport_change(air_transport, transportable_unit)
+					undoable_move_add_change(self.current_move, change)
+					undoable_move_load(self.current_move, air_transport)
+					i_delegate_bridge_add_change(self.bridge, change)
+				}
+			}
+		}
+	}
+
+	if route_is_unload(route) || paratroops_landing {
+		// Set<Unit> units = transporting.values() ∪ transporting.keys()
+		// (∪ dependent_air_transportable_units' keys+values when transporting is empty).
+		units_set := make(map[^Unit]struct{})
+		for k, v in transporting {
+			units_set[k] = {}
+			units_set[v] = {}
+		}
+		if len(transporting) == 0 {
+			for k, v in dependent_air_transportable_units {
+				units_set[k] = {}
+				for u in v {
+					units_set[u] = {}
+				}
+			}
+		}
+
+		// any pending battles in the unloading zone?
+		tracker := move_performer_get_battle_tracker(self)
+		pending_battles := battle_tracker_get_pending_battle(
+			tracker,
+			route_get_start(route),
+			.NORMAL,
+		) != nil
+
+		air_pred, air_ctx           := matches_unit_is_air()
+		ait_pred, ait_ctx           := matches_unit_is_air_transport()
+		enemy_at_end_pred, enemy_at_end_ctx := matches_territory_has_non_submerged_enemy_units(self.player)
+
+		for unit, _ in units_set {
+			// CollectionUtils.getMatches(units, Matches.unitIsAir().negate())
+			if air_pred(air_ctx, unit) {
+				continue
+			}
+			transported_by := unit_get_transported_by(unit)
+			// paratroopers landing in battle: unload after AA fires
+			if paratroops_landing &&
+			   transported_by != nil &&
+			   ait_pred(ait_ctx, transported_by) &&
+			   game_step_properties_helper_is_combat_move(data) &&
+			   enemy_at_end_pred(enemy_at_end_ctx, route_get_end(route)) {
+				continue
+			}
+			// unload the transports
+			change1 := transport_tracker_unload_transport_change(
+				unit,
+				route_get_end(undoable_move_get_route(self.current_move)),
+				pending_battles,
+			)
+			undoable_move_add_change(self.current_move, change1)
+			undoable_move_unload(self.current_move, unit)
+			i_delegate_bridge_add_change(self.bridge, change1)
+			// set noMovement
+			change2 := change_factory_mark_no_movement_change(unit)
+			undoable_move_add_change(self.current_move, change2)
+			i_delegate_bridge_add_change(self.bridge, change2)
+		}
+	}
+}

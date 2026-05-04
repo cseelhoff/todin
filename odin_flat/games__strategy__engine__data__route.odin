@@ -370,3 +370,139 @@ route_get_fuel_costs_and_if_charged_flat_fuel_cost :: proc(
 	}
 	return resources, charged_flat_fuel_cost
 }
+
+// Mirrors Java Route#getFuelCostsAndUnitsChargedFlatFuelCost(
+//     Collection<Unit>, Route, GamePlayer, GameData, boolean) (private
+// static). Returns the aggregate movement-charge ResourceCollection and
+// the set of units charged a flat fuel cost. Java:
+//   if (!Properties.getUseFuelCost(data.getProperties())) {
+//     return Tuple.of(new ResourceCollection(data), new HashSet<>());
+//   }
+//   final Set<Unit> unitsToChargeFuelCosts = new HashSet<>(units);
+//   if (GameStepPropertiesHelper.isNonCombatMove(data, true)) {
+//     // allied (not owned) air that can land on carrier first, then owned
+//     final List<Unit> canLandOnCarrierUnits = ...;
+//     unitsToChargeFuelCosts.removeAll(
+//         AirMovementValidator.whatAirCanLandOnTheseCarriers(
+//             carriers, canLandOnCarrierUnits, route.getStart()));
+//   }
+//   unitsToChargeFuelCosts.removeAll(
+//       CollectionUtils.getMatches(units,
+//           Matches.unitIsBeingTransportedByOrIsDependentOfSomeUnitInThisList(
+//               units, player, true)));
+//   final ResourceCollection movementCharge = new ResourceCollection(data);
+//   final Set<Unit> unitsChargedFlatFuelCost = new HashSet<>();
+//   for (final Unit unit : unitsToChargeFuelCosts) {
+//     final Tuple<ResourceCollection, Boolean> tuple =
+//         route.getFuelCostsAndIfChargedFlatFuelCost(unit, data, ignoreFlat);
+//     movementCharge.add(tuple.getFirst());
+//     if (tuple.getSecond()) unitsChargedFlatFuelCost.add(unit);
+//   }
+//   return Tuple.of(movementCharge, unitsChargedFlatFuelCost);
+route_get_fuel_costs_and_units_charged_flat_fuel_cost :: proc(
+	units: []^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	data: ^Game_Data,
+	ignore_flat: bool,
+) -> (
+	^Resource_Collection,
+	[dynamic]^Unit,
+) {
+	if !properties_get_use_fuel_cost(game_data_get_properties(data)) {
+		empty: [dynamic]^Unit
+		return resource_collection_new(data), empty
+	}
+
+	units_to_charge: [dynamic]^Unit
+	for u in units {
+		append(&units_to_charge, u)
+	}
+
+	// If non-combat then remove air units moving with a carrier.
+	if game_step_properties_helper_is_non_combat_move(data, true) {
+		owned_pred, owned_ctx := matches_unit_is_owned_by(player)
+		allied_pred, allied_ctx := matches_is_unit_allied(player)
+		can_land_pred, can_land_ctx := matches_unit_can_land_on_carrier()
+		is_carrier_pred, is_carrier_ctx := matches_unit_is_carrier()
+
+		// Add allied air first so carriers consider them before owned air.
+		can_land_on_carrier_units: [dynamic]^Unit
+		for u in units {
+			if !owned_pred(owned_ctx, u) &&
+			   allied_pred(allied_ctx, u) &&
+			   can_land_pred(can_land_ctx, u) {
+				append(&can_land_on_carrier_units, u)
+			}
+		}
+		for u in units {
+			if owned_pred(owned_ctx, u) && can_land_pred(can_land_ctx, u) {
+				append(&can_land_on_carrier_units, u)
+			}
+		}
+
+		carriers: [dynamic]^Unit
+		for u in units {
+			if is_carrier_pred(is_carrier_ctx, u) {
+				append(&carriers, u)
+			}
+		}
+
+		air_landing := air_movement_validator_what_air_can_land_on_these_carriers(
+			carriers[:],
+			can_land_on_carrier_units[:],
+			route_get_start(route),
+		)
+		filtered: [dynamic]^Unit
+		for u in units_to_charge {
+			if !slice.contains(air_landing[:], u) {
+				append(&filtered, u)
+			}
+		}
+		units_to_charge = filtered
+	}
+
+	// Remove dependent units.
+	units_dyn: [dynamic]^Unit
+	for u in units {
+		append(&units_dyn, u)
+	}
+	dep_pred, dep_ctx :=
+		matches_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list(
+			units_dyn,
+			player,
+			true,
+		)
+	dependents: [dynamic]^Unit
+	for u in units {
+		if dep_pred(dep_ctx, u) {
+			append(&dependents, u)
+		}
+	}
+	if len(dependents) > 0 {
+		filtered: [dynamic]^Unit
+		for u in units_to_charge {
+			if !slice.contains(dependents[:], u) {
+				append(&filtered, u)
+			}
+		}
+		units_to_charge = filtered
+	}
+
+	// Sum per-unit fuel cost and collect units charged the flat cost.
+	movement_charge := resource_collection_new(data)
+	units_charged_flat_fuel_cost: [dynamic]^Unit
+	for u in units_to_charge {
+		per_unit, charged_flat := route_get_fuel_costs_and_if_charged_flat_fuel_cost(
+			route,
+			u,
+			data,
+			ignore_flat,
+		)
+		resource_collection_add(movement_charge, per_unit)
+		if charged_flat {
+			append(&units_charged_flat_fuel_cost, u)
+		}
+	}
+	return movement_charge, units_charged_flat_fuel_cost
+}

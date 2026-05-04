@@ -1275,3 +1275,297 @@ battle_delegate_check_defending_planes_land_on_carriers :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#fireKamikazeSuicideAttacks(
+//   Unit, IntegerMap<Resource>, IntegerMap<Resource>, GamePlayer, Territory)
+//
+// Faithful port of the private instance method. Rolls dice (low-luck or
+// normal) for one attacked unit, applies hits as damage or removal,
+// charges the firing player's resources, blocks bombarding from the sea
+// zone for the rest of the turn, and broadcasts the result to the two
+// players involved.
+battle_delegate_fire_kamikaze_suicide_attacks :: proc(
+	self: ^Battle_Delegate,
+	unit_under_fire: ^Unit,
+	number_of_attacks: Integer_Map_Resource,
+	resources_and_attack_values: Integer_Map_Resource,
+	firing_enemy: ^Game_Player,
+	location: ^Territory,
+) {
+	// TODO: find a way to autosave after each dice roll. (Java comment carried over)
+	data := i_delegate_bridge_get_data(self.bridge)
+	dice_sides := data.dice_sides
+	change := composite_change_new()
+	hits: i32 = 0
+	rolls: [dynamic]i32
+	rolls_present := false
+	if properties_get_low_luck(game_data_get_properties(data)) {
+		power: i32 = 0
+		for r, num in number_of_attacks {
+			composite_change_add(
+				change,
+				change_factory_change_resources_change(firing_enemy, r, -num),
+			)
+			power += num * resources_and_attack_values[r]
+		}
+		if power > 0 {
+			hits = power / dice_sides
+			remainder := power % dice_sides
+			if remainder > 0 {
+				annotation := fmt.aprintf(
+					"Rolling for remainder in Kamikaze Suicide Attack on unit: %s",
+					unit_get_type(unit_under_fire).named.base.name,
+				)
+				rolls = i_delegate_bridge_get_random(
+					self.bridge,
+					dice_sides,
+					1,
+					firing_enemy,
+					I_Random_Stats_Dice_Type.COMBAT,
+					annotation,
+				)
+				rolls_present = true
+				if remainder > rolls[0] {
+					hits += 1
+				}
+			}
+		}
+	} else {
+		// avoid multiple calls of getRandom, so just do it once at the beginning
+		num_tokens: i32 = 0
+		for _, n in number_of_attacks {
+			num_tokens += n
+		}
+		annotation := fmt.aprintf(
+			"Rolling for Kamikaze Suicide Attack on unit: %s",
+			unit_get_type(unit_under_fire).named.base.name,
+		)
+		rolls = i_delegate_bridge_get_random(
+			self.bridge,
+			dice_sides,
+			num_tokens,
+			firing_enemy,
+			I_Random_Stats_Dice_Type.COMBAT,
+			annotation,
+		)
+		rolls_present = true
+		power_of_tokens := make([]i32, num_tokens)
+		defer delete(power_of_tokens)
+		j: i32 = 0
+		for r, n in number_of_attacks {
+			composite_change_add(
+				change,
+				change_factory_change_resources_change(firing_enemy, r, -n),
+			)
+			power := resources_and_attack_values[r]
+			num := n
+			for num > 0 {
+				power_of_tokens[j] = power
+				j += 1
+				num -= 1
+			}
+		}
+		for i in 0 ..< len(rolls) {
+			if power_of_tokens[i] > rolls[i] {
+				hits += 1
+			}
+		}
+	}
+	// title: Set.of(unitUnderFire) → single-element collection.
+	one_unit := make([dynamic]^Unit)
+	defer delete(one_unit)
+	append(&one_unit, unit_under_fire)
+	title := fmt.aprintf(
+		"Kamikaze Suicide Attack attacks %s",
+		my_formatter_units_to_text(one_unit),
+	)
+	rolls_slice: []i32 = nil
+	if rolls_present {
+		rolls_slice = rolls[:]
+	}
+	dice_str := fmt.aprintf(
+		" scoring %d hits.  Rolls: %s",
+		hits,
+		my_formatter_as_dice_ints(rolls_slice),
+	)
+	full_msg := fmt.aprintf("%s%s", title, dice_str)
+	i_delegate_history_writer_start_event(
+		i_delegate_bridge_get_history_writer(self.bridge),
+		full_msg,
+		rawptr(unit_under_fire),
+	)
+	if hits > 0 {
+		ua := unit_get_unit_attachment(unit_under_fire)
+		current_hits := unit_get_hits(unit_under_fire)
+		if unit_attachment_get_hit_points(ua) <= current_hits + hits {
+			killed := make([dynamic]^Unit)
+			append(&killed, unit_under_fire)
+			remove_units_history_change_perform(
+				history_change_factory_remove_units_from_territory(location, killed),
+				self.bridge,
+			)
+		} else {
+			damage_map := new(Integer_Map_Unit)
+			damage_map.entries = make(map[^Unit]i32)
+			damage_map.entries[unit_under_fire] = hits
+			damage_units_history_change_perform(
+				history_change_factory_damage_units(location, damage_map),
+				self.bridge,
+			)
+		}
+	}
+	if !composite_change_is_empty(change) {
+		i_delegate_bridge_add_change(self.bridge, &change.change)
+	}
+	// kamikaze suicide attacks, even if unsuccessful, deny the ability to
+	// bombard from this sea zone.
+	battle_tracker_add_no_bombard_allowed_from_here(self.battle_tracker, location)
+	// TODO: display this as actual dice for both players (Java comment carried over)
+	players_involved := make([dynamic]^Game_Player)
+	append(&players_involved, self.player)
+	append(&players_involved, firing_enemy)
+	excluded := make([dynamic]^Game_Player)
+	display := i_delegate_bridge_get_display_channel_broadcaster(self.bridge)
+	i_display_report_message_to_players(
+		display,
+		players_involved,
+		excluded,
+		full_msg,
+		title,
+	)
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#setupTerritoriesAbandonedToTheEnemy(
+//   BattleTracker, IDelegateBridge)
+//
+// Set up the battles where we have abandoned a contested territory during
+// combat move to the enemy. The enemy then takes over the territory in
+// question. Faithful port of the private static method.
+battle_delegate_setup_territories_abandoned_to_the_enemy :: proc(
+	battle_tracker: ^Battle_Tracker,
+	bridge: ^I_Delegate_Bridge,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	if !properties_get_abandoned_territories_may_be_taken_over_immediately(
+		game_data_get_properties(data),
+	) {
+		return
+	}
+	player := i_delegate_bridge_get_game_player(bridge)
+	not_unowned_p, not_unowned_c := matches_territory_is_not_unowned_water()
+	can_capture_p, can_capture_c :=
+		matches_territory_has_enemy_units_that_can_capture_it_and_is_owned_by_their_enemy(player)
+	// CollectionUtils.getMatches(territories, p1.and(p2)).
+	battle_territories := make([dynamic]^Territory)
+	defer delete(battle_territories)
+	for t in game_map_get_territories(game_state_get_map(&data.game_state)) {
+		if not_unowned_p(not_unowned_c, t) && can_capture_p(can_capture_c, t) {
+			append(&battle_territories, t)
+		}
+	}
+	// all territories that contain enemy units, where the territory is owned
+	// by an enemy of these units.
+	for territory in battle_territories {
+		// abandonedToUnits = territory.getUnitCollection().getMatches(Matches.enemyUnit(player))
+		en_p, en_c := matches_enemy_unit(player)
+		territory_units := unit_collection_get_units(territory_get_unit_collection(territory))
+		abandoned_to_units := make([dynamic]^Unit)
+		for u in territory_units {
+			if en_p(en_c, u) {
+				append(&abandoned_to_units, u)
+			}
+		}
+		abandoned_to_player := unit_utils_find_player_with_most_units(abandoned_to_units)
+
+		// Add transport-dependents: for any abandoned-to unit that is itself a
+		// transport, include the units it carries (deduped, skipping any
+		// already present in the abandoned-to list).
+		transport_map := transport_tracker_transporting(territory_units)
+		to_add := make(map[^Unit]struct{})
+		defer delete(to_add)
+		for transport, transported in transport_map {
+			in_abandoned := false
+			for au in abandoned_to_units {
+				if au == transport {
+					in_abandoned = true
+					break
+				}
+			}
+			if !in_abandoned {
+				continue
+			}
+			for tu in transported {
+				already := false
+				for au in abandoned_to_units {
+					if au == tu {
+						already = true
+						break
+					}
+				}
+				if !already {
+					to_add[tu] = struct{}{}
+				}
+			}
+		}
+		for u, _ in to_add {
+			append(&abandoned_to_units, u)
+		}
+
+		// either we have abandoned the territory (no more enemy units of our
+		// enemy units) or we are possibly bombing the territory (so we may
+		// have units there still).
+		enemy_units_of_abandoned := make(map[^Unit]struct{})
+		defer delete(enemy_units_of_abandoned)
+		for au in abandoned_to_units {
+			p := unit_get_owner(au)
+			eo_p, eo_c := matches_unit_is_enemy_of(p)
+			na_p, na_c := matches_unit_is_not_air()
+			ni_p, ni_c := matches_unit_is_not_infrastructure()
+			for u in territory_units {
+				if eo_p(eo_c, u) && na_p(na_c, u) && ni_p(ni_c, u) {
+					enemy_units_of_abandoned[u] = struct{}{}
+				}
+			}
+		}
+		// only look at bombing battles, because otherwise the normal attack
+		// will determine the ownership of the territory.
+		bombing_battle := battle_tracker_get_pending_bombing_battle(battle_tracker, territory)
+		if bombing_battle != nil {
+			for u in i_battle_get_attacking_units(bombing_battle) {
+				delete_key(&enemy_units_of_abandoned, u)
+			}
+		}
+		if len(enemy_units_of_abandoned) != 0 {
+			continue
+		}
+		non_fighting_battle := battle_tracker_get_pending_battle(
+			battle_tracker,
+			territory,
+			.NORMAL,
+		)
+		if non_fighting_battle != nil {
+			fmt.panicf(
+				"Should not be possible to have a normal battle in: %s and have abandoned or only bombing there too.",
+				territory.named.base.name,
+			)
+		}
+		history_writer := i_delegate_bridge_get_history_writer(bridge)
+		msg := fmt.aprintf(
+			"%s has abandoned %s to %s",
+			player.named.base.name,
+			territory.named.base.name,
+			abandoned_to_player.named.base.name,
+		)
+		i_delegate_history_writer_start_event(history_writer, msg, rawptr(&abandoned_to_units))
+		battle_tracker_take_over(
+			battle_tracker,
+			territory,
+			abandoned_to_player,
+			bridge,
+			nil,
+			abandoned_to_units,
+		)
+		// TODO: if there are multiple defending unit owners, allow picking
+		// which one takes over the territory. (Java comment carried over.)
+	}
+}
+

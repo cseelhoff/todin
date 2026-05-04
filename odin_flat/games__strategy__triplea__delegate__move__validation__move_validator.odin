@@ -6,6 +6,12 @@ import "core:strings"
 // games.strategy.triplea.delegate.move.validation.MoveValidator#TOO_POOR_TO_VIOLATE_NEUTRALITY
 MOVE_VALIDATOR_TOO_POOR_TO_VIOLATE_NEUTRALITY :: "Not enough money to pay for violating neutrality"
 
+// games.strategy.triplea.delegate.move.validation.MoveValidator#CANT_MOVE_THROUGH_IMPASSABLE
+MOVE_VALIDATOR_CANT_MOVE_THROUGH_IMPASSABLE :: "Can't move through impassable territories"
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#CANNOT_VIOLATE_NEUTRALITY
+MOVE_VALIDATOR_CANNOT_VIOLATE_NEUTRALITY :: "Cannot violate neutrality"
+
 Move_Validator :: struct {
 	data:          ^Game_Data,
 	is_non_combat: bool,
@@ -1730,5 +1736,548 @@ move_validator_validate_paratroops :: proc(
 		}
 	}
 	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#allLandUnitsHaveAirTransport
+// Java (public static):
+//   public static boolean allLandUnitsHaveAirTransport(final Collection<Unit> units) {
+//     if (units.isEmpty()
+//         || !units.stream().allMatch(
+//             Matches.unitIsAirTransportable()
+//                 .or(Matches.unitIsAirTransport())
+//                 .or(Matches.unitIsAir()))) {
+//       return false;
+//     }
+//     final List<Unit> paratroopsRequiringTransport =
+//         CollectionUtils.getMatches(units, Matches.unitIsAirTransportable());
+//     if (paratroopsRequiringTransport.isEmpty()) { return false; }
+//     final List<Unit> airTransports =
+//         CollectionUtils.getMatches(units, Matches.unitIsAirTransport());
+//     final List<Unit> allParatroops =
+//         TransportUtils.findUnitsToLoadOnAirTransports(paratroopsRequiringTransport, airTransports);
+//     if (allParatroops.size() != paratroopsRequiringTransport.size()) { return false; }
+//     final Map<Unit, Unit> transportLoadMap =
+//         TransportUtils.mapTransportsToLoad(units, airTransports);
+//     return transportLoadMap.keySet().containsAll(paratroopsRequiringTransport);
+//   }
+move_validator_all_land_units_have_air_transport :: proc(units: [dynamic]^Unit) -> bool {
+	if len(units) == 0 {
+		return false
+	}
+	transportable_p, transportable_c := matches_unit_is_air_transportable()
+	air_transport_p, air_transport_c := matches_unit_is_air_transport()
+	air_p, air_c := matches_unit_is_air()
+	for u in units {
+		if !(transportable_p(transportable_c, u) ||
+			   air_transport_p(air_transport_c, u) ||
+			   air_p(air_c, u)) {
+			return false
+		}
+	}
+	paratroops_requiring_transport := make([dynamic]^Unit)
+	defer delete(paratroops_requiring_transport)
+	for u in units {
+		if transportable_p(transportable_c, u) {
+			append(&paratroops_requiring_transport, u)
+		}
+	}
+	if len(paratroops_requiring_transport) == 0 {
+		return false
+	}
+	air_transports := make([dynamic]^Unit)
+	defer delete(air_transports)
+	for u in units {
+		if air_transport_p(air_transport_c, u) {
+			append(&air_transports, u)
+		}
+	}
+	all_paratroops := transport_utils_find_units_to_load_on_air_transports(
+		paratroops_requiring_transport,
+		air_transports,
+	)
+	defer delete(all_paratroops)
+	if len(all_paratroops) != len(paratroops_requiring_transport) {
+		return false
+	}
+	transport_load_map := transport_utils_map_transports_to_load(units, air_transports)
+	defer delete(transport_load_map)
+	for p in paratroops_requiring_transport {
+		if _, ok := transport_load_map[p]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// Adapter so route_get_matches / route_any_match (which expect a
+// non-context predicate) can call non-capturing matches predicates.
+move_validator_lambda_validate_basic_pred_impassable :: proc(t: ^Territory) -> bool {
+	return matches_pred_territory_is_impassable(nil, t)
+}
+
+move_validator_lambda_validate_basic_pred_neutral_but_not_water :: proc(t: ^Territory) -> bool {
+	return matches_pred_territory_is_neutral_but_not_water(nil, t)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateBasic
+// Java (private):
+//   private MoveValidationResult validateBasic(
+//       final Collection<Unit> units,
+//       final Route route,
+//       final GamePlayer player,
+//       final Map<Unit, Unit> unitsToSeaTransports,
+//       final Map<Unit, Collection<Unit>> airTransportDependents,
+//       final MoveValidationResult result) { ... }
+move_validator_validate_basic :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	units_to_sea_transports: map[^Unit]^Unit,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	is_edit_mode := edit_delegate_get_edit_mode(game_data_get_properties(self.data))
+
+	contains_all :: proc(haystack: [dynamic]^Unit, needles: [dynamic]^Unit) -> bool {
+		for n in needles {
+			found := false
+			for h in haystack {
+				if h == n {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+
+	transport_values := make([dynamic]^Unit)
+	defer delete(transport_values)
+	for _, t in units_to_sea_transports {
+		append(&transport_values, t)
+	}
+	end_uc := territory_get_unit_collection(route_get_end(route))
+	if !unit_collection_contains_all(end_uc, transport_values) &&
+	   !contains_all(units, transport_values) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Transports not found in route end",
+		)
+	}
+
+	air_keys := make([dynamic]^Unit)
+	defer delete(air_keys)
+	for k in air_transport_dependents {
+		append(&air_keys, k)
+	}
+	if !contains_all(units, air_keys) {
+		return move_validation_result_set_error_return_result(
+			result,
+			"Air transports map contains units not being moved",
+		)
+	}
+	for _, deps in air_transport_dependents {
+		if !contains_all(units, deps) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Air transports map contains units not being moved",
+			)
+		}
+	}
+
+	if !is_edit_mode {
+		// Make sure all units are at least friendly
+		enemy_p, enemy_c := matches_enemy_unit(player)
+		for u in units {
+			if enemy_p(enemy_c, u) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Can only move friendly units",
+					u,
+				)
+			}
+		}
+
+		// Ensure all air transports are included
+		for air_transport, dep_units in air_transport_dependents {
+			in_units := false
+			for u in units {
+				if u == air_transport {
+					in_units = true
+					break
+				}
+			}
+			if !in_units {
+				for unit in dep_units {
+					found := false
+					for u in units {
+						if u == unit {
+							found = true
+							break
+						}
+					}
+					if found {
+						move_validation_result_add_disallowed_unit(
+							result,
+							"Not all units have enough movement",
+							unit,
+						)
+					}
+				}
+			}
+		}
+
+		// Check that units have enough movement considering land transports
+		units_without_dependents := move_validator_find_non_dependent_units(
+			units,
+			route,
+			air_transport_dependents,
+		)
+		defer delete(units_without_dependents)
+		units_with_enough_movement := make([dynamic]^Unit)
+		defer delete(units_with_enough_movement)
+		units_without_enough_movement := make([dynamic]^Unit)
+		defer delete(units_without_enough_movement)
+		ctx3 := Move_Validator_Validate_Basic_3_Ctx {
+			route = route,
+		}
+		ctx4 := Move_Validator_Validate_Basic_4_Ctx {
+			route = route,
+		}
+		for u in units_without_dependents {
+			if move_validator_lambda_validate_basic_3(rawptr(&ctx3), u) {
+				append(&units_with_enough_movement, u)
+			}
+			if move_validator_lambda_validate_basic_4(rawptr(&ctx4), u) {
+				append(&units_without_enough_movement, u)
+			}
+		}
+		disallowed := move_validator_check_land_transports(
+			self,
+			player,
+			units_with_enough_movement,
+			units_without_enough_movement,
+		)
+		defer delete(disallowed)
+		ctx5 := Move_Validator_Validate_Basic_5_Ctx {
+			result = result,
+		}
+		for u in disallowed {
+			move_validator_lambda_validate_basic_5(rawptr(&ctx5), u)
+		}
+
+		// Can only move owned units except transported units or allied air on carriers
+		owned_p, owned_c := matches_unit_is_owned_by(player)
+		for u in units_without_dependents {
+			if !owned_p(owned_c, u) {
+				ua := unit_get_unit_attachment(u)
+				if !(unit_attachment_get_carrier_cost(ua) > 0 &&
+					   game_player_is_allied(player, unit_get_owner(u))) {
+					move_validation_result_add_disallowed_unit(
+						result,
+						"Can only move own troops",
+						u,
+					)
+				}
+			}
+		}
+
+		// neutral-territory passage
+		if move_validator_non_air_passing_through_neutral_territory(
+			route,
+			units,
+			game_data_get_properties(self.data),
+		) {
+			return move_validation_result_set_error_return_result(
+				result,
+				"Must stop land units when passing through neutral territories",
+			)
+		}
+
+		// territory effects disallow check
+		steps := route_get_steps(route)
+		defer delete(steps)
+		forbidden_types := territory_effect_helper_get_unit_types_for_units_not_allowed_into_territory_1(
+			steps,
+		)
+		defer delete(forbidden_types)
+		forbid_p, forbid_c := matches_unit_is_of_types(forbidden_types)
+		any_forbidden := false
+		for u in units {
+			if forbid_p(forbid_c, u) {
+				any_forbidden = true
+				break
+			}
+		}
+		if any_forbidden {
+			msg: string
+			if route_number_of_steps(route) > 1 {
+				msg = "Territory Effects disallow some units into these territories"
+			} else {
+				msg = "Territory Effects disallow some units into this territory"
+			}
+			return move_validation_result_set_error_return_result(result, msg)
+		}
+
+		// requiresUnitsToMove
+		requires_units_to_move_list := units_without_dependents
+		if route_is_unload(route) {
+			requires_units_to_move_list = units
+		}
+		all_terrs := route_get_all_territories(route)
+		defer delete(all_terrs)
+		for t in all_terrs {
+			req_p, req_c := matches_unit_has_required_units_to_move(t)
+			all_match := true
+			for u in requires_units_to_move_list {
+				if !req_p(req_c, u) {
+					all_match = false
+					break
+				}
+			}
+			if !all_match {
+				return move_validation_result_set_error_return_result(
+					result,
+					fmt.aprintf(
+						"%s doesn't have the required units to allow moving the selected units into it",
+						t.named.base.name,
+					),
+				)
+			}
+		}
+	}
+
+	// make sure that no non-sea non-transportable no carriable units end at sea
+	if territory_is_water(route_get_end(route)) {
+		cant_go := move_validator_get_units_that_cant_go_on_water(units)
+		defer delete(cant_go)
+		for u in cant_go {
+			move_validation_result_add_disallowed_unit(
+				result,
+				"Not all units can end at water",
+				u,
+			)
+		}
+	}
+
+	// if we are water make sure no land
+	sea_p, sea_c := matches_unit_is_sea()
+	any_sea := false
+	for u in units {
+		if sea_p(sea_c, u) {
+			any_sea = true
+			break
+		}
+	}
+	if any_sea && route_has_land(route) {
+		for u in units {
+			if sea_p(sea_c, u) {
+				move_validation_result_add_disallowed_unit(
+					result,
+					"Sea units cannot go on land",
+					u,
+				)
+			}
+		}
+	}
+
+	// stack limits per unit
+	pa := player_attachment_get(player)
+	player_movement_limit: map[^Triple(i32, string, map[^Unit_Type]struct {})]struct {}
+	player_attacking_limit: map[^Triple(i32, string, map[^Unit_Type]struct {})]struct {}
+	if pa != nil {
+		player_movement_limit = player_attachment_get_movement_limit(pa)
+		player_attacking_limit = player_attachment_get_attacking_limit(pa)
+	}
+	ctx6 := Move_Validator_Validate_Basic_6_Ctx {
+		player_movement_limit  = player_movement_limit,
+		player_attacking_limit = player_attacking_limit,
+	}
+	units_with_stacking_limits := make([dynamic]^Unit)
+	defer delete(units_with_stacking_limits)
+	for u in units {
+		if move_validator_lambda_validate_basic_6(rawptr(&ctx6), u) {
+			append(&units_with_stacking_limits, u)
+		}
+	}
+	steps2 := route_get_steps(route)
+	defer delete(steps2)
+	for t in steps2 {
+		limit_type: string
+		enemy_t_p, enemy_t_c := matches_is_territory_enemy_and_not_unowned_water(player)
+		is_enemy_terr := enemy_t_p(enemy_t_c, t)
+		enemy_u_p, enemy_u_c := matches_unit_is_enemy_of(player)
+		any_enemy_unit := territory_any_units_match(t, enemy_u_p, enemy_u_c)
+		if is_enemy_terr || any_enemy_unit {
+			limit_type = UNIT_STACKING_LIMIT_FILTER_ATTACKING_LIMIT
+		} else {
+			limit_type = UNIT_STACKING_LIMIT_FILTER_MOVEMENT_LIMIT
+		}
+		empty_existing: [dynamic]^Unit
+		defer delete(empty_existing)
+		allowed := unit_stacking_limit_filter_filter_units(
+			units_with_stacking_limits,
+			limit_type,
+			player,
+			t,
+			empty_existing,
+		)
+		defer delete(allowed)
+		for u in units_with_stacking_limits {
+			in_allowed := false
+			for a in allowed {
+				if a == u {
+					in_allowed = true
+					break
+				}
+			}
+			if !in_allowed {
+				move_validation_result_add_disallowed_unit(
+					result,
+					fmt.aprintf(
+						"Unit type %s has reached stacking limit",
+						unit_get_type(u).named.base.name,
+					),
+					u,
+				)
+			}
+		}
+	}
+
+	// Don't allow move through impassable territories
+	if !is_edit_mode &&
+	   route_any_match(route, move_validator_lambda_validate_basic_pred_impassable) {
+		return move_validation_result_set_error_return_result(
+			result,
+			MOVE_VALIDATOR_CANT_MOVE_THROUGH_IMPASSABLE,
+		)
+	}
+	if move_validation_result_has_error(
+		move_validator_can_pay_to_cross_neutral_territory(self, route, player, result),
+	) {
+		return result
+	}
+	props := game_data_get_properties(self.data)
+	if properties_get_neutrals_impassable(props) &&
+	   move_validator_is_not_neutrals_blitzable(props) {
+		neutrals := route_get_matches(
+			route,
+			move_validator_lambda_validate_basic_pred_neutral_but_not_water,
+		)
+		defer delete(neutrals)
+		if len(neutrals) != 0 {
+			return move_validation_result_set_error_return_result(
+				result,
+				MOVE_VALIDATOR_CANNOT_VIOLATE_NEUTRALITY,
+			)
+		}
+	}
+	return result
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateCanal(Route, Collection<Unit>, GamePlayer)
+// Java (public):
+//   public @Nullable String validateCanal(
+//       final Route route, @Nullable final Collection<Unit> units, final GamePlayer player) {
+//     return validateCanal(route, units, Map.of(), player);
+//   }
+// `units_is_null` mirrors Java's nullable Collection (matches the
+// `with_dependents` overload's discriminator).
+move_validator_validate_canal :: proc(
+	self: ^Move_Validator,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	units_is_null: bool,
+	player: ^Game_Player,
+) -> ^string {
+	empty_deps: map[^Unit][dynamic]^Unit
+	defer delete(empty_deps)
+	return move_validator_validate_canal_with_dependents(
+		self,
+		route,
+		units,
+		units_is_null,
+		empty_deps,
+		player,
+	)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateCanal(Collection<Unit>, Route, GamePlayer, Map, MoveValidationResult)
+// Java (private):
+//   private MoveValidationResult validateCanal(
+//       final Collection<Unit> units,
+//       final Route route,
+//       final GamePlayer player,
+//       final Map<Unit, Collection<Unit>> airTransportDependents,
+//       final MoveValidationResult result) {
+//     if (getEditMode(data.getProperties())) { return result; }
+//     // TODO: merge validateCanal here and provide granular unit warnings
+//     return result.setErrorReturnResult(validateCanal(route, units, airTransportDependents, player));
+//   }
+// Suffix `_to_result` distinguishes this overload from the public 3-arg
+// `move_validator_validate_canal` and the package-private 4-arg
+// `move_validator_validate_canal_with_dependents`.
+move_validator_validate_canal_to_result :: proc(
+	self: ^Move_Validator,
+	units: [dynamic]^Unit,
+	route: ^Route,
+	player: ^Game_Player,
+	air_transport_dependents: map[^Unit][dynamic]^Unit,
+	result: ^Move_Validation_Result,
+) -> ^Move_Validation_Result {
+	if edit_delegate_get_edit_mode(game_data_get_properties(self.data)) {
+		return result
+	}
+	rs := move_validator_validate_canal_with_dependents(
+		self,
+		route,
+		units,
+		false,
+		air_transport_dependents,
+		player,
+	)
+	// Java: result.setErrorReturnResult(@Nullable String). When the inner
+	// returns null, MoveValidationResult.setErrorReturnResult(null) is a
+	// no-op that returns the same result. Mirror that here.
+	if rs == nil {
+		return result
+	}
+	return move_validation_result_set_error_return_result(result, rs^)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#nonParatroopersPresent
+// Java (private static):
+//   private static boolean nonParatroopersPresent(
+//       final GamePlayer player, final Collection<Unit> units) {
+//     if (!player.getTechAttachment().getParatroopers()) return true;
+//     if (!units.stream().allMatch(Matches.unitIsAir().or(Matches.unitIsLand()))) return true;
+//     if (units.stream().anyMatch(not(Matches.unitIsAirTransportable()).and(Matches.unitIsLand()))) return true;
+//     return !allLandUnitsHaveAirTransport(units);
+//   }
+move_validator_non_paratroopers_present :: proc(
+	player: ^Game_Player,
+	units: [dynamic]^Unit,
+) -> bool {
+	if !tech_attachment_get_paratroopers(game_player_get_tech_attachment(player)) {
+		return true
+	}
+	air_p, air_c := matches_unit_is_air()
+	land_p, land_c := matches_unit_is_land()
+	for u in units {
+		if !(air_p(air_c, u) || land_p(land_c, u)) {
+			return true
+		}
+	}
+	transportable_p, transportable_c := matches_unit_is_air_transportable()
+	for u in units {
+		if !transportable_p(transportable_c, u) && land_p(land_c, u) {
+			return true
+		}
+	}
+	return !move_validator_all_land_units_have_air_transport(units)
 }
 

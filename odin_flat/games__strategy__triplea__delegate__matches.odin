@@ -2992,6 +2992,44 @@ matches_unit_is_being_transported :: proc() -> (proc(rawptr, ^Unit) -> bool, raw
 	return matches_pred_unit_is_being_transported, nil
 }
 
+// unitIsBeingTransportedByOrIsDependentOfSomeUnitInThisList(
+//     Collection<Unit> units, GamePlayer currentPlayer,
+//     boolean forceLoadParatroopersIfPossible)
+Matches_Ctx_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list :: struct {
+	units:           [dynamic]^Unit,
+	current_player:  ^Game_Player,
+	paratrooper_map: map[^Unit]^Unit,
+}
+
+matches_pred_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list :: proc(
+	ctx_ptr: rawptr,
+	dependent: ^Unit,
+) -> bool {
+	c := cast(^Matches_Ctx_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list)ctx_ptr
+	return matches_lambda_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list_166(
+		c.units,
+		c.current_player,
+		c.paratrooper_map,
+		dependent,
+	)
+}
+
+matches_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list :: proc(
+	units: [dynamic]^Unit,
+	current_player: ^Game_Player,
+	force_load_paratroopers_if_possible: bool,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Matches_Ctx_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list)
+	ctx.units = units
+	ctx.current_player = current_player
+	if force_load_paratroopers_if_possible {
+		ctx.paratrooper_map = transport_utils_map_paratroopers(units)
+	} else {
+		ctx.paratrooper_map = make(map[^Unit]^Unit)
+	}
+	return matches_pred_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list, rawptr(ctx)
+}
+
 // unitIsCarrier() — u -> ua.getCarrierCapacity() != -1
 matches_pred_unit_is_carrier :: proc(_: rawptr, u: ^Unit) -> bool {
 	return unit_attachment_get_carrier_capacity(unit_get_unit_attachment(u)) != -1

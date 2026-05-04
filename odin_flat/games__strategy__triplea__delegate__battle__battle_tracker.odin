@@ -1687,3 +1687,94 @@ battle_tracker_take_over :: proc(
 	battle_tracker_mark_was_in_combat(arrived_units, bridge, change_tracker)
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#addMustFightBattleChange(
+//     Route, Collection<Unit>, GamePlayer, GameData)
+//
+// Java private. Selects the battle site (route end, or start when end is
+// null), short-circuits to EMPTY_CHANGE when the site has no enemy units
+// or when the only enemies are infrastructure; otherwise looks up (or
+// creates) a NORMAL pending battle, registers the attack via the battle's
+// addAttackChange, and wires up dependencies on any preceding amphibious
+// assault, bombing battle, and air battle at the route end.
+battle_tracker_add_must_fight_battle_change :: proc(
+	self: ^Battle_Tracker,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	game_player: ^Game_Player,
+	data: ^Game_Data,
+) -> ^Change {
+	site := route_get_end(route)
+	if site == nil {
+		site = route_get_start(route)
+	}
+	has_enemy_p, has_enemy_c := matches_territory_has_enemy_units(game_player)
+	if !has_enemy_p(has_enemy_c, site) {
+		empty := change_factory_1_new()
+		return &empty.change
+	}
+	enemy_p, enemy_c := matches_enemy_unit(game_player)
+	enemy_units: [dynamic]^Unit
+	defer delete(enemy_units)
+	for u in site.unit_collection.units {
+		if enemy_p(enemy_c, u) {
+			append(&enemy_units, u)
+		}
+	}
+	if route_get_end(route) != nil && len(enemy_units) > 0 {
+		infra_p, infra_c := matches_unit_is_infrastructure()
+		all_infra := true
+		for u in enemy_units {
+			if !infra_p(infra_c, u) {
+				all_infra = false
+				break
+			}
+		}
+		if all_infra {
+			empty := change_factory_1_new()
+			return &empty.change
+		}
+	}
+	battle := battle_tracker_get_pending_battle(self, site, .NORMAL)
+	if battle == nil {
+		new_mfb := must_fight_battle_new(site, game_player, data, self)
+		battle = cast(^I_Battle)new_mfb
+		self.pending_battles[battle] = {}
+		battle_records_add_battle(
+			battle_tracker_get_battle_records(self),
+			game_player,
+			i_battle_get_battle_id(battle),
+			site,
+			i_battle_get_battle_type(battle),
+		)
+	}
+	change := must_fight_battle_add_attack_change(
+		cast(^Must_Fight_Battle)battle,
+		route,
+		units,
+		nil,
+	)
+	precede := battle_tracker_get_dependent_amphibious_assault(self, route)
+	if precede != nil {
+		land_p, land_c := matches_unit_is_land()
+		any_land := false
+		for u in units {
+			if land_p(land_c, u) {
+				any_land = true
+				break
+			}
+		}
+		if any_land {
+			battle_tracker_add_dependency(self, battle, precede)
+		}
+	}
+	bombing := battle_tracker_get_pending_bombing_battle(self, route_get_end(route))
+	if bombing != nil {
+		battle_tracker_add_dependency(self, battle, bombing)
+	}
+	air_battle := battle_tracker_get_pending_battle(self, route_get_end(route), .AIR_BATTLE)
+	if air_battle != nil {
+		battle_tracker_add_dependency(self, battle, air_battle)
+	}
+	return change
+}
+

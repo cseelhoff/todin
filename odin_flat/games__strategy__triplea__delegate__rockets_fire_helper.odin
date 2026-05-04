@@ -692,3 +692,324 @@ rockets_fire_helper_pred_enemy_not_transported :: proc(ctx_ptr: rawptr, u: ^Unit
 	}
 	return true
 }
+
+// games.strategy.triplea.delegate.RocketsFireHelper#findRocketTargetsAndFireIfNeeded(IDelegateBridge,boolean)
+//
+//   private void findRocketTargetsAndFireIfNeeded(
+//       final IDelegateBridge bridge, final boolean fireRocketsImmediately) {
+//     final GameData data = bridge.getData();
+//     final GamePlayer player = bridge.getGamePlayer();
+//     final Map<Territory, Integer> previouslyAttackedTerritories = new LinkedHashMap<>();
+//     final int maxAttacks = data.getTechTracker().getRocketNumberPerTerritory(player);
+//     for (final Territory attackFrom : getTerritoriesWithRockets(data, player)) {
+//       ... (see Java source) ...
+//     }
+//   }
+//
+// Walks the player's rocket-bearing territories, asks the remote player
+// where to fire from each, and either records the (attackFrom →
+// targetTerritory) pair for later batched firing or fires the rocket
+// immediately (Sequentially Targeted Rockets). When the
+// DamageFromBombingDoneToUnits property is on, the method also asks the
+// remote player which enemy unit in the target territory should absorb
+// the damage, restricting the choice to unit types listed by any
+// rocket's BombingTargets attachment.
+rockets_fire_helper_find_rocket_targets_and_fire_if_needed :: proc(
+	self:                    ^Rockets_Fire_Helper,
+	bridge:                  ^I_Delegate_Bridge,
+	fire_rockets_immediately: bool,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	player := i_delegate_bridge_get_game_player(bridge)
+	previously_attacked_territories := make(map[^Territory]i32)
+	defer delete(previously_attacked_territories)
+	max_attacks := tech_tracker_get_rocket_number_per_territory(player)
+
+	terr_with_rockets := rockets_fire_helper_get_territories_with_rockets(data, player)
+	defer delete(terr_with_rockets)
+
+	for attack_from, _ in terr_with_rockets {
+		targets := rockets_fire_helper_get_targets_within_range(
+			attack_from,
+			&data.game_state,
+			player,
+		)
+		// negative Rocket Number per Territory == unlimited
+		for t, count in previously_attacked_territories {
+			if max_attacks >= 0 && max_attacks <= count {
+				delete_key(&targets, t)
+			}
+		}
+		if len(targets) == 0 {
+			delete(targets)
+			continue
+		}
+
+		// Ask the user where each rocket launcher should target.
+		target_territory: ^Territory
+		for {
+			targets_list: [dynamic]^Territory
+			for t, _ in targets {
+				append(&targets_list, t)
+			}
+			target_territory = rockets_fire_helper_get_target(
+				targets_list,
+				bridge,
+				attack_from,
+			)
+			delete(targets_list)
+			if target_territory == nil {
+				break
+			}
+
+			enemy_pred_ctx := new(Rockets_Fire_Helper_Ctx_enemy_not_transported)
+			enemy_pred_ctx.player = player
+			enemy_units := territory_get_matches(
+				target_territory,
+				rockets_fire_helper_pred_enemy_not_transported,
+				rawptr(enemy_pred_ctx),
+			)
+
+			enemy_targets_total: [dynamic]^Unit
+			{
+				mp, mc := matches_unit_is_at_max_damage_or_not_can_be_damaged(
+					target_territory,
+				)
+				for u in enemy_units {
+					if !mp(mc, u) {
+						append(&enemy_targets_total, u)
+					}
+				}
+			}
+
+			unit_target: ^Unit
+			if properties_get_damage_from_bombing_done_to_units_instead_of_territories(
+				game_data_get_properties(data),
+			) {
+				rocket_match_fn, rocket_match_ctx :=
+					rockets_fire_helper_rocket_match(player)
+				rocket_targets: [dynamic]^Unit
+				for u in territory_get_units(attack_from) {
+					if rocket_match_fn(rocket_match_ctx, u) {
+						append(&rocket_targets, u)
+					}
+				}
+				// a hack: rockets fire at anyone who could be targeted by any rocket
+				legal_targets_for_these_rockets: map[^Unit_Type]struct {}
+				for r in rocket_targets {
+					bts := unit_attachment_get_bombing_targets(
+						unit_get_unit_attachment(r),
+						game_data_get_unit_type_list(data),
+					)
+					for ut, _ in bts {
+						legal_targets_for_these_rockets[ut] = {}
+					}
+				}
+				of_types_p, of_types_c := matches_unit_is_of_types(
+					legal_targets_for_these_rockets,
+				)
+				enemy_targets: [dynamic]^Unit
+				for u in enemy_targets_total {
+					if of_types_p(of_types_c, u) {
+						append(&enemy_targets, u)
+					}
+				}
+				if len(enemy_targets) == 0 {
+					delete(enemy_targets)
+					delete(rocket_targets)
+					delete(legal_targets_for_these_rockets)
+					delete(enemy_targets_total)
+					delete(enemy_units)
+					continue
+				}
+				if len(enemy_targets) == 1 {
+					unit_target = enemy_targets[0]
+				} else {
+					remote := i_delegate_bridge_get_remote_player(bridge, player)
+					unit_target = player_what_should_bomber_bomb(
+						remote,
+						target_territory,
+						enemy_targets,
+						rocket_targets,
+					)
+				}
+				delete(enemy_targets)
+				delete(rocket_targets)
+				delete(legal_targets_for_these_rockets)
+				if unit_target == nil {
+					delete(enemy_targets_total)
+					delete(enemy_units)
+					// Ask them if they now want to attack a different territory
+					continue
+				}
+			}
+
+			delete(enemy_targets_total)
+			delete(enemy_units)
+
+			self.attacked_territories[attack_from] = target_territory
+			self.attacked_units[attack_from] = unit_target
+			// Sequentially Targeted Rockets: target, fire, target, fire ...
+			// Sensible (non-sequential) Rockets: target, target, target, fire, fire, fire.
+			if fire_rockets_immediately {
+				rockets_fire_helper_fire_rocket(
+					self,
+					bridge,
+					data,
+					attack_from,
+					target_territory,
+				)
+				break
+			}
+			// Can't add this above because it would cause the rocket to fire
+			// twice in a Sequentially Targeted rocket scenario.
+			self.attacking_from_territories[attack_from] = {}
+			break
+		}
+		delete(targets)
+		if target_territory != nil {
+			num_attacks := previously_attacked_territories[target_territory]
+			previously_attacked_territories[target_territory] = num_attacks + 1
+		}
+	}
+}
+
+// games.strategy.triplea.delegate.RocketsFireHelper#fireWW2V1IfNeeded(IDelegateBridge)
+//
+//   public static void fireWW2V1IfNeeded(final IDelegateBridge bridge) {
+//     final GameData data = bridge.getData();
+//     final GamePlayer player = bridge.getGamePlayer();
+//     if (!TechTracker.hasRocket(player)
+//         || Properties.getWW2V2(data.getProperties())
+//         || Properties.getAllRocketsAttack(data.getProperties())) {
+//       return;
+//     }
+//     final Set<Territory> rocketTerritories = getTerritoriesWithRockets(data, player);
+//     final Set<Territory> targets = new HashSet<>();
+//     for (final Territory territory : rocketTerritories) {
+//       targets.addAll(getTargetsWithinRange(territory, data, player));
+//     }
+//     if (targets.isEmpty()) {
+//       bridge.getHistoryWriter().startEvent(
+//           player.getName() + " has no targets to attack with rockets");
+//       return;
+//     }
+//     final Territory attacked = getTarget(targets, bridge, null);
+//     if (attacked != null) {
+//       new RocketsFireHelper().fireRocket(bridge, data, null, attacked);
+//     }
+//   }
+//
+// In WW2V1 each player only gets one rocket attack per turn, fired at
+// end of non-combat move.
+rockets_fire_helper_fire_ww2_v1_if_needed :: proc(bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	player := i_delegate_bridge_get_game_player(bridge)
+	if !tech_tracker_has_rocket(player) ||
+	   properties_get_ww2_v2(game_data_get_properties(data)) ||
+	   properties_get_all_rockets_attack(game_data_get_properties(data)) {
+		return
+	}
+	rocket_territories := rockets_fire_helper_get_territories_with_rockets(data, player)
+	defer delete(rocket_territories)
+	targets: map[^Territory]struct {}
+	defer delete(targets)
+	for territory, _ in rocket_territories {
+		within := rockets_fire_helper_get_targets_within_range(
+			territory,
+			&data.game_state,
+			player,
+		)
+		for t, _ in within {
+			targets[t] = {}
+		}
+		delete(within)
+	}
+	if len(targets) == 0 {
+		msg := fmt.aprintf(
+			"%s has no targets to attack with rockets",
+			player.named.base.name,
+		)
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(bridge),
+			msg,
+		)
+		return
+	}
+	targets_list: [dynamic]^Territory
+	for t, _ in targets {
+		append(&targets_list, t)
+	}
+	defer delete(targets_list)
+	attacked := rockets_fire_helper_get_target(targets_list, bridge, nil)
+	if attacked != nil {
+		helper := rockets_fire_helper_new()
+		rockets_fire_helper_fire_rocket(helper, bridge, data, nil, attacked)
+	}
+}
+
+// games.strategy.triplea.delegate.RocketsFireHelper#setUpRockets(IDelegateBridge)
+//
+//   public static RocketsFireHelper setUpRockets(final IDelegateBridge bridge) {
+//     final GameState data = bridge.getData();
+//     final RocketsFireHelper helper = new RocketsFireHelper();
+//     helper.needToFindRocketTargets = false;
+//     if ((Properties.getWW2V2(data.getProperties())
+//             || Properties.getAllRocketsAttack(data.getProperties()))
+//         && TechTracker.hasRocket(bridge.getGamePlayer())) {
+//       if (Properties.getSequentiallyTargetedRockets(data.getProperties())) {
+//         helper.needToFindRocketTargets = true;
+//       } else {
+//         helper.findRocketTargetsAndFireIfNeeded(bridge, false);
+//       }
+//     }
+//     return helper;
+//   }
+//
+// WW2V2/WW2V3, now fires at the start of the BattleDelegate.
+// WW2V1, fires at end of non combat move so does not call here.
+rockets_fire_helper_set_up_rockets :: proc(bridge: ^I_Delegate_Bridge) -> ^Rockets_Fire_Helper {
+	data := i_delegate_bridge_get_data(bridge)
+	helper := rockets_fire_helper_new()
+	helper.need_to_find_rocket_targets = false
+	if (properties_get_ww2_v2(game_data_get_properties(data)) ||
+		   properties_get_all_rockets_attack(game_data_get_properties(data))) &&
+	   tech_tracker_has_rocket(i_delegate_bridge_get_game_player(bridge)) {
+		if properties_get_sequentially_targeted_rockets(game_data_get_properties(data)) {
+			helper.need_to_find_rocket_targets = true
+		} else {
+			rockets_fire_helper_find_rocket_targets_and_fire_if_needed(helper, bridge, false)
+		}
+	}
+	return helper
+}
+
+// games.strategy.triplea.delegate.RocketsFireHelper#fireRockets(IDelegateBridge)
+//
+//   public void fireRockets(final IDelegateBridge bridge) {
+//     if (needToFindRocketTargets) {
+//       findRocketTargetsAndFireIfNeeded(bridge, true);
+//     } else {
+//       for (final Territory attackingFrom : attackingFromTerritories) {
+//         fireRocket(bridge, bridge.getData(), attackingFrom, attackedTerritories.get(attackingFrom));
+//       }
+//     }
+//   }
+//
+// Fire rockets which have been previously targeted (if any), or for
+// Sequentially Targeted rockets target them too.
+rockets_fire_helper_fire_rockets :: proc(self: ^Rockets_Fire_Helper, bridge: ^I_Delegate_Bridge) {
+	if self.need_to_find_rocket_targets {
+		rockets_fire_helper_find_rocket_targets_and_fire_if_needed(self, bridge, true)
+	} else {
+		for attacking_from, _ in self.attacking_from_territories {
+			rockets_fire_helper_fire_rocket(
+				self,
+				bridge,
+				i_delegate_bridge_get_data(bridge),
+				attacking_from,
+				self.attacked_territories[attacking_from],
+			)
+		}
+	}
+}

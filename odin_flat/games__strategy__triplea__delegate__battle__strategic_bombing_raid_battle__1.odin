@@ -69,3 +69,135 @@ strategic_bombing_raid_battle_1_add_post_bombing_to_history :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$1#killAnyWithMaxDamageReached
+//
+// Java:
+//   if (targets.keySet().stream().anyMatch(Matches.unitCanDieFromReachingMaxDamage())) {
+//     final List<Unit> unitsCanDie = CollectionUtils.getMatches(
+//         targets.keySet(), Matches.unitCanDieFromReachingMaxDamage());
+//     unitsCanDie.retainAll(CollectionUtils.getMatches(
+//         unitsCanDie, Matches.unitIsAtMaxDamageOrNotCanBeDamaged(battleSite)));
+//     if (!unitsCanDie.isEmpty()) {
+//       HistoryChangeFactory.removeUnitsFromTerritory(battleSite, unitsCanDie).perform(bridge);
+//       final IntegerMap<UnitType> costs = bridge.getCostsForTuv(defender);
+//       final int tuvLostDefender = TuvUtils.getTuv(unitsCanDie, defender, costs, gameData);
+//       defenderLostTuv += tuvLostDefender;
+//     }
+//   }
+strategic_bombing_raid_battle_1_kill_any_with_max_damage_reached :: proc(
+	self: ^Strategic_Bombing_Raid_Battle_1,
+	bridge: ^I_Delegate_Bridge,
+) {
+	outer := self.outer
+	can_die_p, can_die_c := matches_unit_can_die_from_reaching_max_damage()
+	max_p, max_c := matches_unit_is_at_max_damage_or_not_can_be_damaged(outer.battle_site)
+
+	any_match := false
+	for u, _ in outer.targets {
+		if can_die_p(can_die_c, u) {
+			any_match = true
+			break
+		}
+	}
+	if !any_match {
+		return
+	}
+
+	units_can_die: [dynamic]^Unit
+	for u, _ in outer.targets {
+		if can_die_p(can_die_c, u) && max_p(max_c, u) {
+			append(&units_can_die, u)
+		}
+	}
+
+	if len(units_can_die) == 0 {
+		return
+	}
+
+	remove_units_history_change_perform(
+		history_change_factory_remove_units_from_territory(outer.battle_site, units_can_die),
+		bridge,
+	)
+
+	costs_map := i_delegate_bridge_get_costs_for_tuv(bridge, outer.defender)
+	costs := new(Integer_Map_Unit_Type)
+	defer free(costs)
+	costs.entries = costs_map
+	tuv_lost_defender := tuv_utils_get_tuv_for_player(
+		units_can_die,
+		outer.defender,
+		costs,
+		outer.game_data,
+	)
+	outer.defender_lost_tuv += tuv_lost_defender
+}
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle$1#killAnySuicideAttackers
+//
+// Java:
+//   if (attackingUnits.stream().anyMatch(Matches.unitIsSuicideOnAttack())) {
+//     final List<Unit> suicideUnits = CollectionUtils.getMatches(
+//         attackingUnits, Matches.unitIsSuicideOnAttack());
+//     attackingUnits.removeAll(suicideUnits);
+//     HistoryChangeFactory.removeUnitsFromTerritory(battleSite, suicideUnits).perform(bridge);
+//     final IntegerMap<UnitType> costs = bridge.getCostsForTuv(attacker);
+//     final int tuvLostAttacker = TuvUtils.getTuv(suicideUnits, attacker, costs, gameData);
+//     attackerLostTuv += tuvLostAttacker;
+//   }
+strategic_bombing_raid_battle_1_kill_any_suicide_attackers :: proc(
+	self: ^Strategic_Bombing_Raid_Battle_1,
+	bridge: ^I_Delegate_Bridge,
+) {
+	outer := self.outer
+	soa_p, soa_c := matches_unit_is_suicide_on_attack()
+
+	any_match := false
+	for u in outer.attacking_units {
+		if soa_p(soa_c, u) {
+			any_match = true
+			break
+		}
+	}
+	if !any_match {
+		return
+	}
+
+	suicide_units: [dynamic]^Unit
+	for u in outer.attacking_units {
+		if soa_p(soa_c, u) {
+			append(&suicide_units, u)
+		}
+	}
+
+	suicide_set: map[^Unit]struct{}
+	defer delete(suicide_set)
+	for u in suicide_units {
+		suicide_set[u] = {}
+	}
+	kept: [dynamic]^Unit
+	for u in outer.attacking_units {
+		if _, found := suicide_set[u]; !found {
+			append(&kept, u)
+		}
+	}
+	delete(outer.attacking_units)
+	outer.attacking_units = kept
+
+	remove_units_history_change_perform(
+		history_change_factory_remove_units_from_territory(outer.battle_site, suicide_units),
+		bridge,
+	)
+
+	costs_map := i_delegate_bridge_get_costs_for_tuv(bridge, outer.attacker)
+	costs := new(Integer_Map_Unit_Type)
+	defer free(costs)
+	costs.entries = costs_map
+	tuv_lost_attacker := tuv_utils_get_tuv_for_player(
+		suicide_units,
+		outer.attacker,
+		costs,
+		outer.game_data,
+	)
+	outer.attacker_lost_tuv += tuv_lost_attacker
+}
+

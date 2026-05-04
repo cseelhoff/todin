@@ -632,3 +632,46 @@ pro_territory_value_utils_find_sea_territory_values :: proc(
 	}
 	return territory_value_map
 }
+
+// games.strategy.triplea.ai.pro.util.ProTerritoryValueUtils#findTerritoryAttackValue(ProData,GamePlayer,Territory)
+// Java:
+//   public static double findTerritoryAttackValue(
+//       final ProData proData, final GamePlayer player, final Territory t) {
+//     final int isEnemyFactory =
+//         ProMatches.territoryHasInfraFactoryAndIsEnemyLand(player).test(t) ? 1 : 0;
+//     double value = 3.0 * TerritoryAttachment.getProduction(t) * (isEnemyFactory + 1);
+//     if (ProUtils.isNeutralLand(t)) {
+//       final double strength =
+//           ProBattleUtils.estimateStrength(
+//               t, new ArrayList<>(t.getUnits()), new ArrayList<>(), false);
+//       final double tuvSwing = -(strength / 8) * proData.getMinCostPerHitPoint();
+//       value += tuvSwing;
+//     }
+//     return value;
+//   }
+pro_territory_value_utils_find_territory_attack_value :: proc(
+	pro_data: ^Pro_Data,
+	player:   ^Game_Player,
+	t:        ^Territory,
+) -> f64 {
+	enemy_factory_ctx := Pro_Matches_Ctx_territory_has_infra_factory_and_is_enemy_land{
+		player = player,
+	}
+	is_enemy_factory: i32 = 0
+	if pro_matches_pred_territory_has_infra_factory_and_is_enemy_land(rawptr(&enemy_factory_ctx), t) {
+		is_enemy_factory = 1
+	}
+	value := 3.0 * f64(territory_attachment_static_get_production(t)) * f64(is_enemy_factory + 1)
+	if pro_utils_is_neutral_land(t) {
+		my_units: [dynamic]^Unit
+		uc := territory_get_unit_collection(t)
+		for u in uc.units {
+			append(&my_units, u)
+		}
+		enemy_units: [dynamic]^Unit
+		strength := pro_battle_utils_estimate_strength(t, my_units, enemy_units, false)
+		tuv_swing := -(strength / 8.0) * pro_data_get_min_cost_per_hit_point(pro_data)
+		value += tuv_swing
+	}
+	return value
+}

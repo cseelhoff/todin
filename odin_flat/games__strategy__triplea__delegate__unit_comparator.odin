@@ -150,3 +150,143 @@ unit_comparator_lambda_get_unloadable_transports_comparator_3 :: proc(
 	}
 	return 0
 }
+
+// ---------------------------------------------------------------------------
+// lambda$getMovableUnitsComparator$4
+// ---------------------------------------------------------------------------
+// Java factory body returns:
+//   (u1, u2) -> { /* big body */ }
+// which captures cache, route, units, and decreasingCapacityComparator.
+// The synthetic desugared signature is therefore
+//   int lambda$4(Map<Unit,BigDecimal> cache,
+//                Route route,
+//                List<Unit> units,
+//                Comparator<Unit> decreasingCapacityComparator,
+//                Unit u1, Unit u2)
+// In Odin we mirror that as the captured values + the rawptr-ctx pair
+// for the inner Comparator<Unit>. `route` may be null in Java; we
+// translate that to a possibly-nil ^Route.
+unit_comparator_lambda_get_movable_units_comparator_4 :: proc(
+	cache: ^map[^Unit]f64,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	decreasing_capacity_comparator: proc(rawptr, ^Unit, ^Unit) -> i32,
+	decreasing_capacity_ctx: rawptr,
+	u1: ^Unit,
+	u2: ^Unit,
+) -> i32 {
+	// Ensure units have enough movement (cache.computeIfAbsent(u, Unit::getMovementLeft)).
+	left1 := unit_comparator_lambda_get_lowest_to_highest_movement_comparator_0(cache, u1)
+	left2 := unit_comparator_lambda_get_lowest_to_highest_movement_comparator_0(cache, u2)
+	if route != nil {
+		cost1 := route_get_movement_cost(route, u1)
+		cost2 := route_get_movement_cost(route, u2)
+		if left1 >= cost1 && left2 < cost2 {
+			return -1
+		}
+		if left1 < cost1 && left2 >= cost2 {
+			return 1
+		}
+	}
+
+	// Prefer transports for which dependents are also selected.
+	transporting1 := unit_get_transporting_no_args(u1)
+	transporting2 := unit_get_transporting_no_args(u2)
+	contains_all_1 := true
+	for t in transporting1 {
+		found := false
+		for u in units {
+			if u == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			contains_all_1 = false
+			break
+		}
+	}
+	contains_all_2 := true
+	for t in transporting2 {
+		found := false
+		for u in units {
+			if u == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			contains_all_2 = false
+			break
+		}
+	}
+	has_depends1: i32 = 0
+	if contains_all_1 {
+		has_depends1 = 1
+	}
+	has_depends2: i32 = 0
+	if contains_all_2 {
+		has_depends2 = 1
+	}
+	if has_depends1 != has_depends2 {
+		return has_depends1 - has_depends2
+	}
+
+	// Sort by decreasing transport capacity (only valid for transports).
+	compare_capacity := decreasing_capacity_comparator(decreasing_capacity_ctx, u1, u2)
+	if compare_capacity != 0 {
+		return compare_capacity
+	}
+
+	// Sort by increasing movement normally, but by decreasing movement during loading.
+	if left1 != left2 {
+		if route != nil && route_is_load(route) {
+			if left2 < left1 {
+				return -1
+			}
+			return 1
+		}
+		if left1 < left2 {
+			return -1
+		}
+		return 1
+	}
+
+	// Sort units by type first.
+	t1 := unit_get_type(u1)
+	t2 := unit_get_type(u2)
+	if !unit_type_equals(t1, t2) {
+		// Land transportable units should have higher priority than
+		// non-land transportable ones, when all else is equal.
+		is_land_transportable1: i32 = 0
+		if unit_attachment_is_land_transportable(unit_type_get_unit_attachment(t1)) {
+			is_land_transportable1 = 1
+		}
+		is_land_transportable2: i32 = 0
+		if unit_attachment_is_land_transportable(unit_type_get_unit_attachment(t2)) {
+			is_land_transportable2 = 1
+		}
+		if is_land_transportable1 != is_land_transportable2 {
+			return is_land_transportable2 - is_land_transportable1
+		}
+		h1 := unit_type_hash_code(t1)
+		h2 := unit_type_hash_code(t2)
+		if h1 < h2 {
+			return -1
+		}
+		if h1 > h2 {
+			return 1
+		}
+		return 0
+	}
+
+	hu1 := unit_hash_code(u1)
+	hu2 := unit_hash_code(u2)
+	if hu1 < hu2 {
+		return -1
+	}
+	if hu1 > hu2 {
+		return 1
+	}
+	return 0
+}

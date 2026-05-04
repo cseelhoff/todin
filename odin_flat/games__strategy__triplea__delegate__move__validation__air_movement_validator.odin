@@ -835,3 +835,121 @@ air_movement_validator_can_air_reach_this_spot :: proc(
 		resource_collection_get_quantity(game_player_get_resources(player), pus)
 }
 
+// Java: private static boolean canFindLand(
+//     final GameData data, final Unit unit, final Territory current,
+//     final BigDecimal movementLeft) { ... }
+//
+// 4-arg overload. Returns true if `unit` can reach any allied
+// non-conquered land territory from `current` within `movementLeft`
+// movement, considering neutral fly-over. BigDecimal → f64.
+air_movement_validator_can_find_land_4 :: proc(
+	data:          ^Game_Data,
+	unit:          ^Unit,
+	current:       ^Territory,
+	movement_left: f64,
+) -> bool {
+	if movement_left < 0 {
+		return false
+	}
+	gs := &data.game_state
+	are_neutrals_passable := air_movement_validator_are_neutrals_passable_by_air(gs)
+	player := unit_get_owner(unit)
+	fly_p, fly_c := matches_air_can_fly_over(player, are_neutrals_passable)
+	neighbors := game_map_get_neighbors_by_movement_cost(
+		game_state_get_map(gs),
+		current,
+		movement_left,
+		fly_p,
+		fly_c,
+	)
+	defer delete(neighbors)
+	land_p, land_c := matches_air_can_land_on_this_allied_non_conquered_land_territory(player)
+	for landing_spot, _ in neighbors {
+		if !land_p(land_c, landing_spot) {
+			continue
+		}
+		if air_movement_validator_can_air_reach_this_spot(
+			unit,
+			gs,
+			player,
+			current,
+			movement_left,
+			landing_spot,
+			are_neutrals_passable,
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+// Java: private static Map<Unit, BigDecimal> getMovementLeftForValidatingAir(
+//     final Collection<Unit> airBeingValidated, final GamePlayer player,
+//     final Route route) { ... }
+//
+// Returns a LinkedHashMap (insertion-ordered) mapping each input unit
+// to its movement-left-for-validation value. Owned units use
+// getMovementLeftForAirUnitNotMovedYet; everything else gets 0.
+// Odin's builtin map preserves insertion order, matching LinkedHashMap.
+// BigDecimal → f64.
+air_movement_validator_get_movement_left_for_validating_air :: proc(
+	air_being_validated: []^Unit,
+	player:              ^Game_Player,
+	route:               ^Route,
+) -> map[^Unit]f64 {
+	result := make(map[^Unit]f64)
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	for unit in air_being_validated {
+		movement_left: f64 = 0.0
+		if owned_p(owned_c, unit) {
+			movement_left = air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(
+				unit,
+				route,
+			)
+		}
+		result[unit] = movement_left
+	}
+	return result
+}
+
+// Java synthetic: lambda$getLowestToHighestMovementComparatorIncludingUnitsNotYetMoved$2
+//   u -> getMovementLeftForAirUnitNotMovedYet(u, route)
+// The key-extractor passed to Comparator.comparing(...). The captured
+// `route` is supplied as an explicit parameter here (as the bytecode
+// would). BigDecimal → f64.
+air_movement_validator_lambda_get_lowest_to_highest_movement_comparator_including_units_not_yet_moved_2 :: proc(
+	route: ^Route,
+	u:     ^Unit,
+) -> f64 {
+	return air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(u, route)
+}
+
+// Java: private static BigDecimal maxMovementLeftForTheseAirUnitsBeingValidated(
+//     final Collection<Unit> airUnits, final Route route, final GamePlayer player) { ... }
+//
+// Among player-owned units in `air_units`, returns the maximum value
+// of getMovementLeftForAirUnitNotMovedYet. Allied units contribute
+// nothing (Java comment: "allied units can't move...."). Returns 0
+// when no owned units are present. BigDecimal → f64.
+air_movement_validator_max_movement_left_for_these_air_units_being_validated :: proc(
+	air_units: []^Unit,
+	route:     ^Route,
+	player:    ^Game_Player,
+) -> f64 {
+	max_val: f64 = 0.0
+	owned_p, owned_c := matches_unit_is_owned_by(player)
+	for u in air_units {
+		if !owned_p(owned_c, u) {
+			continue
+		}
+		movement_left := air_movement_validator_get_movement_left_for_air_unit_not_moved_yet(
+			u,
+			route,
+		)
+		if movement_left > max_val {
+			max_val = movement_left
+		}
+	}
+	return max_val
+}
+

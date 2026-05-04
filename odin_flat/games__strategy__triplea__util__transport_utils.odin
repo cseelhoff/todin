@@ -341,3 +341,54 @@ transport_utils_find_units_to_load_on_air_transports :: proc(
 	return total_load
 }
 
+// Java: TransportUtils.mapTransports(Route route, Collection<Unit> units,
+//     Collection<Unit> transportsToLoad) -> Map<Unit, Unit>
+// Dispatches based on the route direction:
+//   - load:   mapTransportsToLoad(units, transportsToLoad)
+//   - unload: mapTransportsAlreadyLoaded(units, route.getStart().getUnits())
+//   - else:   mapTransportsAlreadyLoaded(units, units)
+transport_utils_map_transports :: proc(
+	route: ^Route,
+	units: [dynamic]^Unit,
+	transports_to_load: [dynamic]^Unit,
+) -> map[^Unit]^Unit {
+	if route_is_load(route) {
+		return transport_utils_map_transports_to_load(units, transports_to_load)
+	}
+	if route_is_unload(route) {
+		start_units := unit_collection_get_units(
+			territory_get_unit_collection(route_get_start(route)),
+		)
+		return transport_utils_map_transports_already_loaded(units, start_units)
+	}
+	return transport_utils_map_transports_already_loaded(units, units)
+}
+
+// Java: TransportUtils.mapParatroopers(Collection<Unit> units) -> Map<Unit, Unit>
+// Filters `units` into air-transports and air-transportables; if both sets
+// are non-empty, delegates to mapTransportsToLoad(paratroops, airTransports).
+// Otherwise returns an empty map (Java: Map.of()).
+transport_utils_map_paratroopers :: proc(units: [dynamic]^Unit) -> map[^Unit]^Unit {
+	air_p, air_c := matches_unit_is_air_transport()
+	air_transports := make([dynamic]^Unit, 0, len(units))
+	for u in units {
+		if air_p(air_c, u) {
+			append(&air_transports, u)
+		}
+	}
+
+	para_p, para_c := matches_unit_is_air_transportable()
+	paratroops := make([dynamic]^Unit, 0, len(units))
+	for u in units {
+		if para_p(para_c, u) {
+			append(&paratroops, u)
+		}
+	}
+
+	if len(air_transports) > 0 && len(paratroops) > 0 {
+		return transport_utils_map_transports_to_load(paratroops, air_transports)
+	}
+	empty: map[^Unit]^Unit
+	return empty
+}
+

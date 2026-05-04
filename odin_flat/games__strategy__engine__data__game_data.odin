@@ -910,3 +910,13 @@ game_data_reset_history :: proc(self: ^Game_Data) {
         )
         self.force_in_swing_event_thread = old_force_in_swing_event_thread
 }
+
+// proc:games.strategy.engine.data.GameData#lambda$toBytes$0(java.io.OutputStream)
+// Java: os -> GameDataManager.saveGame(os, this)
+// Captures `this` (the GameData); receives the IoUtils.writeToMemory
+// output stream as its argument and forwards both to the static
+// saveGame proc. The lambda has no body of its own beyond the call
+// (mirrors GameDataUtils.lambda$gameDataToBytes$2).
+game_data_lambda_to_bytes_0 :: proc(self: ^Game_Data, os: ^Output_Stream) {
+        game_data_manager_save_game(os, self)
+}

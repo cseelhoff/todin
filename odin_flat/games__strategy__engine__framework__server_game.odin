@@ -727,3 +727,93 @@ server_game_new_2 :: proc(
 	)
 }
 
+// games.strategy.engine.framework.ServerGame#stopGame()
+// Stops the game on this server node, subsequently stopping all client
+// nodes and shutting down the server. Mirrors the Java control flow
+// faithfully; the single-threaded snapshot harness models the
+// `blockDelegateExecution(16000)` call as always succeeding (see the
+// `delegate_execution_manager_block_delegate_execution` shim) so the
+// "could not stop" / `ExitStatus.FAILURE.exit()` retry branch is
+// preserved structurally but never observably entered, and the
+// `InterruptedException` catch is unreachable in the synchronous shim.
+// Likewise the outer `RuntimeException` try/finally collapses to a
+// straight-line teardown followed by an unconditional
+// `resumeDelegateExecution`.
+server_game_stop_game :: proc(self: ^Server_Game) {
+	if self.is_game_over {
+		fmt.eprintln("Game previously stopped, cannot stop again.")
+		return
+	}
+
+	self.is_game_over = true
+	count_down_latch_count_down(self.delegate_execution_stopped_latch)
+
+	// Tell the players (especially the AIs) that the game is stopping.
+	for _, player in self.game_players {
+		player_stop_game(player)
+	}
+
+	// Block delegate execution to prevent outbound messages while we
+	// shut down. Two attempts, mirroring Java.
+	if !delegate_execution_manager_block_delegate_execution(self.delegate_execution_manager, 16000) {
+		fmt.eprintln("Could not stop delegate execution.")
+		if !delegate_execution_manager_block_delegate_execution(self.delegate_execution_manager, 16000) {
+			fmt.eprintln("Exiting...")
+			failure := Exit_Status.Failure
+			exit_status_exit(&failure)
+		}
+	}
+
+	// Shutdown.
+	delegate_execution_manager_set_game_over(self.delegate_execution_manager)
+	i_game_modified_channel_shut_down(server_game_get_game_modified_broadcaster(self))
+	random_stats_shut_down(self.random_stats)
+
+	game_modification_channel := remote_name_new(
+		SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME,
+		class_new(
+			"games.strategy.engine.framework.IGameModifiedChannel",
+			"IGameModifiedChannel",
+		),
+	)
+	messengers_unregister_channel_subscriber(
+		self.messengers,
+		rawptr(self.game_modified_channel),
+		game_modification_channel,
+	)
+	messengers_unregister_remote(self.messengers, server_game_server_remote())
+	vault_shut_down(self.vault)
+
+	for _, gp in self.game_players {
+		messengers_unregister_remote(
+			self.messengers,
+			server_game_get_remote_name_for_player(player_get_game_player(gp)),
+		)
+	}
+
+	for delegate in game_data_get_delegates(self.game_data) {
+		remote_type := i_delegate_get_remote_type(delegate)
+		if remote_type == nil {
+			continue
+		}
+		messengers_unregister_remote(
+			self.messengers,
+			server_game_get_remote_name_for_delegate(delegate),
+		)
+	}
+
+	delegate_execution_manager_resume_delegate_execution(self.delegate_execution_manager)
+
+	i_game_loader_shut_down(game_data_get_game_loader(self.game_data))
+
+	// If this is a bot, shut down the bot. systemctl will restart it,
+	// picking up any new maps and/or new bot versions.
+	if game_runner_headless() && game_runner_exit_on_end_game() {
+		if self.in_game_lobby_watcher != nil {
+			in_game_lobby_watcher_wrapper_shut_down(self.in_game_lobby_watcher)
+		}
+		success := Exit_Status.Success
+		exit_status_exit(&success)
+	}
+}
+

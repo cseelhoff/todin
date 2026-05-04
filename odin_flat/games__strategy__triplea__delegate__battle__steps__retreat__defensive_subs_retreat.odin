@@ -242,3 +242,20 @@ defensive_subs_retreat_execute :: proc(self: ^Defensive_Subs_Retreat, stack: ^Ex
 	evader_retreat_retreat_units(params, retreat_territories, defensive_subs_retreat_get_name(self))
 }
 
+// Java: DefensiveSubsRetreat#lambda$getEmptyOrFriendlySeaNeighbors$0(Collection unitsToRetreat, Territory t)
+//   Route r = new Route(battleState.getBattleSite(), t);
+//   return new MoveValidator(battleState.getGameData(), false)
+//              .validateCanal(r, unitsToRetreat, battleState.getPlayer(DEFENSE)) == null;
+defensive_subs_retreat_lambda_get_empty_or_friendly_sea_neighbors_0 :: proc(
+	self: ^Defensive_Subs_Retreat,
+	units_to_retreat: [dynamic]^Unit,
+	t: ^Territory,
+) -> bool {
+	game_data := battle_state_get_game_data(self.battle_state)
+	battle_site := battle_state_get_battle_site(self.battle_state)
+	defense_player := battle_state_get_player(self.battle_state, .DEFENSE)
+	r := route_new_from_start_and_steps(battle_site, t)
+	validator := move_validator_new(game_data, false)
+	return move_validator_validate_canal(validator, r, units_to_retreat, defense_player) == nil
+}
+

@@ -825,3 +825,37 @@ strategic_bombing_raid_battle_fight :: proc(
 
 	execution_stack_execute(self.stack, bridge)
 }
+
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#removeAaHits
+//
+// Java:
+//   private void removeAaHits(IDelegateBridge bridge, CasualtyDetails casualties, String currentTypeAa) {
+//     final List<Unit> killed = casualties.getKilled();
+//     if (!killed.isEmpty()) {
+//       final IntegerMap<UnitType> costs = bridge.getCostsForTuv(attacker);
+//       final int tuvLostAttacker = TuvUtils.getTuv(killed, attacker, costs, gameData);
+//       attackerLostTuv += tuvLostAttacker;
+//       removeAttackers(killed, false);
+//       HistoryChangeFactory.removeUnitsWithAa(battleSite, killed, currentTypeAa).perform(bridge);
+//     }
+//   }
+strategic_bombing_raid_battle_remove_aa_hits :: proc(
+	self: ^Strategic_Bombing_Raid_Battle,
+	bridge: ^I_Delegate_Bridge,
+	casualties: ^Casualty_Details,
+	current_type_aa: string,
+) {
+	killed := casualty_list_get_killed(&casualties.casualty_list)
+	if len(killed) == 0 {
+		return
+	}
+	costs_map := i_delegate_bridge_get_costs_for_tuv(bridge, self.attacker)
+	costs := new(Integer_Map_Unit_Type)
+	defer free(costs)
+	costs.entries = costs_map
+	tuv_lost_attacker := tuv_utils_get_tuv_for_player(killed, self.attacker, costs, self.game_data)
+	self.attacker_lost_tuv += tuv_lost_attacker
+	strategic_bombing_raid_battle_remove_attackers(self, killed, false)
+	change := history_change_factory_remove_units_with_aa(self.battle_site, killed, current_type_aa)
+	remove_units_history_change_perform(change, bridge)
+}

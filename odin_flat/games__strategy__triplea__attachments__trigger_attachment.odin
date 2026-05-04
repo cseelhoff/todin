@@ -2831,3 +2831,345 @@ trigger_attachment_trigger_unit_placement :: proc(
 	}
 }
 
+// ---------------------------------------------------------------------------
+// public static void triggerChangeOwnership(
+//     Set<TriggerAttachment> satisfiedTriggers,
+//     IDelegateBridge bridge,
+//     FireTriggerParams fireTriggerParams)
+//
+// For each satisfied trigger filtered by changeOwnershipMatch(): roll
+// testChance / consume uses, then for each "territory:oldOwner:newOwner:
+// captured" entry in changeOwnership, resolve the territory list ("all"
+// → every map territory; otherwise the named territory), look up the
+// old/new owners (oldOwner may be missing → match any), and for every
+// territory that has a TerritoryAttachment and whose current owner
+// matches the requested old owner, log a history entry and either emit
+// a plain ChangeFactory.changeOwner change or invoke
+// BattleTracker.takeOver when the entry was flagged as a capture.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_change_ownership :: proc(
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_lambda_change_ownership_match,
+		fire_trigger_params,
+	)
+	defer delete(trigs)
+	bt := battle_delegate_get_battle_tracker(game_data_get_battle_delegate(data))
+	for t in trigs {
+		if fire_trigger_params.test_chance && !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		for value in trigger_attachment_get_change_ownership(t) {
+			s := default_attachment_split_on_colon(value)
+			defer delete(s)
+			territories: [dynamic]^Territory
+			defer delete(territories)
+			if strings.equal_fold(s[0], "all") {
+				for terr in game_map_get_territories(game_data_get_map(data)) {
+					append(&territories, terr)
+				}
+			} else {
+				territory_set := game_map_get_territory_or_null(game_data_get_map(data), s[0])
+				append(&territories, territory_set)
+			}
+			// if null, then is must be "any", so then any player
+			old_owner := player_list_get_player_id(game_data_get_player_list(data), s[1])
+			new_owner := player_list_get_player_id(game_data_get_player_list(data), s[2])
+			captured := default_attachment_get_bool(nil, s[3])
+			history_writer := i_delegate_bridge_get_history_writer(bridge)
+			for terr in territories {
+				current_owner := territory_get_owner(terr)
+				if territory_attachment_get(terr) == nil {
+					// any territory that has no territory attachment should
+					// definitely not be changed
+					continue
+				}
+				if old_owner != nil && old_owner != current_owner {
+					continue
+				}
+				attachment_text := my_formatter_attachment_name_to_text(t.name)
+				new_owner_name := default_named_get_name(
+					&new_owner.named_attachable.default_named,
+				)
+				terr_name := default_named_get_name(&terr.named_attachable.default_named)
+				verb := " takes ownership of territory "
+				if captured {
+					verb = " captures territory "
+				}
+				event := strings.concatenate(
+					{attachment_text, ": ", new_owner_name, verb, terr_name},
+				)
+				i_delegate_history_writer_start_event(history_writer, event)
+				delete(event)
+				if !captured {
+					i_delegate_bridge_add_change(
+						bridge,
+						change_factory_change_owner(terr, new_owner),
+					)
+				} else {
+					battle_tracker_take_over(bt, terr, new_owner, bridge, nil, nil)
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// fireTriggers(Set<TriggerAttachment>, Map<ICondition,Boolean>,
+//              IDelegateBridge, FireTriggerParams)
+//
+// Filter the input set by testChance (when requested), build a
+// no-chance copy of the FireTriggerParams (test_chance=false) so the
+// individual category dispatchers don't re-roll, and invoke each
+// trigger-category handler in the exact Java order:
+//   notifications,
+//   property changes (player, relationship-type, territory,
+//                     territory-effect, unit),
+//   relationship change, available-tech, tech, production,
+//   production-frontier-edit, support, change-ownership,
+//   unit-removal, purchase, unit-placement, resource-change,
+//   activate-trigger-other, victory.
+// `triggerResourceChange` here uses the 3-arg public overload (the
+// `_simple` proc in this file).
+// Finally, when use_uses is requested, decrement the uses of every
+// trigger that has a non-empty `when` list via setUsesForWhenTriggers.
+// Mirrors the Java implementation around line 264 of TriggerAttachment.java.
+// ---------------------------------------------------------------------------
+trigger_attachment_fire_triggers :: proc(
+	triggers_to_be_fired: map[^Trigger_Attachment]struct {},
+	tested_conditions_so_far: map[^I_Condition]bool,
+	bridge: ^I_Delegate_Bridge,
+	initial_fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	triggers_to_fire := make(map[^Trigger_Attachment]struct {})
+	defer delete(triggers_to_fire)
+	for t in triggers_to_be_fired {
+		if initial_fire_trigger_params.test_chance &&
+		   !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		triggers_to_fire[t] = {}
+	}
+	no_chance_fire_trigger_params := fire_trigger_params_new(
+		initial_fire_trigger_params.before_or_after,
+		initial_fire_trigger_params.step_name,
+		initial_fire_trigger_params.use_uses,
+		initial_fire_trigger_params.test_uses,
+		false,
+		initial_fire_trigger_params.test_when,
+	)
+	// Order: Notifications, Attachment Property Changes (Player,
+	// Relationship, Territory, TerritoryEffect, Unit), Relationship,
+	// AvailableTech, Tech, ProductionFrontier, ProductionEdit, Support,
+	// Purchase, UnitPlacement, Resource, Victory Notifications to current player
+	trigger_attachment_trigger_notifications(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// Attachment property changes
+	trigger_attachment_trigger_player_property_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_relationship_type_property_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_territory_property_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_territory_effect_property_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_unit_property_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// Misc changes that only need to happen once (twice or more is meaningless)
+	trigger_attachment_trigger_relationship_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_available_tech_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_tech_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_production_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_production_frontier_edit_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_support_change(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_change_ownership(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// Misc changes that can happen multiple times (can use "each")
+	trigger_attachment_trigger_unit_removal(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_purchase(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_unit_placement(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// 3-arg public overload (returns end-of-turn report; discarded by fireTriggers).
+	_ = trigger_attachment_trigger_resource_change_simple(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// Activating other triggers, and trigger victory, should ALWAYS be LAST in this list!
+	trigger_attachment_trigger_activate_trigger_other(
+		tested_conditions_so_far,
+		triggers_to_fire,
+		bridge,
+		no_chance_fire_trigger_params,
+	)
+	trigger_attachment_trigger_victory(
+		triggers_to_fire, bridge, no_chance_fire_trigger_params,
+	)
+	// For both 'when' and 'activated triggers', change uses now. (Other
+	// triggers change at end of round in EndRoundDelegate.)
+	if initial_fire_trigger_params.use_uses {
+		trigger_attachment_set_uses_for_when_triggers(triggers_to_fire, bridge)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// triggerActivateTriggerOther(Map<ICondition,Boolean>,
+//     Set<TriggerAttachment>, IDelegateBridge, FireTriggerParams)
+//
+// Filter satisfied triggers by activateTriggerMatch(); for each, optionally
+// re-roll testChance, optionally consume a use, then for every
+// (otherTriggerName, options) tuple in t.getActivateTrigger():
+//   1. Resolve `toFire` by scanning every player's attachments for one
+//      named otherTriggerName.
+//   2. Parse the colon-separated options
+//      "numberOfTimes:useUses:testUses:testConditions:testChance".
+//   3. If testConditions and `toFire` is not yet in
+//      testedConditionsSoFar, populate it via collectTestsForAllTriggers
+//      and short-circuit when the resulting isSatisfiedMatch fails.
+//   4. Build a sub-FireTriggerParams (testWhen=false) and invoke
+//      fireTriggers(toFireSet, ...) `numberOfTimes * eachMultiple` times,
+//      writing a history event per repetition.
+// Mirrors lines ~1381-1450 of TriggerAttachment.java.
+// ---------------------------------------------------------------------------
+trigger_attachment_trigger_activate_trigger_other :: proc(
+	tested_conditions_so_far: map[^I_Condition]bool,
+	satisfied_triggers: map[^Trigger_Attachment]struct {},
+	bridge: ^I_Delegate_Bridge,
+	activate_fire_trigger_params: ^Fire_Trigger_Params,
+) {
+	data := i_delegate_bridge_get_data(bridge)
+	trigs := trigger_attachment_filter_satisfied_triggers(
+		satisfied_triggers,
+		trigger_attachment_activate_trigger_match(),
+		activate_fire_trigger_params,
+	)
+	defer delete(trigs)
+	for t in trigs {
+		if activate_fire_trigger_params.test_chance &&
+		   !abstract_trigger_attachment_test_chance(t, bridge) {
+			continue
+		}
+		if activate_fire_trigger_params.use_uses {
+			abstract_trigger_attachment_use(t, bridge)
+		}
+		each_multiple := abstract_trigger_attachment_get_each_multiple(t)
+		for tup in trigger_attachment_get_activate_trigger(t) {
+			// numberOfTimes:useUses:testUses:testConditions:testChance
+			to_fire: ^Trigger_Attachment = nil
+			player_list := game_data_get_player_list(data)
+			players := player_list_get_players(player_list)
+			for player in players {
+				ta := cast(^Trigger_Attachment)named_attachable_get_attachment(
+					&player.named_attachable,
+					tup.first,
+				)
+				if ta != nil {
+					to_fire = ta
+					break
+				}
+			}
+			to_fire_set := make(map[^Trigger_Attachment]struct {})
+			to_fire_set[to_fire] = {}
+			options := default_attachment_split_on_colon(tup.second)
+			number_of_times_to_fire := default_attachment_get_int(nil, options[0])
+			use_uses_to_fire := default_attachment_get_bool(nil, options[1])
+			test_uses_to_fire := default_attachment_get_bool(nil, options[2])
+			test_conditions_to_fire := default_attachment_get_bool(nil, options[3])
+			test_chance_to_fire := default_attachment_get_bool(nil, options[4])
+			if test_conditions_to_fire {
+				_, present := tested_conditions_so_far[cast(^I_Condition)rawptr(to_fire)]
+				if !present {
+					// new HashSet<>(testedConditionsSoFar.keySet())
+					needed_so_far := make(map[^I_Condition]struct {})
+					for k in tested_conditions_so_far {
+						needed_so_far[k] = {}
+					}
+					trigger_attachment_collect_tests_for_all_triggers(
+						to_fire_set,
+						bridge,
+						needed_so_far,
+						tested_conditions_so_far,
+					)
+					delete(needed_so_far)
+				}
+				pred, ctx := abstract_trigger_attachment_is_satisfied_match(
+					tested_conditions_so_far,
+				)
+				if !pred(ctx, to_fire) {
+					delete(to_fire_set)
+					delete(options)
+					free(ctx)
+					continue
+				}
+				free(ctx)
+			}
+			to_fire_trigger_params := fire_trigger_params_new(
+				activate_fire_trigger_params.before_or_after,
+				activate_fire_trigger_params.step_name,
+				use_uses_to_fire,
+				test_uses_to_fire,
+				test_chance_to_fire,
+				false,
+			)
+			history_writer := i_delegate_bridge_get_history_writer(bridge)
+			count := number_of_times_to_fire * each_multiple
+			for i := i32(0); i < count; i += 1 {
+				t_name := default_named_get_name(&t.named_attachable.default_named)
+				fire_name: string = ""
+				if to_fire != nil {
+					fire_name = default_named_get_name(
+						&to_fire.named_attachable.default_named,
+					)
+				}
+				event := strings.concatenate(
+					{
+						my_formatter_attachment_name_to_text(t_name),
+						" activates a trigger called: ",
+						my_formatter_attachment_name_to_text(fire_name),
+					},
+				)
+				i_delegate_history_writer_start_event(history_writer, event)
+				delete(event)
+				trigger_attachment_fire_triggers(
+					to_fire_set,
+					tested_conditions_so_far,
+					bridge,
+					to_fire_trigger_params,
+				)
+			}
+			delete(to_fire_set)
+			delete(options)
+		}
+	}
+}
+

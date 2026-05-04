@@ -2727,3 +2727,66 @@ pro_matches_territory_is_enemy_not_passive_neutral_or_allied :: proc(
 	return pro_matches_pred_territory_is_enemy_not_passive_neutral_or_allied, rawptr(ctx)
 }
 
+// ---------------------------------------------------------------------------
+// lambda$noCanalsBetweenTerritories$0(player, startTerritory, endTerritory)
+// Desugared body of the BiPredicate returned by noCanalsBetweenTerritories.
+// ---------------------------------------------------------------------------
+
+pro_matches_lambda_no_canals_between_territories :: proc(
+	player: ^Game_Player,
+	start_territory: ^Territory,
+	end_territory: ^Territory,
+) -> bool {
+	r := route_new(start_territory, end_territory)
+	validator := move_validator_new(game_player_get_data(player), false)
+	return move_validator_validate_canal(validator, r, nil, player) == nil
+}
+
+// ---------------------------------------------------------------------------
+// unitCantBeMovedAndIsAlliedDefender(player, t) -> Predicate<Unit>
+// ---------------------------------------------------------------------------
+
+Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender :: struct {
+	player: ^Game_Player,
+	t:      ^Territory,
+}
+
+pro_matches_pred_unit_cant_be_moved_and_is_allied_defender :: proc(
+	ctx_ptr: rawptr,
+	u: ^Unit,
+) -> bool {
+	ctx := cast(^Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender)ctx_ptr
+	o_p, o_c := matches_unit_is_owned_by(ctx.player)
+	is_owned := o_p(o_c, u)
+	// myUnitHasNoMovementMatch: owned-by(player) AND !hasMovementLeft
+	if is_owned {
+		hml_p, hml_c := matches_unit_has_movement_left()
+		if !hml_p(hml_c, u) {
+			return true
+		}
+	}
+	// alliedUnitMatch: !owned-by(player) AND isUnitAllied(player)
+	//                  AND !isBeingTransportedByOrIsDependentOfSomeUnitInThisList(t.units, player, false)
+	if is_owned {
+		return false
+	}
+	a_p, a_c := matches_is_unit_allied(ctx.player)
+	if !a_p(a_c, u) {
+		return false
+	}
+	bt_p, bt_c := matches_unit_is_being_transported_by_or_is_dependent_of_some_unit_in_this_list(
+		territory_get_units(ctx.t), ctx.player, false,
+	)
+	return !bt_p(bt_c, u)
+}
+
+pro_matches_unit_cant_be_moved_and_is_allied_defender :: proc(
+	player: ^Game_Player,
+	t: ^Territory,
+) -> (proc(rawptr, ^Unit) -> bool, rawptr) {
+	ctx := new(Pro_Matches_Ctx_unit_cant_be_moved_and_is_allied_defender)
+	ctx.player = player
+	ctx.t = t
+	return pro_matches_pred_unit_cant_be_moved_and_is_allied_defender, rawptr(ctx)
+}
+

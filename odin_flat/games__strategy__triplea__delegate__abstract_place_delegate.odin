@@ -2002,3 +2002,364 @@ abstract_place_delegate_free_placement_capacity :: proc(
 		)
 	}
 }
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#doAfterEnd()
+// Clears unplaced units (unless property keeps them), resets the produced map
+// and the placements list, and removes air that can't land for LHTR-style games.
+abstract_place_delegate_do_after_end :: proc(self: ^Abstract_Place_Delegate) {
+	player := i_delegate_bridge_get_game_player(self.bridge)
+	units := unit_holder_get_units(cast(^Unit_Holder)player)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if !properties_get_unplaced_units_live(game_data_get_properties(data)) && len(units) > 0 {
+		event_text := strings.concatenate({
+			my_formatter_units_to_text_no_owner_simple(units),
+			" were produced but were not placed",
+		})
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			event_text,
+			rawptr(&units),
+		)
+		change := change_factory_remove_units(cast(^Unit_Holder)player, units)
+		i_delegate_bridge_add_change(self.bridge, change)
+	}
+	// reset ourselves for next turn
+	clear(&self.produced)
+	clear(&self.placements)
+	if game_step_properties_helper_is_remove_air_that_can_not_land(data) {
+		abstract_place_delegate_remove_air_that_cant_land(self)
+	}
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getMaxUnitsToBePlaced(Collection,Territory,GamePlayer)
+// Returns -1 if any producer is unlimited; otherwise sums the per-producer caps
+// from getMaxUnitsToBePlacedMap.
+abstract_place_delegate_get_max_units_to_be_placed :: proc(
+	self:   ^Abstract_Place_Delegate,
+	units:  [dynamic]^Unit,
+	to:     ^Territory,
+	player: ^Game_Player,
+) -> i32 {
+	im := abstract_place_delegate_get_max_units_to_be_placed_map(self, units, to, player)
+	defer free(im)
+	production: i32 = 0
+	for _, prod_t in im.map_values {
+		if prod_t == -1 {
+			return -1
+		}
+		production += prod_t
+	}
+	return production
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getUnitsThatCantBePlacedThatRequireUnits(Collection,Territory)
+// Mirrors Java: greedily assigns units to best-ordered producers, respecting
+// each producer's `unitWhichRequiresUnitsHasRequiredUnits` predicate, and
+// returns whichever units could not be placed anywhere.
+abstract_place_delegate_get_units_that_cant_be_placed_that_require_units :: proc(
+	self:  ^Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	to:    ^Territory,
+) -> [dynamic]^Unit {
+	if !abstract_place_delegate_has_unit_placement_restrictions(self) {
+		return make([dynamic]^Unit)
+	}
+	req_p, req_c := matches_unit_requires_units_on_creation()
+	any_requires := false
+	for u in units {
+		if req_p(req_c, u) {
+			any_requires = true
+			break
+		}
+	}
+	if !any_requires {
+		return make([dynamic]^Unit)
+	}
+	producers_map := abstract_place_delegate_get_max_units_to_be_placed_map(self, units, to, self.player)
+	defer free(producers_map)
+	producers := abstract_place_delegate_get_all_producers_3(self, to, self.player, units)
+	defer delete(producers)
+	if len(producers) == 0 {
+		// Java returns the original `units` collection here.
+		result := make([dynamic]^Unit)
+		for u in units {
+			append(&result, u)
+		}
+		return result
+	}
+	// stable insertion sort by best-producer comparator
+	cmp_fn, cmp_ctx := abstract_place_delegate_get_best_producer_comparator(self, to, units, self.player)
+	for i := 1; i < len(producers); i += 1 {
+		j := i
+		for j > 0 && cmp_fn(cmp_ctx, producers[j], producers[j - 1]) < 0 {
+			tmp := producers[j]
+			producers[j] = producers[j - 1]
+			producers[j - 1] = tmp
+			j -= 1
+		}
+	}
+	free(cmp_ctx)
+
+	units_left_to_place := make([dynamic]^Unit)
+	for u in units {
+		append(&units_left_to_place, u)
+	}
+	hardest_cmp := abstract_place_delegate_get_hardest_to_place_with_requires_units_restrictions()
+
+	for t in producers {
+		if len(units_left_to_place) == 0 {
+			clear(&units_left_to_place)
+			return units_left_to_place
+		}
+		production_here := integer_map_get_int(producers_map, rawptr(t))
+		req_at_p, req_at_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, t, false)
+		can_be_placed_here := make([dynamic]^Unit)
+		for u in units_left_to_place {
+			if req_at_p(req_at_c, u) {
+				append(&can_be_placed_here, u)
+			}
+		}
+		free(req_at_c)
+		if production_here == -1 || production_here >= i32(len(can_be_placed_here)) {
+			// remove every can_be_placed_here element from units_left_to_place
+			for moved in can_be_placed_here {
+				for i := len(units_left_to_place) - 1; i >= 0; i -= 1 {
+					if units_left_to_place[i] == moved {
+						ordered_remove(&units_left_to_place, i)
+					}
+				}
+			}
+			delete(can_be_placed_here)
+			continue
+		}
+		// stable insertion sort by hardest-to-place comparator
+		for i := 1; i < len(can_be_placed_here); i += 1 {
+			j := i
+			for j > 0 && hardest_cmp(can_be_placed_here[j], can_be_placed_here[j - 1]) < 0 {
+				tmp := can_be_placed_here[j]
+				can_be_placed_here[j] = can_be_placed_here[j - 1]
+				can_be_placed_here[j - 1] = tmp
+				j -= 1
+			}
+		}
+		// take first `production_here` matches (predicate is `it -> true`)
+		placed_here := make([dynamic]^Unit)
+		taken: i32 = 0
+		for u in can_be_placed_here {
+			if taken >= production_here {
+				break
+			}
+			if abstract_place_delegate_lambda_get_units_that_cant_be_placed_that_require_units_3(u) {
+				append(&placed_here, u)
+				taken += 1
+			}
+		}
+		for moved in placed_here {
+			for i := len(units_left_to_place) - 1; i >= 0; i -= 1 {
+				if units_left_to_place[i] == moved {
+					ordered_remove(&units_left_to_place, i)
+				}
+			}
+		}
+		delete(placed_here)
+		delete(can_be_placed_here)
+	}
+	return units_left_to_place
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getCanAllUnitsWithRequiresUnitsBePlacedCorrectly(java.util.Collection,games.strategy.engine.data.Territory)
+// Java: return getUnitsThatCantBePlacedThatRequireUnits(units, to).isEmpty();
+abstract_place_delegate_get_can_all_units_with_requires_units_be_placed_correctly :: proc(
+	self:  ^Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	to:    ^Territory,
+) -> bool {
+	cant := abstract_place_delegate_get_units_that_cant_be_placed_that_require_units(self, units, to)
+	defer delete(cant)
+	return len(cant) == 0
+}
+
+// games.strategy.triplea.delegate.AbstractPlaceDelegate#getUnitsToBePlaced(games.strategy.engine.data.Territory,java.util.Collection,games.strategy.engine.data.GamePlayer)
+// Java returns @Nullable Collection<Unit>: returns (_, false) when sea-zone enemy
+// presence forbids placement in non-WW2v2 / non-EnemySeas games, otherwise
+// (placeable, true). The body mirrors Java line-by-line.
+abstract_place_delegate_get_units_to_be_placed :: proc(
+	self:      ^Abstract_Place_Delegate,
+	to:        ^Territory,
+	all_units: [dynamic]^Unit,
+	player:    ^Game_Player,
+) -> (
+	[dynamic]^Unit,
+	bool,
+) {
+	properties := abstract_delegate_get_properties(&self.abstract_delegate)
+	water := territory_is_water(to)
+	if water &&
+	   (!properties_get_ww2_v2(properties) && !properties_get_unit_placement_in_enemy_seas(properties)) {
+		enemy_p, enemy_c := matches_enemy_unit(player)
+		for u in to.unit_collection.units {
+			if enemy_p(enemy_c, u) {
+				empty: [dynamic]^Unit
+				return empty, false
+			}
+		}
+	}
+	// if unit is water, remove land, if unit is land, remove water.
+	units := make([dynamic]^Unit)
+	defer delete(units)
+	if water {
+		not_land_p, not_land_c := matches_unit_is_not_land()
+		for u in all_units {
+			if not_land_p(not_land_c, u) {
+				append(&units, u)
+			}
+		}
+	} else {
+		not_sea_p, not_sea_c := matches_unit_is_not_sea()
+		for u in all_units {
+			if not_sea_p(not_sea_c, u) {
+				append(&units, u)
+			}
+		}
+	}
+	placeable_units := make([dynamic]^Unit)
+	defer delete(placeable_units)
+	units_at_start_of_turn_in_to := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
+	defer delete(units_at_start_of_turn_in_to)
+	all_produced_units := abstract_place_delegate_units_placed_in_territory_so_far(self, to)
+	defer delete(all_produced_units)
+	is_bid := game_step_properties_helper_is_bid(abstract_delegate_get_data(&self.abstract_delegate))
+	was_factory_there_at_start :=
+		abstract_place_delegate_was_owned_unit_that_can_produce_units_or_is_factory_in_territory_at_start_of_step(self, to, player)
+
+	// we add factories and constructions later
+	if water || was_factory_there_at_start ||
+	   abstract_place_delegate_is_player_allowed_to_placement_any_territory_owned_land(self, player) {
+		not_construction_p, not_construction_c := matches_unit_is_not_construction()
+		side_p: proc(rawptr, ^Unit) -> bool
+		side_c: rawptr
+		if water {
+			side_p, side_c = matches_unit_is_sea()
+		} else {
+			side_p, side_c = matches_unit_is_land()
+		}
+		for u in units {
+			if side_p(side_c, u) && not_construction_p(not_construction_c, u) {
+				append(&placeable_units, u)
+			}
+		}
+		if !water {
+			air_p, air_c := matches_unit_is_air()
+			for u in units {
+				if air_p(air_c, u) && not_construction_p(not_construction_c, u) {
+					append(&placeable_units, u)
+				}
+			}
+		} else {
+			can_produce_fighters_on_carriers :=
+				is_bid ||
+				properties_get_produce_fighters_on_carriers(properties) ||
+				properties_get_lhtr_carrier_production_rules(properties)
+			carrier_p, carrier_c := matches_unit_is_carrier()
+			any_produced_carrier := false
+			for u in all_produced_units {
+				if carrier_p(carrier_c, u) {
+					any_produced_carrier = true
+					break
+				}
+			}
+			combined_p, combined_c :=
+				abstract_place_delegate_unit_is_carrier_owned_by_combined_players(self, player)
+			any_combined_carrier_in_to := false
+			for u in to.unit_collection.units {
+				if combined_p(combined_c, u) {
+					any_combined_carrier_in_to = true
+					break
+				}
+			}
+			if (can_produce_fighters_on_carriers && any_produced_carrier) ||
+			   any_combined_carrier_in_to {
+				air_p, air_c := matches_unit_is_air()
+				can_land_p, can_land_c := matches_unit_can_land_on_carrier()
+				for u in units {
+					if air_p(air_c, u) && can_land_p(can_land_c, u) {
+						append(&placeable_units, u)
+					}
+				}
+			}
+		}
+	}
+	abstract_place_delegate_add_construction_units(self, units, to, &placeable_units)
+	// remove any units that require other units to be consumed on creation,
+	// if we don't have enough to consume (veqryn)
+	{
+		req_p, req_c := matches_unit_which_consumes_units_has_required_units(units_at_start_of_turn_in_to)
+		for i := len(placeable_units) - 1; i >= 0; i -= 1 {
+			if !req_p(req_c, placeable_units[i]) {
+				ordered_remove(&placeable_units, i)
+			}
+		}
+	}
+
+	placeable_units2: [dynamic]^Unit
+	if abstract_place_delegate_has_unit_placement_restrictions(self) {
+		territory_production: i32 = 0
+		if ta := territory_attachment_get(to); ta != nil {
+			territory_production = territory_attachment_get_production(ta)
+		}
+		placeable_units2 = make([dynamic]^Unit)
+		req_p, req_c := abstract_place_delegate_unit_which_requires_units_has_required_units(self, to, true)
+		only_orig_p, only_orig_c := matches_unit_can_only_place_in_original_territories()
+		orig_owned_p, orig_owned_c := matches_territory_is_originally_owned_by(player)
+		for current_unit in placeable_units {
+			ua := unit_get_unit_attachment(current_unit)
+			required_production := unit_attachment_get_can_only_be_placed_in_territory_valued_at_x(ua)
+			if required_production != -1 && required_production > territory_production {
+				continue
+			}
+			if !req_p(req_c, current_unit) {
+				continue
+			}
+			if only_orig_p(only_orig_c, current_unit) && !orig_owned_p(orig_owned_c, to) {
+				continue
+			}
+			if !unit_attachment_unit_placement_restrictions_contain(ua, to) {
+				append(&placeable_units2, current_unit)
+			}
+		}
+	} else {
+		placeable_units2 = make([dynamic]^Unit)
+		for u in placeable_units {
+			append(&placeable_units2, u)
+		}
+	}
+
+	// Limit count of each unit type to the max that can be placed based on unit requirements.
+	unit_types := unit_utils_get_unit_types_from_unit_list(placeable_units)
+	defer delete(unit_types)
+	for ut, _ in unit_types {
+		of_type_p, of_type_c := matches_unit_is_of_type(ut)
+		units_of_type := make([dynamic]^Unit)
+		for u in placeable_units2 {
+			if of_type_p(of_type_c, u) {
+				append(&units_of_type, u)
+			}
+		}
+		cant := abstract_place_delegate_get_units_that_cant_be_placed_that_require_units(
+			self, units_of_type, to,
+		)
+		for r in cant {
+			for i := len(placeable_units2) - 1; i >= 0; i -= 1 {
+				if placeable_units2[i] == r {
+					ordered_remove(&placeable_units2, i)
+				}
+			}
+		}
+		delete(units_of_type)
+		delete(cant)
+	}
+	// now check stacking limits
+	limited := abstract_place_delegate_apply_stacking_limits_per_unit_type(self, placeable_units2, to)
+	delete(placeable_units2)
+	return limited, true
+}

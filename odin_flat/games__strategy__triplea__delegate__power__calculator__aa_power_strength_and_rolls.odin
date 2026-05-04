@@ -11,6 +11,71 @@ Aa_Power_Strength_And_Rolls :: struct {
 	active_strength_and_rolls:              [dynamic]Unit_Power_Strength_And_Rolls,
 }
 
+// Java: private AaPowerStrengthAndRolls(Collection<Unit> units, int targetCount,
+// CombatValue calculator). Stores calculator + targetCount, populates the
+// per-unit map via addUnits, computes the best strength / dice sides pair
+// (strength/diceSides ratio), then materializes activeStrengthAndRolls.
+aa_power_strength_and_rolls_new :: proc(
+	units: [dynamic]^Unit,
+	target_count: i32,
+	calculator: ^Combat_Value,
+) -> ^Aa_Power_Strength_And_Rolls {
+	self := new(Aa_Power_Strength_And_Rolls)
+	self.calculator = calculator
+	self.target_count = int(target_count)
+	aa_power_strength_and_rolls_add_units(self, units)
+
+	highest_strength: i32 = 0
+	chosen_dice_sides: i32 = 100
+	for u, entry in self.total_strength_and_total_rolls_by_unit {
+		ds := combat_value_get_dice_sides(calculator, u)
+		strength: i32 = 0
+		if entry.strength_and_rolls != nil {
+			strength = entry.strength_and_rolls.strength
+		}
+		if (f32(strength) / f32(ds)) > (f32(highest_strength) / f32(chosen_dice_sides)) {
+			highest_strength = strength
+			chosen_dice_sides = ds
+		}
+	}
+
+	self.best_strength = int(highest_strength)
+	self.dice_sides = int(chosen_dice_sides)
+
+	self.active_strength_and_rolls = aa_power_strength_and_rolls_calculate_active_strength_and_rolls(
+		self,
+	)
+	return self
+}
+
+// Java: static AaPowerStrengthAndRolls#build(Collection<Unit>, int, CombatValue).
+// If `aaUnits` is null/empty, constructs from an empty list. Otherwise sorts
+// the units using `calculator.unitComparator()` (so the strongest go first
+// without support, letting addUnits give support to the best units first) and
+// hands the sorted list to the private constructor.
+aa_power_strength_and_rolls_build :: proc(
+	aa_units: [dynamic]^Unit,
+	target_count: i32,
+	calculator: ^Combat_Value,
+) -> ^Aa_Power_Strength_And_Rolls {
+	if len(aa_units) == 0 {
+		empty: [dynamic]^Unit
+		result := aa_power_strength_and_rolls_new(empty, target_count, calculator)
+		delete(empty)
+		return result
+	}
+	sorted: [dynamic]^Unit
+	for u in aa_units {
+		append(&sorted, u)
+	}
+	cmp := combat_value_unit_comparator(calculator)
+	aa_power_strength_and_rolls_active_cmp_ = cmp
+	slice.sort_by(sorted[:], aa_power_strength_and_rolls_active_less_)
+	result := aa_power_strength_and_rolls_new(sorted, target_count, calculator)
+	delete(sorted)
+	return result
+}
+
 aa_power_strength_and_rolls_get_active_units :: proc(
 	self: ^Aa_Power_Strength_And_Rolls,
 ) -> [dynamic]Unit_Power_Strength_And_Rolls {

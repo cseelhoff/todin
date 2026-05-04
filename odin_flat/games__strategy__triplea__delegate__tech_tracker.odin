@@ -756,3 +756,137 @@ tech_tracker_lambda_get_rocket_distance_16 :: proc(player: ^Game_Player) -> i32 
 	return tech_tracker_get_rocket_distance(player)
 }
 
+// =====================================================================
+// Per-getXxxBonus Supplier/BooleanSupplier lambda bodies (javac indices
+// 0–12). Each Java getter is shaped:
+//   final Supplier<Integer> getter =
+//       () -> getSumOfBonuses(TAA::getXxx, type, player);
+//   return getCached(player, type, "getXxx", getter);
+// (or, for canBlitz/canBombard, a BooleanSupplier delegating to
+// getUnitAbilitiesGained(ABILITY_CAN_*, type, player).)
+//
+// The captured Java locals are `type` and `player`; method_key records
+// the parameter list as `(UnitType, GamePlayer)` and we mirror that
+// order. The static-port bonus accessors above (tech_tracker_get_*)
+// already inline the same getSumOfBonuses pipeline that the Java
+// Supplier would execute, so each lambda body is a thin delegate —
+// matching the lambda 14/15/16 shape used elsewhere in this file.
+// =====================================================================
+
+// Java: lambda$getAirDefenseBonus$0(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getAirDefenseBonus, type, player)`.
+tech_tracker_lambda_get_air_defense_bonus_0 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_air_defense_bonus(player, type)
+}
+
+// Java: lambda$getAirAttackBonus$1(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getAirAttackBonus, type, player)`.
+tech_tracker_lambda_get_air_attack_bonus_1 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_air_attack_bonus(player, type)
+}
+
+// Java: lambda$getMovementBonus$2(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getMovementBonus, type, player)`.
+tech_tracker_lambda_get_movement_bonus_2 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_movement_bonus(player, type)
+}
+
+// Java: lambda$getAttackBonus$3(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getAttackBonus, type, player)`.
+tech_tracker_lambda_get_attack_bonus_3 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_attack_bonus(player, type)
+}
+
+// Java: lambda$getAttackRollsBonus$4(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getAttackRollsBonus, type, player)`.
+tech_tracker_lambda_get_attack_rolls_bonus_4 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_attack_rolls_bonus(player, type)
+}
+
+// Java: lambda$getDefenseBonus$5(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getDefenseBonus, type, player)`.
+tech_tracker_lambda_get_defense_bonus_5 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_defense_bonus(player, type)
+}
+
+// Java: lambda$getDefenseRollsBonus$6(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getDefenseRollsBonus, type, player)`.
+tech_tracker_lambda_get_defense_rolls_bonus_6 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_defense_rolls_bonus(player, type)
+}
+
+// Java: lambda$getRadarBonus$7(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getRadarBonus, type, player)`.
+tech_tracker_lambda_get_radar_bonus_7 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_radar_bonus(player, type)
+}
+
+// Java: lambda$getRocketDiceNumber$8(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getRocketDiceNumber, type, player)`.
+tech_tracker_lambda_get_rocket_dice_number_8 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_rocket_dice_number(player, type)
+}
+
+// Java: lambda$getBombingBonus$9(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getBombingBonus, type, player)`.
+tech_tracker_lambda_get_bombing_bonus_9 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_bombing_bonus(player, type)
+}
+
+// Java: lambda$getProductionBonus$10(UnitType, GamePlayer)
+//   `() -> getSumOfBonuses(TAA::getProductionBonus, type, player)`.
+tech_tracker_lambda_get_production_bonus_10 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> i32 {
+	return tech_tracker_get_production_bonus(player, type)
+}
+
+// Java: lambda$canBlitz$11(UnitType, GamePlayer)
+//   `() -> getUnitAbilitiesGained(ABILITY_CAN_BLITZ, type, player)`.
+tech_tracker_lambda_can_blitz_11 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> bool {
+	return tech_tracker_can_blitz(player, type)
+}
+
+// Java: lambda$canBombard$12(UnitType, GamePlayer)
+//   `() -> getUnitAbilitiesGained(ABILITY_CAN_BOMBARD, type, player)`.
+tech_tracker_lambda_can_bombard_12 :: proc(
+	type: ^Unit_Type,
+	player: ^Game_Player,
+) -> bool {
+	return tech_tracker_can_bombard(player, type)
+}
+

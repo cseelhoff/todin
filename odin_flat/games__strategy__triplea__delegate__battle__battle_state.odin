@@ -33,3 +33,28 @@ battle_state_get_attacker_retreat_territories :: proc(
 	return must_fight_battle_get_attacker_retreat_territories(cast(^Must_Fight_Battle)self)
 }
 
+// games.strategy.triplea.delegate.battle.BattleState#getPlayer(Side)
+battle_state_get_player :: proc(self: ^Battle_State, side: Battle_State_Side) -> ^Game_Player {
+	return must_fight_battle_get_player(cast(^Must_Fight_Battle)self, side)
+}
+
+// games.strategy.triplea.delegate.battle.BattleState#getBattleSite
+battle_state_get_battle_site :: proc(self: ^Battle_State) -> ^Territory {
+	return (cast(^Must_Fight_Battle)self).battle_site
+}
+
+// games.strategy.triplea.delegate.battle.BattleState#getStatus
+battle_state_get_status :: proc(self: ^Battle_State) -> ^Battle_State_Battle_Status {
+	return must_fight_battle_get_status(cast(^Must_Fight_Battle)self)
+}
+
+// games.strategy.triplea.delegate.battle.BattleState#getGameData
+battle_state_get_game_data :: proc(self: ^Battle_State) -> ^Game_Data {
+	return (cast(^Must_Fight_Battle)self).game_data
+}
+
+// games.strategy.triplea.delegate.battle.BattleState#getTerritoryEffects
+battle_state_get_territory_effects :: proc(self: ^Battle_State) -> [dynamic]^Territory_Effect {
+	return (cast(^Must_Fight_Battle)self).territory_effects
+}
+

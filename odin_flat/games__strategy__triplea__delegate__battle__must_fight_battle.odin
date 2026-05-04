@@ -1814,4 +1814,138 @@ must_fight_battle_get_battle_executables :: proc(
 	return out
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#determineStepStrings()
+//
+// Java:
+//   stepStrings = new ArrayList<>();
+//   stepFiringUnits = new HashMap<>();
+//   for (var details : BattleSteps.builder().battleState(this).battleActions(this).build().get()) {
+//     String stepName = details.getName();
+//     stepStrings.add(stepName);
+//     if (details.getStep() instanceof SelectCasualties) {
+//       SelectCasualties step = (SelectCasualties) details.getStep();
+//       stepFiringUnits.put(stepName, step.getFiringGroup().getFiringUnits());
+//     }
+//   }
+//   return stepStrings;
+//
+// Note on the SelectCasualties branch: in this Odin port, `Select_Casualties`
+// does NOT embed `Battle_Step` (see select_casualties.odin), and the only
+// place that wraps a SelectCasualties into a `Battle_Step_Step_Details`
+// (`select_casualties_get_all_step_details`) sets `step = nil` and is
+// itself never reached from `battle_steps_get` — the firing-round
+// sub-steps produced by `fire_round_steps_factory_create_steps` are
+// untyped `^Battle_Step` allocations rather than embedded subtypes.
+// Consequently the Odin equivalent of `details.getStep() instanceof
+// SelectCasualties` is unreachable; we still mirror the Java loop
+// structure so future architectural changes that re-introduce typed
+// SelectCasualties details can fill in the population by checking the
+// step pointer.
+must_fight_battle_determine_step_strings :: proc(self: ^Must_Fight_Battle) -> [dynamic]string {
+	delete(self.step_strings)
+	self.step_strings = make([dynamic]string)
+	for _, units in self.step_firing_units {
+		delete(units)
+	}
+	clear(&self.step_firing_units)
+
+	builder := battle_steps_builder()
+	battle_steps_battle_steps_builder_battle_state(builder, cast(^Battle_State)self)
+	battle_steps_battle_steps_builder_battle_actions(builder, cast(^Battle_Actions)self)
+	steps := battle_steps_battle_steps_builder_build(builder)
+	all_details := battle_steps_get(steps)
+	defer delete(all_details)
+
+	for details in all_details {
+		step_name := battle_step_step_details_get_name(details)
+		append(&self.step_strings, step_name)
+		// SelectCasualties detection is unreachable in this port — see
+		// the proc-level comment above. The step pointer is kept on
+		// `details` for future architectural changes.
+		_ = battle_step_step_details_get_step(details)
+	}
+	return self.step_strings
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#pushFightLoopOnStack()
+//
+// Java:
+//   if (isOver) return;
+//   final List<IExecutable> steps = getBattleExecutables();
+//   // add in the reverse order we create them
+//   Collections.reverse(steps);
+//   for (final IExecutable step : steps) {
+//     stack.push(step);
+//   }
+must_fight_battle_push_fight_loop_on_stack :: proc(self: ^Must_Fight_Battle) {
+	if self.is_over {
+		return
+	}
+	steps := must_fight_battle_get_battle_executables(self)
+	defer delete(steps)
+	n := len(steps)
+	for i := 0; i < n / 2; i += 1 {
+		steps[i], steps[n - 1 - i] = steps[n - 1 - i], steps[i]
+	}
+	for step in steps {
+		execution_stack_push_one(self.stack, step)
+	}
+}
+
+// games.strategy.triplea.delegate.battle.MustFightBattle#removeUnits(
+//     Collection<Unit>, IDelegateBridge, Territory, BattleState.Side)
+//
+// Java:
+//   if (killedUnits.isEmpty()) return;
+//   // Note: dedup with a LinkedHashSet (preserves insertion order).
+//   final var uniqueKilledUnits = new LinkedHashSet<>(killedUnits);
+//   final RemoveUnitsHistoryChange removeUnitsHistoryChange =
+//       HistoryChangeFactory.removeUnitsFromTerritory(battleSite, uniqueKilledUnits);
+//   final Collection<Unit> killedUnitsIncludingDependents =
+//       removeUnitsHistoryChange.getOldUnits();
+//   final Collection<Unit> transformedUnits = removeUnitsHistoryChange.getNewUnits();
+//   removeUnitsHistoryChange.perform(bridge);
+//   cleanupKilledUnits(bridge, side, killedUnitsIncludingDependents, transformedUnits);
+must_fight_battle_remove_units :: proc(
+	self: ^Must_Fight_Battle,
+	killed_units: [dynamic]^Unit,
+	bridge: ^I_Delegate_Bridge,
+	battle_site: ^Territory,
+	side: Battle_State_Side,
+) {
+	if len(killed_units) == 0 {
+		return
+	}
+
+	// new LinkedHashSet<>(killedUnits): dedup while preserving insertion order.
+	seen: map[^Unit]struct{}
+	defer delete(seen)
+	unique_killed_units: [dynamic]^Unit
+	for u in killed_units {
+		if _, ok := seen[u]; !ok {
+			seen[u] = {}
+			append(&unique_killed_units, u)
+		}
+	}
+
+	remove_units_history_change := history_change_factory_remove_units_from_territory(
+		battle_site,
+		unique_killed_units,
+	)
+
+	killed_units_including_dependents := remove_units_history_change_get_old_units(
+		remove_units_history_change,
+	)
+	transformed_units := remove_units_history_change_get_new_units(remove_units_history_change)
+	remove_units_history_change_perform(remove_units_history_change, bridge)
+
+	must_fight_battle_cleanup_killed_units(
+		self,
+		bridge,
+		side,
+		killed_units_including_dependents,
+		transformed_units,
+	)
+}
+
 

@@ -449,3 +449,51 @@ pro_odds_calculator_calculate_battle_results_no_submerge :: proc(
 	)
 }
 
+// Java: ProOddsCalculator#calculateBattleResults(ProData, ProTerritory, Collection<Unit> defenders)
+//   return calculateBattleResults(
+//       proData,
+//       proTerritory.getTerritory(),
+//       proTerritory.getMaxEnemyUnits(),
+//       defenders,
+//       proTerritory.getMaxEnemyBombardUnits());
+pro_odds_calculator_calculate_battle_results_3 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	pro_territory: ^Pro_Territory,
+	defenders: [dynamic]^Unit,
+) -> ^Pro_Battle_Result {
+	bombard_set := pro_territory_get_max_enemy_bombard_units(pro_territory)
+	bombarding_units := make([dynamic]^Unit)
+	for u, _ in bombard_set {
+		append(&bombarding_units, u)
+	}
+	return pro_odds_calculator_calculate_battle_results(
+		self,
+		pro_data,
+		pro_territory_get_territory(pro_territory),
+		pro_territory_get_max_enemy_units(pro_territory),
+		defenders,
+		bombarding_units,
+	)
+}
+
+// Java: ProOddsCalculator#calculateBattleResults(ProData, ProTerritory)
+//   return calculateBattleResults(proData, proTerritory, proTerritory.getAllDefenders());
+pro_odds_calculator_calculate_battle_results_2 :: proc(
+	self: ^Pro_Odds_Calculator,
+	pro_data: ^Pro_Data,
+	pro_territory: ^Pro_Territory,
+) -> ^Pro_Battle_Result {
+	defenders_set := pro_territory_get_all_defenders(pro_territory)
+	defenders := make([dynamic]^Unit)
+	for u, _ in defenders_set {
+		append(&defenders, u)
+	}
+	return pro_odds_calculator_calculate_battle_results_3(
+		self,
+		pro_data,
+		pro_territory,
+		defenders,
+	)
+}
+

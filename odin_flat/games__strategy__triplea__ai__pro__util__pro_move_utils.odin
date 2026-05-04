@@ -297,6 +297,263 @@ pro_move_utils_calculate_move_routes :: proc(
 	return moves
 }
 
+// games.strategy.triplea.ai.pro.util.ProMoveUtils#calculateAmphibRoutes(
+//     ProData, GamePlayer, Map<Territory, ProTerritory>, boolean)
+//
+// Calculates amphibious movement routes. Mirrors the Java:
+//
+//   For each (territory, ProTerritory) entry, walk the
+//   amphibAttackMap (Transport -> List<Unit>) and, per transport,
+//   start a fresh sequence on a MoveBatcher. Loaded units come from
+//   transport.isTransporting(transportTerritory); otherwise the
+//   value collection is the remainingUnitsToLoad pile. Then loop
+//   while movesLeft >= 0:
+//
+//     1. If transportTerritory has no enemy units, look at every
+//        remaining unit; if it is one square away on the GameMap,
+//        emit a transport-load sequence (load route + transport)
+//        and move it from remainingUnitsToLoad to loadedUnits.
+//     2. If movesLeft > 0 and we still have somewhere to go (more
+//        than one square from t, or units left to pick up, or an
+//        explicit unloadTerritory we're not yet on), pick the best
+//        next sea neighbor: filter by ProMatches.canMoveSeaThrough,
+//        skip those that fail MoveValidator.validateCanal, and
+//        score by (a) the max distance from neighbor to remaining
+//        loaders and (b) the distance-ignore-end from neighbor to
+//        t / unloadTerritory under the same sea predicate. The
+//        Java's tri-condition tie-breaker is reproduced verbatim.
+//        On success, queue an addMove(transport+loadedUnits, route)
+//        on the MoveBatcher and advance transportTerritory.
+//     3. After the load/move loop, warn if any remainingUnitsToLoad
+//        survive, then publish the final transportTerritory back
+//        into the ProTerritory's transportTerritoryMap. If we have
+//        loaded units and t is land, queue the final unload move.
+//
+//   The MoveBatcher's batchMoves() handles cross-sequence merging
+//   (see move_batcher_batch_moves) and yields the final list of
+//   MoveDescriptions.
+pro_move_utils_calculate_amphib_routes :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	is_combat_move: bool,
+) -> [dynamic]^Move_Description {
+	data := pro_data_get_data(pro_data)
+	gm := game_data_get_map(data)
+
+	moves := move_batcher_new()
+
+	// Loop through all territories to attack.
+	for t in attack_map {
+		// Loop through each amphib attack map.
+		amphib_attack_map := pro_territory_get_amphib_attack_map(attack_map[t])
+		for transport in amphib_attack_map {
+			moves_left := int(unit_get_movement_left(transport))
+			transport_territory := pro_data_get_unit_territory(pro_data, transport)
+			move_batcher_new_sequence(moves)
+
+			// Check if units are already loaded or not.
+			loaded_units := make([dynamic]^Unit)
+			remaining_units_to_load := make([dynamic]^Unit)
+
+			if unit_is_transporting_in_territory_arg(transport, transport_territory) {
+				for u in amphib_attack_map[transport] {
+					append(&loaded_units, u)
+				}
+			} else {
+				for u in amphib_attack_map[transport] {
+					append(&remaining_units_to_load, u)
+				}
+			}
+
+			// Load units and move transport.
+			for moves_left >= 0 {
+				// Load adjacent units if no enemies present in transport territory.
+				heu_p, heu_c := matches_territory_has_enemy_units(player)
+				if !heu_p(heu_c, transport_territory) {
+					units_to_remove := make([dynamic]^Unit)
+					for amphib_unit in remaining_units_to_load {
+						unit_territory := pro_data_get_unit_territory(pro_data, amphib_unit)
+						if game_map_get_distance(gm, transport_territory, unit_territory) == 1 {
+							route := route_new_from_start_and_steps(
+								unit_territory,
+								transport_territory,
+							)
+							move_batcher_add_transport_load(
+								moves,
+								amphib_unit,
+								route,
+								transport,
+							)
+							append(&units_to_remove, amphib_unit)
+							append(&loaded_units, amphib_unit)
+						}
+					}
+					for u in units_to_remove {
+						for i := 0; i < len(remaining_units_to_load); i += 1 {
+							if remaining_units_to_load[i] == u {
+								ordered_remove(&remaining_units_to_load, i)
+								break
+							}
+						}
+					}
+				}
+
+				// Move transport if I'm not already at the end or out of moves.
+				transport_territory_map := pro_territory_get_transport_territory_map(
+					attack_map[t],
+				)
+				unload_territory: ^Territory = nil
+				if v, ok := transport_territory_map[transport]; ok {
+					unload_territory = v
+				}
+				distance_from_end := game_map_get_distance(gm, transport_territory, t)
+				if territory_is_water(t) {
+					distance_from_end += 1
+				}
+				if moves_left > 0 &&
+				   (distance_from_end > 1 ||
+						   len(remaining_units_to_load) > 0 ||
+						   (unload_territory != nil &&
+									   unload_territory != transport_territory)) {
+					nb_p, nb_c := pro_matches_territory_can_move_sea_units_through(
+						player,
+						is_combat_move,
+					)
+					neighbors := game_map_get_neighbors_predicate(
+						gm,
+						transport_territory,
+						nb_p,
+						nb_c,
+					)
+					defer delete(neighbors)
+					territory_to_move_to: ^Territory = nil
+					min_unit_distance := i32(max(i32))
+					// Used to move to farthest away loading territory first.
+					max_distance_from_end := i32(min(i32))
+					move_validator := move_validator_new(data, !is_combat_move)
+					transport_singleton := make([dynamic]^Unit)
+					append(&transport_singleton, transport)
+					for neighbor in neighbors {
+						route := route_new_from_start_and_steps(
+							transport_territory,
+							neighbor,
+						)
+						if move_validator_validate_canal(
+							   move_validator,
+							   route,
+							   transport_singleton,
+							   false,
+							   player,
+						   ) !=
+						   nil {
+							continue
+						}
+						distance_from_unload_territory: i32 = 0
+						if unload_territory != nil {
+							cp, cc := pro_matches_territory_can_move_sea_units_through(
+								player,
+								is_combat_move,
+							)
+							pro_move_utils_active_cond = cp
+							pro_move_utils_active_cond_ctx = cc
+							distance_from_unload_territory =
+								game_map_get_distance_ignore_end_for_condition(
+									gm,
+									neighbor,
+									unload_territory,
+									pro_move_utils_cond_trampoline,
+								)
+						}
+						cp2, cc2 := pro_matches_territory_can_move_sea_units_through(
+							player,
+							is_combat_move,
+						)
+						pro_move_utils_active_cond = cp2
+						pro_move_utils_active_cond_ctx = cc2
+						neighbor_distance_from_end :=
+							game_map_get_distance_ignore_end_for_condition(
+								gm,
+								neighbor,
+								t,
+								pro_move_utils_cond_trampoline,
+							)
+						if territory_is_water(t) {
+							neighbor_distance_from_end += 1
+						}
+						max_unit_distance: i32 = 0
+						for u in remaining_units_to_load {
+							distance := game_map_get_distance(
+								gm,
+								neighbor,
+								pro_data_get_unit_territory(pro_data, u),
+							)
+							if distance > max_unit_distance {
+								max_unit_distance = distance
+							}
+						}
+						if neighbor_distance_from_end <= i32(moves_left) &&
+						   max_unit_distance <= min_unit_distance &&
+						   distance_from_unload_territory < i32(moves_left) &&
+						   (max_unit_distance < min_unit_distance ||
+								   (max_unit_distance > 1 &&
+										   neighbor_distance_from_end >
+											   max_distance_from_end) ||
+								   (max_unit_distance <= 1 &&
+										   neighbor_distance_from_end <
+											   max_distance_from_end)) {
+							territory_to_move_to = neighbor
+							min_unit_distance = max_unit_distance
+							if neighbor_distance_from_end > max_distance_from_end {
+								max_distance_from_end = neighbor_distance_from_end
+							}
+						}
+					}
+					if territory_to_move_to != nil {
+						units_to_move := make([dynamic]^Unit)
+						append(&units_to_move, transport)
+						for u in loaded_units {
+							append(&units_to_move, u)
+						}
+						route := route_new_from_start_and_steps(
+							transport_territory,
+							territory_to_move_to,
+						)
+						move_batcher_add_move_units_route(moves, units_to_move[:], route)
+						transport_territory = territory_to_move_to
+					}
+				}
+				moves_left -= 1
+			}
+			if len(remaining_units_to_load) > 0 {
+				pro_logger_warn(
+					fmt.tprintf(
+						"%d-%s: %v, remainingUnitsToLoad=%v",
+						game_sequence_get_round(game_data_get_sequence(data)),
+						game_step_get_name(
+							game_sequence_get_step(game_data_get_sequence(data)),
+						),
+						t,
+						remaining_units_to_load[:],
+					),
+				)
+			}
+
+			// Set territory transport is moving to.
+			ttm := pro_territory_get_transport_territory_map(attack_map[t])
+			ttm[transport] = transport_territory
+
+			// Unload transport.
+			if len(loaded_units) > 0 && !territory_is_water(t) {
+				route := route_new_from_start_and_steps(transport_territory, t)
+				move_batcher_add_move_units_route(moves, loaded_units[:], route)
+			}
+		}
+	}
+
+	return move_batcher_batch_moves(moves)
+}
+
 // games.strategy.triplea.ai.pro.util.ProMoveUtils#calculateBombardMoveRoutes(
 //     ProData, GamePlayer, Map<Territory, ProTerritory>)
 //

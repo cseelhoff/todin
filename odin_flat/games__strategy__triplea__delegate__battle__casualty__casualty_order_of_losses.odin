@@ -296,3 +296,86 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 	}
 	return sorted_well_enough_units_list
 }
+
+// Java: CasualtyOrderOfLosses#sortUnitsForCasualtiesWithSupport(Parameters)
+//
+// Returns the perfect casualty-pick order for `parameters.targetsToPickFrom`,
+// using the OOL cache when possible. The cache key is a string derived
+// from the player, battlesite, combat side, and the (ordered) list of
+// AmphibTypes for the targets. On a miss we delegate to the impl proc,
+// then store the result and every prefix-shrinking subset under the
+// matching key (as Java does), so future calls with smaller target lists
+// hit the cache.
+casualty_order_of_losses_sort_units_for_casualties_with_support :: proc(
+	parameters: ^Casualty_Order_Of_Losses_Parameters,
+) -> [dynamic]^Unit {
+	// Convert unit lists to unit type lists.
+	target_types := make([dynamic]^Casualty_Order_Of_Losses_Amphib_Type, 0, len(parameters.targets_to_pick_from))
+	for u in parameters.targets_to_pick_from {
+		append(&target_types, casualty_order_of_losses_amphib_type_of(u))
+	}
+
+	// Calculate hashes and cache key.
+	key := casualty_order_of_losses_compute_ool_cache_key(parameters, target_types)
+
+	// Check OOL cache.
+	if stored, ok := casualty_order_of_losses_ool_cache[key]; ok {
+		result := make([dynamic]^Unit)
+		select_from := make([dynamic]^Unit, 0, len(parameters.targets_to_pick_from))
+		for u in parameters.targets_to_pick_from {
+			append(&select_from, u)
+		}
+		for amphib_type in stored {
+			j := 0
+			for j < len(select_from) {
+				unit := select_from[j]
+				if casualty_order_of_losses_amphib_type_matches(amphib_type, unit) {
+					append(&result, unit)
+					ordered_remove(&select_from, j)
+				} else {
+					j += 1
+				}
+			}
+		}
+		delete(select_from)
+		delete(target_types)
+		return result
+	}
+
+	sorted_well_enough_units_list := casualty_order_of_losses_sort_units_for_casualties_with_support_impl(parameters)
+
+	// Cache result and all subsets of the result.
+	unit_types := make([dynamic]^Casualty_Order_Of_Losses_Amphib_Type, 0, len(sorted_well_enough_units_list))
+	for u in sorted_well_enough_units_list {
+		append(&unit_types, casualty_order_of_losses_amphib_type_of(u))
+	}
+	cur_key := key
+	for len(unit_types) > 0 {
+		// Cache the current snapshot of unit_types under cur_key.
+		snapshot := make([dynamic]^Casualty_Order_Of_Losses_Amphib_Type, 0, len(unit_types))
+		for t in unit_types {
+			append(&snapshot, t)
+		}
+		casualty_order_of_losses_ool_cache[cur_key] = snapshot
+
+		// Java: it.next() then targetTypes.remove(unitTypeToRemove); it.remove();
+		unit_type_to_remove := unit_types[0]
+		ordered_remove(&unit_types, 0)
+		// Remove first matching element from target_types. Java's
+		// List.remove(Object) uses .equals(); AmphibType is @Value so it
+		// compares by (type, isAmphibious).
+		for j := 0; j < len(target_types); j += 1 {
+			t := target_types[j]
+			if t.type == unit_type_to_remove.type &&
+			   t.is_amphibious == unit_type_to_remove.is_amphibious {
+				ordered_remove(&target_types, j)
+				break
+			}
+		}
+		cur_key = casualty_order_of_losses_compute_ool_cache_key(parameters, target_types)
+	}
+	delete(unit_types)
+	delete(target_types)
+
+	return sorted_well_enough_units_list
+}

@@ -537,3 +537,53 @@ pro_sort_move_options_utils_lambda_sort_unit_needed_options_then_attack_4 :: pro
 	n2 := default_named_get_name(&unit_type2.named_attachable.default_named)
 	return strings.compare(n1, n2)
 }
+
+// Java: lambda$sortUnitNeededOptionsThenAttack$2(ProData proData,
+//           GamePlayer player, Map<Territory, ProTerritory> attackMap,
+//           Collection<Territory> territories1, Unit u1, Object k) -> Double
+//   return calculateAttackEfficiency(proData, player, attackMap, territories1, u1);
+// `computeIfAbsent` mapping function for the o1 cache lookup; the
+// `Object k` parameter is the HashMap key (the Map.Entry) and is
+// unused in the body.
+pro_sort_move_options_utils_lambda_sort_unit_needed_options_then_attack_2 :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	territories1: [dynamic]^Territory,
+	u1: ^Unit,
+	k: rawptr,
+) -> f64 {
+	_ = k
+	return pro_sort_move_options_utils_calculate_attack_efficiency(
+		pro_data,
+		player,
+		attack_map,
+		territories1,
+		u1,
+	)
+}
+
+// Java: lambda$sortUnitNeededOptionsThenAttack$3(ProData proData,
+//           GamePlayer player, Map<Territory, ProTerritory> attackMap,
+//           Collection<Territory> territories2, Unit u2, Object k) -> Double
+//   return calculateAttackEfficiency(proData, player, attackMap, territories2, u2);
+// `computeIfAbsent` mapping function for the o2 cache lookup; same
+// body as lambda$2 but emitted as a separate synthetic by javac because
+// it occurs at a distinct call site.
+pro_sort_move_options_utils_lambda_sort_unit_needed_options_then_attack_3 :: proc(
+	pro_data: ^Pro_Data,
+	player: ^Game_Player,
+	attack_map: map[^Territory]^Pro_Territory,
+	territories2: [dynamic]^Territory,
+	u2: ^Unit,
+	k: rawptr,
+) -> f64 {
+	_ = k
+	return pro_sort_move_options_utils_calculate_attack_efficiency(
+		pro_data,
+		player,
+		attack_map,
+		territories2,
+		u2,
+	)
+}

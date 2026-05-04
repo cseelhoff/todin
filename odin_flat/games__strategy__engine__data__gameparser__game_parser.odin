@@ -1763,3 +1763,105 @@ game_parser_parse :: proc(
 
 	return self.data, nil, nil
 }
+
+// Java synthetic lambda from GameParser.parse(Path, XmlGameElementMapper,
+// Version, boolean):
+//
+//   inputStream -> {
+//     try {
+//       return new GameParser(xmlFile, xmlGameElementMapper, engineVersion,
+//                              collectAttachmentOrderAndValues)
+//           .parse(xmlFile, inputStream);
+//     } catch (final EngineVersionException e) {
+//       log.warn("Game engine not compatible with: " + xmlFile, e);
+//       return null;
+//     } catch (final Exception e) {
+//       log.error("Could not parse:" + xmlFile + ", " + e.getMessage(), e);
+//       return null;
+//     }
+//   }
+//
+// Captures `xmlFile`, `xmlGameElementMapper`, `engineVersion`, and
+// `collectAttachmentOrderAndValues` from the enclosing
+// `parse(Path, mapper, version, boolean)` static. Odin's bare `proc`
+// type cannot carry environment, so the captures are passed
+// explicitly and the lambda is invoked directly from `parse_4` after
+// the `UrlStreams.openStream(uri)` call (rather than passing it
+// through `url_streams_open_stream_uri_op`, which is the no-context
+// variant). Optional<GameData> -> ^Game_Data (nil = empty). Both
+// typed exception arms collapse to "return nil" since the surrounding
+// snapshot harness treats Optional.empty() identically. The
+// log.warn/log.error sites are dropped (no logger shim).
+//   GameParseException is not caught here in Java; it is mirrored as
+// panics inside the parser's helper procs (per the modeling pragma
+// on `game_parser_parse`).
+game_parser_lambda_parse_2 :: proc(
+	xml_file: Path,
+	xml_game_element_mapper: ^Xml_Game_Element_Mapper,
+	engine_version: ^Version,
+	collect_attachment_order_and_values: bool,
+	input_stream: ^Input_Stream,
+) -> ^Game_Data {
+	parser := game_parser_new(
+		path_to_string(xml_file),
+		xml_game_element_mapper,
+		engine_version,
+		collect_attachment_order_and_values,
+	)
+	data, xml_err, engine_err := game_parser_parse(parser, xml_file, input_stream)
+	if engine_err != nil {
+		// log.warn("Game engine not compatible with: " + xmlFile, e) — dropped.
+		return nil
+	}
+	if xml_err != nil {
+		// log.error("Could not parse:" + xmlFile + ", " + e.getMessage(), e) — dropped.
+		return nil
+	}
+	return data
+}
+
+// Java:
+//   @VisibleForTesting
+//   public static Optional<GameData> parse(
+//       final Path xmlFile,
+//       final XmlGameElementMapper xmlGameElementMapper,
+//       final Version engineVersion,
+//       final boolean collectAttachmentOrderAndValues) {
+//     return UrlStreams.openStream(
+//         xmlFile.toUri(),
+//         inputStream -> { ... lambda$parse$2 ... });
+//   }
+//
+// Optional<GameData> -> ^Game_Data (nil = empty / openStream miss).
+// The `xmlFile.toUri()` call collapses to `uri_new(path_to_string(...))`
+// since both shims exist (`Uri` is a thin string wrapper in the JDK
+// shims). Because `url_streams_open_stream_uri_op` takes a
+// context-free `proc(^Input_Stream) -> rawptr` and Odin's bare proc
+// type cannot carry the four captured locals, this function inlines
+// the openStream-then-apply-lambda dataflow instead of routing
+// through the `_uri_op` overload — semantically equivalent: it opens
+// the stream via `url_streams_open_stream_uri`, returns nil on
+// Optional.empty(), and otherwise dispatches to
+// `game_parser_lambda_parse_2`.
+//
+// This is the 4-arg static parse referenced by `game_parser_parse_2`
+// (the public 2-arg overload) as a forward reference.
+game_parser_parse_4 :: proc(
+	xml_file: Path,
+	xml_game_element_mapper: ^Xml_Game_Element_Mapper,
+	engine_version: ^Version,
+	collect_attachment_order_and_values: bool,
+) -> ^Game_Data {
+	uri := uri_new(path_to_string(xml_file))
+	input_stream := url_streams_open_stream_uri(uri)
+	if input_stream == nil {
+		return nil
+	}
+	return game_parser_lambda_parse_2(
+		xml_file,
+		xml_game_element_mapper,
+		engine_version,
+		collect_attachment_order_and_values,
+		input_stream,
+	)
+}

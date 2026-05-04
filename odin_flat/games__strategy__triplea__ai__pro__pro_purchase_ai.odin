@@ -1075,3 +1075,678 @@ pro_purchase_ai_upgrade_units_with_remaining_pus :: proc(
 		}
 	}
 }
+
+// Synthetic less-comparator for `Comparator.comparingDouble(
+// ProPlaceTerritory::getDefenseValue).reversed()` in
+// `ProPurchaseAi.prioritizeTerritoriesToDefend`. Reversed order =
+// descending → `less(a,b)` is `a > b`.
+pro_purchase_ai_lambda_prioritize_territories_to_defend_defense_desc :: proc(
+	a: ^Pro_Place_Territory,
+	b: ^Pro_Place_Territory,
+) -> bool {
+	return pro_place_territory_get_defense_value(a) >
+		pro_place_territory_get_defense_value(b)
+}
+
+// `ProPurchaseAi.prioritizeTerritoriesToDefend(Map<Territory, ProPurchaseTerritory>, boolean)`.
+// Walks every `ProPlaceTerritory` reachable from the player's purchase
+// territories, filters down to those that genuinely need defending
+// (capital rule, TUV swing, leftover land units), assigns each a
+// defense value from production / factory presence / capital weight /
+// existing defender TUV, drops anything with a non-positive value,
+// and returns the survivors sorted by defense value descending.
+pro_purchase_ai_prioritize_territories_to_defend :: proc(
+	self: ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	is_land: bool,
+) -> [dynamic]^Pro_Place_Territory {
+	pro_logger_info(
+		fmt.tprintf("Prioritize territories to defend with isLand=%v", is_land),
+	)
+
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
+		self.territory_manager,
+	)
+
+	air_p, air_c := matches_unit_is_air()
+	owned_p, owned_c := matches_unit_is_owned_by(self.player)
+
+	// Determine which territories need defended.
+	need_to_defend: [dynamic]^Pro_Place_Territory
+	defer delete(need_to_defend)
+	need_to_defend_seen: map[^Pro_Place_Territory]struct {}
+	defer delete(need_to_defend_seen)
+
+	for _, ppt in purchase_territories {
+		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
+			t := pro_place_territory_get_territory(place_territory)
+			max_terr := pro_other_move_options_get_max(enemy_attack_options, t)
+			if max_terr == nil ||
+			   (territory_is_water(t) &&
+					   len(pro_place_territory_get_defending_units(place_territory)) == 0) ||
+			   (is_land && territory_is_water(t)) ||
+			   (!is_land && !territory_is_water(t)) {
+				continue
+			}
+
+			// Build the deduped enemy-attacker list (Java HashSet of
+			// max units + amphib units).
+			enemy_attacking_units: [dynamic]^Unit
+			defer delete(enemy_attacking_units)
+			enemy_seen: map[^Unit]struct {}
+			defer delete(enemy_seen)
+			for u in pro_territory_get_max_units(max_terr) {
+				if _, ok := enemy_seen[u]; !ok {
+					enemy_seen[u] = struct {}{}
+					append(&enemy_attacking_units, u)
+				}
+			}
+			for u in pro_territory_get_max_amphib_units(max_terr) {
+				if _, ok := enemy_seen[u]; !ok {
+					enemy_seen[u] = struct {}{}
+					append(&enemy_attacking_units, u)
+				}
+			}
+
+			bombard_units: [dynamic]^Unit
+			defer delete(bombard_units)
+			for u in pro_territory_get_max_bombard_units(max_terr) {
+				append(&bombard_units, u)
+			}
+
+			result := pro_odds_calculator_calculate_battle_results(
+				self.calc,
+				self.pro_data,
+				t,
+				enemy_attacking_units,
+				pro_place_territory_get_defending_units(place_territory),
+				bombard_units,
+			)
+			pro_place_territory_set_min_battle_result(place_territory, result)
+
+			hold_value: f64 = 0
+			if territory_is_water(t) {
+				owned_defenders: [dynamic]^Unit
+				defer delete(owned_defenders)
+				for u in pro_place_territory_get_defending_units(place_territory) {
+					if owned_p(owned_c, u) {
+						append(&owned_defenders, u)
+					}
+				}
+				costs := new(Integer_Map_Unit_Type)
+				costs.entries = pro_data_get_unit_value_map(self.pro_data)
+				unit_value := tuv_utils_get_tuv(owned_defenders, costs)
+				free(costs)
+				hold_value = f64(unit_value) / 8.0
+			}
+
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s TUVSwing=%v, win%%=%v, hasLandUnitRemaining=%v, holdValue=%v, enemyAttackers=%s, defenders=%s",
+					territory_to_string(t),
+					pro_battle_result_get_tuv_swing(result),
+					pro_battle_result_get_win_percentage(result),
+					pro_battle_result_is_has_land_unit_remaining(result),
+					hold_value,
+					pro_utils_summarize_units(enemy_attacking_units),
+					pro_utils_summarize_units(
+						pro_place_territory_get_defending_units(place_territory),
+					),
+				),
+			)
+
+			// Decide if it can't currently be held.
+			is_land_and_can_only_be_attacked_by_air :=
+				!territory_is_water(t) && len(enemy_attacking_units) > 0
+			if is_land_and_can_only_be_attacked_by_air {
+				for u in enemy_attacking_units {
+					if !air_p(air_c, u) {
+						is_land_and_can_only_be_attacked_by_air = false
+						break
+					}
+				}
+			}
+			should_add :=
+				(!territory_is_water(t) &&
+					   pro_battle_result_is_has_land_unit_remaining(result)) ||
+				pro_battle_result_get_tuv_swing(result) > hold_value ||
+				(t == pro_data_get_my_capital(self.pro_data) &&
+						!is_land_and_can_only_be_attacked_by_air &&
+						pro_battle_result_get_win_percentage(result) >
+							(100.0 - pro_data_get_win_percentage(self.pro_data)))
+			if should_add {
+				if _, present := need_to_defend_seen[place_territory]; !present {
+					need_to_defend_seen[place_territory] = struct {}{}
+					append(&need_to_defend, place_territory)
+				}
+			}
+		}
+	}
+
+	// Calculate value of defending each territory.
+	has_factory_p, has_factory_c :=
+		pro_matches_territory_has_infra_factory_and_is_owned_land(self.player)
+	for place_territory in need_to_defend {
+		t := pro_place_territory_get_territory(place_territory)
+
+		is_my_capital: i32 = 0
+		if t == pro_data_get_my_capital(self.pro_data) {
+			is_my_capital = 1
+		}
+
+		is_factory: i32 = 0
+		if has_factory_p(has_factory_c, t) {
+			is_factory = 1
+		}
+
+		production: i32 = 0
+		ta := territory_attachment_get(t)
+		if ta != nil {
+			production = territory_attachment_get_production(ta)
+		}
+
+		costs := new(Integer_Map_Unit_Type)
+		costs.entries = pro_data_get_unit_value_map(self.pro_data)
+		defending_unit_value := f64(
+			tuv_utils_get_tuv(
+				pro_place_territory_get_defending_units(place_territory),
+				costs,
+			),
+		)
+		free(costs)
+		if territory_is_water(t) {
+			any_owned := false
+			for u in pro_place_territory_get_defending_units(place_territory) {
+				if owned_p(owned_c, u) {
+					any_owned = true
+					break
+				}
+			}
+			if !any_owned {
+				defending_unit_value = 0
+			}
+		}
+
+		territory_value :=
+			(2.0 * f64(production) + 4.0 * f64(is_factory) + 0.5 * defending_unit_value) *
+			(1.0 + f64(is_factory)) *
+			(1.0 + 10.0 * f64(is_my_capital))
+		pro_place_territory_set_defense_value(place_territory, territory_value)
+	}
+
+	// Drop territories with non-positive defense value, then sort
+	// the survivors by defense value descending.
+	sorted_territories: [dynamic]^Pro_Place_Territory
+	for ppt in need_to_defend {
+		if !pro_purchase_ai_lambda_prioritize_territories_to_defend_1(ppt) {
+			append(&sorted_territories, ppt)
+		}
+	}
+	slice.sort_by(
+		sorted_territories[:],
+		pro_purchase_ai_lambda_prioritize_territories_to_defend_defense_desc,
+	)
+	for place_territory in sorted_territories {
+		pro_logger_debug(
+			fmt.tprintf(
+				"%v defenseValue=%v",
+				place_territory,
+				pro_place_territory_get_defense_value(place_territory),
+			),
+		)
+	}
+	return sorted_territories
+}
+
+// Synthetic less-comparator for `Comparator.comparingDouble(
+// ProPlaceTerritory::getStrategicValue).reversed()` in the first
+// loop of `ProPurchaseAi.purchaseUnitsWithRemainingProduction`.
+pro_purchase_ai_lambda_purchase_units_with_remaining_production_strategic_desc :: proc(
+	a: ^Pro_Place_Territory,
+	b: ^Pro_Place_Territory,
+) -> bool {
+	return pro_place_territory_get_strategic_value(a) >
+		pro_place_territory_get_strategic_value(b)
+}
+
+// Synthetic less-comparator for `Comparator.comparingDouble(
+// ProPlaceTerritory::getDefenseValue).reversed()` in the second
+// loop of `ProPurchaseAi.purchaseUnitsWithRemainingProduction`.
+pro_purchase_ai_lambda_purchase_units_with_remaining_production_defense_desc :: proc(
+	a: ^Pro_Place_Territory,
+	b: ^Pro_Place_Territory,
+) -> bool {
+	return pro_place_territory_get_defense_value(a) >
+		pro_place_territory_get_defense_value(b)
+}
+
+// `ProPurchaseAi.purchaseUnitsWithRemainingProduction(
+//     Map<Territory, ProPurchaseTerritory>, List<ProPurchaseOption>,
+//     List<ProPurchaseOption>)`.
+// Two passes: (1) for safe (can-hold) land territories with leftover
+// production, queue the most efficient long-range attack unit
+// (preferring air) until the budget or the option list is exhausted;
+// (2) for unsafe (can't-hold) land territories, sample defense units
+// weighted by `cost^2 * defenseEfficiency` until exhausted.
+pro_purchase_ai_purchase_units_with_remaining_production :: proc(
+	self: ^Pro_Purchase_Ai,
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	land_purchase_options: [dynamic]^Pro_Purchase_Option,
+	air_purchase_options: [dynamic]^Pro_Purchase_Option,
+) {
+	if pro_resource_tracker_is_empty(self.resource_tracker) {
+		return
+	}
+	pro_logger_info(
+		fmt.tprintf(
+			"Purchase units in territories with remaining production with resources: %v",
+			self.resource_tracker,
+		),
+	)
+
+	// Split safe vs. can't-hold land place territories that still
+	// have unit production budget.
+	prioritized_land_territories: [dynamic]^Pro_Place_Territory
+	defer delete(prioritized_land_territories)
+	prioritized_cant_hold_land_territories: [dynamic]^Pro_Place_Territory
+	defer delete(prioritized_cant_hold_land_territories)
+	for _, ppt in purchase_territories {
+		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
+			t := pro_place_territory_get_territory(place_territory)
+			pt_for_t, has_pt := purchase_territories[t]
+			if !has_pt {
+				continue
+			}
+			if !territory_is_water(t) &&
+			   pro_place_territory_is_can_hold(place_territory) &&
+			   pro_purchase_territory_get_remaining_unit_production(pt_for_t) > 0 {
+				append(&prioritized_land_territories, place_territory)
+			} else if !territory_is_water(t) &&
+			   pro_purchase_territory_get_remaining_unit_production(pt_for_t) > 0 {
+				append(&prioritized_cant_hold_land_territories, place_territory)
+			}
+		}
+	}
+
+	slice.sort_by(
+		prioritized_land_territories[:],
+		pro_purchase_ai_lambda_purchase_units_with_remaining_production_strategic_desc,
+	)
+	pro_logger_debug(
+		fmt.tprintf(
+			"Sorted land territories with remaining production: %v",
+			prioritized_land_territories,
+		),
+	)
+
+	// Pass 1: long-range attack units in safe territories.
+	for place_territory in prioritized_land_territories {
+		t := pro_place_territory_get_territory(place_territory)
+		pro_logger_debug(fmt.tprintf("Checking territory: %v", t))
+
+		air_and_land_purchase_options: [dynamic]^Pro_Purchase_Option
+		defer delete(air_and_land_purchase_options)
+		for ppo in air_purchase_options {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		for ppo in land_purchase_options {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		purchase_options_for_territory :=
+			pro_purchase_validation_utils_find_purchase_options_for_territory_5(
+				self.pro_data,
+				self.player,
+				air_and_land_purchase_options,
+				t,
+				self.is_bid,
+			)
+		defer delete(purchase_options_for_territory)
+
+		remaining_unit_production :=
+			pro_purchase_territory_get_remaining_unit_production(purchase_territories[t])
+		for {
+			empty_units: [dynamic]^Unit
+			pro_purchase_validation_utils_remove_invalid_purchase_options(
+				self.pro_data,
+				self.player,
+				self.start_of_turn_data,
+				&purchase_options_for_territory,
+				self.resource_tracker,
+				remaining_unit_production,
+				empty_units,
+				purchase_territories,
+				0,
+				t,
+			)
+			delete(empty_units)
+			if len(purchase_options_for_territory) == 0 {
+				break
+			}
+
+			// Pick the option with the highest
+			// attackEfficiency * movement / quantity, with air x10.
+			best_attack_option: ^Pro_Purchase_Option = nil
+			max_attack_efficiency: f64 = 0
+			for ppo in purchase_options_for_territory {
+				attack_efficiency :=
+					pro_purchase_option_get_attack_efficiency(ppo) *
+					f64(pro_purchase_option_get_movement(ppo)) /
+					f64(pro_purchase_option_get_quantity(ppo))
+				if pro_purchase_option_is_air(ppo) {
+					attack_efficiency *= 10
+				}
+				if attack_efficiency > max_attack_efficiency {
+					best_attack_option = ppo
+					max_attack_efficiency = attack_efficiency
+				}
+			}
+			if best_attack_option == nil {
+				break
+			}
+
+			pro_resource_tracker_purchase(self.resource_tracker, best_attack_option)
+			remaining_unit_production -=
+				pro_purchase_option_get_quantity(best_attack_option)
+			pro_purchase_ai_add_units_to_place(
+				self,
+				place_territory,
+				pro_purchase_option_create_temp_units(best_attack_option),
+			)
+		}
+	}
+
+	slice.sort_by(
+		prioritized_cant_hold_land_territories[:],
+		pro_purchase_ai_lambda_purchase_units_with_remaining_production_defense_desc,
+	)
+	pro_logger_debug(
+		fmt.tprintf(
+			"Sorted can't hold land territories with remaining production: %v",
+			prioritized_cant_hold_land_territories,
+		),
+	)
+
+	// Pass 2: defense units in can't-hold territories.
+	owned_p, owned_c := matches_unit_is_owned_by(self.player)
+	for place_territory in prioritized_cant_hold_land_territories {
+		t := pro_place_territory_get_territory(place_territory)
+		pro_logger_debug(fmt.tprintf("Checking territory: %v", t))
+
+		owned_local_units: [dynamic]^Unit
+		defer delete(owned_local_units)
+		for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+			if owned_p(owned_c, u) {
+				append(&owned_local_units, u)
+			}
+		}
+
+		air_and_land_purchase_options: [dynamic]^Pro_Purchase_Option
+		defer delete(air_and_land_purchase_options)
+		for ppo in air_purchase_options {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		for ppo in land_purchase_options {
+			append(&air_and_land_purchase_options, ppo)
+		}
+		purchase_options_for_territory :=
+			pro_purchase_validation_utils_find_purchase_options_for_territory_5(
+				self.pro_data,
+				self.player,
+				air_and_land_purchase_options,
+				t,
+				self.is_bid,
+			)
+		defer delete(purchase_options_for_territory)
+
+		remaining_unit_production :=
+			pro_purchase_territory_get_remaining_unit_production(purchase_territories[t])
+		for {
+			empty_units: [dynamic]^Unit
+			pro_purchase_validation_utils_remove_invalid_purchase_options(
+				self.pro_data,
+				self.player,
+				self.start_of_turn_data,
+				&purchase_options_for_territory,
+				self.resource_tracker,
+				remaining_unit_production,
+				empty_units,
+				purchase_territories,
+				0,
+				t,
+			)
+			delete(empty_units)
+
+			defense_efficiencies: map[^Pro_Purchase_Option]f64
+			defer delete(defense_efficiencies)
+			for ppo in purchase_options_for_territory {
+				cost := f64(pro_purchase_option_get_cost(ppo))
+				defense_efficiencies[ppo] =
+					cost * cost *
+					pro_purchase_option_get_defense_efficiency_with_args(
+						ppo,
+						1,
+						self.data,
+						owned_local_units,
+						pro_place_territory_get_place_units(place_territory),
+					)
+			}
+
+			selected_option := pro_purchase_utils_randomize_purchase_option(
+				defense_efficiencies,
+				"Defense",
+			)
+			if selected_option == nil {
+				break
+			}
+
+			pro_resource_tracker_purchase(self.resource_tracker, selected_option)
+			remaining_unit_production -= pro_purchase_option_get_quantity(selected_option)
+			pro_purchase_ai_add_units_to_place(
+				self,
+				place_territory,
+				pro_purchase_option_create_temp_units(selected_option),
+			)
+		}
+	}
+}
+
+// `ProPurchaseAi.placeDefenders(Map<Territory, ProPurchaseTerritory>,
+// List<ProPlaceTerritory>, IAbstractPlaceDelegate)`. For every
+// prioritized territory, asks the place delegate for the
+// non-construction units that can be placed there, then commits
+// units one-by-one until the battle result is acceptable. If the
+// final result still doesn't justify the defense, the territory is
+// flagged as unable to hold via `setCantHoldPlaceTerritory`.
+pro_purchase_ai_place_defenders :: proc(
+	self: ^Pro_Purchase_Ai,
+	place_non_construction_territories: map[^Territory]^Pro_Purchase_Territory,
+	need_to_defend_territories: [dynamic]^Pro_Place_Territory,
+	place_delegate: ^I_Abstract_Place_Delegate,
+) {
+	player_units := unit_collection_get_units(
+		game_player_get_unit_collection(self.player),
+	)
+	pro_logger_info(fmt.tprintf("Place defenders with units=%v", player_units))
+
+	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
+		self.territory_manager,
+	)
+
+	not_construction_p, not_construction_c := matches_unit_is_not_construction()
+
+	for place_territory in need_to_defend_territories {
+		t := pro_place_territory_get_territory(place_territory)
+		max_terr := pro_other_move_options_get_max(enemy_attack_options, t)
+		max_units_summary, max_amphib_summary: string
+		if max_terr != nil {
+			max_units_list: [dynamic]^Unit
+			defer delete(max_units_list)
+			for u in pro_territory_get_max_units(max_terr) {
+				append(&max_units_list, u)
+			}
+			max_units_summary = pro_utils_summarize_units(max_units_list)
+			max_amphib_summary = pro_utils_summarize_units(
+				pro_territory_get_max_amphib_units(max_terr),
+			)
+		}
+		pro_logger_debug(
+			fmt.tprintf(
+				"Placing defenders for %s, enemyAttackers=%s, amphibEnemyAttackers=%s, defenders=%s",
+				territory_to_string(t),
+				max_units_summary,
+				max_amphib_summary,
+				pro_utils_summarize_units(
+					pro_place_territory_get_defending_units(place_territory),
+				),
+			),
+		)
+
+		// player.getMatches(Matches.unitIsNotConstruction()).
+		non_construction_player_units: [dynamic]^Unit
+		defer delete(non_construction_player_units)
+		for u in player_units {
+			if not_construction_p(not_construction_c, u) {
+				append(&non_construction_player_units, u)
+			}
+		}
+
+		placeable_units := i_abstract_place_delegate_get_placeable_units(
+			place_delegate,
+			non_construction_player_units,
+			t,
+		)
+		if placeable_units_is_error(placeable_units) {
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s can't place units with error: %s",
+					territory_to_string(t),
+					placeable_units_get_error_message(placeable_units),
+				),
+			)
+			continue
+		}
+
+		remaining_unit_production := placeable_units_get_max_units(placeable_units)
+		if remaining_unit_production == -1 {
+			remaining_unit_production = max(i32)
+		}
+		pro_logger_trace(
+			fmt.tprintf(
+				"%s, remainingUnitProduction=%d",
+				territory_to_string(t),
+				remaining_unit_production,
+			),
+		)
+
+		// Place defenders one-at-a-time until the territory can be
+		// held (or we run out of units).
+		units_that_can_be_placed: [dynamic]^Unit
+		defer delete(units_that_can_be_placed)
+		for u in placeable_units_get_units(placeable_units) {
+			append(&units_that_can_be_placed, u)
+		}
+		land_place_count := remaining_unit_production
+		if i32(len(units_that_can_be_placed)) < land_place_count {
+			land_place_count = i32(len(units_that_can_be_placed))
+		}
+		units_to_place: [dynamic]^Unit
+		final_result := pro_battle_result_new_empty()
+		for i in 0 ..< int(land_place_count) {
+			append(&units_to_place, units_that_can_be_placed[i])
+
+			// Build deduped enemy-attacker list (max units + amphib).
+			enemy_attacking_units: [dynamic]^Unit
+			defer delete(enemy_attacking_units)
+			enemy_seen: map[^Unit]struct {}
+			defer delete(enemy_seen)
+			if max_terr != nil {
+				for u in pro_territory_get_max_units(max_terr) {
+					if _, ok := enemy_seen[u]; !ok {
+						enemy_seen[u] = struct {}{}
+						append(&enemy_attacking_units, u)
+					}
+				}
+				for u in pro_territory_get_max_amphib_units(max_terr) {
+					if _, ok := enemy_seen[u]; !ok {
+						enemy_seen[u] = struct {}{}
+						append(&enemy_attacking_units, u)
+					}
+				}
+			}
+
+			defenders: [dynamic]^Unit
+			defer delete(defenders)
+			for u in pro_place_territory_get_defending_units(place_territory) {
+				append(&defenders, u)
+			}
+			for u in units_to_place {
+				append(&defenders, u)
+			}
+
+			bombard_units: [dynamic]^Unit
+			defer delete(bombard_units)
+			if max_terr != nil {
+				for u in pro_territory_get_max_bombard_units(max_terr) {
+					append(&bombard_units, u)
+				}
+			}
+
+			final_result = pro_odds_calculator_calculate_battle_results(
+				self.calc,
+				self.pro_data,
+				t,
+				enemy_attacking_units,
+				defenders,
+				bombard_units,
+			)
+
+			my_capital := pro_data_get_my_capital(self.pro_data)
+			if (t != my_capital &&
+				   !pro_battle_result_is_has_land_unit_remaining(final_result) &&
+				   pro_battle_result_get_tuv_swing(final_result) <= 0) ||
+			   (t == my_capital &&
+					   pro_battle_result_get_win_percentage(final_result) <
+						   (100.0 - pro_data_get_win_percentage(self.pro_data)) &&
+					   pro_battle_result_get_tuv_swing(final_result) <= 0) {
+				break
+			}
+		}
+
+		// Decide whether to commit the placement or flag as unholdable.
+		min_battle_result := pro_place_territory_get_min_battle_result(place_territory)
+		min_tuv_swing: f64 = 0
+		if min_battle_result != nil {
+			min_tuv_swing = pro_battle_result_get_tuv_swing(min_battle_result)
+		}
+		my_capital := pro_data_get_my_capital(self.pro_data)
+		if !pro_battle_result_is_has_land_unit_remaining(final_result) ||
+		   pro_battle_result_get_tuv_swing(final_result) < min_tuv_swing ||
+		   t == my_capital {
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s, placedUnits=%v, TUVSwing=%v",
+					territory_to_string(t),
+					units_to_place,
+					pro_battle_result_get_tuv_swing(final_result),
+				),
+			)
+			pro_purchase_ai_do_place(t, units_to_place, place_delegate)
+		} else {
+			pro_purchase_ai_set_cant_hold_place_territory(
+				self,
+				place_territory,
+				place_non_construction_territories,
+			)
+			pro_logger_trace(
+				fmt.tprintf(
+					"%s, unable to defend with placedUnits=%v, TUVSwing=%v, minTUVSwing=%v",
+					territory_to_string(t),
+					units_to_place,
+					pro_battle_result_get_tuv_swing(final_result),
+					min_tuv_swing,
+				),
+			)
+		}
+		delete(units_to_place)
+	}
+}
