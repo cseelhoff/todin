@@ -12,6 +12,7 @@ Owner_Change :: struct {
 // Java: OwnerChange(Territory territory, @Nullable GamePlayer newOwner)
 owner_change_new :: proc(territory: ^Territory, new_owner: ^Game_Player) -> ^Owner_Change {
 	self := new(Owner_Change)
+	self.kind = .Owner_Change
 	self.territory_name = default_named_get_name(&territory.named_attachable.default_named)
 	if new_owner == nil {
 		self.new_owner_name = ""

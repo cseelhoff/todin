@@ -10,6 +10,7 @@ add_production_rule_new :: proc(rule: ^Production_Rule, frontier: ^Production_Fr
 	assert(rule != nil)
 	assert(frontier != nil)
 	self := new(Add_Production_Rule)
+	self.kind = .Add_Production_Rule
 	self.rule = rule
 	self.frontier = frontier
 	return self

@@ -15,6 +15,7 @@ remove_available_tech_new :: proc(
 	assert(front != nil)
 	assert(tech != nil)
 	self := new(Remove_Available_Tech)
+	self.kind = .Remove_Available_Tech
 	self.tech = tech
 	self.frontier = front
 	self.player = player

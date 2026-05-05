@@ -21,6 +21,7 @@ generic_tech_change_new :: proc(
 		panic("null attachment")
 	}
 	self := new(Generic_Tech_Change)
+	self.kind = .Generic_Tech_Change
 	self.attached_to = attachment.attached_to
 	self.attachment_name = attachment.name
 	old_value, _ := tech_attachment_has_generic_tech(attachment, property)

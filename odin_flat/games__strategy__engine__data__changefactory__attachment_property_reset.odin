@@ -16,6 +16,7 @@ attachment_property_reset_new :: proc(attachment: ^I_Attachment, property: strin
 		panic("null attachment")
 	}
 	self := new(Attachment_Property_Reset)
+	self.kind = .Attachment_Property_Reset
 	self.attached_to = i_attachment_get_attached_to(attachment)
 	self.attachment_name = i_attachment_get_name(attachment)
 	self.old_value = mutable_property_get_value(i_attachment_get_property_or_throw(attachment, property))

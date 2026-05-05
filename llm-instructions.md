@@ -284,6 +284,61 @@ A method is `is_implemented = 1` only when:
   logging-only stub.
 - All called procs are themselves implemented (layer ordering
   guarantees this).
+- **If the Java method is an `@Override` of a virtual on the parent
+  class or interface**, the corresponding `*_new` constructor MUST
+  assign the matching proc-typed field on the parent (this is how
+  Odin models the JVM's vtable — see "Vtable wiring" below). A
+  method body alone is NOT enough; without the constructor
+  assignment, polymorphic dispatch through the parent type silently
+  no-ops at runtime, even though the file compiles cleanly.
+
+### Vtable wiring (constructor proc-field assignment)
+
+Java polymorphism (`@Override`) is modeled in the port as
+**proc-typed fields** on the parent struct (`I_Delegate.start: proc(^I_Delegate)`,
+`Change.perform: proc(^Change, ^Game_State)`, etc.). For dispatch
+through the parent type to reach a subclass override, the
+subclass's `*_new` constructor MUST assign the proc-field
+explicitly — Odin does NOT auto-wire methods to fields.
+
+Convention:
+
+```odin
+purchase_delegate_v_start :: proc(self: ^I_Delegate) {
+    purchase_delegate_start(cast(^Purchase_Delegate)self)
+}
+purchase_delegate_v_end :: proc(self: ^I_Delegate) {
+    purchase_delegate_end(cast(^Purchase_Delegate)self)
+}
+
+purchase_delegate_new :: proc() -> ^Purchase_Delegate {
+    self := new(Purchase_Delegate)
+    self.start = purchase_delegate_v_start   // <-- WIRING
+    self.end   = purchase_delegate_v_end     // <-- WIRING
+    return self
+}
+```
+
+The `*_v_*` shim is needed because Odin proc types are nominal:
+`proc(^I_Delegate)` and `proc(^Purchase_Delegate)` are different
+types even when the body would compile against either. The shim
+takes the parent's signature and casts to the concrete pointer.
+
+For the **discriminator-enum dispatch** pattern (used by
+`Change_Kind` → `change_perform` switch, `Named_Kind` → various
+JSON serializers, `History_Node_Kind` → tree walkers), the same
+rule applies: every `*_new` constructor of a subtype MUST assign
+the discriminator field, e.g. `self.kind = .Owner_Change`. A
+missing kind-assignment makes the switch silently fall through to
+the default case and the subtype is treated as a no-op.
+
+The `scripts/scan_vtable_wiring.py` scanner enforces both
+patterns. It is run by the orchestrator after Phase B completes
+and populates the `vtable_wiring` table in `port.sqlite` with
+status `ok` / `missing` / `missing_kind`. Phase B does NOT
+finish until every `vtable_wiring.status = 'missing*'` row has
+been resolved (the constructor patched and the row re-scanned to
+`ok`). See `phase-b.md` "Vtable wiring pass" for the workflow.
 
 ---
 

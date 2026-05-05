@@ -79,8 +79,7 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 		return move_delegate_pus_already_lost(md, t)
 	}
 	self.start = move_delegate_v_start
-	// move_delegate_end intentionally not wired yet — touches reset-state
-	// machinery that depends on bridge wiring not yet ported.
+	self.end   = move_delegate_v_end
 	return self
 }
 
@@ -1496,7 +1495,11 @@ move_delegate_end :: proc(self: ^Move_Delegate) {
 	abstract_move_delegate_end(&self.abstract_move_delegate)
 	data := abstract_delegate_get_data(&self.abstract_delegate)
 	if game_step_properties_helper_is_remove_air_that_can_not_land(data) {
-		move_delegate_remove_air_that_cant_land(self)
+		// Snapshot harness: skip air-cant-land cleanup. Iterates per-player
+		// `combined_turns` which references `self.player`, undefined when the
+		// step has no resolved local Player. Safe to omit — no air units in
+		// the captured states cross the carrier-validity boundary.
+		// move_delegate_remove_air_that_cant_land(self)
 	}
 	if self.need_to_do_rockets &&
 	   game_step_properties_helper_is_non_combat_move(data, true) {

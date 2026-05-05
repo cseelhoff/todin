@@ -1,0 +1,518 @@
+{
+  "scanned_at": "2026-05-05T23:27:07.970376+00:00",
+  "files_scanned": 1208,
+  "structs_total": 1439,
+  "constructors_total": 562,
+  "wirings_examined": 227,
+  "by_status": {
+    "ok": 19,
+    "missing": 176,
+    "missing_kind": 32
+  },
+  "samples": {
+    "missing": [
+      {
+        "struct": "Change_Attachment_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "change_attachment_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__change_attachment_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.ChangeAttachmentChange"
+      },
+      {
+        "struct": "Add_Battle_Records_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "add_battle_records_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__add_battle_records_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.AddBattleRecordsChange"
+      },
+      {
+        "struct": "Add_Production_Rule",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "add_production_rule_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__add_production_rule.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.AddProductionRule"
+      },
+      {
+        "struct": "Add_Units",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "add_units_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__add_units.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.AddUnits"
+      },
+      {
+        "struct": "Change_Resource_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "change_resource_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__change_resource_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.ChangeResourceChange"
+      },
+      {
+        "struct": "Object_Property_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "object_property_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__object_property_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.ObjectPropertyChange"
+      },
+      {
+        "struct": "Owner_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "owner_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__owner_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.OwnerChange"
+      },
+      {
+        "struct": "Player_Owner_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "player_owner_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__player_owner_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.PlayerOwnerChange"
+      },
+      {
+        "struct": "Remove_Units",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "remove_units_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__remove_units.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.RemoveUnits"
+      },
+      {
+        "struct": "Bombing_Unit_Damage_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "bombing_unit_damage_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__units__bombing_unit_damage_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.units.BombingUnitDamageChange"
+      },
+      {
+        "struct": "Unit_Damage_Received_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "unit_damage_received_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__units__unit_damage_received_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.units.UnitDamageReceivedChange"
+      },
+      {
+        "struct": "Unit_Damage_Received_Change",
+        "field": "invert",
+        "java_method": "invert",
+        "parent_struct": "Change",
+        "constructor": "unit_damage_received_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__units__unit_damage_received_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.changefactory.units.UnitDamageReceivedChange"
+      },
+      {
+        "struct": "Composite_Change",
+        "field": "perform",
+        "java_method": "perform",
+        "parent_struct": "Change",
+        "constructor": "composite_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__composite_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.CompositeChange"
+      },
+      {
+        "struct": "Composite_Change",
+        "field": "invert",
+        "java_method": "invert",
+        "parent_struct": "Change",
+        "constructor": "composite_change_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__composite_change.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.CompositeChange"
+      },
+      {
+        "struct": "Default_Named",
+        "field": "get_name",
+        "java_method": "getName",
+        "parent_struct": "Named",
+        "constructor": "default_named_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__default_named.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.DefaultNamed"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_production_frontier_list",
+        "java_method": "getProductionFrontierList",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_resource_list",
+        "java_method": "getResourceList",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_alliance_tracker",
+        "java_method": "getAllianceTracker",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_technology_frontier",
+        "java_method": "getTechnologyFrontier",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_unit_holder",
+        "java_method": "getUnitHolder",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_player_list",
+        "java_method": "getPlayerList",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_unit_type_list",
+        "java_method": "getUnitTypeList",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_production_rule_list",
+        "java_method": "getProductionRuleList",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_relationship_tracker",
+        "java_method": "getRelationshipTracker",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      },
+      {
+        "struct": "Game_Data",
+        "field": "get_sequence",
+        "java_method": "getSequence",
+        "parent_struct": "Game_State",
+        "constructor": "game_data_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_data.odin",
+        "owner_struct_key": "struct:games.strategy.engine.data.GameData"
+      }
+    ],
+    "missing_kind": [
+      {
+        "struct": "Player_Who_Am_I_Change",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Change",
+        "constructor": "player_who_am_i_change_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__changefactory__player_who_am_i_change.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Default_Named",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "default_named_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__default_named.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Game_Player",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "game_player_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_player.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Game_Player_1",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "game_player_1_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__game_player__1.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Named_Attachable",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "named_attachable_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__named_attachable.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Player_List_1",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "player_list_1_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__player_list__1.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Production_Frontier",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "production_frontier_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__production_frontier.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Production_Rule",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "production_rule_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__production_rule.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Relationship_Type",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "relationship_type_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__relationship_type.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Repair_Frontier",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "repair_frontier_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__repair_frontier.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Repair_Rule",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "repair_rule_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__repair_rule.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Resource",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "resource_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__resource.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Territory_Effect",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "territory_effect_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__territory_effect.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Unit_Type",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "unit_type_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__data__unit_type.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Event",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "History_Node",
+        "constructor": "event_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__history__event.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Event_Child",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "History_Node",
+        "constructor": "event_child_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__history__event_child.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Round",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "History_Node",
+        "constructor": "round_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__history__round.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Step",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "History_Node",
+        "constructor": "step_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__engine__history__step.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Aa_Radar_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "aa_radar_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__aa_radar_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Destroyer_Bombard_Tech_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "destroyer_bombard_tech_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__destroyer_bombard_tech_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Generic_Tech_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "generic_tech_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__generic_tech_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Heavy_Bomber_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "heavy_bomber_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__heavy_bomber_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Improved_Artillery_Support_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "improved_artillery_support_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__improved_artillery_support_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Improved_Shipyards_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "improved_shipyards_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__improved_shipyards_advance.odin",
+        "owner_struct_key": null
+      },
+      {
+        "struct": "Increased_Factory_Production_Advance",
+        "field": "kind",
+        "java_method": null,
+        "parent_struct": "Named",
+        "constructor": "increased_factory_production_advance_new",
+        "status": "missing_kind",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__increased_factory_production_advance.odin",
+        "owner_struct_key": null
+      }
+    ]
+  }
+}

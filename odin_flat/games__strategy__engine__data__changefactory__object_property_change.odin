@@ -26,6 +26,7 @@ object_property_change_new :: proc(
 	new_value: rawptr,
 ) -> ^Object_Property_Change {
 	self := new(Object_Property_Change)
+	self.kind = .Object_Property_Change
 	self.object = object
 	self.property = property
 	self.new_value = new_value

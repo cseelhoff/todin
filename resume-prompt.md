@@ -55,9 +55,21 @@ at the start of the session, then proceed.
 2. **Pick the active phase**:
    - If `s_done < s_total` → **Phase A** (structs).
    - Else if `m_done < m_total` → **Phase B** (methods).
+   - Else if there are unresolved `vtable_wiring` rows → **Phase B-2**
+     (constructor proc-field wiring) — see below.
    - Else → **Phase C** (snapshot validation): compile + run the
      snapshot tests per `llm-instructions.md` §Phase C, then
      `task_complete`.
+
+   **Phase B-2 detection.** Once `m_done == m_total`, run:
+   ```sh
+   python3 scripts/scan_vtable_wiring.py --commit
+   sqlite3 port.sqlite "SELECT status, COUNT(*) FROM vtable_wiring \
+     GROUP BY status;"
+   ```
+   If `missing` or `missing_kind` rows remain, advance to Phase B-2;
+   otherwise advance to Phase C. The scanner is idempotent — re-run
+   it after every Phase B-2 batch to refresh statuses.
 
 3. **Pull the next batch from the DB.**
 
@@ -109,8 +121,15 @@ at the start of the session, then proceed.
      ORDER BY m.odin_file_path, m.method_key;"
    ```
 
-   - If the result set is empty, Phase B is complete — advance to
-     Phase C.
+   - If the result set is empty, Phase B is complete — run the
+     missing-proc scanner one more time, then advance to **Phase
+     B-2** (vtable wiring) per `phase-b.md` §"Phase B-2: Vtable
+     wiring pass". Phase B-2 closes the gap between method bodies
+     (which Phase B ports) and the constructor-side proc-field
+     assignments needed for Java polymorphism to actually dispatch
+     at runtime. Without B-2, `^I_Delegate.start(d)` and similar
+     polymorphic calls silently no-op and the snapshot harness will
+     plateau in Phase C.
    - Otherwise the first column of every row is the layer `L` (the
      same value on every row, by construction). Read it from the
      first row and record it in session memory under
@@ -567,6 +586,18 @@ Rules:
 - No reflection. No stubs. No `panic("not impl")`. No `// TODO`. No
   logging-only stub. Each body must be REAL behavior, or that
   specific method_key must be reported `blocked`.
+- **`@Override` of a parent virtual / interface method.** Port the
+  body as usual (e.g. `purchase_delegate_start :: proc(self: ^Purchase_Delegate)`).
+  Phase B does NOT require you to wire the constructor — the
+  constructor-side proc-field assignment (`self.start = ...`) is
+  handled by the dedicated Phase B-2 vtable-wiring pass after every
+  method body is in place. You may leave the constructor untouched.
+  But: if you are also porting the constructor (`<init>` is in the
+  batch) AND the parent's struct declares a proc-typed field whose
+  name matches one of the methods you just ported, GO AHEAD and
+  add `self.<field> = <snake>_<methodSnake>` (or a `*_v_*` shim
+  cast where signatures differ) inside the constructor — Phase B-2
+  will see your wiring as `ok` and skip the row.
 
 Already-ported dependencies: every method at a lower `method_layer`
 is ALREADY implemented in /home/caleb/todin/odin_flat/, and ALL
@@ -673,6 +704,50 @@ The orchestrator MAY:
   closures, etc.).
 - Re-run `scripts/build_called_layered_tables.py` or other
   bootstrap scripts when the call graph needs reconciliation.
+
+### Phase B-2: vtable wiring (after every method body is implemented)
+
+Once `m_done == m_total`, Phase B is method-body-complete but is
+NOT done. Java polymorphism (`@Override`) is modeled as proc-typed
+fields on the parent struct (e.g. `I_Delegate.start: proc(^I_Delegate)`,
+`Change.perform: proc(^Change, ^Game_State)`, `Named.kind:
+Named_Kind`). Subclass `*_new` constructors MUST assign these
+proc-fields and discriminator enums explicitly — Phase B's
+template only ports method bodies, never the constructor wiring.
+
+Run the scanner:
+
+```sh
+python3 scripts/scan_vtable_wiring.py --commit
+sqlite3 port.sqlite "SELECT status, COUNT(*) FROM vtable_wiring \
+  GROUP BY status;"
+```
+
+The scanner populates `port.sqlite.vtable_wiring` with one row per
+(subclass, proc-field) pair, status `ok` / `missing` /
+`missing_kind`. Loop:
+
+```sh
+sqlite3 -separator '|' port.sqlite "
+  SELECT odin_struct_name, proc_field, java_method, parent_struct,
+         constructor, status, odin_file_path, owner_struct_key
+  FROM vtable_wiring
+  WHERE status IN ('missing', 'missing_kind')
+  ORDER BY odin_file_path, odin_struct_name, proc_field
+  LIMIT 64;"
+```
+
+Group rows client-side by `odin_file_path`, dispatch ONE subagent
+per file (≤8 in parallel) using the **Phase B-2 subagent template
+in `phase-b.md`**. After the batch returns, re-run
+`scan_vtable_wiring.py --commit` and continue until:
+
+```sql
+SELECT COUNT(*) FROM vtable_wiring WHERE status != 'ok';   -- → 0
+```
+
+Only then does Phase C start. Treat any `missing*` row as a hard
+gate identical to an unimplemented `methods` row.
 
 ---
 

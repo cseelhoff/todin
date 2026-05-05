@@ -347,6 +347,11 @@ Rules:
 - No reflection. No stubs. No `panic("not impl")`. No `// TODO`. No
   logging-only stub. Each body must be REAL behavior, or that
   specific method_key must be reported `blocked`.
+- **`@Override` of a parent virtual / interface method.** Port the
+  body as usual. The constructor-side proc-field assignment is
+  handled by the dedicated Phase B-2 vtable-wiring pass after every
+  method body is in place — see "Phase B-2: Vtable wiring pass"
+  below. You may leave the constructor untouched here.
 
 Already-ported dependencies: every method at a lower `method_layer`
 is ALREADY implemented in /home/caleb/todin/odin_flat/, and ALL
@@ -453,3 +458,125 @@ Workspace: /home/caleb/todin
   under `triplea/conversion/odin_tests/`.
 - Do NOT bypass safety flags (`--no-verify`, etc.) in any git
   operations.
+---
+
+## Phase B-2: Vtable wiring pass (after method bodies complete)
+
+Phase B's per-method dispatch ports the **bodies** of overriding
+methods (`purchase_delegate_start`, `change_attachment_change_perform`,
+…) but does NOT wire the constructor-side proc-fields that connect
+those bodies to the parent's vtable. Without that wiring,
+polymorphic dispatch through `^I_Delegate` / `^Change` /
+`^Named` silently no-ops at runtime even though `odin check` is
+clean.
+
+**This was the 30→34/52 plateau in the original snapshot run** —
+many `*_perform`, `*_start`, `*_end`, `*_save_state`, `*_load_state`
+bodies existed and were marked `is_implemented = 1`, but the
+corresponding `*_new` constructors never assigned the proc-fields
+on the parent. Phase B-2 closes that gap before Phase C can pass.
+
+### When Phase B-2 runs
+
+After every layer of regular Phase B finishes (i.e. when
+`SELECT MIN(method_layer) FROM methods WHERE is_implemented = 0`
+returns `NULL`), the orchestrator runs:
+
+```sh
+python3 scripts/scan_vtable_wiring.py --commit
+```
+
+This scans `odin_flat/` and populates `port.sqlite.vtable_wiring`
+with one row per (subclass, proc-field) pair. Statuses:
+
+  - `ok`            — constructor assigns the proc-field (any path,
+                       direct or through a delegated `*_new_canonical`)
+  - `missing`       — Java has `<Class>#<methodName>` AND parent
+                       declares `<methodName>: proc(...)` but the
+                       subclass's `*_new` never assigns it
+  - `missing_kind`  — parent transitively carries a `kind: <Enum>`
+                       discriminator but the constructor never sets
+                       `self.kind = .<Variant>`
+
+### Vtable-wiring batch query
+
+```sh
+sqlite3 -separator '|' port.sqlite "
+  SELECT odin_struct_name, proc_field, java_method, parent_struct,
+         constructor, status, odin_file_path, owner_struct_key
+  FROM vtable_wiring
+  WHERE status IN ('missing', 'missing_kind')
+  ORDER BY odin_file_path, odin_struct_name, proc_field
+  LIMIT 8;"
+```
+
+Group rows by `odin_file_path` and dispatch ONE subagent per file
+(up to 8 in parallel) using the template below. After all
+subagents return, re-run `scan_vtable_wiring.py --commit`. Repeat
+until `SELECT COUNT(*) FROM vtable_wiring WHERE status IN
+('missing','missing_kind') = 0`.
+
+### Phase B-2 subagent prompt template
+
+```
+Wire constructor proc-fields ("vtable wiring") for one Odin file
+per /home/caleb/todin/llm-instructions.md "Vtable wiring" section
+(read it first; obey all rules).
+
+Odin target file: <ODIN_FILE_PATH>
+Wirings to add (each is a (struct, proc_field, status) triple):
+  - <Odin_Struct_Name>.<proc_field>  status=<missing|missing_kind>
+    parent=<Parent_Struct>  java_method=<methodCamel or "kind">
+    constructor=<expected_constructor_name>
+  - ...
+
+Rules per row:
+  1. For status=`missing`: locate the `<expected_constructor_name>`
+     proc in the file (or any `*_new*` returning ^Odin_Struct_Name).
+     Add a `<snake>_v_<methodSnake>` shim proc taking the parent's
+     signature and casting `^Parent_Struct` to `^Odin_Struct_Name`,
+     then assign `self.<proc_field> = <snake>_v_<methodSnake>`
+     inside the constructor BEFORE `return self`. The body the
+     shim calls is `<snake>_<methodSnake>` (already implemented in
+     Phase B). If multiple `*_new*` constructors exist, prefer
+     adding the assignment to the canonical one (the longest-named
+     `*_new_canonical` if present, else the most-arg overload).
+  2. For status=`missing_kind`: assign `self.kind = .<Variant>`
+     inside the constructor BEFORE `return self`. The expected
+     `.<Variant>` is the Pascal_Underscore form of the struct name
+     itself (e.g. `Owner_Change` → `.Owner_Change`).
+  3. If the constructor delegates to another `*_new*` (e.g.
+     `return foo_new_canonical(...)`), patch the canonical instead
+     so every entry point benefits.
+  4. Do NOT modify the method body procs themselves. Do NOT add
+     new fields. Do NOT redefine the struct.
+  5. If the corresponding `<snake>_<methodSnake>` body proc does
+     not exist (sanity check via grep), mark that wiring
+     `blocked: missing body proc <name>` and continue with the
+     rest of the batch.
+
+DO NOT update port.sqlite. The orchestrator re-runs
+scan_vtable_wiring.py --commit after the batch returns.
+
+Return EXACTLY one line:
+  done: <Odin_Struct_Name>.<proc_field> ... | <referenced procs>
+or:
+  partial: <done struct.field> ... | blocked: <struct.field> <reason>; ...
+or:
+  blocked: <whole-file reason>
+```
+
+### Phase B-2 stop condition
+
+Phase B is only complete when:
+
+  ```sql
+  SELECT COUNT(*) FROM methods WHERE is_implemented = 0;
+  -- → 0
+  SELECT COUNT(*) FROM vtable_wiring WHERE status != 'ok';
+  -- → 0
+  ```
+
+Only then does the orchestrator advance to Phase C. A non-empty
+`vtable_wiring` with `missing*` rows is treated identically to an
+unimplemented `methods` row: it blocks Phase C.
