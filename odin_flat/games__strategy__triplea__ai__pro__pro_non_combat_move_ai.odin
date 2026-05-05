@@ -4210,3 +4210,220 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 	)
 	return factory_move_map
 }
+
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#simulateNonCombatMove(IMoveDelegate)
+pro_non_combat_move_ai_simulate_non_combat_move :: proc(
+	self:     ^Pro_Non_Combat_Move_Ai,
+	move_del: ^I_Move_Delegate,
+) -> map[^Territory]^Pro_Territory {
+	return pro_non_combat_move_ai_do_non_combat_move(self, nil, false, nil, false, move_del)
+}
+
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#doNonCombatMove(Map, Map, IMoveDelegate)
+pro_non_combat_move_ai_do_non_combat_move :: proc(
+	self:                         ^Pro_Non_Combat_Move_Ai,
+	initial_factory_move_map:     map[^Territory]^Pro_Territory,
+	has_initial_factory_move_map: bool,
+	purchase_territories:         map[^Territory]^Pro_Purchase_Territory,
+	has_purchase_territories:     bool,
+	move_del:                     ^I_Move_Delegate,
+) -> map[^Territory]^Pro_Territory {
+	pro_logger_info("Starting non-combat move phase")
+
+	// Current data at the start of non-combat move
+	self.data = pro_data_get_data(self.pro_data)
+	self.player = pro_data_get_player(self.pro_data)
+	self.unit_territory_map = pro_data_get_unit_territory_map(self.pro_data)
+	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
+
+	// Find the max number of units that can move to each allied territory
+	cleared_for_defense := make([dynamic]^Territory, 0)
+	pro_territory_manager_populate_defense_options(self.territory_manager, cleared_for_defense)
+	delete(cleared_for_defense)
+
+	// On maps that have a single move phase this can be true.
+	is_combat_move := game_step_properties_helper_is_combat_move(self.data)
+
+	// Find number of units in each move territory that can't move and all infra units
+	pro_non_combat_move_ai_find_units_that_cant_move(
+		self,
+		purchase_territories,
+		has_purchase_territories,
+		pro_purchase_option_map_get_land_options(pro_data_get_purchase_options(self.pro_data)),
+	)
+	infra_unit_move_map := pro_non_combat_move_ai_find_infra_units_that_can_move(self)
+
+	// Try to have one land unit in each territory bordering an enemy territory
+	moved_one_defender_to_territories :=
+		pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy(self)
+
+	// Determine max enemy attack units and if territories can be held
+	pro_territory_manager_populate_enemy_attack_options(
+		self.territory_manager,
+		moved_one_defender_to_territories,
+		pro_territory_manager_get_defend_territories(self.territory_manager),
+	)
+	pro_non_combat_move_ai_determine_if_move_territories_can_be_held(self)
+
+	// Prioritize territories to defend
+	factory_move_map := initial_factory_move_map
+	_ = has_initial_factory_move_map
+	prioritized_territories := pro_non_combat_move_ai_prioritize_defend_options(
+		self,
+		factory_move_map,
+	)
+
+	// Determine which territories to defend and how many units each one needs
+	my_capital := pro_data_get_my_capital(self.pro_data)
+	enemy_distance_to_my_capital := i32(max(i32))
+	if my_capital != nil {
+		enemy_distance_to_my_capital = pro_utils_get_closest_enemy_land_territory_distance(
+			self.data,
+			self.player,
+			my_capital,
+		)
+		pro_non_combat_move_ai_move_units_to_defend_territories(
+			self,
+			is_combat_move,
+			&prioritized_territories,
+			enemy_distance_to_my_capital,
+		)
+	}
+
+	// Copy data in case capital defense needs increased
+	territory_manager_copy := pro_territory_manager_new_with_existing(
+		self.calc,
+		self.pro_data,
+		self.territory_manager,
+	)
+
+	// Get list of territories that can't be held and find move value for each territory
+	territories_that_cant_be_held := pro_territory_manager_get_cant_hold_territories(
+		self.territory_manager,
+	)
+	defend_territories_set := make(map[^Territory]struct {})
+	defer delete(defend_territories_set)
+	for t in pro_territory_manager_get_defend_territories(self.territory_manager) {
+		defend_territories_set[t] = struct {}{}
+	}
+	empty_attack := make([dynamic]^Territory, 0)
+	defer delete(empty_attack)
+	territory_value_map := pro_territory_value_utils_find_territory_values(
+		self.pro_data,
+		self.player,
+		territories_that_cant_be_held,
+		empty_attack,
+		defend_territories_set,
+	)
+	sea_territory_value_map := pro_territory_value_utils_find_sea_territory_values(
+		self.player,
+		territories_that_cant_be_held,
+		pro_territory_manager_get_defend_territories(self.territory_manager),
+	)
+	move_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+
+	// Use loop to ensure capital is protected after moves
+	if my_capital != nil {
+		defense_range := i32(-1)
+		for {
+			// Add value to territories near capital if necessary
+			can_move_p, can_move_c := pro_matches_territory_can_move_land_units(
+				self.player,
+				is_combat_move,
+			)
+			for t in pro_territory_manager_get_defend_territories(self.territory_manager) {
+				value := territory_value_map[t]
+				distance := game_map_get_distance_predicate(
+					game_data_get_map(self.data),
+					my_capital,
+					t,
+					can_move_p,
+					can_move_c,
+				)
+				if distance >= 0 && distance <= defense_range {
+					value *= 10
+				}
+				pro_territory_set_value(move_map[t], value)
+				if territory_is_water(t) {
+					pro_territory_set_sea_value(move_map[t], sea_territory_value_map[t])
+				}
+			}
+
+			pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
+
+			// Check if capital has local land superiority
+			pro_logger_info(
+				fmt.tprintf(
+					"Checking if capital has local land superiority with enemyDistanceToMyCapital=%d",
+					enemy_distance_to_my_capital,
+				),
+			)
+			if enemy_distance_to_my_capital >= 2 &&
+			   enemy_distance_to_my_capital <= 3 &&
+			   defense_range == -1 &&
+			   !pro_battle_utils_territory_has_local_land_superiority_after_moves(
+				   self.pro_data,
+				   my_capital,
+				   enemy_distance_to_my_capital,
+				   self.player,
+				   move_map,
+			   ) {
+				defense_range = enemy_distance_to_my_capital - 1
+				self.territory_manager = territory_manager_copy
+				pro_logger_debug(
+					"Capital doesn't have local land superiority so setting defensive stance",
+				)
+			} else {
+				break
+			}
+		}
+	} else {
+		pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
+	}
+
+	// Determine where to move infra units
+	factory_move_map = pro_non_combat_move_ai_move_infra_units(
+		self,
+		is_combat_move,
+		factory_move_map,
+		infra_unit_move_map,
+	)
+
+	// Log a warning if any units not assigned to a territory (skip infrastructure for now)
+	infra_p, infra_c := matches_unit_is_infrastructure()
+	unmoved_unit_move_map := pro_my_move_options_get_unit_move_map(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+	for u, dests in unmoved_unit_move_map {
+		if !infra_p(infra_c, u) {
+			pro_logger_warn(
+				fmt.tprintf(
+					"%s: %s has unmoved unit: %s with options: %v",
+					game_player_to_string(self.player),
+					territory_to_string(self.unit_territory_map[u]),
+					unit_to_string(u),
+					dests,
+				),
+			)
+		}
+	}
+
+	// Calculate move routes and perform moves
+	pro_non_combat_move_ai_do_move(
+		self,
+		is_combat_move,
+		move_map,
+		move_del,
+		self.data,
+		self.player,
+	)
+
+	// Log results
+	pro_logger_info("Logging results")
+	pro_non_combat_move_ai_log_attack_moves(self, prioritized_territories)
+
+	self.territory_manager = nil
+	return factory_move_map
+}

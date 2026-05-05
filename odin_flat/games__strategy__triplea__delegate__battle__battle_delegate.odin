@@ -2697,3 +2697,49 @@ battle_delegate_end :: proc(self: ^Battle_Delegate) {
 	self.need_to_cleanup = true
 	self.need_to_check_defending_planes_can_land = true
 }
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#start()
+battle_delegate_start :: proc(self: ^Battle_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	// we may start multiple times due to loading after saving
+	// only initialize once
+	if self.need_to_initialize {
+		battle_delegate_do_initialize(self.battle_tracker, self.bridge)
+		self.need_to_initialize = false
+	}
+	// do pre-combat stuff, like scrambling, after we have set up all battles, but before we have
+	// bombardment, etc.
+	// the order of all of this stuff matters quite a bit.
+	if self.need_to_scramble {
+		battle_delegate_do_scrambling(self)
+		self.need_to_scramble = false
+	}
+	if self.need_to_create_rockets {
+		self.rocket_helper = rockets_fire_helper_set_up_rockets(self.bridge)
+		self.need_to_create_rockets = false
+	}
+	if self.need_to_kamikaze_suicide_attacks {
+		battle_delegate_do_kamikaze_suicide_attacks(self)
+		self.need_to_kamikaze_suicide_attacks = false
+	}
+	if self.need_to_clear_empty_air_battle_attacks {
+		battle_delegate_clear_empty_air_battle_attacks(self.battle_tracker, self.bridge)
+		self.need_to_clear_empty_air_battle_attacks = false
+	}
+	if self.need_to_add_bombardment_sources {
+		battle_delegate_add_bombardment_sources(self)
+		self.need_to_add_bombardment_sources = false
+	}
+	battle_tracker_fight_air_raids_and_strategic_bombing_simple(self.battle_tracker, self.bridge)
+	if self.need_to_fire_rockets {
+		// If we are loading a save-game created during battle and after the
+		// 'needToCreateRockets' phase, rocketHelper can be null here.
+		if self.rocket_helper == nil {
+			self.rocket_helper = rockets_fire_helper_set_up_rockets(self.bridge)
+		}
+		rockets_fire_helper_fire_rockets(self.rocket_helper, self.bridge)
+		self.need_to_fire_rockets = false
+	}
+	battle_tracker_fight_defenseless_battles(self.battle_tracker, self.bridge)
+	battle_tracker_fight_battle_if_only_one(self.battle_tracker, self.bridge)
+}

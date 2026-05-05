@@ -419,3 +419,294 @@ abstract_pro_ai_place :: proc(
 	)
 	_ = bid
 }
+
+// Java: protected void move(boolean nonCombat, IMoveDelegate moveDel,
+//                           GameData data, GamePlayer player)
+abstract_pro_ai_move :: proc(
+	self:       ^Abstract_Pro_Ai,
+	non_combat: bool,
+	move_del:   ^I_Move_Delegate,
+	data:       ^Game_Data,
+	player:     ^Game_Player,
+) {
+	start := time.tick_now()
+	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
+	// not flagged actually_called_in_ai_test, so the call is elided.
+	_ = game_sequence_get_round(game_data_get_sequence(data))
+	abstract_pro_ai_initialize_data(self)
+	pro_ai_prepare_data(cast(^Pro_Ai)self, data)
+	did_combat_move := false
+	did_non_combat_move := false
+	if non_combat {
+		_ = pro_non_combat_move_ai_do_non_combat_move(
+			self.non_combat_move_ai,
+			self.stored_factory_move_map,
+			self.stored_factory_move_map != nil,
+			self.stored_purchase_territories,
+			self.stored_purchase_territories != nil,
+			move_del,
+		)
+		self.stored_factory_move_map = nil
+		did_non_combat_move = true
+	} else {
+		if self.stored_combat_move_map == nil {
+			_ = pro_combat_move_ai_do_combat_move(self.combat_move_ai, move_del)
+		} else {
+			pro_combat_move_ai_do_move(
+				self.combat_move_ai,
+				self.stored_combat_move_map,
+				move_del,
+				data,
+				player,
+			)
+			self.stored_combat_move_map = nil
+		}
+		did_combat_move = true
+		// Some maps only have a single "combat" move phase. For these, do "non-combat" moves too,
+		// after combat moves.
+		steps := abstract_pro_ai_get_game_steps_for_player(data, player, 0)
+		defer delete(steps)
+		if !abstract_pro_ai_has_non_combat_move(self, steps) {
+			_ = pro_non_combat_move_ai_do_non_combat_move(
+				self.non_combat_move_ai,
+				self.stored_factory_move_map,
+				self.stored_factory_move_map != nil,
+				self.stored_purchase_territories,
+				self.stored_purchase_territories != nil,
+				move_del,
+			)
+			self.stored_factory_move_map = nil
+			did_non_combat_move = true
+		}
+	}
+
+	pro_logger_info(
+		fmt.tprintf(
+			"%s move (didCombatMove=%v  didNonCombatMove=%v) time=%d",
+			default_named_get_name(&player.named_attachable.default_named),
+			did_combat_move,
+			did_non_combat_move,
+			i64(time.duration_milliseconds(time.tick_since(start))),
+		),
+	)
+}
+
+// I_Delegate_Bridge vtable adapters that forward to a Pro_Dummy_Delegate_Bridge
+// stashed in `concrete`. Mirrors the wrapping pattern in
+// pro_purchase_validation_utils so AbstractDelegate.setDelegateBridgeAndPlayer
+// can dispatch get_data / get_game_player / add_change through the vtable.
+@(private="file")
+abstract_pro_ai_pdb_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
+	return pro_dummy_delegate_bridge_get_data(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+}
+@(private="file")
+abstract_pro_ai_pdb_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
+	return pro_dummy_delegate_bridge_get_game_player(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+}
+@(private="file")
+abstract_pro_ai_pdb_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
+	pro_dummy_delegate_bridge_add_change(cast(^Pro_Dummy_Delegate_Bridge)self.concrete, change)
+}
+
+// Java: protected void purchase(boolean purchaseForBid, int pusToSpend,
+//                               IPurchaseDelegate purchaseDelegate,
+//                               GameData data, GamePlayer player)
+abstract_pro_ai_purchase :: proc(
+	self:               ^Abstract_Pro_Ai,
+	purchase_for_bid:   bool,
+	pus_to_spend:       i32,
+	purchase_delegate:  ^I_Purchase_Delegate,
+	data:               ^Game_Data,
+	player:             ^Game_Player,
+) {
+	start := time.tick_now()
+	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
+	// not flagged actually_called_in_ai_test, so the call is elided.
+	_ = game_sequence_get_round(game_data_get_sequence(data))
+	abstract_pro_ai_initialize_data(self)
+	if pus_to_spend <= 0 {
+		return
+	}
+	if purchase_for_bid {
+		pro_ai_prepare_data(cast(^Pro_Ai)self, data)
+		self.stored_purchase_territories = pro_purchase_ai_bid(
+			self.purchase_ai,
+			pus_to_spend,
+			purchase_delegate,
+			&data.game_state,
+		)
+	} else {
+		// Repair factories
+		pro_purchase_ai_repair(self.purchase_ai, pus_to_spend, purchase_delegate, data, player)
+
+		// Check if any place territories exist
+		purchase_territories := pro_purchase_utils_find_purchase_territories(
+			self.pro_data,
+			player,
+		)
+		// CollectionUtils.getMatches with a rawptr-ctx ProMatches predicate is
+		// inlined per the codebase convention (collection_utils_get_matches
+		// only handles bare proc(rawptr)->bool predicates).
+		factory_pred, factory_ctx :=
+			pro_matches_territory_has_no_infra_factory_and_is_not_conquered_owned_land(player)
+		all_territories := game_map_get_territories(game_data_get_map(data))
+		possible_factory_territories: [dynamic]^Territory
+		defer delete(possible_factory_territories)
+		for t in all_territories {
+			if factory_pred(factory_ctx, t) {
+				append(&possible_factory_territories, t)
+			}
+		}
+		if len(purchase_territories) == 0 && len(possible_factory_territories) == 0 {
+			pro_logger_info("No possible place or factory territories owned so exiting purchase logic")
+			return
+		}
+		pro_logger_info("Starting simulation for purchase phase")
+
+		// Setup data copy and delegates
+		data_copy := abstract_pro_ai_copy_data(self, data)
+		if data_copy == nil {
+			return
+		}
+		player_copy := player_list_get_player_id(
+			game_data_get_player_list(data_copy),
+			default_named_get_name(&player.named_attachable.default_named),
+		)
+		move_del := game_data_get_move_delegate(data_copy)
+		dummy := pro_dummy_delegate_bridge_new(self, player_copy, data_copy)
+		bridge := new(I_Delegate_Bridge)
+		bridge.concrete = rawptr(dummy)
+		bridge.get_data = abstract_pro_ai_pdb_get_data
+		bridge.get_game_player = abstract_pro_ai_pdb_get_game_player
+		bridge.add_change = abstract_pro_ai_pdb_add_change
+		abstract_delegate_set_delegate_bridge_and_player_no_websocket(
+			&move_del.abstract_delegate,
+			bridge,
+		)
+
+		// Simulate the next phases until place/end of turn is reached then use simulated data for
+		// purchase
+		sequence := game_data_get_sequence(data_copy)
+		next_step_index := game_sequence_get_step_index(sequence) + 1
+		game_steps := abstract_pro_ai_get_game_steps_for_player(
+			data_copy,
+			player_copy,
+			next_step_index,
+		)
+		defer delete(game_steps)
+		for step in game_steps {
+			game_sequence_set_round_and_step(
+				sequence,
+				game_sequence_get_round(sequence),
+				game_step_get_display_name(step),
+				game_step_get_player_id(step),
+			)
+			step_name := step.name
+			pro_logger_info(fmt.tprintf("Simulating phase: %s", step_name))
+			if game_step_is_non_combat_move_step_name(step_name) {
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				factory_move_map := pro_non_combat_move_ai_simulate_non_combat_move(
+					self.non_combat_move_ai,
+					cast(^I_Move_Delegate)move_del,
+				)
+				if self.stored_factory_move_map == nil {
+					self.stored_factory_move_map = pro_simulate_turn_utils_transfer_move_map(
+						self.pro_data,
+						factory_move_map,
+						&data.game_state,
+						player,
+					)
+				}
+			} else if game_step_is_combat_move_step_name(step_name) &&
+			   !game_step_is_airborne_combat_move_step_name(step_name) {
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				move_map := pro_combat_move_ai_do_combat_move(
+					self.combat_move_ai,
+					cast(^I_Move_Delegate)move_del,
+				)
+				if self.stored_combat_move_map == nil {
+					self.stored_combat_move_map = pro_simulate_turn_utils_transfer_move_map(
+						self.pro_data,
+						move_map,
+						&data.game_state,
+						player,
+					)
+				}
+				// Some maps only have a combat move. For these, do both types of moves during this phase.
+				if !abstract_pro_ai_has_non_combat_move(self, game_steps) {
+					// Copy the data so we can simulate battles on it, in order to choose our "non
+					// combat" moves based on that (estimated) board state.
+					data_copy2 := abstract_pro_ai_copy_data(self, data)
+					if data_copy2 == nil {
+						return
+					}
+					player_copy2 := player_list_get_player_id(
+						game_data_get_player_list(data_copy2),
+						default_named_get_name(&player.named_attachable.default_named),
+					)
+					pro_data_initialize_simulation(self.pro_data, self, data_copy2, player_copy2)
+					pro_simulate_turn_utils_simulate_battles(
+						self.pro_data,
+						data_copy2,
+						player_copy2,
+						bridge,
+						self.calc,
+					)
+					pro_data_initialize_simulation(self.pro_data, self, data_copy2, player_copy2)
+					factory_move_map := pro_non_combat_move_ai_simulate_non_combat_move(
+						self.non_combat_move_ai,
+						cast(^I_Move_Delegate)move_del,
+					)
+					if self.stored_factory_move_map == nil {
+						self.stored_factory_move_map = pro_simulate_turn_utils_transfer_move_map(
+							self.pro_data,
+							factory_move_map,
+							&data.game_state,
+							player,
+						)
+					}
+				}
+			} else if game_step_is_battle_step_name(step_name) {
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				pro_simulate_turn_utils_simulate_battles(
+					self.pro_data,
+					data_copy,
+					player_copy,
+					bridge,
+					self.calc,
+				)
+			} else if game_step_is_place_step_name(step_name) ||
+			   game_step_is_end_turn_step_name(step_name) {
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player)
+				self.stored_purchase_territories = pro_purchase_ai_purchase(
+					self.purchase_ai,
+					purchase_delegate,
+					&data.game_state,
+				)
+				break
+			} else if game_step_is_politics_step_name(step_name) {
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player)
+				// Can only do politics if this player still owns its capital.
+				my_capital := pro_data_get_my_capital(self.pro_data)
+				if my_capital == nil || territory_is_owned_by(my_capital, player) {
+					politics_delegate := game_data_get_politics_delegate(data_copy)
+					abstract_delegate_set_delegate_bridge_and_player_no_websocket(
+						&politics_delegate.abstract_delegate,
+						bridge,
+					)
+					actions := pro_politics_ai_political_actions(self.politics_ai)
+					if self.stored_political_actions == nil {
+						self.stored_political_actions = actions
+					}
+				}
+			}
+		}
+	}
+	pro_logger_info(
+		fmt.tprintf(
+			"%s time for purchase=%d",
+			default_named_get_name(&player.named_attachable.default_named),
+			i64(time.duration_milliseconds(time.tick_since(start))),
+		),
+	)
+}

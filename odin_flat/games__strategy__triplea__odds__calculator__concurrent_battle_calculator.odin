@@ -325,3 +325,40 @@ concurrent_battle_calculator_set_game_data_internal :: proc(self: ^Concurrent_Ba
 	return self.is_data_set
 }
 
+// games.strategy.triplea.odds.calculator.ConcurrentBattleCalculator#lambda$calculate$4(GamePlayer, GamePlayer, Territory, Collection<Unit>, Collection<Unit>, Collection<Unit>, Collection<TerritoryEffect>, boolean, RunCountDistributor, BattleCalculator)
+// Java body (parallelStream map lambda):
+//   worker -> worker.calculate(
+//       attacker, defender, location, attacking, defending, bombarding,
+//       territoryEffects, retreatWhenOnlyAirLeft, runCountDistributor.nextRunCount())
+// The lambda captures the eight calculate() parameters plus the
+// RunCountDistributor; `worker` is the per-element BattleCalculator from
+// the parallel stream. Translated as a static-style proc taking all
+// captures as explicit arguments (the calculate() inlining above does the
+// equivalent work directly, so this proc is the verbatim lambda body
+// kept for fidelity with the Java surface).
+concurrent_battle_calculator_lambda_calculate_4 :: proc(
+	attacker: ^Game_Player,
+	defender: ^Game_Player,
+	location: ^Territory,
+	attacking: [dynamic]^Unit,
+	defending: [dynamic]^Unit,
+	bombarding: [dynamic]^Unit,
+	territory_effects: [dynamic]^Territory_Effect,
+	retreat_when_only_air_left: bool,
+	run_count_distributor: ^Run_Count_Distributor,
+	worker: ^Battle_Calculator,
+) -> ^Aggregate_Results {
+	return battle_calculator_calculate(
+		worker,
+		attacker,
+		defender,
+		location,
+		attacking,
+		defending,
+		bombarding,
+		territory_effects,
+		retreat_when_only_air_left,
+		run_count_distributor_next_run_count(run_count_distributor),
+	)
+}
+
