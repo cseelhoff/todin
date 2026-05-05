@@ -9,7 +9,7 @@ Game_Game_Builder :: struct {
 	dice_sides:            ^Dice_Sides,
 	game_play:             ^Game_Play,
 	initialize:            ^Initialize,
-	map:                   ^Map,
+	map_:                  ^Map,
 	resource_list:         ^Xml_Resource_List,
 	player_list:           ^Xml_Player_List,
 	unit_list:             ^Unit_List,

@@ -39,11 +39,11 @@ i_game_is_game_over :: proc(self: ^I_Game) -> bool {
 
 // games.strategy.engine.framework.IGame#setDisplay(games.strategy.engine.display.IDisplay)
 i_game_set_display :: proc(self: ^I_Game, display: ^I_Display) {
-	
+	self.set_display(self, display)
+}
 
 // games.strategy.engine.framework.IGame#setResourceLoader(games.strategy.triplea.ResourceLoader)
 i_game_set_resource_loader :: proc(self: ^I_Game, resource_loader: ^Resource_Loader) {
 	self.set_resource_loader(self, resource_loader)
-}self.set_display(self, display)
 }
 

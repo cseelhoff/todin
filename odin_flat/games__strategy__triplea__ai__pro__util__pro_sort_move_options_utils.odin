@@ -296,7 +296,7 @@ pro_sort_move_options_utils_calculate_attack_efficiency :: proc(
 			append(&attacking_units, u)
 		}
 		power_difference: i32 = 0
-		for include_unit in [2]bool{false, true} {
+		for include_unit in ([2]bool{false, true}) {
 			if include_unit {
 				append(&attacking_units, unit)
 			}

@@ -73,9 +73,9 @@ i_delegate_bridge_get_costs_for_tuv :: proc(
         player: ^Game_Player,
 ) -> map[^Unit_Type]i32 {
         calc := tuv_costs_calculator_new()
- 
+        return tuv_costs_calculator_get_costs_for_tuv(calc, player)
+}
 
 i_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel {
         return self.get_sound_channel_broadcaster(self)
-}       return tuv_costs_calculator_get_costs_for_tuv(calc, player)
 }
