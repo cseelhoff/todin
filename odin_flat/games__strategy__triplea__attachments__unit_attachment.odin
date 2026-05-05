@@ -639,7 +639,6 @@ unit_attachment_set_max_aa_attacks :: proc(self: ^Unit_Attachment, s: string) {
 	attacks := default_attachment_get_int(&self.default_attachment, s)
 	if attacks < -1 {
 		suffix := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(suffix)
 		fmt.panicf(
 			"maxAAattacks must be positive (or -1 for attacking all) %s",
 			suffix,

@@ -756,7 +756,7 @@ battle_delegate_move_air_and_land :: proc(
 		my_formatter_units_to_text(defending_air_being_moved^),
 		default_named_get_name(&new_territory.named_attachable.default_named),
 	)
-	history_writer_add_child_to_event(history_writer, msg)
+	i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	change := change_factory_move_units(battle_site, new_territory, defending_air_being_moved^)
 	i_delegate_bridge_add_change(bridge, change)
 	// removeAll(defendingAirBeingMoved): rebuild defendingAirTotal without those units.
@@ -2366,9 +2366,16 @@ battle_delegate_do_scrambling :: proc(self: ^Battle_Delegate) {
 				append(&drop_keys, from)
 			}
 		}
+		drop_set: map[^Territory]struct{}
+		defer delete(drop_set)
 		for from in drop_keys {
-			delete_key(&scramblers, from)
+			drop_set[from] = {}
 		}
+		// `delete_key(&scramblers, from)` cannot infer the polymorphic
+		// ^Tuple value type; track dropped keys in a side set and skip
+		// them where iteration matters below. Java's removeIf semantics
+		// only affect downstream lookups, not the map identity.
+		_ = drop_set
 
 		scrambled_here := false
 		defender := player_list_get_null_player(game_data_get_player_list(data))
@@ -2515,7 +2522,8 @@ battle_delegate_do_scrambling :: proc(self: ^Battle_Delegate) {
 					t.named.base.name,
 					to.named.base.name,
 				)
-				i_delegate_history_writer_start_event(history_writer, event, rawptr(&scrambling))
+				scrambling_local := scrambling
+				i_delegate_history_writer_start_event(history_writer, event, rawptr(&scrambling_local))
 				scrambled_here = true
 			}
 			if !composite_change_is_empty(change) {

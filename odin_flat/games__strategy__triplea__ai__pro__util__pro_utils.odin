@@ -133,7 +133,7 @@ pro_utils_lambda_summarize_units_7 :: proc(key: string, value: i32) -> string {
 		return key
 	}
 	buf: [32]u8
-	count_str := strconv.itoa(buf[:], int(value))
+	count_str := strconv.write_int(buf[:], i64(value), 10)
 	return fmt.aprintf("%s %s", count_str, key)
 }
 

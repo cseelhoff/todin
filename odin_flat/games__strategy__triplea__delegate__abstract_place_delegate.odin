@@ -1088,12 +1088,14 @@ abstract_place_delegate_lambda_unit_which_requires_units_has_required_units_2 ::
 	count_neighbors:            bool,
 	unit_which_requires_units:  ^Unit,
 ) -> bool {
-	if !matches_unit_requires_units_on_creation(unit_which_requires_units) {
+	ruoc_p, ruoc_c := matches_unit_requires_units_on_creation()
+	if !ruoc_p(ruoc_c, unit_which_requires_units) {
 		return true
 	}
 	units_at_start_of_turn_in_producer := abstract_place_delegate_units_at_start_of_step_in_territory(self, to)
 	defer delete(units_at_start_of_turn_in_producer)
-	if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_producer) {
+	in_list_p, in_list_c := matches_unit_which_requires_units_has_required_units_in_list(units_at_start_of_turn_in_producer)
+	if in_list_p(in_list_c, unit_which_requires_units) {
 		return true
 	}
 	if count_neighbors && territory_is_water(to) {
@@ -1105,7 +1107,8 @@ abstract_place_delegate_lambda_unit_which_requires_units_has_required_units_2 ::
 		for current in producers {
 			units_at_start_of_turn_in_current := abstract_place_delegate_units_at_start_of_step_in_territory(self, current)
 			defer delete(units_at_start_of_turn_in_current)
-			if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_current) {
+			in_list_p2, in_list_c2 := matches_unit_which_requires_units_has_required_units_in_list(units_at_start_of_turn_in_current)
+			if in_list_p2(in_list_c2, unit_which_requires_units) {
 				return true
 			}
 		}
@@ -1715,7 +1718,7 @@ abstract_place_delegate_perform_place_from :: proc(
 	desc := undoable_placement_get_description_object(current_placement)
 	i_delegate_history_writer_start_event(writer, transcript_text, rawptr(desc))
 	if msg, has := moved_air_transcript_text_for_history.?; has {
-		history_writer_add_child_to_event(writer, msg)
+		i_delegate_history_writer_add_child_to_event(writer, msg)
 	}
 	i_delegate_bridge_add_change(bridge, &change.change)
 	abstract_place_delegate_update_produced_map(self, producer, placeable_units)

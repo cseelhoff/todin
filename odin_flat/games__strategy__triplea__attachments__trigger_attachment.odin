@@ -3205,12 +3205,10 @@ trigger_attachment_trigger_activate_trigger_other :: proc(
 			history_writer := i_delegate_bridge_get_history_writer(bridge)
 			count := number_of_times_to_fire * each_multiple
 			for i := i32(0); i < count; i += 1 {
-				t_name := default_named_get_name(&t.named_attachable.default_named)
+				t_name := t.name
 				fire_name: string = ""
 				if to_fire != nil {
-					fire_name = default_named_get_name(
-						&to_fire.named_attachable.default_named,
-					)
+					fire_name = to_fire.name
 				}
 				event := strings.concatenate(
 					{

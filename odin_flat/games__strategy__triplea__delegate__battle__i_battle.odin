@@ -162,9 +162,11 @@ i_battle_add_attack_change :: proc(
 		return must_fight_battle_add_attack_change(cast(^Must_Fight_Battle)self, route, units, targets)
 	}
 	if ab.is_finished_battle {
-		// finished_battle's signature takes `^map[...]` (pointer);
-		// targets is local so we can take its address safely.
-		return finished_battle_add_attack_change(cast(^Finished_Battle)self, route, units, &targets)
+		// finished_battle's signature takes `^map[...]`; copy the
+		// by-value `targets` parameter into a local so we can pass
+		// a stable address (Odin disallows &param directly).
+		t_local := targets
+		return finished_battle_add_attack_change(cast(^Finished_Battle)self, route, units, &t_local)
 	}
 	return non_fighting_battle_add_attack_change(cast(^Non_Fighting_Battle)self, route, units, targets)
 }

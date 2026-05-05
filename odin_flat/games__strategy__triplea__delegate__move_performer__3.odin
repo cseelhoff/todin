@@ -78,7 +78,7 @@ move_performer_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 	change := composite_change_new()
 
 	// markFuelCostResourceChange must be done before we load/unload units
-	composite_change_add(change, route_get_fuel_changes(self.units, self.route, game_player, data))
+	composite_change_add(change, route_get_fuel_changes(self.units[:], self.route, game_player, data))
 
 	move_performer_mark_transports_movement(outer, arrived, transporting, self.route)
 
@@ -188,7 +188,12 @@ move_performer_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 						arrived_set[u] = {}
 					}
 					targets[target] = arrived_set
-					battle_tracker_add_battle_bombing(
+					dep_til_end_list := make([dynamic]^Unit)
+					defer delete(dep_til_end_list)
+					for k, _ in dependent_on_something_til_end {
+						append(&dep_til_end_list, k)
+					}
+					battle_tracker_add_battle(
 						move_performer_get_battle_tracker(outer),
 						self.route,
 						arrived_copy_for_battles,
@@ -196,8 +201,8 @@ move_performer_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 						game_player,
 						outer.bridge,
 						outer.current_move,
-						dependent_on_something_til_end,
-						targets,
+						dep_til_end_list,
+						&targets,
 						false,
 					)
 				}
@@ -229,14 +234,22 @@ move_performer_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 		}
 
 		if !ignore_battle && game_step_properties_helper_is_combat_move(data) && !targeted_attack {
+			dep_til_end_list2 := make([dynamic]^Unit)
+			defer delete(dep_til_end_list2)
+			for k, _ in dependent_on_something_til_end {
+				append(&dep_til_end_list2, k)
+			}
 			battle_tracker_add_battle(
 				move_performer_get_battle_tracker(outer),
 				self.route,
 				arrived_copy_for_battles,
+				false,
 				game_player,
 				outer.bridge,
 				outer.current_move,
-				dependent_on_something_til_end,
+				dep_til_end_list2,
+				nil,
+				false,
 			)
 		}
 
@@ -302,7 +315,7 @@ move_performer_3_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 	undoable_move_add_change(outer.current_move, cast(^Change)change)
 	desc := fmt.tprintf(
 		"%s moved from %s to %s",
-		my_formatter_units_to_text_no_owner(arrived),
+		my_formatter_units_to_text_no_owner(arrived, nil),
 		territory_to_string(route_get_start(self.route)),
 		territory_to_string(route_get_end(self.route)),
 	)

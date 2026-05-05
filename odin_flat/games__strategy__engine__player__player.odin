@@ -87,6 +87,19 @@ Player :: struct {
                 potential_targets: [dynamic]^Unit,
                 bombers: [dynamic]^Unit,
         ) -> ^Unit,
+        where_should_rockets_attack: proc(
+                self: ^Player,
+                candidates: [dynamic]^Territory,
+                from: ^Territory,
+        ) -> ^Territory,
+        retreat_query: proc(
+                self: ^Player,
+                battle_id: Uuid,
+                submerge: bool,
+                battle_site: ^Territory,
+                possible_territories: [dynamic]^Territory,
+                message: string,
+        ) -> ^Territory,
 }
 
 // games.strategy.engine.player.Player#selectAttackUnits(Territory)
@@ -395,6 +408,39 @@ player_what_should_bomber_bomb :: proc(
 	}
 	if len(potential_targets) > 0 {
 		return potential_targets[0]
+	}
+	return nil
+}
+
+// games.strategy.engine.player.Player#whereShouldRocketsAttack(Collection<Territory>, Territory)
+//   Vtable dispatch. Default (snapshot harness): pick first available
+//   target (matches AbstractAi behavior).
+player_where_should_rockets_attack :: proc(
+	self: ^Player,
+	candidates: [dynamic]^Territory,
+	from: ^Territory,
+) -> ^Territory {
+	if self != nil && self.where_should_rockets_attack != nil {
+		return self.where_should_rockets_attack(self, candidates, from)
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return nil
+}
+
+// games.strategy.engine.player.Player#retreatQuery(UUID, boolean, Territory, Collection<Territory>, String)
+//   Vtable dispatch. Default (snapshot harness): never retreat.
+player_retreat_query :: proc(
+	self: ^Player,
+	battle_id: Uuid,
+	submerge: bool,
+	battle_site: ^Territory,
+	possible_territories: [dynamic]^Territory,
+	message: string,
+) -> ^Territory {
+	if self != nil && self.retreat_query != nil {
+		return self.retreat_query(self, battle_id, submerge, battle_site, possible_territories, message)
 	}
 	return nil
 }

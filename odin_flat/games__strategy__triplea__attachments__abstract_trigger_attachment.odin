@@ -259,3 +259,18 @@ abstract_trigger_attachment_use :: proc(t: ^Trigger_Attachment, bridge: ^I_Deleg
 abstract_trigger_attachment_test_chance :: proc(t: ^Trigger_Attachment, bridge: ^I_Delegate_Bridge) -> bool {
 	return true
 }
+
+// Java: public static int getEachMultiple(AbstractTriggerAttachment t)
+//   Returns the maximum eachMultiple across t.getConditions(). Each
+//   condition is a RulesAttachment carrying its own each_multiple
+//   (defaulting to 1).
+abstract_trigger_attachment_get_each_multiple :: proc(t: ^Abstract_Trigger_Attachment) -> i32 {
+	each_multiple: i32 = 1
+	for condition in t.conditions {
+		temp := condition.each_multiple
+		if temp > each_multiple {
+			each_multiple = temp
+		}
+	}
+	return each_multiple
+}

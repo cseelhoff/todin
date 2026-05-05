@@ -676,7 +676,7 @@ move_delegate_repaired_change_into :: proc(
 			my_formatter_units_to_text(units_to_remove),
 			territory.named.base.name,
 		)
-		history_writer_add_child_to_event(writer, remove_text, rawptr(&units_to_remove))
+		i_delegate_history_writer_add_child_to_event(writer, remove_text, rawptr(&units_to_remove))
 		i_delegate_bridge_add_change(
 			bridge,
 			change_factory_remove_units(cast(^Unit_Holder)territory, units_to_remove),
@@ -686,7 +686,7 @@ move_delegate_repaired_change_into :: proc(
 			my_formatter_units_to_text(units_to_add),
 			territory.named.base.name,
 		)
-		history_writer_add_child_to_event(writer, add_text, rawptr(&units_to_add))
+		i_delegate_history_writer_add_child_to_event(writer, add_text, rawptr(&units_to_add))
 		i_delegate_bridge_add_change(
 			bridge,
 			change_factory_add_units(cast(^Unit_Holder)territory, units_to_add),

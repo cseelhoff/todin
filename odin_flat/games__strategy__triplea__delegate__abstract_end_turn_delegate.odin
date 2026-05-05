@@ -336,7 +336,7 @@ abstract_end_turn_delegate_write_history_event_for_change_unit_ownership :: proc
 				tuple.first.named.base.name,
 				my_formatter_units_to_text_no_owner(tuple.second, nil),
 			)
-			history_writer_add_child_to_event(writer, text, tuple.second)
+			i_delegate_history_writer_add_child_to_event(writer, text, rawptr(&tuple.second))
 		}
 	}
 }
@@ -873,7 +873,7 @@ abstract_end_turn_delegate_get_blockade_production_loss :: proc(
 		i_delegate_history_writer_start_event(writer, mainline)
 		string_builder_append(string_builder_append(end_turn_report, mainline), "<br />")
 		for t in transcripts {
-			history_writer_add_child_to_event(writer, t)
+			i_delegate_history_writer_add_child_to_event(writer, t)
 			string_builder_append(string_builder_append(string_builder_append(end_turn_report, "* "), t), "<br />")
 		}
 		string_builder_append(end_turn_report, "<br />")

@@ -115,15 +115,15 @@ offensive_first_strike_get_steps :: proc(self: ^Offensive_First_Strike) -> [dyna
 	fire_round_steps_factory_builder_battle_actions(builder, self.battle_actions)
 	fire_round_steps_factory_builder_firing_group_splitter(
 		builder,
-		firing_group_splitter_general_apply,
+		firing_group_splitter_general_apply_raw,
 		splitter,
 	)
 	fire_round_steps_factory_builder_side(builder, &side_local)
 	fire_round_steps_factory_builder_return_fire(builder, &return_fire_local)
-	fire_round_steps_factory_builder_dice_roller(builder, main_dice_roller_apply)
+	fire_round_steps_factory_builder_dice_roller(builder, main_dice_roller_apply_stateless)
 	fire_round_steps_factory_builder_casualty_selector(
 		builder,
-		select_main_battle_casualties_apply,
+		select_main_battle_casualties_apply_stateless,
 	)
 
 	factory := fire_round_steps_factory_builder_build(builder)

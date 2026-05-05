@@ -96,5 +96,10 @@ triple_a_start_game :: proc(
 	}
 	local_players := new(Local_Players)
 	local_players^ = make_Local_Players(players)
-	launch_action_start_game(launch_action, local_players, game, players, chat)
+	players_set := make(map[^Player]struct{})
+	defer delete(players_set)
+	for p in players {
+		players_set[p] = {}
+	}
+	launch_action_start_game(launch_action, local_players, game, players_set, chat)
 }

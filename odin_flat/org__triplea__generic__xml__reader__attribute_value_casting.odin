@@ -113,7 +113,7 @@ attribute_value_casting_cast_attribute_value :: proc(self: ^Attribute_Value_Cast
 			return nil, nil
 		}
 		buf: [40]u8
-		s := strconv.ftoa(buf[:], dv, 'g', -1, 64)
+		s := strconv.write_float(buf[:], dv, 'g', -1, 64)
 		return strings.clone(s), nil
 	case .BOOLEAN:
 		v, berr := attribute_value_casting_cast_to_boolean(self, attribute_value)

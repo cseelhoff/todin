@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Undoable_Placement :: struct {
 	using abstract_undoable_move: Abstract_Undoable_Move,
 	place_territory:    ^Territory,
@@ -54,3 +56,65 @@ undoable_placement_new :: proc(
 	return self
 }
 
+
+// Java: protected final void undoSpecific(IDelegateBridge bridge)
+//   Reaches the current AbstractPlaceDelegate via the game sequence
+//   step, removes the placed units from `produced[producerTerritory]`,
+//   then re-installs a fresh HashMap (mirrors Java's `new HashMap<>(produced)`).
+undoable_placement_undo_specific :: proc(self: ^Undoable_Placement, bridge: ^I_Delegate_Bridge) {
+	data := i_delegate_bridge_get_data(bridge)
+	step := game_sequence_get_step(game_data_get_sequence(data))
+	current_delegate := cast(^Abstract_Place_Delegate)game_step_get_delegate(step)
+	produced := &current_delegate.produced
+	units, ok := produced[self.producer_territory]
+	if !ok {
+		return
+	}
+	n := 0
+	for u in units {
+		keep := true
+		for r in self.units {
+			if u == r {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			units[n] = u
+			n += 1
+		}
+	}
+	resize(&units, n)
+	if n == 0 {
+		delete_key(produced, self.producer_territory)
+	} else {
+		produced[self.producer_territory] = units
+	}
+}
+
+// Java: private String getMoveLabel(String separator)
+//   producerTerritory.equals(placeTerritory) ? placeTerritory.getName()
+//     : producerTerritory.getName() + separator + placeTerritory.getName()
+undoable_placement_get_move_label_with_separator :: proc(self: ^Undoable_Placement, separator: string) -> string {
+	if self.producer_territory == self.place_territory {
+		return territory_get_name(self.place_territory)
+	}
+	return fmt.tprintf(
+		"%s%s%s",
+		territory_get_name(self.producer_territory),
+		separator,
+		territory_get_name(self.place_territory),
+	)
+}
+
+// Java: public final String getMoveLabel()
+//   return getMoveLabel(" -> ")
+undoable_placement_get_move_label :: proc(self: ^Undoable_Placement) -> string {
+	return undoable_placement_get_move_label_with_separator(self, " -> ")
+}
+
+// Java: public final Territory getEnd()
+//   return placeTerritory
+undoable_placement_get_end :: proc(self: ^Undoable_Placement) -> ^Territory {
+	return self.place_territory
+}

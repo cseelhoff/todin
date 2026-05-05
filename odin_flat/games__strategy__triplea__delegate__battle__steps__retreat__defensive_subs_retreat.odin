@@ -111,7 +111,7 @@ defensive_subs_retreat_get_empty_or_friendly_sea_neighbors :: proc(
 		// canalMatch: new MoveValidator(data,false).validateCanal(new Route(site,t), unitsToRetreat, defensePlayer) == null
 		r := route_new_from_start_and_steps(battle_site, t)
 		validator := move_validator_new(game_data, false)
-		if move_validator_validate_canal(validator, r, units_to_retreat, defense_player) != nil {
+		if move_validator_validate_canal(validator, r, units_to_retreat, false, defense_player) != nil {
 			continue
 		}
 		append(&result, t)
@@ -256,6 +256,6 @@ defensive_subs_retreat_lambda_get_empty_or_friendly_sea_neighbors_0 :: proc(
 	defense_player := battle_state_get_player(self.battle_state, .DEFENSE)
 	r := route_new_from_start_and_steps(battle_site, t)
 	validator := move_validator_new(game_data, false)
-	return move_validator_validate_canal(validator, r, units_to_retreat, defense_player) == nil
+	return move_validator_validate_canal(validator, r, units_to_retreat, false, defense_player) == nil
 }
 

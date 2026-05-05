@@ -63,11 +63,18 @@ initialization_delegate_init_ai_starting_bonus_income :: proc(bridge: ^I_Delegat
 		game_data_get_player_list(i_delegate_bridge_get_data(bridge)),
 	)
 	for player in players {
+		res_map := resource_collection_get_resources_copy(game_player_get_resources(player))
+		defer delete(res_map)
+		income := integer_map_new()
+		for k, v in res_map {
+			integer_map_put(income, rawptr(k), v)
+		}
 		bonus_income_utils_add_bonus_income(
-			resource_collection_get_resources_copy(game_player_get_resources(player)),
+			income,
 			bridge,
 			player,
 		)
+		free(income)
 	}
 }
 
@@ -296,8 +303,15 @@ initialization_delegate_lambda_init_ai_starting_bonus_income_0 :: proc(
 	bridge: ^I_Delegate_Bridge,
 	player: ^Game_Player,
 ) {
+	res_map := resource_collection_get_resources_copy(game_player_get_resources(player))
+	defer delete(res_map)
+	income := integer_map_new()
+	defer free(income)
+	for k, v in res_map {
+		integer_map_put(income, rawptr(k), v)
+	}
 	bonus_income_utils_add_bonus_income(
-		resource_collection_get_resources_copy(game_player_get_resources(player)),
+		income,
 		bridge,
 		player,
 	)

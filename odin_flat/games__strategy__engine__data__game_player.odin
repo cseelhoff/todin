@@ -306,3 +306,11 @@ game_player_am_not_dead_yet :: proc(self: ^Game_Player) -> bool {
 	}
 	return false
 }
+
+// Java: games.strategy.engine.data.GamePlayer#getName()
+//   Inherited from DefaultNamed via NamedAttachable. Forwarder so
+//   callers that hold a ^Game_Player can read the name without
+//   reaching through the embed chain explicitly.
+game_player_get_name :: proc(self: ^Game_Player) -> string {
+	return default_named_get_name(&self.named_attachable.default_named)
+}

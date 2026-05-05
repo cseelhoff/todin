@@ -200,7 +200,6 @@ unit_support_attachment_set_bonus_type :: proc(self: ^Unit_Support_Attachment, t
 	defer delete(parts)
 	if len(parts) > 2 {
 		err := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(err)
 		fmt.panicf("bonusType can only have value and count: %s%s", type_str, err)
 	}
 	if len(parts) == 1 {
@@ -240,7 +239,6 @@ unit_support_attachment_set_dice :: proc(self: ^Unit_Support_Attachment, dice: s
 			self.aa_strength = true
 		} else {
 			err := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(err)
 			fmt.panicf("%s dice must be roll, strength, AAroll, or AAstrength: %s", dice, err)
 		}
 	}
@@ -268,7 +266,6 @@ unit_support_attachment_set_faction :: proc(self: ^Unit_Support_Attachment, fact
 			self.enemy = true
 		} else {
 			err := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(err)
 			fmt.panicf("%s faction must be allied, or enemy%s", faction, err)
 		}
 	}
@@ -296,7 +293,6 @@ unit_support_attachment_set_side :: proc(self: ^Unit_Support_Attachment, side: s
 			self.offence = true
 		} else {
 			err := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(err)
 			fmt.panicf("%s side must be defence or offence%s", side, err)
 		}
 	}

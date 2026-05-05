@@ -12,6 +12,13 @@ Launch_Action :: struct {
 	get_auto_save_file_utils: proc(self: ^Launch_Action) -> ^Auto_Save_File_Utils,
 	get_default_local_player_type: proc(self: ^Launch_Action) -> ^Player_Types_Type,
 	get_fallback_connection: proc(self: ^Launch_Action, cancel_action: proc()) -> Maybe(^Server_Connection_Props),
+	start_game: proc(
+		self: ^Launch_Action,
+		local_players: ^Local_Players,
+		game: ^I_Game,
+		players: map[^Player]struct{},
+		chat: ^Chat,
+	),
 }
 
 // Java owners covered by this file:
@@ -107,4 +114,24 @@ launch_action_get_fallback_connection :: proc(
 		return self.get_fallback_connection(self, cancel_action)
 	}
 	return nil
+}
+
+// games.strategy.engine.framework.startup.launcher.LaunchAction#startGame(...)
+// Dispatch for the Java interface method; embedding structs install
+// their own `start_game` proc and this dispatch invokes it. The
+// snapshot harness routes through Headless_Launch_Action which
+// installs headless_launch_action_start_game.
+launch_action_start_game :: proc(
+	self: ^Launch_Action,
+	local_players: ^Local_Players,
+	game: ^I_Game,
+	players: map[^Player]struct{},
+	chat: ^Chat,
+) {
+	if self == nil {
+		return
+	}
+	if self.start_game != nil {
+		self.start_game(self, local_players, game, players, chat)
+	}
 }

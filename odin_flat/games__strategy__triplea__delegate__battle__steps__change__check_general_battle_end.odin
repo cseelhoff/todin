@@ -214,12 +214,18 @@ check_general_battle_end_has_no_strength_or_rolls :: proc(
 	enemy_units: [dynamic]^Unit,
 ) -> bool {
 	game_data := battle_state_get_game_data(self.battle_state)
+	support_map := unit_type_list_get_support_rules(game_data_get_unit_type_list(game_data))
+	support_list: [dynamic]^Unit_Support_Attachment
+	defer delete(support_list)
+	for k, _ in support_map {
+		append(&support_list, k)
+	}
 	cv := combat_value_builder_build_main_combat_value(
 		enemy_units,
 		my_units,
 		side,
 		game_data_get_sequence(game_data),
-		unit_type_list_get_support_rules(game_data_get_unit_type_list(game_data)),
+		support_list,
 		properties_get_lhtr_heavy_bombers(game_data_get_properties(game_data)),
 		int(game_data_get_dice_sides(game_data)),
 		battle_state_get_territory_effects(self.battle_state),

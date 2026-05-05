@@ -2442,7 +2442,7 @@ matches_unit_consumes_units_on_creation :: proc() -> (proc(rawptr, ^Unit) -> boo
 // unitCreatesResources() — u -> !ua.getCreatesResourcesList().isEmpty()
 matches_pred_unit_creates_resources :: proc(_: rawptr, u: ^Unit) -> bool {
 	imr := unit_attachment_get_creates_resources_list(unit_get_unit_attachment(u))
-	return len(imr.values) > 0
+	return len(imr) > 0
 }
 
 matches_unit_creates_resources :: proc() -> (proc(rawptr, ^Unit) -> bool, rawptr) {

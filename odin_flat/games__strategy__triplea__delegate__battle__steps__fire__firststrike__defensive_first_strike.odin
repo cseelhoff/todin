@@ -146,3 +146,37 @@ defensive_first_strike_new :: proc(
 	self.state = defensive_first_strike_calculate_state(self)
 	return self
 }
+
+// Java: private List<BattleStep> getSteps()
+//   Mirrors offensive_first_strike_get_steps; the only difference is
+//   `side = DEFENSE` and the splitter receives DEFENSE as its first
+//   constructor argument.
+defensive_first_strike_get_steps :: proc(self: ^Defensive_First_Strike) -> [dynamic]^Battle_Step {
+	splitter := firing_group_splitter_general_new(
+		.DEFENSE,
+		.FIRST_STRIKE,
+		BATTLE_STEP_FIRST_STRIKE_UNITS,
+	)
+
+	side_local: Battle_State_Side = .DEFENSE
+	return_fire_local := self.return_fire
+
+	builder := fire_round_steps_factory_builder()
+	fire_round_steps_factory_builder_battle_state(builder, self.battle_state)
+	fire_round_steps_factory_builder_battle_actions(builder, self.battle_actions)
+	fire_round_steps_factory_builder_firing_group_splitter(
+		builder,
+		firing_group_splitter_general_apply_raw,
+		splitter,
+	)
+	fire_round_steps_factory_builder_side(builder, &side_local)
+	fire_round_steps_factory_builder_return_fire(builder, &return_fire_local)
+	fire_round_steps_factory_builder_dice_roller(builder, main_dice_roller_apply_stateless)
+	fire_round_steps_factory_builder_casualty_selector(
+		builder,
+		select_main_battle_casualties_apply_stateless,
+	)
+
+	factory := fire_round_steps_factory_builder_build(builder)
+	return fire_round_steps_factory_create_steps(factory)
+}

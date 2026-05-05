@@ -25,6 +25,7 @@ I_Delegate_Bridge :: struct {
                 dice_type:  I_Random_Stats_Dice_Type,
                 annotation: string,
         ) -> [dynamic]i32,
+        stop_game_sequence:       proc(self: ^I_Delegate_Bridge, status: string, title: string),
 }
 
 // Java owners covered by this file:
@@ -130,4 +131,15 @@ i_delegate_bridge_get_random :: proc(
         annotation: string,
 ) -> [dynamic]i32 {
         return self.get_random(self, max, count, player, dice_type, annotation)
+}
+
+// Java: games.strategy.engine.delegate.IDelegateBridge#stopGameSequence(String, String)
+//   Vtable dispatch; concrete bridges (DefaultDelegateBridge in the
+//   harness) install this. AI/snapshot bridges leave it nil → no-op,
+//   matching the headless harness which has no UI step controller to
+//   tear down.
+i_delegate_bridge_stop_game_sequence :: proc(self: ^I_Delegate_Bridge, status: string, title: string) {
+	if self != nil && self.stop_game_sequence != nil {
+		self.stop_game_sequence(self, status, title)
+	}
 }

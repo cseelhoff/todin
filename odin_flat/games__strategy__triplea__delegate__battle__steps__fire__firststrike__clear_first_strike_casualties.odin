@@ -101,14 +101,17 @@ clear_first_strike_casualties_get_sides_to_clear :: proc(
 	self: ^Clear_First_Strike_Casualties,
 ) -> []Battle_State_Side {
 	props := game_data_get_properties(battle_state_get_game_data(self.battle_state))
+	@(static) sides_def := [?]Battle_State_Side{.DEFENSE}
+	@(static) sides_off := [?]Battle_State_Side{.OFFENSE}
+	@(static) sides_both := [?]Battle_State_Side{.OFFENSE, .DEFENSE}
 	if properties_get_ww2_v2(props) {
 		if self.offense_state == .SNEAK_ATTACK && self.defense_state != .SNEAK_ATTACK {
-			return []Battle_State_Side{.DEFENSE}
+			return sides_def[:]
 		} else if self.defense_state == .SNEAK_ATTACK && self.offense_state != .SNEAK_ATTACK {
-			return []Battle_State_Side{.OFFENSE}
+			return sides_off[:]
 		}
 	}
-	return []Battle_State_Side{.OFFENSE, .DEFENSE}
+	return sides_both[:]
 }
 
 // Java: ClearFirstStrikeCasualties#calculateDefenseState

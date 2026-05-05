@@ -773,6 +773,39 @@ tech_tracker_lambda_get_rocket_distance_16 :: proc(player: ^Game_Player) -> i32 
 // matching the lambda 14/15/16 shape used elsewhere in this file.
 // =====================================================================
 
+// Java: public int getAirAttackBonus(GamePlayer player, UnitType type)
+//   getCached(... () -> getSumOfBonuses(TAA::getAirAttackBonus, type, player))
+// Static port: sum across each TAA's airAttackBonus integer-map for `type`.
+tech_tracker_get_air_attack_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.air_attack_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.air_attack_bonus, rawptr(type))
+	}
+	return total
+}
+
+// Java: public int getAirDefenseBonus(GamePlayer player, UnitType type)
+//   getCached(... () -> getSumOfBonuses(TAA::getAirDefenseBonus, type, player))
+tech_tracker_get_air_defense_bonus :: proc(player: ^Game_Player, type: ^Unit_Type) -> i32 {
+	advances := tech_tracker_static_current_tech_advances(player)
+	defer delete(advances)
+	total: i32 = 0
+	for ta in advances {
+		taa := tech_ability_attachment_get(ta)
+		if taa == nil || taa.air_defense_bonus == nil {
+			continue
+		}
+		total += integer_map_get_int(taa.air_defense_bonus, rawptr(type))
+	}
+	return total
+}
+
 // Java: lambda$getAirDefenseBonus$0(UnitType, GamePlayer)
 //   `() -> getSumOfBonuses(TAA::getAirDefenseBonus, type, player)`.
 tech_tracker_lambda_get_air_defense_bonus_0 :: proc(

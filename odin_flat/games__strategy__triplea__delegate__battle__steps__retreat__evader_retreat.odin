@@ -22,7 +22,8 @@ evader_retreat_add_history_retreat :: proc(
 ) {
 	transcript_text := fmt.aprintf("%s%s", my_formatter_units_to_text(units), suffix)
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(writer, transcript_text, units)
+	units_local := units
+	i_delegate_history_writer_add_child_to_event(writer, transcript_text, rawptr(&units_local))
 }
 
 // games.strategy.triplea.delegate.battle.steps.retreat.EvaderRetreat#notifyRetreat(

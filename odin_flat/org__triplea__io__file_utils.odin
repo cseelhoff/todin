@@ -15,7 +15,7 @@ File_Utils :: struct {}
 //   return Files.createTempDirectory("triplea");
 // Path → string per layer-1 task directive.
 file_utils_new_temp_folder :: proc() -> string {
-	base := os.get_env("TMPDIR")
+	base := os.get_env("TMPDIR", context.temp_allocator)
 	if base == "" {
 		base = "/tmp"
 	}

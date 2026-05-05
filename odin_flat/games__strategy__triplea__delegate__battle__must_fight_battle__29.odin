@@ -53,9 +53,7 @@ must_fight_battle_29_execute :: proc(
 	if i64(outer.round) > 10000 {
 		// Distinct attacking unit type names.
 		attacking_seen: map[^Unit_Type]struct{}
-		defer delete(attacking_seen)
 		attacking_names: [dynamic]string
-		defer delete(attacking_names)
 		for u in outer.attacking_units {
 			t := unit_get_type(u)
 			if _, ok := attacking_seen[t]; !ok {
@@ -65,9 +63,7 @@ must_fight_battle_29_execute :: proc(
 		}
 		// Distinct defending unit type names.
 		defending_seen: map[^Unit_Type]struct{}
-		defer delete(defending_seen)
 		defending_names: [dynamic]string
-		defer delete(defending_names)
 		for u in outer.defending_units {
 			t := unit_get_type(u)
 			if _, ok := defending_seen[t]; !ok {

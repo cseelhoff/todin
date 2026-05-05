@@ -37,7 +37,7 @@ move_performer_1_execute :: proc(self_base: ^I_Executable, stack: ^Execution_Sta
 	for battle in pending {
 		for unit in self.units {
 			optional_route := abstract_move_delegate_get_route_used_to_move_into(
-				abstract_move_delegate_get_undoable_moves(outer.move_delegate),
+				outer.move_delegate.moves_to_undo,
 				unit,
 				route_get_start(self.route),
 			)

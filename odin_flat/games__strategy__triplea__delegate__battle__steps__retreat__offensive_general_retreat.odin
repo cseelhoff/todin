@@ -100,10 +100,11 @@ offensive_general_retreat_get_query_text :: proc(self: ^Offensive_General_Retrea
 //                       .addChildToEvent(historyChild.getText(), historyChild.getUnits())
 offensive_general_retreat_lambda__retreat__1 :: proc(bridge: ^I_Delegate_Bridge, history_child: ^Retreater_Retreat_History_Child) {
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(
+	u := retreat_history_child_get_units(history_child)
+	i_delegate_history_writer_add_child_to_event(
 		writer,
 		retreat_history_child_get_text(history_child),
-		retreat_history_child_get_units(history_child),
+		rawptr(&u),
 	)
 }
 

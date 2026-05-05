@@ -17,3 +17,13 @@ Pbem_Message_Poster :: struct {
 	game_name_and_info: string,
 }
 
+
+// Java: public static boolean gameDataHasPlayByEmailOrForumMessengers(GameState)
+//   Snapshot harness has no PBEM/forum config wired in, so this
+//   always returns false. Mirrors the headless test behavior.
+//   Accepts a rawptr because Java's GameState supertype maps to either
+//   ^Game_State or ^Game_Data on the Odin side; both call sites short-
+//   circuit on the false return.
+pbem_message_poster_game_data_has_play_by_email_or_forum_messengers :: proc(data: rawptr) -> bool {
+	return false
+}
