@@ -78,7 +78,20 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 		md := cast(^Move_Delegate)amd
 		return move_delegate_pus_already_lost(md, t)
 	}
+	self.start = move_delegate_v_start
+	// move_delegate_end intentionally not wired yet — touches reset-state
+	// machinery that depends on bridge wiring not yet ported.
 	return self
+}
+
+@(private = "file")
+move_delegate_v_start :: proc(self: ^I_Delegate) {
+	move_delegate_start(cast(^Move_Delegate)self)
+}
+
+@(private = "file")
+move_delegate_v_end :: proc(self: ^I_Delegate) {
+	move_delegate_end(cast(^Move_Delegate)self)
 }
 
 // games.strategy.triplea.delegate.MoveDelegate#pusAlreadyLost(Territory)
