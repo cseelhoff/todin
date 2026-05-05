@@ -16,7 +16,15 @@ Initialization_Delegate :: struct {
 initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 	self := new(Initialization_Delegate)
 	self.need_to_initialize = true
+	self.start = initialization_delegate_v_start
 	return self
+}
+
+// I_Delegate.start vtable shim — casts back to Initialization_Delegate
+// and invokes the concrete override.
+@(private = "file")
+initialization_delegate_v_start :: proc(self: ^I_Delegate) {
+	initialization_delegate_start(cast(^Initialization_Delegate)self)
 }
 
 // games.strategy.triplea.delegate.InitializationDelegate#saveState()

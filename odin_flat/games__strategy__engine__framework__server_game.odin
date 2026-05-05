@@ -201,6 +201,17 @@ server_game_get_current_step :: proc(self: ^Server_Game) -> ^Game_Step {
 SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME :: "games.strategy.engine.framework.IGame.GAME_MODIFICATION_CHANNEL"
 
 server_game_get_game_modified_broadcaster :: proc(self: ^Server_Game) -> ^I_Game_Modified_Channel {
+	// The Odin port has no reflective dispatch, so the broadcaster
+	// returned by `messengers_get_channel_broadcaster` (a
+	// Unified_Invocation_Handler cast to ^I_Channel_Subscriber) cannot
+	// proxy method calls back to the registered IGameModifiedChannel.
+	// Server_Game has the concrete adapter on `game_modified_channel`
+	// (set up in `server_game_new` and the test wrapper); return it
+	// directly so dispatchers (`step_changed`, `game_data_changed`, …)
+	// hit the real proc-fields.
+	if self.game_modified_channel != nil {
+		return self.game_modified_channel
+	}
 	rn := remote_name_new(
 		SERVER_GAME_GAME_MODIFICATION_CHANNEL_NAME,
 		class_new(
@@ -254,7 +265,7 @@ server_game_import_dice_stats :: proc(self: ^Server_Game, node: ^History_Node) {
 // Java walks the DefaultTreeModel from the root, taking the last child at
 // each level until reaching a leaf. The History tree only ever contains
 // History_Node subclasses, so the final cast is safe.
-@(private = "file")
+@(private = "file") 
 server_game_history_get_last_node :: proc(history: ^History) -> ^History_Node {
 	root := default_tree_model_get_root(&history.default_tree_model)
 	node := root
@@ -467,6 +478,14 @@ server_game_start_step :: proc(self: ^Server_Game, step_is_restored_from_saved_g
 		)
 	}
 	history_writer := delegate_history_writer_new(self.messengers.channel_messenger, self.game_data)
+	// The messenger broadcaster returns a Unified_Invocation_Handler cast to
+	// ^I_Game_Modified_Channel — its memory layout does not align with the
+	// channel struct, so dispatch through it segfaults. The Server_Game has
+	// already constructed and wired the real channel adapter; route history
+	// events through it directly instead.
+	if self.game_modified_channel != nil {
+		history_writer.channel = self.game_modified_channel
+	}
 	bridge := make_Default_Delegate_Bridge(
 		self.game_data,
 		self,
@@ -664,7 +683,7 @@ Server_Game_Server_Remote_Adapter :: struct {
 	data:                  ^Game_Data,
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_server_remote_get_saved_game :: proc(self: ^I_Server_Remote) -> []u8 {
 	w := cast(^Server_Game_Server_Remote_Adapter)self
 	return server_game_lambda_new_0(w.target, w.data)
@@ -679,14 +698,14 @@ Server_Game_Game_Modified_Channel_Adapter :: struct {
 	history_writer:                ^History_Writer,
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_assert_correct_caller :: proc(w: ^Server_Game_Game_Modified_Channel_Adapter) {
 	if message_context_get_sender() != messengers_get_server_node(w.target.messengers) {
 		panic("Only server can change game data")
 	}
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_game_data_changed :: proc(self: ^I_Game_Modified_Channel, change: ^Change) {
 	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
 	sg_gmc_assert_correct_caller(w)
@@ -694,14 +713,14 @@ sg_gmc_game_data_changed :: proc(self: ^I_Game_Modified_Channel, change: ^Change
 	history_writer_add_change(w.history_writer, change)
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_start_history_event :: proc(self: ^I_Game_Modified_Channel, event_name: string) {
 	w := cast(^Server_Game_Game_Modified_Channel_Adapter)self
 	sg_gmc_assert_correct_caller(w)
 	history_writer_start_event(w.history_writer, event_name)
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_start_history_event_with_data :: proc(
 	self: ^I_Game_Modified_Channel,
 	event_name: string,
@@ -717,7 +736,7 @@ sg_gmc_start_history_event_with_data :: proc(
 	}
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_add_child_to_event :: proc(
 	self: ^I_Game_Modified_Channel,
 	text: string,
@@ -731,7 +750,7 @@ sg_gmc_add_child_to_event :: proc(
 	history_writer_add_child_to_event(w.history_writer, ec)
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_step_changed :: proc(
 	self: ^I_Game_Modified_Channel,
 	step_name: string,
@@ -755,7 +774,7 @@ sg_gmc_step_changed :: proc(
 	)
 }
 
-@(private = "file")
+// removed @(private="file") so test_server_game.odin can install these procs
 sg_gmc_shut_down :: proc(self: ^I_Game_Modified_Channel) {
 	// Java: empty body — "nothing to do, we call this".
 }

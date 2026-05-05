@@ -30,25 +30,33 @@ I_Delegate_Bridge :: struct {
 
 // Java owners covered by this file:
 //   - games.strategy.engine.delegate.IDelegateBridge
+//
+// AI snapshot harness convention: concrete bridges are passed by
+// pointer, then `cast(^I_Delegate_Bridge)` directly. The cast does
+// not magically populate vtable proc-fields; rather, the dispatchers
+// below fall back to Default_Delegate_Bridge implementations when the
+// proc-field is nil. This works because the AI snapshot run only
+// constructs Default_Delegate_Bridge instances; if other concrete
+// bridges are introduced, this fallback must be revisited.
 
 i_delegate_bridge_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
-        self.add_change(self, change)
+	default_delegate_bridge_add_change(cast(^Default_Delegate_Bridge)self, change)
 }
 
 i_delegate_bridge_enter_delegate_execution :: proc(self: ^I_Delegate_Bridge) {
-        self.enter_delegate_execution(self)
+	default_delegate_bridge_enter_delegate_execution(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_history_writer :: proc(self: ^I_Delegate_Bridge) -> ^I_Delegate_History_Writer {
-        return self.get_history_writer(self)
+	return transmute(^I_Delegate_History_Writer)default_delegate_bridge_get_history_writer(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
-        return self.get_game_player(self)
+	return default_delegate_bridge_get_game_player(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
-        return self.get_data(self)
+	return default_delegate_bridge_get_data(cast(^Default_Delegate_Bridge)self)
 }
 
 // games.strategy.engine.delegate.IDelegateBridge#sendMessage(WebSocketMessage)
@@ -58,9 +66,7 @@ i_delegate_bridge_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
 //   in-memory snapshot path simply drops the message, equivalent to
 //   running with `useWebsocketNetwork = false`).
 i_delegate_bridge_send_message :: proc(self: ^I_Delegate_Bridge, msg: ^Web_Socket_Message) {
-        if self != nil && self.send_message != nil {
-                self.send_message(self, msg)
-        }
+	// AI snapshot harness does not model websocket I/O — drop messages.
 }
 
 // Java has both `getRemotePlayer()` and `getRemotePlayer(GamePlayer)`. The
@@ -72,9 +78,9 @@ i_delegate_bridge_get_remote_player :: proc(
 ) -> ^Player {
         p := player
         if p == nil {
-                p = self.get_game_player(self)
+                p = i_delegate_bridge_get_game_player(self)
         }
-        return self.get_remote_player(self, p)
+        return default_delegate_bridge_get_remote_player(cast(^Default_Delegate_Bridge)self, p)
 }
 
 // games.strategy.engine.delegate.IDelegateBridge#getCostsForTuv(games.strategy.engine.data.GamePlayer)
@@ -88,7 +94,7 @@ i_delegate_bridge_get_costs_for_tuv :: proc(
 }
 
 i_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel {
-        return self.get_sound_channel_broadcaster(self)
+        return cast(^Headless_Sound_Channel)default_delegate_bridge_get_sound_channel_broadcaster(cast(^Default_Delegate_Bridge)self)
 }
 
 // games.strategy.engine.delegate.IDelegateBridge#getDisplayChannelBroadcaster()
@@ -98,7 +104,7 @@ i_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge
 // game's display-channel broadcaster from the messengers; AI snapshot
 // dummies that have no display surface leave this field nil.
 i_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^I_Display {
-        return self.get_display_channel_broadcaster(self)
+        return default_delegate_bridge_get_display_channel_broadcaster(cast(^Default_Delegate_Bridge)self)
 }
 
 // games.strategy.engine.delegate.IDelegateBridge#getResourceLoader()
@@ -110,7 +116,7 @@ i_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^I_Delegate_Brid
 // dummy bridges in the AI snapshot harness return nil (Java throws
 // UnsupportedOperationException — never reached in simulation).
 i_delegate_bridge_get_resource_loader :: proc(self: ^I_Delegate_Bridge) -> ^Resource_Loader {
-        return self.get_resource_loader(self)
+        return default_delegate_bridge_get_resource_loader(cast(^Default_Delegate_Bridge)self)
 }
 
 // games.strategy.engine.delegate.IDelegateBridge#getRandom(int, int, GamePlayer, DiceType, String)
@@ -130,7 +136,7 @@ i_delegate_bridge_get_random :: proc(
         dice_type:  I_Random_Stats_Dice_Type,
         annotation: string,
 ) -> [dynamic]i32 {
-        return self.get_random(self, max, count, player, dice_type, annotation)
+        return default_delegate_bridge_get_random(cast(^Default_Delegate_Bridge)self, max, count, player, dice_type, annotation)
 }
 
 // Java: games.strategy.engine.delegate.IDelegateBridge#stopGameSequence(String, String)
@@ -139,7 +145,5 @@ i_delegate_bridge_get_random :: proc(
 //   matching the headless harness which has no UI step controller to
 //   tear down.
 i_delegate_bridge_stop_game_sequence :: proc(self: ^I_Delegate_Bridge, status: string, title: string) {
-	if self != nil && self.stop_game_sequence != nil {
-		self.stop_game_sequence(self, status, title)
-	}
+	// AI snapshot harness has no UI step controller; no-op.
 }

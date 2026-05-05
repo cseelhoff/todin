@@ -32,11 +32,22 @@ original_owner_tracker_add_original_owner_change_unit :: proc(unit: ^Unit, playe
 // }
 original_owner_tracker_add_original_owner_change_territory :: proc(t: ^Territory, player: ^Game_Player) -> ^Change {
 	ta := territory_attachment_get_or_throw(t)
-	return change_factory_attachment_property_change(
-		cast(^I_Attachment)rawptr(ta),
+	// The standard path goes through change_factory_attachment_property_change
+	// → change_attachment_change_new → i_attachment_get_property_or_throw,
+	// which requires the I_Attachment vtable on Territory_Attachment to be
+	// wired. Until that vtable plumbing exists, build the canonical
+	// Change_Attachment_Change directly with a snapshot of the current
+	// `originalOwner` field as `old_value` (Java's behavior).
+	old_value: rawptr = rawptr(ta.original_owner)
+	cac := change_attachment_change_new_canonical(
+		cast(^Attachable)t,
+		"territoryAttachment",
 		rawptr(player),
+		old_value,
 		"originalOwner",
+		false,
 	)
+	return &cac.change
 }
 
 // Java: public static Optional<GamePlayer> getOriginalOwner(final Territory t) {

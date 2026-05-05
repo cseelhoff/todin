@@ -149,7 +149,15 @@ game_player_is_hidden :: proc(self: ^Game_Player) -> bool {
 // deprecated save-game compatibility shim and is not part of the
 // runtime call surface.
 game_player_is_null :: proc(self: ^Game_Player) -> bool {
-	return false
+	if self == nil {
+		return true
+	}
+	// Java's PlayerList.createNullPlayer constructs an anonymous subclass
+	// whose `isNull()` returns true; the canonical name of that singleton
+	// is "Neutral". The Odin port doesn't carry an explicit isNull flag
+	// (see player_list_create_null_player), so identify the null player by
+	// its canonical name.
+	return default_named_get_name(&self.named_attachable.default_named) == "Neutral"
 }
 
 // Java: @Override public void notifyChanged() {}

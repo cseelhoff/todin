@@ -60,7 +60,54 @@ make_Change :: proc() -> Change {
 // during Phase B. For now these unblock package-level compilation.
 change_perform :: proc(self: ^Change, data: ^Game_State) {
 	if self == nil { return }
-	if self.perform != nil { self.perform(self, data) }
+	if self.perform != nil {
+		self.perform(self, data)
+		return
+	}
+	// Constructors don't always wire the perform proc-field; dispatch
+	// by kind so every Change subtype runs its concrete perform.
+	switch self.kind {
+	case .Unknown:
+	case .Composite_Change:
+		composite_change_perform(cast(^Composite_Change)self, data)
+	case .Change_Attachment_Change:
+		change_attachment_change_perform(cast(^Change_Attachment_Change)self, data)
+	case .Object_Property_Change:
+		object_property_change_perform(cast(^Object_Property_Change)self, data)
+	case .Add_Battle_Records_Change:
+		add_battle_records_change_perform(cast(^Add_Battle_Records_Change)self, data)
+	case .Add_Production_Rule:
+		add_production_rule_perform(cast(^Add_Production_Rule)self, data)
+	case .Add_Units:
+		add_units_perform(cast(^Add_Units)self, data)
+	case .Change_Resource_Change:
+		change_resource_change_perform(cast(^Change_Resource_Change)self, data)
+	case .Owner_Change:
+		owner_change_perform(cast(^Owner_Change)self, data)
+	case .Player_Owner_Change:
+		player_owner_change_perform(cast(^Player_Owner_Change)self, data)
+	case .Player_Who_Am_I_Change:
+		player_who_am_i_change_perform(cast(^Player_Who_Am_I_Change)self, data)
+	case .Bombing_Unit_Damage_Change:
+		bombing_unit_damage_change_perform(cast(^Bombing_Unit_Damage_Change)self, data)
+	case .Unit_Damage_Received_Change:
+		unit_damage_received_change_perform(cast(^Unit_Damage_Received_Change)self, data)
+	case .Unit_Hits_Change:
+	case .Attachment_Property_Reset:
+	case .Attachment_Property_Reset_Undo:
+	case .Relationship_Change:
+	case .Remove_Battle_Records_Change:
+	case .Remove_Units:
+		remove_units_perform(cast(^Remove_Units)self, data)
+	case .Production_Frontier_Change:
+	case .Remove_Production_Rule:
+	case .Remove_Available_Tech:
+	case .Generic_Tech_Change:
+	case .Set_Property_Change:
+	case .Add_Available_Tech:
+	case .Change_Factory_1:
+		change_factory_1_perform(cast(^Change_Factory_1)self, data)
+	}
 }
 change_invert :: proc(self: ^Change) -> ^Change {
 	if self == nil { return nil }
