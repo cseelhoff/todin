@@ -257,6 +257,13 @@ battle_delegate_delegate_currently_requires_user_input :: proc(self: ^Battle_Del
 	return true
 }
 
+// games.strategy.triplea.delegate.battle.BattleDelegate#clearEmptyAirBattleAttacks(BattleTracker, IDelegateBridge)
+battle_delegate_clear_empty_air_battle_attacks :: proc(battle_tracker: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	// these are air battle and air raids where there is no defender, probably because no air is in
+	// range to defend
+	battle_tracker_clear_empty_air_battle_attacks(battle_tracker, bridge)
+}
+
 // games.strategy.triplea.delegate.battle.BattleDelegate#fightBattle(Territory, boolean, IBattle$BattleType)
 // Mirrors the Java method byte-for-byte. Returns "" on success (Java `null`)
 // and a human-readable error string otherwise. The `bombing` parameter is
@@ -2645,4 +2652,48 @@ battle_delegate_do_scrambling :: proc(self: ^Battle_Delegate) {
 			}
 		}
 	}
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#doInitialize(BattleTracker, IDelegateBridge)
+// Java:
+//   setupUnitsInSameTerritoryBattles(battleTracker, bridge);
+//   setupTerritoriesAbandonedToTheEnemy(battleTracker, bridge);
+//   battleTracker.clearFinishedBattles(bridge);
+//   resetMaxScrambleCount(bridge);
+battle_delegate_do_initialize :: proc(battle_tracker: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	battle_delegate_setup_units_in_same_territory_battles(battle_tracker, bridge)
+	battle_delegate_setup_territories_abandoned_to_the_enemy(battle_tracker, bridge)
+	battle_tracker_clear_finished_battles(battle_tracker, bridge)
+	battle_delegate_reset_max_scramble_count(bridge)
+}
+
+// games.strategy.triplea.delegate.battle.BattleDelegate#end()
+// Renamed from `end` (Java identifier) to `battle_delegate_end` since `end`
+// is reserved-ish in Odin contexts and to follow the file's naming scheme.
+battle_delegate_end :: proc(self: ^Battle_Delegate) {
+	if self.need_to_record_battle_statistics {
+		battle_tracker_send_battle_records_to_game_data(battle_delegate_get_battle_tracker(self), self.bridge)
+		self.need_to_record_battle_statistics = false
+	}
+	if self.need_to_cleanup {
+		battle_tracker_clear_battle_records(battle_delegate_get_battle_tracker(self))
+		battle_delegate_scrambling_cleanup(self)
+		battle_delegate_air_battle_cleanup(self)
+		self.need_to_cleanup = false
+	}
+	if self.need_to_check_defending_planes_can_land {
+		battle_delegate_check_defending_planes_can_land(self)
+		self.need_to_check_defending_planes_can_land = false
+	}
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	self.need_to_initialize = true
+	self.need_to_scramble = true
+	self.need_to_create_rockets = true
+	self.need_to_kamikaze_suicide_attacks = true
+	self.need_to_clear_empty_air_battle_attacks = true
+	self.need_to_add_bombardment_sources = true
+	self.need_to_fire_rockets = true
+	self.need_to_record_battle_statistics = true
+	self.need_to_cleanup = true
+	self.need_to_check_defending_planes_can_land = true
 }

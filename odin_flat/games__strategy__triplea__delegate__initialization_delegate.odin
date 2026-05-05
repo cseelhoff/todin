@@ -574,3 +574,16 @@ initialization_delegate_init :: proc(self: ^Initialization_Delegate, bridge: ^I_
 	initialization_delegate_reset_unit_state(self)
 }
 
+// games.strategy.triplea.delegate.InitializationDelegate#start()
+// Override. Calls super.start() (resolves to Base_Triple_A_Delegate's
+// start, which itself chains to Abstract_Delegate.start), then runs
+// init(bridge) once-per-game guarded by need_to_initialize. The
+// `bridge` field lives on the embedded Abstract_Delegate.
+initialization_delegate_start :: proc(self: ^Initialization_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	if self.need_to_initialize {
+		initialization_delegate_init(self, self.abstract_delegate.bridge)
+		self.need_to_initialize = false
+	}
+}
+

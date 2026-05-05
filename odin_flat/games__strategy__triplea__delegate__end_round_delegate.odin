@@ -285,3 +285,349 @@ end_round_delegate_check_victory_cities :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.EndRoundDelegate#end()
+// Java body:
+//   super.end();
+//   final GameState data = getData();
+//   if (Properties.getTriggers(data.getProperties())) {
+//     final CompositeChange change = new CompositeChange();
+//     for (final GamePlayer player : data.getPlayerList().getPlayers()) {
+//       change.add(AbstractTriggerAttachment.triggerSetUsedForThisRound(player));
+//     }
+//     if (!change.isEmpty()) {
+//       bridge.getHistoryWriter().startEvent("Setting uses for triggers used this round.");
+//       bridge.addChange(change);
+//     }
+//   }
+end_round_delegate_end :: proc(self: ^End_Round_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if properties_get_triggers(game_data_get_properties(data)) {
+		change := composite_change_new()
+		for player in player_list_get_players(game_data_get_player_list(data)) {
+			inner := abstract_trigger_attachment_trigger_set_used_for_this_round(player)
+			composite_change_add(change, &inner.change)
+		}
+		if !composite_change_is_empty(change) {
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(self.bridge),
+				"Setting uses for triggers used this round.",
+			)
+			i_delegate_bridge_add_change(self.bridge, &change.change)
+		}
+	}
+}
+
+// AND-chained Predicate<TriggerAttachment> used by start():
+//   availableUses
+//     .and(whenOrDefaultMatch(null, null))
+//     .and(activateTriggerMatch().or(victoryMatch()))
+// `availableUses`, `activateTriggerMatch`, and `victoryMatch` are
+// non-capturing bare procs; `whenOrDefaultMatch` carries a captured
+// (proc, rawptr) pair. The composite predicate therefore stores only
+// the when-pair and short-circuits the rest inline.
+End_Round_Delegate_Ctx_trigger_match :: struct {
+	when_pred: proc(rawptr, ^Trigger_Attachment) -> bool,
+	when_ctx:  rawptr,
+}
+
+end_round_delegate_lambda_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^End_Round_Delegate_Ctx_trigger_match)ctx_ptr
+	if !abstract_trigger_attachment_lambda_static_0(t) {
+		return false
+	}
+	if !ctx.when_pred(ctx.when_ctx, t) {
+		return false
+	}
+	if trigger_attachment_lambda_activate_trigger_match(t) {
+		return true
+	}
+	return trigger_attachment_lambda_victory_match(t)
+}
+
+// games.strategy.triplea.delegate.EndRoundDelegate#start()
+// Java body translated branch-for-branch. Constants.PLAYER_NAME_*
+// resolve to literal strings (verified against
+// games/strategy/triplea/Constants.java): "Japanese", "Germans",
+// "British", "Russians", "Americans".
+end_round_delegate_start :: proc(self: ^End_Round_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	if self.game_over {
+		return
+	}
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	props := game_data_get_properties(data)
+
+	// Pacific theater VP victory.
+	if properties_get_pacific_theater(props) {
+		japanese := player_list_get_player_id(
+			game_data_get_player_list(data),
+			"Japanese",
+		)
+		pa := player_attachment_get(japanese)
+		if pa != nil && player_attachment_get_vps(pa) >= 22 {
+			victory_message := "Axis achieve VP victory"
+			i_delegate_history_writer_start_event(
+				i_delegate_bridge_get_history_writer(self.bridge),
+				victory_message,
+			)
+			// CollectionUtils.getAny over the alliance-name set ⇒ pick the
+			// first key from the map (iteration order does not matter for
+			// the snapshot harness because the AI test setup has Japanese
+			// in exactly one alliance).
+			alliance_name: string
+			any_alliance := false
+			for an in alliance_tracker_get_alliances_player_is_in(
+				game_data_get_alliance_tracker(data),
+				japanese,
+			) {
+				alliance_name = an
+				any_alliance = true
+				break
+			}
+			if any_alliance {
+				winners_set := alliance_tracker_get_players_in_alliance(
+					game_data_get_alliance_tracker(data),
+					alliance_name,
+				)
+				winners: [dynamic]^Game_Player
+				for p in winners_set {
+					append(&winners, p)
+				}
+				end_round_delegate_signal_game_over(
+					self,
+					victory_message,
+					winners,
+					self.bridge,
+				)
+			}
+		}
+	}
+
+	// Win by Victory Cities.
+	if properties_get_total_victory(props) {
+		end_round_delegate_check_victory_cities(
+			self,
+			self.bridge,
+			" achieve TOTAL VICTORY with ",
+			" Total Victory VCs",
+		)
+	}
+	if properties_get_honorable_surrender(props) {
+		end_round_delegate_check_victory_cities(
+			self,
+			self.bridge,
+			" achieve an HONORABLE VICTORY with ",
+			" Honorable Victory VCs",
+		)
+	}
+	if properties_get_projection_of_power(props) {
+		end_round_delegate_check_victory_cities(
+			self,
+			self.bridge,
+			" achieve victory through a PROJECTION OF POWER with ",
+			" Projection of Power VCs",
+		)
+	}
+
+	// Regular economic victory.
+	if properties_get_economic_victory(props) {
+		for alliance_name in alliance_tracker_get_alliances(
+			game_data_get_alliance_tracker(data),
+		) {
+			victory_amount := end_round_delegate_get_economic_victory_amount(
+				&data.game_state,
+				alliance_name,
+			)
+			team_members := alliance_tracker_get_players_in_alliance(
+				game_data_get_alliance_tracker(data),
+				alliance_name,
+			)
+			team_prod: i32 = 0
+			for player in team_members {
+				team_prod += end_round_delegate_get_production(self, player)
+				if team_prod >= victory_amount {
+					victory_message := strings.concatenate(
+						{alliance_name, " achieve economic victory"},
+					)
+					i_delegate_history_writer_start_event(
+						i_delegate_bridge_get_history_writer(self.bridge),
+						victory_message,
+					)
+					winners_set := alliance_tracker_get_players_in_alliance(
+						game_data_get_alliance_tracker(data),
+						alliance_name,
+					)
+					winners: [dynamic]^Game_Player
+					for p in winners_set {
+						append(&winners, p)
+					}
+					end_round_delegate_signal_game_over(
+						self,
+						victory_message,
+						winners,
+						self.bridge,
+					)
+				}
+			}
+		}
+	}
+
+	// Generic trigger-based victories.
+	if properties_get_triggered_victory(props) {
+		when_pred, when_ctx := abstract_trigger_attachment_when_or_default_match("", "")
+		match_ctx := new(End_Round_Delegate_Ctx_trigger_match)
+		match_ctx.when_pred = when_pred
+		match_ctx.when_ctx = when_ctx
+
+		players_set := make(map[^Game_Player]struct {})
+		defer delete(players_set)
+		for p in player_list_get_players(game_data_get_player_list(data)) {
+			players_set[p] = {}
+		}
+
+		to_fire_possible := trigger_attachment_collect_for_all_triggers_matching(
+			players_set,
+			end_round_delegate_lambda_trigger_match,
+			rawptr(match_ctx),
+		)
+		if len(to_fire_possible) != 0 {
+			tested_conditions := trigger_attachment_collect_tests_for_all_triggers_simple(
+				to_fire_possible,
+				self.bridge,
+			)
+			satisfied_pred, satisfied_ctx := abstract_trigger_attachment_is_satisfied_match(
+				tested_conditions,
+			)
+			to_fire_satisfied := make(map[^Trigger_Attachment]struct {})
+			defer delete(to_fire_satisfied)
+			for t in to_fire_possible {
+				if satisfied_pred(satisfied_ctx, t) {
+					to_fire_satisfied[t] = {}
+				}
+			}
+			fire_trigger_params := fire_trigger_params_new("", "", true, true, true, true)
+			trigger_attachment_trigger_activate_trigger_other(
+				tested_conditions,
+				to_fire_satisfied,
+				self.bridge,
+				fire_trigger_params,
+			)
+			trigger_attachment_trigger_victory(
+				to_fire_satisfied,
+				self.bridge,
+				fire_trigger_params,
+			)
+		}
+	}
+
+	if properties_get_ww2_v2(props) || properties_get_ww2_v3(props) {
+		return
+	}
+
+	// Older 5-player maps: simple "who still owns their capital" check.
+	player_list := game_data_get_player_list(data)
+	russians := player_list_get_player_id(player_list, "Russians")
+	germans := player_list_get_player_id(player_list, "Germans")
+	british := player_list_get_player_id(player_list, "British")
+	japanese := player_list_get_player_id(player_list, "Japanese")
+	americans := player_list_get_player_id(player_list, "Americans")
+	if germans == nil ||
+	   russians == nil ||
+	   british == nil ||
+	   japanese == nil ||
+	   americans == nil ||
+	   player_list_size(player_list) > 5 {
+		return
+	}
+
+	game_map := game_data_get_map(data)
+	russia :=
+		territory_get_owner(
+			territory_attachment_get_first_owned_capital_or_first_unowned_capital_or_throw(
+				russians,
+				game_map,
+			),
+		) ==
+		russians
+	germany :=
+		territory_get_owner(
+			territory_attachment_get_first_owned_capital_or_first_unowned_capital_or_throw(
+				germans,
+				game_map,
+			),
+		) ==
+		germans
+	britain :=
+		territory_get_owner(
+			territory_attachment_get_first_owned_capital_or_first_unowned_capital_or_throw(
+				british,
+				game_map,
+			),
+		) ==
+		british
+	japan :=
+		territory_get_owner(
+			territory_attachment_get_first_owned_capital_or_first_unowned_capital_or_throw(
+				japanese,
+				game_map,
+			),
+		) ==
+		japanese
+	america :=
+		territory_get_owner(
+			territory_attachment_get_first_owned_capital_or_first_unowned_capital_or_throw(
+				americans,
+				game_map,
+			),
+		) ==
+		americans
+
+	count: i32 = 0
+	if !russia {
+		count += 1
+	}
+	if !britain {
+		count += 1
+	}
+	if !america {
+		count += 1
+	}
+	military_msg := " achieve a military victory"
+	if germany && japan && count >= 2 {
+		event := strings.concatenate({"Axis", military_msg})
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			event,
+		)
+		winners_set := alliance_tracker_get_players_in_alliance(
+			game_data_get_alliance_tracker(data),
+			"Axis",
+		)
+		winners: [dynamic]^Game_Player
+		for p in winners_set {
+			append(&winners, p)
+		}
+		end_round_delegate_signal_game_over(self, event, winners, self.bridge)
+	}
+	if russia && !germany && britain && !japan && america {
+		event := strings.concatenate({"Allies", military_msg})
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			event,
+		)
+		winners_set := alliance_tracker_get_players_in_alliance(
+			game_data_get_alliance_tracker(data),
+			"Allies",
+		)
+		winners: [dynamic]^Game_Player
+		for p in winners_set {
+			append(&winners, p)
+		}
+		end_round_delegate_signal_game_over(self, event, winners, self.bridge)
+	}
+}
+

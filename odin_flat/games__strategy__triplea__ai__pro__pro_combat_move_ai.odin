@@ -3273,3 +3273,179 @@ pro_combat_move_ai_remove_attacks_until_capital_can_be_held :: proc(
 	}
 }
 
+// Java: ProCombatMoveAi#doCombatMove(IMoveDelegate moveDel)
+//   Drives the combat-move phase end-to-end: snapshots GameData/player,
+//   builds a fresh ProTerritoryManager, evaluates whether we should be on
+//   the defensive, populates attack/defense options, prioritizes and prunes
+//   targets in two passes (the second pass adds water neighbors of any
+//   amphib targets so transports get counter-attack coverage), assigns
+//   units, calculates amphib routes for transport-territory bookkeeping,
+//   removes attacks that expose transports or jeopardize the capital,
+//   handles contested sea, executes the moves, records strafing
+//   territories, logs the result and returns the attack map.
+pro_combat_move_ai_do_combat_move :: proc(
+	self: ^Pro_Combat_Move_Ai,
+	move_del: ^I_Move_Delegate,
+) -> map[^Territory]^Pro_Territory {
+	pro_logger_info("Starting combat move phase")
+
+	// Current data at the start of combat move
+	self.data = pro_data_get_data(self.pro_data)
+	self.player = pro_data_get_player(self.pro_data)
+	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
+
+	// Determine whether capital is threatened, and I should be in a defensive stance
+	empty_purchase_territories: map[^Territory]^Pro_Purchase_Territory
+	self.is_defensive = !pro_battle_utils_territory_has_local_land_superiority(
+		self.pro_data,
+		pro_data_get_my_capital(self.pro_data),
+		3, // ProBattleUtils.MEDIUM_RANGE
+		self.player,
+		empty_purchase_territories,
+	)
+	self.is_bombing = false
+	pro_logger_debug(fmt.tprintf("Currently in defensive stance: %v", self.is_defensive))
+
+	// Find the maximum number of units that can attack each territory and max enemy defenders
+	pro_territory_manager_populate_attack_options(self.territory_manager)
+	pro_territory_manager_populate_enemy_defense_options(self.territory_manager)
+
+	// Remove territories that aren't worth attacking and prioritize the remaining ones
+	attack_options := pro_territory_manager_remove_territories_that_cant_be_conquered_0(
+		self.territory_manager,
+	)
+	cleared_territories: [dynamic]^Territory
+	for patd in attack_options {
+		append(&cleared_territories, pro_territory_get_territory(patd))
+	}
+	pro_territory_manager_populate_enemy_attack_options(
+		self.territory_manager,
+		cleared_territories,
+		cleared_territories,
+	)
+	pro_combat_move_ai_determine_territories_that_can_be_held(
+		self,
+		attack_options,
+		cleared_territories,
+	)
+	pro_combat_move_ai_prioritize_attack_options(self, self.player, &attack_options)
+	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+
+	// Determine which territories to attack
+	pro_combat_move_ai_determine_territories_to_attack(self, &attack_options)
+
+	// Determine which territories can be held and remove any that aren't worth attacking
+	clear(&cleared_territories)
+	possible_transport_territories := make(map[^Territory]struct {})
+	defer delete(possible_transport_territories)
+	water_p, water_c := matches_territory_is_water()
+	for patd in attack_options {
+		t := pro_territory_get_territory(patd)
+		append(&cleared_territories, t)
+		if len(pro_territory_get_amphib_attack_map(patd)) > 0 {
+			neighbors := game_map_get_neighbors_predicate(
+				game_data_get_map(self.data),
+				t,
+				water_p,
+				water_c,
+			)
+			for n in neighbors {
+				possible_transport_territories[n] = {}
+			}
+			delete(neighbors)
+		}
+	}
+	for t in cleared_territories {
+		possible_transport_territories[t] = {}
+	}
+	possible_transport_dyn: [dynamic]^Territory
+	defer delete(possible_transport_dyn)
+	for t in possible_transport_territories {
+		append(&possible_transport_dyn, t)
+	}
+	pro_territory_manager_populate_enemy_attack_options(
+		self.territory_manager,
+		cleared_territories,
+		possible_transport_dyn,
+	)
+	pro_combat_move_ai_determine_territories_that_can_be_held(
+		self,
+		attack_options,
+		cleared_territories,
+	)
+	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+
+	// Determine how many units to attack each territory with
+	already_moved_units :=
+		pro_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy(
+			self,
+			attack_options,
+		)
+	pro_combat_move_ai_determine_units_to_attack_with(
+		self,
+		&attack_options,
+		already_moved_units,
+	)
+
+	// Get all transport final territories (side-effects bookkeeping)
+	_ = pro_move_utils_calculate_amphib_routes(
+		self.pro_data,
+		self.player,
+		pro_my_move_options_get_territory_map(
+			pro_territory_manager_get_attack_options(self.territory_manager),
+		),
+		true,
+	)
+
+	// Determine max enemy counter-attack units and remove territories where transports are exposed
+	pro_combat_move_ai_remove_territories_where_transports_are_exposed(self)
+
+	// Determine if capital can be held if I still own it
+	my_capital := pro_data_get_my_capital(self.pro_data)
+	if my_capital != nil && territory_is_owned_by(my_capital, self.player) {
+		pro_combat_move_ai_remove_attacks_until_capital_can_be_held(
+			self,
+			&attack_options,
+			pro_purchase_option_map_get_land_options(
+				pro_data_get_purchase_options(self.pro_data),
+			),
+		)
+	}
+
+	// Check if any subs in contested territory that's not being attacked
+	pro_combat_move_ai_check_contested_sea_territories(self)
+
+	// Calculate attack routes and perform moves
+	pro_combat_move_ai_do_move(
+		self,
+		pro_my_move_options_get_territory_map(
+			pro_territory_manager_get_attack_options(self.territory_manager),
+		),
+		move_del,
+		self.data,
+		self.player,
+	)
+
+	// Set strafing territories to avoid retreats
+	abstract_pro_ai_set_stored_strafing_territories(
+		self.ai,
+		pro_territory_manager_get_strafing_territories(self.territory_manager),
+	)
+	pro_logger_info(
+		fmt.tprintf(
+			"Strafing territories: %v",
+			pro_territory_manager_get_strafing_territories(self.territory_manager),
+		),
+	)
+
+	// Log results
+	pro_logger_info("Logging results")
+	pro_combat_move_ai_log_attack_moves(self, attack_options)
+
+	result := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_attack_options(self.territory_manager),
+	)
+	self.territory_manager = nil
+	return result
+}
+

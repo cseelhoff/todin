@@ -499,6 +499,145 @@ strategic_bombing_raid_battle_notify_aa_hits :: proc(
 	}
 }
 
+// games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#calculateCasualties
+//
+// Java:
+//   private CasualtyDetails calculateCasualties(
+//       final Collection<Unit> validAttackingUnitsForThisRoll,
+//       final Collection<Unit> defendingAa,
+//       final IDelegateBridge bridge,
+//       final DiceRoll dice,
+//       final String currentTypeAa) {
+//     bridge.getDisplayChannelBroadcaster()
+//         .notifyDice(dice, SELECT_PREFIX + currentTypeAa + CASUALTIES_SUFFIX);
+//     final CasualtyDetails casualties = AaCasualtySelector.getAaCasualties(
+//         validAttackingUnitsForThisRoll, defendingAa,
+//         CombatValueBuilder.mainCombatValue()
+//             .enemyUnits(defendingUnits).friendlyUnits(attackingUnits)
+//             .side(BattleState.Side.OFFENSE)
+//             .gameSequence(bridge.getData().getSequence())
+//             .supportAttachments(bridge.getData().getUnitTypeList().getSupportRules())
+//             .lhtrHeavyBombers(Properties.getLhtrHeavyBombers(bridge.getData().getProperties()))
+//             .gameDiceSides(bridge.getData().getDiceSides())
+//             .territoryEffects(territoryEffects).build(),
+//         CombatValueBuilder.aaCombatValue()
+//             .enemyUnits(attackingUnits).friendlyUnits(defendingUnits)
+//             .side(BattleState.Side.DEFENSE)
+//             .supportAttachments(bridge.getData().getUnitTypeList().getSupportAaRules()).build(),
+//         "Hits from " + currentTypeAa + ", ", dice, bridge,
+//         attacker, battleId, battleSite);
+//     final int totalExpectingHits = Math.min(dice.getHits(), validAttackingUnitsForThisRoll.size());
+//     if (casualties.size() != totalExpectingHits) throw new IllegalStateException(...);
+//     return casualties;
+//   }
+strategic_bombing_raid_battle_calculate_casualties :: proc(
+	self:                              ^Strategic_Bombing_Raid_Battle,
+	valid_attacking_units_for_this_roll: [dynamic]^Unit,
+	defending_aa:                      [dynamic]^Unit,
+	bridge:                            ^I_Delegate_Bridge,
+	dice:                              ^Dice_Roll,
+	current_type_aa:                   string,
+) -> ^Casualty_Details {
+	step_name := fmt.aprintf(
+		"%s%s%s",
+		BATTLE_STEP_SELECT_PREFIX,
+		current_type_aa,
+		BATTLE_STEP_CASUALTIES_SUFFIX,
+	)
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	i_display_notify_dice(display, dice, step_name)
+
+	game_data := i_delegate_bridge_get_data(bridge)
+
+	// Main combat value (offense POV).
+	main_support_rules_map := unit_type_list_get_support_rules(
+		game_data_get_unit_type_list(game_data),
+	)
+	main_support_attachments: [dynamic]^Unit_Support_Attachment
+	for usa, _ in main_support_rules_map {
+		append(&main_support_attachments, usa)
+	}
+	main_cv := combat_value_builder_main_builder_build(
+		combat_value_builder_main_builder_territory_effects(
+			combat_value_builder_main_builder_game_dice_sides(
+				combat_value_builder_main_builder_lhtr_heavy_bombers(
+					combat_value_builder_main_builder_support_attachments(
+						combat_value_builder_main_builder_game_sequence(
+							combat_value_builder_main_builder_side(
+								combat_value_builder_main_builder_friendly_units(
+									combat_value_builder_main_builder_enemy_units(
+										combat_value_builder_main_combat_value(),
+										self.defending_units,
+									),
+									self.attacking_units,
+								),
+								.OFFENSE,
+							),
+							game_data_get_sequence(game_data),
+						),
+						main_support_attachments,
+					),
+					properties_get_lhtr_heavy_bombers(game_data_get_properties(game_data)),
+				),
+				int(game_data_get_dice_sides(game_data)),
+			),
+			self.territory_effects,
+		),
+	)
+
+	// AA combat value (defense POV).
+	aa_support_rules_map := unit_type_list_get_support_aa_rules(
+		game_data_get_unit_type_list(game_data),
+	)
+	aa_support_attachments: [dynamic]^Unit_Support_Attachment
+	for usa, _ in aa_support_rules_map {
+		append(&aa_support_attachments, usa)
+	}
+	aa_cv := combat_value_builder_aa_builder_build(
+		combat_value_builder_aa_builder_support_attachments(
+			combat_value_builder_aa_builder_side(
+				combat_value_builder_aa_builder_friendly_units(
+					combat_value_builder_aa_builder_enemy_units(
+						combat_value_builder_aa_combat_value(),
+						self.attacking_units,
+					),
+					self.defending_units,
+				),
+				.DEFENSE,
+			),
+			aa_support_attachments,
+		),
+	)
+
+	text := fmt.aprintf("Hits from %s, ", current_type_aa)
+	casualties := aa_casualty_selector_get_aa_casualties(
+		valid_attacking_units_for_this_roll,
+		defending_aa,
+		main_cv,
+		aa_cv,
+		text,
+		dice,
+		bridge,
+		self.attacker,
+		self.battle_id,
+		self.battle_site,
+	)
+
+	hits := int(dice_roll_get_hits(dice))
+	total_expecting_hits := hits
+	if len(valid_attacking_units_for_this_roll) < total_expecting_hits {
+		total_expecting_hits = len(valid_attacking_units_for_this_roll)
+	}
+	if casualty_list_size(&casualties.casualty_list) != total_expecting_hits {
+		fmt.panicf(
+			"Wrong number of casualties, expecting:%d but got:%d",
+			total_expecting_hits,
+			casualty_list_size(&casualties.casualty_list),
+		)
+	}
+	return casualties
+}
+
 // games.strategy.triplea.delegate.battle.StrategicBombingRaidBattle#updateDefendingUnits
 //
 //   final Map<String, Set<UnitType>> airborneTechTargetsAllowed =

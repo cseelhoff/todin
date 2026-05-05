@@ -4133,3 +4133,409 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			   self, purchase_options, purchase_territories,
 		   )
 }
+
+// games.strategy.triplea.ai.pro.ProPurchaseAi#bid(int,
+//   games.strategy.triplea.delegate.remote.IPurchaseDelegate,
+//   games.strategy.engine.data.GameState)
+//
+// Default settings for bidding: 1) Limit one bid unit in a territory or sea
+// zone (until set in all territories then 2, etc). 2) The nation placing a
+// unit in a territory or sea zone must have started with a unit in said
+// territory or sea zone prior to placing the bid.
+pro_purchase_ai_bid :: proc(
+	self:                ^Pro_Purchase_Ai,
+	pus:                 i32,
+	purchase_delegate:   ^I_Purchase_Delegate,
+	start_of_turn_data:  ^Game_State,
+) -> map[^Territory]^Pro_Purchase_Territory {
+	// Current data fields
+	self.data = pro_data_get_data(self.pro_data)
+	self.start_of_turn_data = start_of_turn_data
+	self.player = pro_data_get_player(self.pro_data)
+	self.resource_tracker = pro_resource_tracker_new(pus, self.data)
+	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
+	self.is_bid = true
+	purchase_options := pro_data_get_purchase_options(self.pro_data)
+
+	pro_logger_info(
+		fmt.tprintf("Starting bid phase with resources: %v", self.resource_tracker),
+	)
+	{
+		units := unit_collection_get_units(game_player_get_unit_collection(self.player))
+		if len(units) > 0 {
+			pro_logger_info(
+				fmt.tprintf("Starting bid phase with unplaced units=%v", units),
+			)
+		}
+	}
+
+	// Find all purchase/place territories
+	purchase_territories := pro_purchase_utils_find_bid_territories(self.pro_data, self.player)
+
+	previous_num_units: i32 = 0
+	for {
+		// Determine max enemy attack units and current allied defenders
+		empty_cleared: [dynamic]^Territory
+		territories_to_check_list: [dynamic]^Territory
+		for k in purchase_territories {
+			append(&territories_to_check_list, k)
+		}
+		pro_territory_manager_populate_enemy_attack_options(
+			self.territory_manager,
+			empty_cleared,
+			territories_to_check_list,
+		)
+		delete(empty_cleared)
+		delete(territories_to_check_list)
+
+		pro_purchase_ai_find_defenders_in_place_territories(self, purchase_territories)
+
+		// Prioritize land territories that need defended and purchase additional defenders
+		need_to_defend_land_territories := pro_purchase_ai_prioritize_territories_to_defend(
+			self, purchase_territories, true,
+		)
+		pro_purchase_ai_purchase_defenders(
+			self,
+			purchase_territories,
+			need_to_defend_land_territories,
+			pro_purchase_option_map_get_land_fodder_options(purchase_options),
+			pro_purchase_option_map_get_land_zero_move_options(purchase_options),
+			pro_purchase_option_map_get_air_options(purchase_options),
+			true,
+		)
+
+		// Find strategic value for each territory
+		pro_logger_info("Find strategic value for place territories")
+		territories_to_check := make(map[^Territory]struct {})
+		for _, t in purchase_territories {
+			for ppt in pro_purchase_territory_get_can_place_territories(t) {
+				territories_to_check[pro_place_territory_get_territory(ppt)] = struct {}{}
+			}
+		}
+		empty_cant_hold: [dynamic]^Territory
+		empty_to_attack: [dynamic]^Territory
+		territory_value_map := pro_territory_value_utils_find_territory_values(
+			self.pro_data,
+			self.player,
+			empty_cant_hold,
+			empty_to_attack,
+			territories_to_check,
+		)
+		delete(empty_cant_hold)
+		delete(empty_to_attack)
+		for _, t in purchase_territories {
+			for ppt in pro_purchase_territory_get_can_place_territories(t) {
+				val := territory_value_map[pro_place_territory_get_territory(ppt)]
+				pro_place_territory_set_strategic_value(ppt, val)
+				pro_logger_debug(
+					fmt.tprintf(
+						"%s, strategicValue=%v",
+						territory_to_string(pro_place_territory_get_territory(ppt)),
+						val,
+					),
+				)
+			}
+		}
+		delete(territories_to_check)
+		delete(territory_value_map)
+
+		// Prioritize land place options purchase AA then land units
+		prioritized_land_territories := pro_purchase_ai_prioritize_land_territories(
+			self, purchase_territories,
+		)
+		pro_purchase_ai_purchase_aa_units(
+			self,
+			purchase_territories,
+			prioritized_land_territories,
+			pro_purchase_option_map_get_aa_options(purchase_options),
+		)
+		pro_purchase_ai_purchase_land_units(
+			self, purchase_territories, prioritized_land_territories, purchase_options,
+		)
+
+		// Prioritize sea territories that need defended and purchase additional defenders
+		need_to_defend_sea_territories := pro_purchase_ai_prioritize_territories_to_defend(
+			self, purchase_territories, false,
+		)
+		empty_zero_move: [dynamic]^Pro_Purchase_Option
+		pro_purchase_ai_purchase_defenders(
+			self,
+			purchase_territories,
+			need_to_defend_sea_territories,
+			pro_purchase_option_map_get_sea_defense_options(purchase_options),
+			empty_zero_move,
+			pro_purchase_option_map_get_air_options(purchase_options),
+			false,
+		)
+		delete(empty_zero_move)
+
+		// Prioritize sea place options and purchase units
+		prioritized_sea_territories := pro_purchase_ai_prioritize_sea_territories(
+			self, purchase_territories,
+		)
+		pro_purchase_ai_purchase_sea_and_amphib_units(
+			self, purchase_territories, prioritized_sea_territories, purchase_options,
+		)
+
+		// Try to use any remaining PUs on high value units
+		pro_purchase_ai_purchase_units_with_remaining_production(
+			self,
+			purchase_territories,
+			pro_purchase_option_map_get_land_options(purchase_options),
+			pro_purchase_option_map_get_air_options(purchase_options),
+		)
+		pro_purchase_ai_upgrade_units_with_remaining_pus(
+			self, purchase_territories, purchase_options,
+		)
+
+		// Check if no remaining PUs or no unit built this iteration
+		num_units: i32 = 0
+		for _, t in purchase_territories {
+			cpt := pro_purchase_territory_get_can_place_territories(t)
+			if len(cpt) > 0 {
+				num_units += i32(len(pro_place_territory_get_place_units(cpt[0])))
+			}
+		}
+
+		delete(need_to_defend_land_territories)
+		delete(need_to_defend_sea_territories)
+		delete(prioritized_land_territories)
+		delete(prioritized_sea_territories)
+
+		if pro_resource_tracker_is_empty(self.resource_tracker) ||
+		   num_units == previous_num_units {
+			break
+		}
+		previous_num_units = num_units
+		pro_purchase_utils_increment_unit_production_for_bid_territories(purchase_territories)
+	}
+
+	// Determine final count of each production rule
+	purchase_map := pro_purchase_ai_populate_production_rule_map(
+		self, purchase_territories, purchase_options,
+	)
+
+	// Purchase units
+	error := i_purchase_delegate_purchase(purchase_delegate, purchase_map)
+	if len(error) > 0 {
+		pro_logger_warn(fmt.tprintf("Purchase error: %s", error))
+	}
+
+	self.territory_manager = nil
+	return purchase_territories
+}
+
+// games.strategy.triplea.ai.pro.ProPurchaseAi#purchase(
+//   games.strategy.triplea.delegate.remote.IPurchaseDelegate,
+//   games.strategy.engine.data.GameState)
+pro_purchase_ai_purchase :: proc(
+	self:               ^Pro_Purchase_Ai,
+	purchase_delegate:  ^I_Purchase_Delegate,
+	start_of_turn_data: ^Game_State,
+) -> map[^Territory]^Pro_Purchase_Territory {
+	// Current data fields
+	self.data = pro_data_get_data(self.pro_data)
+	self.start_of_turn_data = start_of_turn_data
+	self.player = pro_data_get_player(self.pro_data)
+	self.resource_tracker = pro_resource_tracker_new_from_player(self.player)
+	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
+	self.is_bid = false
+	purchase_options := pro_data_get_purchase_options(self.pro_data)
+
+	pro_logger_info(
+		fmt.tprintf("Starting purchase phase with resources: %v", self.resource_tracker),
+	)
+	{
+		units := unit_collection_get_units(game_player_get_unit_collection(self.player))
+		if len(units) > 0 {
+			pro_logger_info(
+				fmt.tprintf("Starting purchase phase with unplaced units=%v", units),
+			)
+		}
+	}
+
+	// Find all purchase/place territories
+	purchase_territories := pro_purchase_utils_find_purchase_territories(
+		self.pro_data, self.player,
+	)
+	is_land_p, is_land_c := matches_territory_is_land()
+	place_territories := make(map[^Territory]struct {})
+	defer delete(place_territories)
+	{
+		owned := game_map_get_territories_owned_by(game_data_get_map(self.data), self.player)
+		defer delete(owned)
+		for t in owned {
+			if is_land_p(is_land_c, t) {
+				place_territories[t] = struct {}{}
+			}
+		}
+	}
+	for _, t in purchase_territories {
+		for ppt in pro_purchase_territory_get_can_place_territories(t) {
+			place_territories[pro_place_territory_get_territory(ppt)] = struct {}{}
+		}
+	}
+
+	// Determine max enemy attack units and current allied defenders
+	{
+		empty_cleared: [dynamic]^Territory
+		place_list: [dynamic]^Territory
+		for t in place_territories {
+			append(&place_list, t)
+		}
+		pro_territory_manager_populate_enemy_attack_options(
+			self.territory_manager, empty_cleared, place_list,
+		)
+		delete(empty_cleared)
+		delete(place_list)
+	}
+	pro_purchase_ai_find_defenders_in_place_territories(self, purchase_territories)
+
+	// Prioritize land territories that need defended and purchase additional defenders
+	need_to_defend_land_territories := pro_purchase_ai_prioritize_territories_to_defend(
+		self, purchase_territories, true,
+	)
+	defer delete(need_to_defend_land_territories)
+	pro_purchase_ai_purchase_defenders(
+		self,
+		purchase_territories,
+		need_to_defend_land_territories,
+		pro_purchase_option_map_get_land_fodder_options(purchase_options),
+		pro_purchase_option_map_get_land_zero_move_options(purchase_options),
+		pro_purchase_option_map_get_air_options(purchase_options),
+		true,
+	)
+
+	// Find strategic value for each territory
+	pro_logger_info("Find strategic value for place territories")
+	territories_to_check := make(map[^Territory]struct {})
+	for t in purchase_territories {
+		ppt_owner := purchase_territories[t]
+		for ppt in pro_purchase_territory_get_can_place_territories(ppt_owner) {
+			territories_to_check[pro_place_territory_get_territory(ppt)] = struct {}{}
+		}
+	}
+	empty_cant_hold: [dynamic]^Territory
+	empty_to_attack: [dynamic]^Territory
+	territory_value_map := pro_territory_value_utils_find_territory_values(
+		self.pro_data,
+		self.player,
+		empty_cant_hold,
+		empty_to_attack,
+		territories_to_check,
+	)
+	delete(empty_cant_hold)
+	delete(empty_to_attack)
+	delete(territories_to_check)
+	for t in purchase_territories {
+		ppt_owner := purchase_territories[t]
+		for ppt in pro_purchase_territory_get_can_place_territories(ppt_owner) {
+			val := territory_value_map[pro_place_territory_get_territory(ppt)]
+			pro_place_territory_set_strategic_value(ppt, val)
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s, strategicValue=%v",
+					territory_to_string(pro_place_territory_get_territory(ppt)),
+					val,
+				),
+			)
+		}
+	}
+	delete(territory_value_map)
+
+	// Prioritize land place options purchase AA then land units
+	prioritized_land_territories := pro_purchase_ai_prioritize_land_territories(
+		self, purchase_territories,
+	)
+	defer delete(prioritized_land_territories)
+	pro_purchase_ai_purchase_aa_units(
+		self,
+		purchase_territories,
+		prioritized_land_territories,
+		pro_purchase_option_map_get_aa_options(purchase_options),
+	)
+	pro_purchase_ai_purchase_land_units(
+		self, purchase_territories, prioritized_land_territories, purchase_options,
+	)
+
+	// Prioritize sea territories that need defended and purchase additional defenders
+	need_to_defend_sea_territories := pro_purchase_ai_prioritize_territories_to_defend(
+		self, purchase_territories, false,
+	)
+	defer delete(need_to_defend_sea_territories)
+	{
+		empty_zero_move: [dynamic]^Pro_Purchase_Option
+		pro_purchase_ai_purchase_defenders(
+			self,
+			purchase_territories,
+			need_to_defend_sea_territories,
+			pro_purchase_option_map_get_sea_defense_options(purchase_options),
+			empty_zero_move,
+			pro_purchase_option_map_get_air_options(purchase_options),
+			false,
+		)
+		delete(empty_zero_move)
+	}
+
+	// Determine whether to purchase new land factory
+	factory_purchase_territories := make(map[^Territory]^Pro_Purchase_Territory)
+	pro_purchase_ai_purchase_factory(
+		self,
+		factory_purchase_territories,
+		purchase_territories,
+		prioritized_land_territories,
+		purchase_options,
+		false,
+	)
+
+	// Prioritize sea place options and purchase units
+	prioritized_sea_territories := pro_purchase_ai_prioritize_sea_territories(
+		self, purchase_territories,
+	)
+	defer delete(prioritized_sea_territories)
+	should_save_up_for_a_fleet := pro_purchase_ai_purchase_sea_and_amphib_units(
+		self, purchase_territories, prioritized_sea_territories, purchase_options,
+	)
+
+	// Try to use any remaining PUs on high value units, except if we need to save up for a fleet.
+	if !should_save_up_for_a_fleet {
+		pro_purchase_ai_purchase_units_with_remaining_production(
+			self,
+			purchase_territories,
+			pro_purchase_option_map_get_land_options(purchase_options),
+			pro_purchase_option_map_get_air_options(purchase_options),
+		)
+		pro_purchase_ai_upgrade_units_with_remaining_pus(
+			self, purchase_territories, purchase_options,
+		)
+		// Try to purchase land/sea factory with extra PUs
+		pro_purchase_ai_purchase_factory(
+			self,
+			factory_purchase_territories,
+			purchase_territories,
+			prioritized_land_territories,
+			purchase_options,
+			true,
+		)
+	}
+
+	// Add factory purchase territory to list
+	for t, v in factory_purchase_territories {
+		purchase_territories[t] = v
+	}
+	delete(factory_purchase_territories)
+
+	// Determine final count of each production rule
+	purchase_map := pro_purchase_ai_populate_production_rule_map(
+		self, purchase_territories, purchase_options,
+	)
+
+	// Purchase units
+	error := i_purchase_delegate_purchase(purchase_delegate, purchase_map)
+	if len(error) > 0 {
+		pro_logger_warn(fmt.tprintf("Purchase error: %s", error))
+	}
+
+	self.territory_manager = nil
+	return purchase_territories
+}

@@ -98,4 +98,90 @@ select_main_battle_casualties_get_target_units :: proc(
 	return select_main_battle_casualties_target_units_of(combat_units, make([dynamic]^Unit))
 }
 
+// Java: CasualtyDetails apply(IDelegateBridge bridge, SelectCasualties step)
+// Picks main-battle casualties for a firing group, deferring the actual
+// player decision to the inner Select dispatcher when needed.
+select_main_battle_casualties_apply :: proc(
+	self: ^Select_Main_Battle_Casualties,
+	bridge: ^I_Delegate_Bridge,
+	step: ^Select_Casualties,
+) -> ^Casualty_Details {
+	target_units := select_main_battle_casualties_get_target_units(step)
+	total_hit_points_available := select_main_battle_casualties_get_max_hits(target_units.combat_units)
+	fire_round_state := select_casualties_get_fire_round_state(step)
+	dice := fire_round_state_get_dice(fire_round_state)
+	hit_count := dice_roll_get_hits(dice)
+	hits_left_for_restricted_transports := hit_count - total_hit_points_available
+
+	bs := select_casualties_get_battle_state(step)
+	game_data := battle_state_get_game_data(bs)
+	props := game_data_get_properties(game_data)
+
+	casualty_details: ^Casualty_Details
+
+	if edit_delegate_get_edit_mode(props) {
+		firing_group := select_casualties_get_firing_group(step)
+		message := select_main_battle_casualties_select_apply(
+			self.select_function,
+			bridge,
+			step,
+			firing_group_get_target_units(firing_group),
+			0,
+		)
+		casualty_details = casualty_details_new_from_list_auto_calculated(&message.casualty_list, true)
+
+	} else if total_hit_points_available > hit_count {
+		// not all units were hit so the player needs to pick which ones are killed
+		casualty_details = select_main_battle_casualties_select_apply(
+			self.select_function,
+			bridge,
+			step,
+			target_units.combat_units,
+			hit_count,
+		)
+
+	} else if total_hit_points_available == hit_count || len(target_units.restricted_transports) == 0 {
+		// all of the combat units were hit so kill them without asking the player
+		casualty_details = casualty_details_new_from_collections(
+			target_units.combat_units[:],
+			[]^Unit{},
+			true,
+		)
+
+	} else if hits_left_for_restricted_transports >= i32(len(target_units.restricted_transports)) {
+		// in addition to the combat units, all of the restricted transports were hit
+		// so kill them all without asking the player
+		for u in target_units.restricted_transports {
+			append(&target_units.combat_units, u)
+		}
+		casualty_details = casualty_details_new_from_collections(
+			target_units.combat_units[:],
+			[]^Unit{},
+			true,
+		)
+
+	} else {
+		// not all restricted transports were hit so the player needs to pick which ones are killed
+		limited := select_main_battle_casualties_limit_transports_to_select(
+			target_units.restricted_transports,
+			hits_left_for_restricted_transports,
+		)
+		message := select_main_battle_casualties_select_apply(
+			self.select_function,
+			bridge,
+			step,
+			limited,
+			hits_left_for_restricted_transports,
+		)
+		for u in message.killed {
+			append(&target_units.combat_units, u)
+		}
+		casualty_details = casualty_details_new_from_collections(
+			target_units.combat_units[:],
+			[]^Unit{},
+			true,
+		)
+	}
+	return casualty_details
+}
 

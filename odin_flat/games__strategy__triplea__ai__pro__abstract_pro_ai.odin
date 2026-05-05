@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:slice"
+import "core:time"
 
 Abstract_Pro_Ai :: struct {
 	using abstract_ai: Abstract_Ai,
@@ -391,4 +392,30 @@ abstract_pro_ai_select_attack_subs :: proc(self: ^Abstract_Pro_Ai, unit_territor
 		),
 	)
 	return pro_battle_result_get_tuv_swing(result) > 0
+}
+
+// Java: protected void place(boolean bid, IAbstractPlaceDelegate placeDelegate,
+//                            GameState data, GamePlayer player)
+abstract_pro_ai_place :: proc(
+	self:           ^Abstract_Pro_Ai,
+	bid:            bool,
+	place_delegate: ^I_Abstract_Place_Delegate,
+	data:           ^Game_State,
+	player:         ^Game_Player,
+) {
+	start := time.tick_now()
+	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
+	// not flagged actually_called_in_ai_test, so the call is elided.
+	_ = game_sequence_get_round(game_state_get_sequence(data))
+	abstract_pro_ai_initialize_data(self)
+	pro_purchase_ai_place(self.purchase_ai, self.stored_purchase_territories, place_delegate)
+	self.stored_purchase_territories = nil
+	pro_logger_info(
+		fmt.tprintf(
+			"%s time for place=%d",
+			default_named_get_name(&player.named_attachable.default_named),
+			i64(time.duration_milliseconds(time.tick_since(start))),
+		),
+	)
+	_ = bid
 }

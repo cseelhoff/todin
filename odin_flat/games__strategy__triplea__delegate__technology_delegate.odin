@@ -187,3 +187,110 @@ technology_delegate_get_available_techs :: proc(
 	return result
 }
 
+// games.strategy.triplea.delegate.TechnologyDelegate#end()
+// Java body:
+//   super.end();
+//   needToInitialize = true;
+technology_delegate_end :: proc(self: ^Technology_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	self.need_to_initialize = true
+}
+
+// AND-chained Predicate<TriggerAttachment> used by start():
+//   availableUses
+//     .and(whenOrDefaultMatch(null, null))
+//     .and(techAvailableMatch())
+// `availableUses` and `techAvailableMatch` are non-capturing bare procs;
+// `whenOrDefaultMatch` carries a captured (proc, rawptr) pair stashed in
+// the per-call ctx. The AND chain is inlined to honor Java's short-circuit
+// evaluation order.
+Technology_Delegate_Ctx_trigger_match :: struct {
+	when_pred: proc(rawptr, ^Trigger_Attachment) -> bool,
+	when_ctx:  rawptr,
+}
+
+technology_delegate_lambda_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^Technology_Delegate_Ctx_trigger_match)ctx_ptr
+	if !abstract_trigger_attachment_lambda_static_0(t) {
+		return false
+	}
+	if !ctx.when_pred(ctx.when_ctx, t) {
+		return false
+	}
+	return trigger_attachment_lambda_tech_available_match(t)
+}
+
+// games.strategy.triplea.delegate.TechnologyDelegate#start()
+// Java body:
+//   super.start();
+//   if (!needToInitialize) return;
+//   if (Properties.getTriggers(getData().getProperties())) {
+//     final Predicate<TriggerAttachment> technologyDelegateTriggerMatch =
+//         AbstractTriggerAttachment.availableUses
+//             .and(AbstractTriggerAttachment.whenOrDefaultMatch(null, null))
+//             .and(TriggerAttachment.techAvailableMatch());
+//     final Set<TriggerAttachment> toFirePossible =
+//         TriggerAttachment.collectForAllTriggersMatching(
+//             Set.of(player), technologyDelegateTriggerMatch);
+//     if (!toFirePossible.isEmpty()) {
+//       final Map<ICondition, Boolean> testedConditions =
+//           TriggerAttachment.collectTestsForAllTriggers(toFirePossible, bridge);
+//       final List<TriggerAttachment> toFireTestedAndSatisfied =
+//           CollectionUtils.getMatches(toFirePossible,
+//               AbstractTriggerAttachment.isSatisfiedMatch(testedConditions));
+//       TriggerAttachment.triggerAvailableTechChange(
+//           new HashSet<>(toFireTestedAndSatisfied), bridge,
+//           new FireTriggerParams(null, null, true, true, true, true));
+//     }
+//   }
+//   needToInitialize = false;
+technology_delegate_start :: proc(self: ^Technology_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	if !self.need_to_initialize {
+		return
+	}
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if properties_get_triggers(game_data_get_properties(data)) {
+		when_pred, when_ctx := abstract_trigger_attachment_when_or_default_match("", "")
+		match_ctx := new(Technology_Delegate_Ctx_trigger_match)
+		match_ctx.when_pred = when_pred
+		match_ctx.when_ctx = when_ctx
+
+		players_set := make(map[^Game_Player]struct {})
+		defer delete(players_set)
+		players_set[self.player] = {}
+
+		to_fire_possible := trigger_attachment_collect_for_all_triggers_matching(
+			players_set,
+			technology_delegate_lambda_trigger_match,
+			rawptr(match_ctx),
+		)
+		if len(to_fire_possible) > 0 {
+			tested_conditions := trigger_attachment_collect_tests_for_all_triggers_simple(
+				to_fire_possible,
+				self.bridge,
+			)
+			satisfied_pred, satisfied_ctx := abstract_trigger_attachment_is_satisfied_match(
+				tested_conditions,
+			)
+			to_fire_tested_and_satisfied := make(map[^Trigger_Attachment]struct {})
+			defer delete(to_fire_tested_and_satisfied)
+			for t in to_fire_possible {
+				if satisfied_pred(satisfied_ctx, t) {
+					to_fire_tested_and_satisfied[t] = {}
+				}
+			}
+			params := fire_trigger_params_new("", "", true, true, true, true)
+			trigger_attachment_trigger_available_tech_change(
+				to_fire_tested_and_satisfied,
+				self.bridge,
+				params,
+			)
+		}
+	}
+	self.need_to_initialize = false
+}
+

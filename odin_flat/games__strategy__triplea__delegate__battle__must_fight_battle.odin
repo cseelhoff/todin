@@ -2338,4 +2338,150 @@ must_fight_battle_end_battle_who_won :: proc(self: ^Must_Fight_Battle, who_won: 
 	}
 }
 
+// games.strategy.triplea.delegate.battle.MustFightBattle#fight(IDelegateBridge)
+//
+// Java: drives a single Must Fight battle. Removes vanished/disabled
+// units; if a previous execution stack is in progress, just redisplays
+// the battle and resumes it. Otherwise opens a history event, prunes
+// air no longer in the territory, marks attacking transports, writes
+// the participating units to the history. If either side has no
+// non-infrastructure units left, ends the battle in favour of the
+// other side. Otherwise determines step strings, displays the battle,
+// (when not headless) sorts casualties by movement and plays the
+// battle-start sound, pushes the fight loop on the execution stack
+// and executes it.
+must_fight_battle_fight :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	abstract_battle_remove_units_that_no_longer_exist(&self.abstract_battle)
+	must_fight_battle_remove_disabled_units(self)
+	if execution_stack_is_executing(self.stack) {
+		display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+		all_units: [dynamic]^Unit
+		for u in self.attacking_units {
+			append(&all_units, u)
+		}
+		for u in self.defending_units {
+			append(&all_units, u)
+		}
+		dependents := transport_tracker_transporting_in_territory(all_units, self.battle_site)
+		empty_amphib: [dynamic]^Unit
+		i_display_show_battle(
+			display,
+			self.battle_id,
+			self.battle_site,
+			must_fight_battle_get_battle_title(self),
+			must_fight_battle_remove_non_combatants_filter(
+				self,
+				self.attacking_units,
+				self.defending_units,
+				true,
+				false,
+			),
+			must_fight_battle_remove_non_combatants_filter(
+				self,
+				self.defending_units,
+				self.attacking_units,
+				false,
+				false,
+			),
+			self.killed,
+			self.attacking_waiting_to_die,
+			self.defending_waiting_to_die,
+			dependents,
+			self.attacker,
+			self.defender,
+			false,
+			abstract_battle_get_battle_type(&self.abstract_battle),
+			empty_amphib,
+		)
+		i_display_list_battle_steps(display, self.battle_id, self.step_strings)
+		execution_stack_execute(self.stack, bridge)
+		return
+	}
+	writer := i_delegate_bridge_get_history_writer(bridge)
+	i_delegate_history_writer_start_event(
+		writer,
+		fmt.aprintf("Battle in %s", self.battle_site.base.name),
+		rawptr(self.battle_site),
+	)
+	must_fight_battle_remove_air_no_longer_in_territory(self)
+	must_fight_battle_mark_attacking_transports(self, bridge)
+	must_fight_battle_write_units_to_history(self, bridge)
+
+	ni_p, ni_c := matches_unit_is_not_infrastructure()
+	any_attacker_non_infra := false
+	for u in self.attacking_units {
+		if ni_p(ni_c, u) {
+			any_attacker_non_infra = true
+			break
+		}
+	}
+	if !any_attacker_non_infra {
+		must_fight_battle_end_battle_who_won(self, .DEFENDER, bridge)
+		return
+	}
+	any_defender_non_infra := false
+	for u in self.defending_units {
+		if ni_p(ni_c, u) {
+			any_defender_non_infra = true
+			break
+		}
+	}
+	if !any_defender_non_infra {
+		must_fight_battle_end_battle_who_won(self, .ATTACKER, bridge)
+		return
+	}
+	_ = must_fight_battle_determine_step_strings(self)
+	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
+	all_units: [dynamic]^Unit
+	for u in self.attacking_units {
+		append(&all_units, u)
+	}
+	for u in self.defending_units {
+		append(&all_units, u)
+	}
+	dependents := transport_tracker_transporting_in_territory(all_units, self.battle_site)
+	empty_amphib: [dynamic]^Unit
+	i_display_show_battle(
+		display,
+		self.battle_id,
+		self.battle_site,
+		must_fight_battle_get_battle_title(self),
+		must_fight_battle_remove_non_combatants_filter(
+			self,
+			self.attacking_units,
+			self.defending_units,
+			true,
+			false,
+		),
+		must_fight_battle_remove_non_combatants_filter(
+			self,
+			self.defending_units,
+			self.attacking_units,
+			false,
+			false,
+		),
+		self.killed,
+		self.attacking_waiting_to_die,
+		self.defending_waiting_to_die,
+		dependents,
+		self.attacker,
+		self.defender,
+		false,
+		abstract_battle_get_battle_type(&self.abstract_battle),
+		empty_amphib,
+	)
+	i_display_list_battle_steps(display, self.battle_id, self.step_strings)
+	if !self.headless {
+		casualty_sorting_util_sort_pre_battle(&self.attacking_units)
+		casualty_sorting_util_sort_pre_battle(&self.defending_units)
+		sound_utils_play_battle_type(
+			self.attacker,
+			self.attacking_units,
+			self.defending_units,
+			bridge,
+		)
+	}
+	must_fight_battle_push_fight_loop_on_stack(self)
+	execution_stack_execute(self.stack, bridge)
+}
 

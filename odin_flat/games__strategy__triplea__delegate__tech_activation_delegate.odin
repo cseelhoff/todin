@@ -138,3 +138,120 @@ tech_activation_delegate_share_technology :: proc(self: ^Tech_Activation_Delegat
 		}
 	}
 }
+
+// games.strategy.triplea.delegate.TechActivationDelegate#start()
+// Java body, performed only on the first call after needToInitialize:
+//   1. super.start()
+//   2. read advances scheduled by the TechnologyDelegate this turn,
+//      log a history event "<player> activating <list>" and call
+//      TechTracker.addAdvance for each one
+//   3. clear those advances from the TechnologyDelegate
+//   4. if Properties.getTriggers(data) is on, build the AND-chained
+//      Predicate<TriggerAttachment>:
+//        availableUses
+//          .and(whenOrDefaultMatch(null, null))
+//          .and(unitPropertyMatch().or(techMatch()).or(supportMatch()))
+//      collect every trigger matching that predicate for the current
+//      player, test the conditions they need, retain the satisfied
+//      ones, and fire unitProperty / tech / support trigger changes
+//      with the default FireTriggerParams(null, null, true, true,
+//      true, true)
+//   5. shareTechnology(); needToInitialize = false
+//
+// The capturing whenOrDefaultMatch is paired with the bare unit/tech/
+// support match procs through a small per-call ctx struct, mirroring
+// the convention used by base_triple_a_delegate / end_turn_delegate.
+Tech_Activation_Delegate_Ctx_trigger_match :: struct {
+	when_pred: proc(rawptr, ^Trigger_Attachment) -> bool,
+	when_ctx:  rawptr,
+}
+
+tech_activation_delegate_lambda_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^Tech_Activation_Delegate_Ctx_trigger_match)ctx_ptr
+	if !abstract_trigger_attachment_lambda_static_0(t) {
+		return false
+	}
+	if !ctx.when_pred(ctx.when_ctx, t) {
+		return false
+	}
+	return trigger_attachment_lambda_unit_property_match(t) ||
+		trigger_attachment_lambda_tech_match(t) ||
+		trigger_attachment_lambda_support_match(t)
+}
+
+tech_activation_delegate_start :: proc(self: ^Tech_Activation_Delegate) {
+	base_triple_a_delegate_start(&self.base_triple_a_delegate)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if !self.need_to_initialize {
+		return
+	}
+	tech_delegate := game_data_get_tech_delegate(data)
+	advances := technology_delegate_get_advances(tech_delegate, self.player)
+	if len(advances) > 0 {
+		adv_str := tech_activation_delegate_advances_as_string(advances)
+		defer delete(adv_str)
+		event := fmt.aprintf("%s activating %s", self.player.named.base.name, adv_str)
+		i_delegate_history_writer_start_event(
+			i_delegate_bridge_get_history_writer(self.bridge),
+			event,
+		)
+		delete(event)
+		for advance in advances {
+			tech_tracker_add_advance(self.player, self.bridge, advance)
+		}
+	}
+	technology_delegate_clear_advances(tech_delegate, self.player)
+	if properties_get_triggers(game_data_get_properties(data)) {
+		// availableUses .and(whenOrDefaultMatch(null, null))
+		when_pred, when_ctx := abstract_trigger_attachment_when_or_default_match("", "")
+		match_ctx := new(Tech_Activation_Delegate_Ctx_trigger_match)
+		match_ctx.when_pred = when_pred
+		match_ctx.when_ctx = when_ctx
+		players_set := make(map[^Game_Player]struct {})
+		defer delete(players_set)
+		players_set[self.player] = {}
+		to_fire_possible := trigger_attachment_collect_for_all_triggers_matching(
+			players_set,
+			tech_activation_delegate_lambda_trigger_match,
+			rawptr(match_ctx),
+		)
+		defer delete(to_fire_possible)
+		if len(to_fire_possible) > 0 {
+			tested_conditions := trigger_attachment_collect_tests_for_all_triggers_simple(
+				to_fire_possible,
+				self.bridge,
+			)
+			defer delete(tested_conditions)
+			sat_pred, sat_ctx := abstract_trigger_attachment_is_satisfied_match(tested_conditions)
+			to_fire_satisfied := make(map[^Trigger_Attachment]struct {})
+			defer delete(to_fire_satisfied)
+			for t in to_fire_possible {
+				if sat_pred(sat_ctx, t) {
+					to_fire_satisfied[t] = {}
+				}
+			}
+			params := fire_trigger_params_new("", "", true, true, true, true)
+			trigger_attachment_trigger_unit_property_change(
+				to_fire_satisfied,
+				self.bridge,
+				params,
+			)
+			trigger_attachment_trigger_tech_change(to_fire_satisfied, self.bridge, params)
+			trigger_attachment_trigger_support_change(to_fire_satisfied, self.bridge, params)
+		}
+	}
+	tech_activation_delegate_share_technology(self)
+	self.need_to_initialize = false
+}
+
+// games.strategy.triplea.delegate.TechActivationDelegate#end()
+// Java body:
+//   super.end();
+//   needToInitialize = true;
+tech_activation_delegate_end :: proc(self: ^Tech_Activation_Delegate) {
+	base_triple_a_delegate_end(&self.base_triple_a_delegate)
+	self.need_to_initialize = true
+}

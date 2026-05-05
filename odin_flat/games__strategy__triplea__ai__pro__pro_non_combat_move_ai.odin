@@ -4029,3 +4029,184 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 	pro_logger_debug(fmt.tprintf("Final number of territories: %d", num_to_defend - 1))
 	delete(transport_map_list_mut)
 }
+
+// Java: ProNonCombatMoveAi#lambda$moveConsumablesToFactories$14(MoveValidator, Unit, Route)
+//   r -> { if (r == null || !r.hasSteps()) return false;
+//          return validator.validateMove(new MoveDescription(List.of(u), r), player).isMoveValid(); }
+// Captures `validator` and `u` from the enclosing locals plus `this.player`
+// from the outer instance; ported as explicit leading params per the
+// existing lambda convention in this file.
+pro_non_combat_move_ai_lambda__move_consumables_to_factories__14 :: proc(
+	validator: ^Move_Validator,
+	u: ^Unit,
+	player: ^Game_Player,
+	r: ^Route,
+) -> bool {
+	if r == nil || !route_has_steps(r) {
+		return false
+	}
+	units := []^Unit{u}
+	md := move_description_new_units_route(units, r)
+	res := move_validator_validate_move(validator, md, player)
+	return move_validation_result_is_move_valid(res)
+}
+
+// games.strategy.triplea.ai.pro.ProNonCombatMoveAi#moveInfraUnits(boolean, java.util.Map, java.util.Map)
+// Java's `factoryMoveMap == null` first-call signal is folded onto an
+// empty Odin map (len == 0): the only divergence between the null and
+// empty-map branches is whether buildFactoryMoveMap runs, and an empty
+// stored map's "transfer stored factory moves" loop is a no-op.
+pro_non_combat_move_ai_move_infra_units :: proc(
+	self: ^Pro_Non_Combat_Move_Ai,
+	is_combat_move: bool,
+	initial_factory_move_map: map[^Territory]^Pro_Territory,
+	infra_unit_move_map: map[^Unit]map[^Territory]struct {},
+) -> map[^Territory]^Pro_Territory {
+	pro_logger_info("Determine where to move infra units")
+
+	move_map := pro_my_move_options_get_territory_map(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+
+	// Move factory units
+	factory_move_map := initial_factory_move_map
+	if len(factory_move_map) == 0 {
+		pro_logger_debug("Creating factory move map")
+		factory_move_map = pro_non_combat_move_ai_build_factory_move_map(
+			self,
+			move_map,
+			infra_unit_move_map,
+		)
+	} else {
+		pro_logger_debug("Using stored factory move map")
+
+		// Transfer stored factory moves to move map
+		for t, pt in factory_move_map {
+			target, ok := move_map[t]
+			if ok && target != nil {
+				pro_territory_add_units(target, pro_territory_get_units(pt))
+			}
+		}
+	}
+
+	pro_logger_debug("Move infra AA units")
+
+	move_validator := move_validator_new(self.data, !is_combat_move)
+	aa_p, aa_c := matches_unit_is_aa_for_anything()
+	factory_p, factory_c := pro_matches_territory_has_infra_factory_and_is_land()
+
+	// Move AA units. Snapshot the keys so we can safely remove from the
+	// underlying map while iterating, mirroring Java's Iterator.remove().
+	keys := make([dynamic]^Unit, 0, len(infra_unit_move_map))
+	defer delete(keys)
+	for u, _ in infra_unit_move_map {
+		append(&keys, u)
+	}
+	mutable_map := infra_unit_move_map
+
+	for u in keys {
+		current_territory := self.unit_territory_map[u]
+
+		// Only check AA units whose territory can't be held and don't have factories
+		if !aa_p(aa_c, u) {
+			continue
+		}
+		current_pt, current_ok := move_map[current_territory]
+		if current_ok && current_pt != nil && pro_territory_is_can_hold(current_pt) {
+			continue
+		}
+		if factory_p(factory_c, current_territory) {
+			continue
+		}
+
+		max_value_territory: ^Territory = nil
+		max_value: f64 = 0
+		empty_enemy: [dynamic]^Territory
+		can_move_p, can_move_c := pro_matches_territory_can_move_land_units_through(
+			self.player,
+			u,
+			current_territory,
+			is_combat_move,
+			empty_enemy,
+		)
+		for t, _ in mutable_map[u] {
+			pro_territory := move_map[t]
+			if pro_territory == nil || !pro_territory_is_can_hold(pro_territory) {
+				continue
+			}
+
+			// Consider max stack of 1 AA in classic
+			pro_non_combat_move_ai_active_can_move_through = can_move_p
+			pro_non_combat_move_ai_active_can_move_through_ctx = can_move_c
+			r := game_map_get_route_for_unit_or_else_throw(
+				game_data_get_map(self.data),
+				current_territory,
+				t,
+				pro_non_combat_move_ai_can_move_through_trampoline,
+				u,
+				self.player,
+			)
+			units := []^Unit{u}
+			md := move_description_new_units_route(units, r)
+			result := move_validator_validate_move(move_validator, md, self.player)
+			if !move_validation_result_is_move_valid(result) {
+				continue
+			}
+
+			// Find value and try to move to territory that doesn't already have AA
+			has_aa := false
+			for cu in pro_territory_get_cant_move_units(pro_territory) {
+				if aa_p(aa_c, cu) {
+					has_aa = true
+					break
+				}
+			}
+			if !has_aa {
+				for cu in pro_territory_get_units(pro_territory) {
+					if aa_p(aa_c, cu) {
+						has_aa = true
+						break
+					}
+				}
+			}
+			value := pro_territory_get_value(pro_territory)
+			if has_aa {
+				value *= 0.01
+			}
+			pro_logger_trace(
+				fmt.tprintf("%s has value=%v", territory_to_string(t), value),
+			)
+			if value > max_value {
+				max_value = value
+				max_value_territory = t
+			}
+		}
+		if max_value_territory != nil {
+			ut_name := default_named_get_name(
+				&unit_get_type(u).named_attachable.default_named,
+			)
+			pro_logger_debug(
+				fmt.tprintf(
+					"%s moved to %s with value=%v",
+					ut_name,
+					territory_to_string(max_value_territory),
+					max_value,
+				),
+			)
+			target_pt, ok := move_map[max_value_territory]
+			if ok && target_pt != nil {
+				pro_territory_add_unit(target_pt, u)
+			}
+			delete_key(&mutable_map, u)
+		}
+	}
+
+	pro_non_combat_move_ai_move_consumables_to_factories(
+		self,
+		is_combat_move,
+		infra_unit_move_map,
+		move_map,
+		move_validator,
+	)
+	return factory_move_map
+}

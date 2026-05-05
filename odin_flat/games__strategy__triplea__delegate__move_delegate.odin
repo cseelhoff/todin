@@ -1059,3 +1059,454 @@ move_delegate_remove_air_that_cant_land :: proc(self: ^Move_Delegate) {
 		)
 	}
 }
+
+// IRemotePlayer methods that aren't carried by the Odin Player vtable.
+// The only Player implementation reachable in the AI snapshot harness
+// is AbstractAi (Java AbstractAi#confirmMoveKamikaze == false,
+// AbstractAi#confirmMoveInFaceOfAa == true). Inline those defaults so
+// we can faithfully model the Java control flow without extending the
+// Player struct from this file.
+move_delegate_remote_confirm_move_kamikaze :: proc(remote: ^Player) -> bool {
+	_ = remote
+	return false
+}
+
+move_delegate_remote_confirm_move_in_face_of_aa :: proc(
+	remote: ^Player,
+	aa_firing_territories: [dynamic]^Territory,
+) -> bool {
+	_ = remote
+	_ = aa_firing_territories
+	return true
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#performMove(games.strategy.engine.data.MoveDescription)
+// Java:
+//   public Optional<String> performMove(final MoveDescription move) {
+//     final GameData data = getData();
+//     final GamePlayer player = getUnitsOwner(move.getUnits());
+//     final MoveValidationResult result =
+//         new MoveValidator(data, GameStepPropertiesHelper.isNonCombatMove(data, false))
+//             .validateMove(move, player, movesToUndo);
+//     ...
+//     return Optional.empty();
+//   }
+//
+// Optional<String> is modeled as a plain `string` per the convention
+// adopted across the port (see pro_move_utils.do_move and
+// move_validator.validate_*): "" means Optional.empty(), any
+// non-empty string means Optional.of(<error>).
+move_delegate_perform_move :: proc(self: ^Move_Delegate, move: ^Move_Description) -> string {
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	// In edit mode the unit owner can differ from the current player.
+	player := abstract_move_delegate_get_units_owner(
+		&self.abstract_move_delegate,
+		move.units,
+	)
+	validator := move_validator_new(
+		data,
+		game_step_properties_helper_is_non_combat_move(data, false),
+	)
+	result := move_validator_validate_move(
+		validator,
+		move,
+		player,
+		self.moves_to_undo,
+	)
+	num_problems := move_validation_result_get_total_warning_count(result)
+	if !move_validation_result_has_error(result) {
+		num_problems -= 1
+	}
+	num_errors_msg: string = ""
+	if num_problems > 0 {
+		num_errors_msg = fmt.aprintf(
+			"; %d %s not shown",
+			num_problems,
+			my_formatter_pluralize_quantity("error", i32(num_problems)),
+		)
+	}
+	if move_validation_result_has_error(result) {
+		return fmt.aprintf(
+			"%s%s",
+			move_validation_result_get_error(result),
+			num_errors_msg,
+		)
+	}
+	if move_validation_result_has_disallowed_units(result) {
+		return fmt.aprintf(
+			"%s%s",
+			move_validation_result_get_disallowed_unit_warning(result, 0),
+			num_errors_msg,
+		)
+	}
+
+	is_kamikaze := false
+	get_kamikaze_air := properties_get_kamikaze_airplanes(game_data_get_properties(data))
+	kamikaze_units: [dynamic]^Unit = make([dynamic]^Unit)
+
+	// Confirm kamikaze moves and remove them from unresolved units.
+	any_kamikaze := false
+	if !get_kamikaze_air {
+		is_kamikaze_pred, is_kamikaze_ctx := matches_unit_is_kamikaze()
+		for u in move.units {
+			if is_kamikaze_pred(is_kamikaze_ctx, u) {
+				any_kamikaze = true
+				break
+			}
+		}
+	}
+	if get_kamikaze_air || any_kamikaze {
+		delete(kamikaze_units)
+		kamikaze_units = move_validation_result_get_unresolved_units(
+			result,
+			NOT_ALL_AIR_UNITS_CAN_LAND,
+		)
+		remote := i_delegate_bridge_get_remote_player(self.bridge)
+		if len(kamikaze_units) != 0 && move_delegate_remote_confirm_move_kamikaze(remote) {
+			is_kamikaze_pred, is_kamikaze_ctx := matches_unit_is_kamikaze()
+			for unit in kamikaze_units {
+				if get_kamikaze_air || is_kamikaze_pred(is_kamikaze_ctx, unit) {
+					move_validation_result_remove_unresolved_unit(
+						result,
+						NOT_ALL_AIR_UNITS_CAN_LAND,
+						unit,
+					)
+					is_kamikaze = true
+				}
+			}
+		}
+	}
+	if move_validation_result_has_unresolved_units(result) {
+		return fmt.aprintf(
+			"%s%s",
+			move_validation_result_get_unresolved_unit_warning(result, 0),
+			num_errors_msg,
+		)
+	}
+
+	// Allow user to cancel move if AA guns will fire.
+	aa_in_move_util := aa_in_move_util_new()
+	aa_in_move_util_initialize(aa_in_move_util, self.bridge)
+	aa_firing_territories := aa_in_move_util_get_territories_where_aa_will_fire(
+		aa_in_move_util,
+		move_description_get_route(move),
+		move.units,
+	)
+	if len(aa_firing_territories) != 0 {
+		remote := i_delegate_bridge_get_remote_player(self.bridge)
+		if !move_delegate_remote_confirm_move_in_face_of_aa(remote, aa_firing_territories) {
+			return ""
+		}
+	}
+
+	// Do the move.
+	route := move_description_get_route(move)
+	current_move := undoable_move_new(move.units, route)
+	transcript_text := fmt.aprintf(
+		"%s moved from %s to %s",
+		my_formatter_units_to_text_no_owner(move.units, nil),
+		territory_get_name(route_get_start(route)),
+		territory_get_name(route_get_end(route)),
+	)
+	writer := i_delegate_bridge_get_history_writer(self.bridge)
+	i_delegate_history_writer_start_event(
+		writer,
+		transcript_text,
+		rawptr(undoable_move_get_description_object(current_move)),
+	)
+	if is_kamikaze {
+		// Java: writer.addChildToEvent(
+		//     "This was a kamikaze move, for at least some of the units",
+		//     kamikazeUnits);
+		// I_Delegate_History_Writer's Odin vtable models only startEvent
+		// (see i_delegate_history_writer.odin); addChildToEvent is not
+		// modeled. Statically this branch is unreachable in the AI
+		// snapshot run because confirmMoveKamikaze defaults to false
+		// (AbstractAi#103, mirrored in
+		// move_delegate_remote_confirm_move_kamikaze above).
+		_ = kamikaze_units
+	}
+	self.temp_move_performer = move_performer_new()
+	move_performer_initialize(self.temp_move_performer, &self.abstract_move_delegate)
+	move_performer_move_units(self.temp_move_performer, move, player, current_move)
+	self.temp_move_performer = nil
+	return ""
+}
+
+// AND/OR-chained Predicate<TriggerAttachment> used by MoveDelegate.start():
+//   moveCombatDelegateBeforeBonusTriggerMatch =
+//     availableUses
+//       .and(whenOrDefaultMatch(null, null))
+//       .and(notificationMatch
+//         .or(playerPropertyMatch).or(relationshipTypePropertyMatch)
+//         .or(territoryPropertyMatch).or(territoryEffectPropertyMatch)
+//         .or(removeUnitsMatch).or(changeOwnershipMatch))
+//   moveCombatDelegateAfterBonusTriggerMatch =
+//     availableUses
+//       .and(whenOrDefaultMatch(null, null))
+//       .and(placeMatch())
+//   moveCombatDelegateAllTriggerMatch = before.or(after)
+//
+// Only `whenOrDefaultMatch` carries a captured (proc, rawptr) pair; every
+// other factory returns a non-capturing bare proc. The shared ctx
+// therefore stores only the when-pair.
+Move_Delegate_Ctx_start_trigger_match :: struct {
+	when_pred: proc(rawptr, ^Trigger_Attachment) -> bool,
+	when_ctx:  rawptr,
+}
+
+move_delegate_lambda_start_before_bonus_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^Move_Delegate_Ctx_start_trigger_match)ctx_ptr
+	if !abstract_trigger_attachment_lambda_static_0(t) {
+		return false
+	}
+	if !ctx.when_pred(ctx.when_ctx, t) {
+		return false
+	}
+	if abstract_trigger_attachment_lambda_notification_match_4(t) {
+		return true
+	}
+	if trigger_attachment_lambda_player_property_match(t) {
+		return true
+	}
+	if trigger_attachment_lambda_relationship_type_property_match(t) {
+		return true
+	}
+	if trigger_attachment_lambda_territory_property_match(t) {
+		return true
+	}
+	if trigger_attachment_lambda_territory_effect_property_match(t) {
+		return true
+	}
+	if trigger_attachment_lambda_remove_units_match(t) {
+		return true
+	}
+	return trigger_attachment_lambda_change_ownership_match(t)
+}
+
+move_delegate_lambda_start_after_bonus_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	ctx := cast(^Move_Delegate_Ctx_start_trigger_match)ctx_ptr
+	if !abstract_trigger_attachment_lambda_static_0(t) {
+		return false
+	}
+	if !ctx.when_pred(ctx.when_ctx, t) {
+		return false
+	}
+	return trigger_attachment_lambda_place_match(t)
+}
+
+move_delegate_lambda_start_all_trigger_match :: proc(
+	ctx_ptr: rawptr,
+	t: ^Trigger_Attachment,
+) -> bool {
+	if move_delegate_lambda_start_before_bonus_trigger_match(ctx_ptr, t) {
+		return true
+	}
+	return move_delegate_lambda_start_after_bonus_trigger_match(ctx_ptr, t)
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#start()
+// Java body translated branch-for-branch. On the first invocation per turn
+// (`needToInitialize`):
+//   - On a combat-move step with triggers enabled, fire every available
+//     before-bonus territory/property/notification/etc. trigger attached
+//     to `player`.
+//   - If the step asks for repair, run `repairMultipleHitPointUnits`.
+//   - If the step asks for bonus movement, run
+//     `resetAndGiveBonusMovement`.
+//   - Always strip movement from owned air sitting on damaged allied
+//     carriers.
+//   - On a combat-move step with triggers, fire after-bonus place
+//     triggers.
+//   - If the step asks for unit-state reset at start, run it.
+move_delegate_start :: proc(self: ^Move_Delegate) {
+	abstract_move_delegate_start(&self.abstract_move_delegate)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if self.need_to_initialize {
+		when_pred, when_ctx := abstract_trigger_attachment_when_or_default_match("", "")
+		match_ctx := new(Move_Delegate_Ctx_start_trigger_match)
+		match_ctx.when_pred = when_pred
+		match_ctx.when_ctx = when_ctx
+
+		tested_conditions: map[^I_Condition]bool
+		have_tested_conditions := false
+
+		if game_step_properties_helper_is_combat_move(data) &&
+		   properties_get_triggers(game_data_get_properties(data)) {
+			players_set := make(map[^Game_Player]struct {})
+			defer delete(players_set)
+			players_set[self.player] = {}
+
+			to_fire_possible := trigger_attachment_collect_for_all_triggers_matching(
+				players_set,
+				move_delegate_lambda_start_all_trigger_match,
+				rawptr(match_ctx),
+			)
+			if len(to_fire_possible) != 0 {
+				tested_conditions = trigger_attachment_collect_tests_for_all_triggers_simple(
+					to_fire_possible,
+					self.bridge,
+				)
+				have_tested_conditions = true
+
+				to_fire_before_bonus := trigger_attachment_collect_for_all_triggers_matching(
+					players_set,
+					move_delegate_lambda_start_before_bonus_trigger_match,
+					rawptr(match_ctx),
+				)
+				if len(to_fire_before_bonus) != 0 {
+					satisfied_pred, satisfied_ctx := abstract_trigger_attachment_is_satisfied_match(
+						tested_conditions,
+					)
+					to_fire_tested_and_satisfied := make(map[^Trigger_Attachment]struct {})
+					defer delete(to_fire_tested_and_satisfied)
+					for t in to_fire_before_bonus {
+						if satisfied_pred(satisfied_ctx, t) {
+							to_fire_tested_and_satisfied[t] = {}
+						}
+					}
+					fire_trigger_params := fire_trigger_params_new(
+						"", "", true, true, true, true,
+					)
+					trigger_attachment_trigger_notifications(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_player_property_change(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_relationship_type_property_change(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_territory_property_change(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_territory_effect_property_change(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_change_ownership(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+					trigger_attachment_trigger_unit_removal(
+						to_fire_tested_and_satisfied,
+						self.bridge,
+						fire_trigger_params,
+					)
+				}
+			}
+		}
+
+		if game_step_properties_helper_is_repair_units(data) {
+			move_delegate_repair_multiple_hit_point_units(self.bridge, self.player)
+		}
+
+		if game_step_properties_helper_is_give_bonus_movement(data) {
+			move_delegate_reset_and_give_bonus_movement(self)
+		}
+
+		move_delegate_remove_movement_from_air_on_damaged_allied_carriers(
+			self.bridge,
+			self.player,
+		)
+
+		if game_step_properties_helper_is_combat_move(data) &&
+		   properties_get_triggers(game_data_get_properties(data)) {
+			players_set := make(map[^Game_Player]struct {})
+			defer delete(players_set)
+			players_set[self.player] = {}
+
+			to_fire_after_bonus := trigger_attachment_collect_for_all_triggers_matching(
+				players_set,
+				move_delegate_lambda_start_after_bonus_trigger_match,
+				rawptr(match_ctx),
+			)
+			if len(to_fire_after_bonus) != 0 {
+				if !have_tested_conditions {
+					tested_conditions = trigger_attachment_collect_tests_for_all_triggers_simple(
+						to_fire_after_bonus,
+						self.bridge,
+					)
+					have_tested_conditions = true
+				}
+				satisfied_pred, satisfied_ctx := abstract_trigger_attachment_is_satisfied_match(
+					tested_conditions,
+				)
+				to_fire_tested_and_satisfied := make(map[^Trigger_Attachment]struct {})
+				defer delete(to_fire_tested_and_satisfied)
+				for t in to_fire_after_bonus {
+					if satisfied_pred(satisfied_ctx, t) {
+						to_fire_tested_and_satisfied[t] = {}
+					}
+				}
+				trigger_attachment_trigger_unit_placement(
+					to_fire_tested_and_satisfied,
+					self.bridge,
+					fire_trigger_params_new("", "", true, true, true, true),
+				)
+			}
+		}
+
+		if game_step_properties_helper_is_reset_unit_state_at_start(data) {
+			move_delegate_reset_unit_state_and_delegate_state(self)
+		}
+		self.need_to_initialize = false
+	}
+}
+
+// games.strategy.triplea.delegate.MoveDelegate#end()
+// Java body translated branch-for-branch:
+//   - super.end() (clears moves_to_undo via Abstract_Move_Delegate).
+//   - If the step requests it, remove air units that cannot land.
+//   - In WW2V1 non-combat, fire rockets exactly once per turn.
+//   - If the step asks for end-of-step unit-state reset, run it. Otherwise
+//     mark every non-air unit that has moved as having no movement left
+//     (air units may move during both CM and NCM, so they're spared).
+//   - Re-arm `needToInitialize` and `needToDoRockets` for the next turn.
+move_delegate_end :: proc(self: ^Move_Delegate) {
+	abstract_move_delegate_end(&self.abstract_move_delegate)
+	data := abstract_delegate_get_data(&self.abstract_delegate)
+	if game_step_properties_helper_is_remove_air_that_can_not_land(data) {
+		move_delegate_remove_air_that_cant_land(self)
+	}
+	if self.need_to_do_rockets &&
+	   game_step_properties_helper_is_non_combat_move(data, true) {
+		rockets_fire_helper_fire_ww2_v1_if_needed(self.bridge)
+		self.need_to_do_rockets = false
+	}
+	if game_step_properties_helper_is_reset_unit_state_at_end(data) {
+		move_delegate_reset_unit_state_and_delegate_state(self)
+	} else {
+		has_moved_pred, has_moved_ctx := matches_unit_has_moved()
+		not_air_pred, not_air_ctx := matches_unit_is_not_air()
+		already_moved_non_air_units: [dynamic]^Unit
+		defer delete(already_moved_non_air_units)
+		for u in units_list_get_units(game_data_get_units(data)) {
+			if has_moved_pred(has_moved_ctx, u) && not_air_pred(not_air_ctx, u) {
+				append(&already_moved_non_air_units, u)
+			}
+		}
+		i_delegate_bridge_add_change(
+			self.bridge,
+			change_factory_mark_no_movement_change_collection(already_moved_non_air_units),
+		)
+	}
+	self.need_to_initialize = true
+	self.need_to_do_rockets = true
+}

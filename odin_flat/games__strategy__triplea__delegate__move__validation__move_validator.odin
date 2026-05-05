@@ -3481,6 +3481,21 @@ move_validator_validate_fuel :: proc(
 
 // games.strategy.triplea.delegate.move.validation.MoveValidator#validateMove(
 //   games.strategy.engine.data.MoveDescription,
+//   games.strategy.engine.data.GamePlayer)
+// Java: public MoveValidationResult validateMove(MoveDescription move,
+//       GamePlayer player) { return validateMove(move, player, List.of()); }
+move_validator_validate_move_simple :: proc(
+	self: ^Move_Validator,
+	move: ^Move_Description,
+	player: ^Game_Player,
+) -> ^Move_Validation_Result {
+	empty: [dynamic]^Undoable_Move
+	defer delete(empty)
+	return move_validator_validate_move(self, move, player, empty)
+}
+
+// games.strategy.triplea.delegate.move.validation.MoveValidator#validateMove(
+//   games.strategy.engine.data.MoveDescription,
 //   games.strategy.engine.data.GamePlayer,
 //   java.util.List)
 // Java: public MoveValidationResult validateMove(MoveDescription move,

@@ -985,6 +985,43 @@ battle_tracker_clear_finished_battles :: proc(self: ^Battle_Tracker, bridge: ^I_
 	}
 }
 
+// games.strategy.triplea.delegate.battle.BattleTracker#clearEmptyAirBattleAttacks(IDelegateBridge)
+//
+//   for (final IBattle battle : List.copyOf(pendingBattles)) {
+//     if (AirBattle.class.isAssignableFrom(battle.getClass())) {
+//       final AirBattle airBattle = (AirBattle) battle;
+//       airBattle.updateDefendingUnits();
+//       if (airBattle.getDefendingUnits().isEmpty()) {
+//         airBattle.finishBattleAndRemoveFromTrackerHeadless(bridge);
+//       }
+//     }
+//   }
+//
+// Java identifies AirBattle by runtime class. The Odin port uses the
+// battle_type discriminator: AirBattle is the only I_Battle subtype
+// constructed with .AIR_BATTLE or .AIR_RAID (Strategic_Bombing_Raid_Battle
+// uses .BOMBING_RAID; every other subtype uses .NORMAL). A snapshot of
+// pending_battles is taken before iterating because
+// air_battle_finish_battle_and_remove_from_tracker_headless removes
+// entries from the tracker.
+battle_tracker_clear_empty_air_battle_attacks :: proc(self: ^Battle_Tracker, bridge: ^I_Delegate_Bridge) {
+	snapshot := make([dynamic]^I_Battle, 0, len(self.pending_battles))
+	defer delete(snapshot)
+	for b, _ in self.pending_battles {
+		append(&snapshot, b)
+	}
+	for battle in snapshot {
+		ab := cast(^Abstract_Battle)battle
+		if ab.battle_type == .AIR_BATTLE || ab.battle_type == .AIR_RAID {
+			air_battle := cast(^Air_Battle)battle
+			air_battle_update_defending_units(air_battle)
+			if len(air_battle.defending_units) == 0 {
+				air_battle_finish_battle_and_remove_from_tracker_headless(air_battle, bridge)
+			}
+		}
+	}
+}
+
 // Java: private static void addChangesOnTakeOverCapitol(
 //   Territory, TerritoryAttachment, GamePlayer, IDelegateBridge, @Nullable UndoableMove)
 battle_tracker_add_changes_on_take_over_capitol :: proc(
