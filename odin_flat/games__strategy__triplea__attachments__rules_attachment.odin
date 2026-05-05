@@ -64,3 +64,26 @@ rules_attachment_get_national_objectives :: proc(
 	return nat_objs
 }
 
+// Java: public RulesAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Non-zero Java field-initializer defaults span the parent chain
+// (AbstractPlayerRulesAttachment ⊃ AbstractRulesAttachment ⊃
+// AbstractConditionsAttachment ⊃ DefaultAttachment) plus the class itself:
+//   RulesAttachment:               techCount = -1, atWarCount = -1
+//   AbstractRulesAttachment:       eachMultiple = 1, switched = true,
+//                                  territoryCount = -1
+//   AbstractConditionsAttachment:  conditionType = AND, chance = DEFAULT_CHANCE
+rules_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Rules_Attachment {
+	self := new(Rules_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.tech_count = -1
+	self.at_war_count = -1
+	self.each_multiple = 1
+	self.switched = true
+	self.territory_count = -1
+	self.condition_type = "AND"
+	self.chance = "1:1"
+	return self
+}

@@ -155,14 +155,10 @@ unit_collection_add :: proc(self: ^Unit_Collection, unit: ^Unit) -> bool {
 	return true
 }
 
-// Java: @Getter NamedUnitHolder holder. The user-requested signature returns
-// ^Unit_Holder; expose the embedded Unit_Holder sub-struct of the held
-// Named_Unit_Holder.
-unit_collection_get_holder :: proc(self: ^Unit_Collection) -> ^Unit_Holder {
-	if self.holder == nil {
-		return nil
-	}
-	return &self.holder.unit_holder
+// Java: @Getter NamedUnitHolder holder. Lombok generates
+// `public NamedUnitHolder getHolder()` returning the Named_Unit_Holder.
+unit_collection_get_holder :: proc(self: ^Unit_Collection) -> ^Named_Unit_Holder {
+	return self.holder
 }
 
 // Java: public int getUnitCount() { return units.size(); }

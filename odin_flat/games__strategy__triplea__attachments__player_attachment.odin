@@ -143,3 +143,18 @@ player_attachment_lambda__get_property_or_empty__0 :: proc(value: string) -> i32
 player_attachment_lambda__get_property_or_empty__2 :: proc(value: string) -> bool {
 	return default_attachment_get_bool(nil, value)
 }
+
+// Java: public PlayerAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Java's only non-zero field initializer on PlayerAttachment is
+// `retainCapitalProduceNumber = 1`; all other fields default to 0/false/null,
+// matching Odin's `new()` zero-init. Mirrors the inline DefaultAttachment
+// super-call pattern used by `unit_attachment_new` / `canal_attachment_new`.
+player_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Player_Attachment {
+	self := new(Player_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.retain_capital_produce_number = 1
+	return self
+}

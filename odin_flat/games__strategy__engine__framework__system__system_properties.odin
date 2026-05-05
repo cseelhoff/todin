@@ -16,12 +16,12 @@ system_properties_get_operating_system :: proc() -> string {
 
 // Mirrors SystemProperties.getUserHome(): System.getProperty("user.home").
 system_properties_get_user_home :: proc() -> string {
-        return os.get_env("HOME")
+        return os.get_env_alloc("HOME", context.allocator)
 }
 
 // Mirrors SystemProperties.getUserName(): System.getProperty("user.name").
 system_properties_get_user_name :: proc() -> string {
-        return os.get_env("USER")
+        return os.get_env_alloc("USER", context.allocator)
 }
 
 // Mirrors SystemProperties.isMac(): true when os.name contains "mac".

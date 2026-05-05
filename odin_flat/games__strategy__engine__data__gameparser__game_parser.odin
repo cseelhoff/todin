@@ -89,7 +89,10 @@ game_parser_parse_attachments :: proc(self: ^Game_Parser, root: ^Attachment_List
 			empty: map[string]string
 			game_parser_parse_attachment(self, current, empty)
 		} else {
-			combinations := game_data_variables_expand_variable_combinations(self.variables, foreach)
+			combinations, err := game_data_variables_expand_variable_combinations(self.variables, foreach)
+			if err != nil {
+				fmt.panicf("%s", err.message)
+			}
 			for foreach_map in combinations {
 				game_parser_parse_attachment(self, current, foreach_map)
 			}
@@ -139,7 +142,7 @@ game_parser_parse_repair_costs :: proc(
 			default_named_get_name(&repair_rule.default_named),
 		)
 	}
-	game_parser_parse_costs_for_rule(self, repair_rule, elements)
+	game_parser_parse_costs_for_rule(self, &repair_rule.rule, elements)
 }
 
 // private Properties parseStepProperties(final List<GamePlay.Sequence.Step.StepProperty> properties)
@@ -165,7 +168,7 @@ game_parser_parse_production_costs :: proc(
 			default_named_get_name(&production_rule.default_named),
 		)
 	}
-	game_parser_parse_costs_for_rule(self, production_rule, elements)
+	game_parser_parse_costs_for_rule(self, &production_rule.rule, elements)
 }
 
 // private void parseCostsForRule(Rule rule, List<Production.Rule.Cost> elements)
@@ -1407,7 +1410,7 @@ game_parser_parse_production_rules :: proc(
 		name := current.name
 		rule := production_rule_new(name, self.data)
 		game_parser_parse_production_costs(self, rule, current.costs)
-		game_parser_parse_results(self, rule, current.results)
+		game_parser_parse_results(self, &rule.rule, current.results)
 		production_rule_list_add_production_rule(
 			game_data_get_production_rule_list(self.data),
 			rule,
@@ -1433,7 +1436,7 @@ game_parser_parse_repair_rules :: proc(
 	for current in elements {
 		rule := repair_rule_new(current.name, self.data, integer_map_new(), integer_map_new())
 		game_parser_parse_repair_costs(self, rule, current.costs)
-		game_parser_parse_results(self, rule, current.results)
+		game_parser_parse_results(self, &rule.rule, current.results)
 		repair_rules_add_repair_rule(game_data_get_repair_rules(self.data), rule)
 	}
 }

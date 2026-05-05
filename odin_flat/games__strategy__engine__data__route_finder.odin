@@ -22,7 +22,8 @@ route_finder_find_route_by_cost_with_cost_fn :: proc(
 	self: ^Route_Finder,
 	start: ^Territory,
 	end: ^Territory,
-	cost: proc(t: ^Territory) -> f64,
+	cost: proc(rawptr, ^Territory) -> f64,
+	cost_ctx: rawptr,
 ) -> ^Route {
 	assert(start != nil)
 	assert(end != nil)
@@ -65,7 +66,7 @@ route_finder_find_route_by_cost_with_cost_fn :: proc(
 		)
 		defer delete(neighbors)
 		for neighbor in neighbors {
-			route_cost := route_costs[current] + cost(neighbor)
+			route_cost := route_costs[current] + cost(cost_ctx, neighbor)
 			_, has_prev := previous[neighbor]
 			if !has_prev || route_cost < route_costs[neighbor] {
 				previous[neighbor] = current
@@ -82,7 +83,7 @@ route_finder_find_route_by_cost_with_cost_fn :: proc(
 	if min_cost == f64(max(i32)) {
 		return nil
 	}
-	return route_finder_get_route(start, end, previous)
+	return route_finder_get_route(self, start, end, previous)
 }
 
 @(private="file")
@@ -137,8 +138,9 @@ route_finder_get_route :: proc(
 // Mirrors the Java lambda `t -> BigDecimal.ONE` inside
 // RouteFinder#findRouteByDistance, used as the per-territory cost function
 // passed to findRouteByCost. BigDecimal collapses to f64 per the port
-// rules, so BigDecimal.ONE becomes 1.0.
-route_finder_lambda_find_route_by_distance_0 :: proc(territory: ^Territory) -> f64 {
+// rules, so BigDecimal.ONE becomes 1.0. The unused rawptr ctx satisfies
+// the cost callback signature; this lambda doesn't capture.
+route_finder_lambda_find_route_by_distance_0 :: proc(_: rawptr, territory: ^Territory) -> f64 {
 	return 1.0
 }
 
@@ -363,6 +365,7 @@ route_finder_find_route_by_distance :: proc(
 		start,
 		end,
 		route_finder_lambda_find_route_by_distance_0,
+		nil,
 	)
 }
 

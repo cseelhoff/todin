@@ -78,11 +78,11 @@ file_utils_find_closest_to_root :: proc(
 		if entry.depth < max_depth && os.is_dir(entry.path) {
 			fd, oerr := os.open(entry.path)
 			if oerr == nil {
-				children, rerr := os.read_dir(fd, -1)
+				children, rerr := os.read_dir(fd, -1, context.allocator)
 				os.close(fd)
 				if rerr == nil {
 					for child in children {
-						joined := filepath.join({entry.path, child.name})
+						joined, _ := filepath.join({entry.path, child.name}, context.allocator)
 						append(&stack, Stack_Entry{path = joined, depth = entry.depth + 1})
 					}
 					delete(children)

@@ -6,6 +6,7 @@ Production_Rule :: struct {
         using default_named: Default_Named,
 	costs:        Integer_Map,
 	results:      Integer_Map,
+	rule:         Rule,
 }
 
 // Java owners covered by this file:
@@ -18,7 +19,29 @@ production_rule_new :: proc(name: string, data: ^Game_Data) -> ^Production_Rule 
 	free(base)
 	self.costs = Integer_Map{map_values = make(map[rawptr]i32)}
 	self.results = Integer_Map{map_values = make(map[rawptr]i32)}
+	self.rule = Rule{
+		add_cost    = production_rule_rule_add_cost,
+		get_name    = production_rule_rule_get_name,
+		get_results = production_rule_rule_get_results,
+	}
 	return self
+}
+
+// Vtable bridges that recover the outer Production_Rule from its
+// embedded Rule field, mirroring Java's `extends Rule` polymorphism.
+production_rule_rule_add_cost :: proc(self: ^Rule, resource: ^Resource, quantity: i32) {
+	pr := cast(^Production_Rule)(uintptr(self) - offset_of(Production_Rule, rule))
+	production_rule_add_cost(pr, resource, quantity)
+}
+
+production_rule_rule_get_name :: proc(self: ^Rule) -> string {
+	pr := cast(^Production_Rule)(uintptr(self) - offset_of(Production_Rule, rule))
+	return default_named_get_name(&pr.default_named)
+}
+
+production_rule_rule_get_results :: proc(self: ^Rule) -> ^Integer_Map {
+	pr := cast(^Production_Rule)(uintptr(self) - offset_of(Production_Rule, rule))
+	return &pr.results
 }
 
 production_rule_get_costs :: proc(self: ^Production_Rule) -> Integer_Map {

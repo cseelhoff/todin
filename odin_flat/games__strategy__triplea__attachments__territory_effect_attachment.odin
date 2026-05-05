@@ -99,3 +99,15 @@ territory_effect_attachment_get_combat_effect :: proc(self: ^Territory_Effect_At
 	return integer_map_get_int(&off, cast(rawptr)type)
 }
 
+// Java: public TerritoryEffectAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Java declares no non-zero field initializers, so `new()`'s zero-init covers
+// every field; the body merely chains to the DefaultAttachment super-call,
+// inlined here per the same pattern as `canal_attachment_new`.
+territory_effect_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Territory_Effect_Attachment {
+	self := new(Territory_Effect_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	return self
+}

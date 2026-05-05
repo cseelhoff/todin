@@ -349,7 +349,7 @@ territory_attachment_lambda_get_property_or_empty_19 :: proc() -> i32 {
 //   return Optional.ofNullable(territoryAttachment);
 // Odin: nil mirrors Optional.empty(); the IllegalStateException is
 // surfaced via fmt.panicf in keeping with the project convention.
-territory_attachment_get :: proc(
+territory_attachment_get_named :: proc(
 	t: ^Territory,
 	name_of_attachment: string,
 ) -> ^Territory_Attachment {

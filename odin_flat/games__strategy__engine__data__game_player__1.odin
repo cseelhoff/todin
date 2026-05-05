@@ -3,7 +3,7 @@ package game
 // Anonymous inner subclass of GamePlayer used to define NULL_GAME_PLAYER.
 // Overrides isNull() to return true; no captured fields.
 Game_Player_1 :: struct {
-	using base: Game_Player,
+	using parent: Game_Player,
 }
 
 // Java: anonymous-class constructor invokes
@@ -20,7 +20,7 @@ game_player_1_new :: proc(
 ) -> ^Game_Player_1 {
 	self := new(Game_Player_1)
 	parent := game_player_new(name, optional, can_be_disabled, default_type, hidden, data)
-	self.base = parent^
+	self.parent = parent^
 	free(parent)
 	return self
 }

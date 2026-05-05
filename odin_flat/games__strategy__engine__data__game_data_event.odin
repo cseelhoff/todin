@@ -52,12 +52,15 @@ game_data_event_lookup_event :: proc(change: ^Change) -> (Game_Data_Event, bool)
 
 // Java: synthetic GameDataEvent#$values()
 // Returns a fresh slice containing all enum members in declaration order.
+@(private="file")
+game_data_event_values_array := [?]Game_Data_Event{
+	.Unit_Moved,
+	.Game_Step_Changed,
+	.Tech_Attachment_Changed,
+}
+
 game_data_event_values :: proc() -> []Game_Data_Event {
-	return []Game_Data_Event{
-		.Unit_Moved,
-		.Game_Step_Changed,
-		.Tech_Attachment_Changed,
-	}
+	return game_data_event_values_array[:]
 }
 
 // Java: synthetic GameDataEvent#<init>(String, int)

@@ -1,8 +1,5 @@
 package game
 
-Generic_Web_Socket_Client_Message_Listener :: struct {
-	message_type: ^Message_Type,
-	listener:     proc(rawptr, rawptr),
-	listener_ctx: rawptr,
-}
+// Inner class GenericWebSocketClient$MessageListener defined in outer file
+// generic_web_socket_client.odin (Odin package-level scope).
 

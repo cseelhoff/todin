@@ -24,9 +24,15 @@ delegate_history_writer_new_internal :: proc(channel: ^I_Game_Modified_Channel, 
 // games.strategy.engine.history.DelegateHistoryWriter#<init>(games.strategy.engine.message.IChannelMessenger,games.strategy.engine.data.GameData)
 delegate_history_writer_new :: proc(messenger: ^I_Channel_Messenger, game_data: ^Game_Data) -> ^Delegate_History_Writer {
 	assert(game_data != nil)
+	// Java: IGame.GAME_MODIFICATION_CHANNEL = new RemoteName(
+	//   IGame.class.getName() + ".GAME_MODIFICATION_CHANNEL",
+	//   IGameModifiedChannel.class)
 	channel := cast(^I_Game_Modified_Channel)i_channel_messenger_get_channel_broadcaster(
 		messenger,
-		"games.strategy.engine.framework.IGame.GAME_MODIFICATION_CHANNEL",
+		remote_name_new(
+			"games.strategy.engine.framework.IGame.GAME_MODIFICATION_CHANNEL",
+			class_new("games.strategy.engine.framework.IGameModifiedChannel", "IGameModifiedChannel"),
+		),
 	)
 	return delegate_history_writer_new_internal(channel, game_data)
 }

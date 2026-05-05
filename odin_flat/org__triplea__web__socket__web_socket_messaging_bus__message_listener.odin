@@ -1,10 +1,5 @@
 package game
 
-// Java owners covered by this file:
-//   - org.triplea.web.socket.WebSocketMessagingBus$MessageListener
-
-Web_Socket_Messaging_Bus_Message_Listener :: struct {
-	message_type: rawptr, // MessageType<T>
-	listener:     rawptr, // Consumer<WebSocketMessageContext<T>>
-}
+// Inner class WebSocketMessagingBus$MessageListener defined in outer file
+// web_socket_messaging_bus.odin (Odin package-level scope).
 

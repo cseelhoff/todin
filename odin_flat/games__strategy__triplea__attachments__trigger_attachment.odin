@@ -2670,7 +2670,7 @@ trigger_attachment_trigger_territory_property_change :: proc(
 				territories_needing_redraw[territory] = {}
 				attachment_name_pair := trigger_attachment_get_territory_attachment_name(t)
 				if attachment_name_pair.first == "TerritoryAttachment" {
-					attachment := territory_attachment_get(territory, attachment_name_pair.second)
+					attachment := territory_attachment_get_named(territory, attachment_name_pair.second)
 					if attachment == nil {
 						// Mirrors Java's orElseThrow on the missing-attachment case
 						// (water territories may legitimately lack an attachment).
@@ -3234,3 +3234,18 @@ trigger_attachment_trigger_activate_trigger_other :: proc(
 	}
 }
 
+// Java: public TriggerAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// TriggerAttachment itself declares no non-zero field initializers; the
+// only non-default values live in the AbstractConditionsAttachment parent
+// (`conditionType = AND`, `chance = DEFAULT_CHANCE`). AbstractTriggerAttachment
+// has only zero defaults (`uses = 0`, `usedThisRound = false`, etc.).
+trigger_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Trigger_Attachment {
+	self := new(Trigger_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.condition_type = "AND"
+	self.chance = "1:1"
+	return self
+}

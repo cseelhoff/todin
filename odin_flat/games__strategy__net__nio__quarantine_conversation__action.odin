@@ -1,7 +1,3 @@
 package game
 
-Quarantine_Conversation_Action :: enum {
-	None,
-	Terminate,
-	Unquarantine,
-}
+// Inner enum QuarantineConversation$Action defined in outer file quarantine_conversation.odin

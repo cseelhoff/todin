@@ -146,3 +146,22 @@ political_action_attachment_get_valid_actions :: proc(
 	}
 	return result
 }
+
+// Java: public PoliticalActionAttachment(String name, Attachable attachable, GameData gameData)
+//   super(name, attachable, gameData);
+// Java field-initializer defaults that are non-zero come from the parent
+// chain (AbstractUserActionAttachment ⊃ AbstractConditionsAttachment ⊃
+// DefaultAttachment): `attemptsPerTurn = 1`, `attemptsLeftThisTurn = 1`,
+// `conditionType = AND`, `chance = DEFAULT_CHANCE` ("1:1"). All other fields
+// default to 0/false/null and are covered by `new()`'s zero-init.
+political_action_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^Game_Data) -> ^Political_Action_Attachment {
+	self := new(Political_Action_Attachment)
+	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
+	default_attachment_set_name(&self.default_attachment, name)
+	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	self.attempts_per_turn = 1
+	self.attempts_left_this_turn = 1
+	self.condition_type = "AND"
+	self.chance = "1:1"
+	return self
+}

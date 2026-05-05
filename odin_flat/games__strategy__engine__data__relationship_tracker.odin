@@ -8,11 +8,11 @@ package game
 
 Relationship_Tracker :: struct {
 	using game_data_component: Game_Data_Component,
-	relationships: map[^Related_Players]^Relationship,
+	relationships: map[Related_Players]^Relationship,
 }
 
 relationship_tracker_get_relationship_related :: proc(self: ^Relationship_Tracker, p1p2: ^Related_Players) -> ^Relationship {
-	return self.relationships[p1p2]
+	return self.relationships[p1p2^]
 }
 
 relationship_tracker_get_relationship_type :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> ^Relationship_Type {
@@ -24,18 +24,9 @@ relationship_tracker_get_relationship_type :: proc(self: ^Relationship_Tracker, 
 //   public Relationship getRelationship(GamePlayer p1, GamePlayer p2) {
 //     return getRelationship(new RelatedPlayers(p1, p2));
 //   }
-//
-// Map keys are ^Related_Players, so a freshly allocated probe key would never
-// match by pointer identity. Honor Java's value-equality semantics by scanning
-// the map with related_players_equals.
-relationship_tracker_get_relationship_players :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> ^Relationship {
-	probe := Related_Players{player1 = p1, player2 = p2}
-	for key, value in self.relationships {
-		if related_players_equals(key, &probe) {
-			return value
-		}
-	}
-	return nil
+relationship_tracker_get_relationship :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> ^Relationship {
+	key := make_Relationship_Tracker_Related_Players(p1, p2)
+	return self.relationships[key]
 }
 
 // games.strategy.engine.data.RelationshipTracker#setRelationship(GamePlayer, GamePlayer, RelationshipType)
@@ -44,7 +35,7 @@ relationship_tracker_get_relationship_players :: proc(self: ^Relationship_Tracke
 //     relationships.put(new RelatedPlayers(p1, p2), new Relationship(relationshipType));
 //   }
 relationship_tracker_set_relationship :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player, relationship_type: ^Relationship_Type) {
-	key := relationship_tracker_related_players_new(p1, p2)
+	key := make_Relationship_Tracker_Related_Players(p1, p2)
 	value := relationship_tracker_relationship_new(self, relationship_type)
 	self.relationships[key] = value
 }
@@ -57,9 +48,9 @@ relationship_tracker_set_relationship :: proc(self: ^Relationship_Tracker, p1: ^
 //         .anyMatch(p2 -> Matches.relationshipTypeIsAtWar().test(getRelationshipType(p1, p2)));
 //   }
 relationship_tracker_is_at_war_with_any_of_these_players :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2s: [dynamic]^Game_Player) -> bool {
-	predicate := matches_relationship_type_is_at_war()
+	predicate, ctx := matches_relationship_type_is_at_war()
 	for p2 in p2s {
-		if predicate(relationship_tracker_get_relationship_type(self, p1, p2)) {
+		if predicate(ctx, relationship_tracker_get_relationship_type(self, p1, p2)) {
 			return true
 		}
 	}
@@ -75,9 +66,9 @@ relationship_tracker_is_at_war_with_any_of_these_players :: proc(self: ^Relation
 //             p2 -> Matches.relationshipTypeIsAllied().test(getRelationshipType(gamePlayer, p2)));
 //   }
 relationship_tracker_is_allied_with_any_of_these_players :: proc(self: ^Relationship_Tracker, player: ^Game_Player, others: [dynamic]^Game_Player) -> bool {
-	predicate := matches_relationship_type_is_allied()
+	predicate, ctx := matches_relationship_type_is_allied()
 	for p2 in others {
-		if predicate(relationship_tracker_get_relationship_type(self, player, p2)) {
+		if predicate(ctx, relationship_tracker_get_relationship_type(self, player, p2)) {
 			return true
 		}
 	}
@@ -92,7 +83,7 @@ relationship_tracker_is_allied_with_any_of_these_players :: proc(self: ^Relation
 relationship_tracker_new :: proc(data: ^Game_Data) -> ^Relationship_Tracker {
 	self := new(Relationship_Tracker)
 	self.game_data_component = make_Game_Data_Component(data)
-	self.relationships = make(map[^Related_Players]^Relationship)
+	self.relationships = make(map[Related_Players]^Relationship)
 	return self
 }
 
@@ -103,8 +94,7 @@ relationship_tracker_new :: proc(data: ^Game_Data) -> ^Relationship_Tracker {
 //     relationships.put(new RelatedPlayers(p1, p2), new Relationship(r, roundValue));
 //   }
 relationship_tracker_set_relationship_with_round :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player, r: ^Relationship_Type, round_value: i32) {
-	key := new(Related_Players)
-	key^ = make_Relationship_Tracker_Related_Players(p1, p2)
+	key := make_Relationship_Tracker_Related_Players(p1, p2)
 	value := relationship_new(self, r, round_value)
 	self.relationships[key] = value
 }
@@ -181,7 +171,7 @@ relationship_tracker_get_relationships :: proc(self: ^Relationship_Tracker, play
 		if player2 == nil || player2 == player1 {
 			continue
 		}
-		rel := relationship_tracker_get_relationship_players(self, player1, player2)
+		rel := relationship_tracker_get_relationship(self, player1, player2)
 		result[rel] = {}
 	}
 	return result

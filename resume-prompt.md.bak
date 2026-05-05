@@ -205,34 +205,20 @@ at the start of the session, then proceed.
            `package game` header.
          - Re-dispatching with a clearer hint when the subagent's
            confusion is purely about rules interpretation.
-- **Anything else** → fix it directly and continue. The
-         orchestrator has full authority to:
-         - Port missing Java methods/structs to Odin directly
-           (read the Java source, write the Odin proc/struct).
-           This is the same work a subagent would do; doing it
-           inline avoids dispatch overhead when the fix is
-           localized.
-         - Correct caller/callee signature mismatches by editing
-           either side to match the Java source of truth.
-         - Edit the snapshot harness under
-           `triplea/conversion/odin_tests/test_common/` and the
-           generated `test_*.odin` files when the harness's
-           expected types don't match the ported Odin shapes.
-           Mirror the change into
-           `templates/odin_test_common/` and
-           `scripts/patch_triplea.py` afterward so the next
-           bootstrap re-run preserves the fix.
-         - Update `port.sqlite` directly to reconcile drift
-           (e.g. flip `is_implemented = 0` on rows whose target
-           proc is actually missing from `odin_flat/`, add
-           missing rows that the bootstrap closure missed,
-           re-run `scripts/build_called_layered_tables.py` if a
-           full re-layer is needed).
-         - Apply any other fix necessary to make Phase C compile
-           and pass.
-         Record the action in session memory under "Direct fixes
-         applied this session" so future runs see what's already
-         on disk.
+       - **Anything else** (ambiguous, requires schema/DB changes,
+         affects the harness, or could mask a deeper bug) → STOP.
+         Do NOT auto-fix. Print the likely cause clearly:
+         ```
+         BLOCKED (manual review required):
+           entity: <key>
+           reason: <subagent reason>
+           likely cause: <your one-paragraph diagnosis>
+           suggested next step: <e.g. "add file X to bootstrap
+             provisioning", "edit scripts/patch_triplea.py", "split
+             struct Y in DB">
+         ```
+         Save the same block into session memory under "Blocked
+         entries", then call `task_complete`.
 
     3. **Never** mark a blocked entity `is_implemented = 1`, and
        never bypass the rule against editing the harness. A
@@ -581,40 +567,34 @@ Workspace: /home/caleb/todin
 - All structs and all methods `is_implemented = 1` AND Phase C
   passes 52/52 snapshot pairs → call `task_complete` with a final
   summary.
+- A subagent reports a harness-level blocker (it asks to edit
+  `triplea/conversion/odin_tests/test_common/`) → STOP. Per
+  `llm-instructions.md`, fix `scripts/patch_triplea.py` and re-run
+  bootstrap. Document the change in session memory before stopping.
+- A `blocked:` row's root cause is **not** a benign cross-layer
+  skip and is not trivially auto-fixable (see step 6a) → STOP
+  after printing the diagnosis and suggested next step. Cross-
+  layer dependency blockers are NOT a stop condition — they are
+  expected and handled by simply leaving the method
+  `is_implemented = 0` and continuing.
 - Context budget feels tight (~70% used) → save progress and
   `task_complete` with the resume instruction.
 
-Non-trivial blockers (harness mismatches, missing procs whose
-DB rows claim implementation, signature drift, schema fixes) are
-NOT stop conditions. The orchestrator addresses them per step 6a-2
-and keeps going. Only stop when work is genuinely complete or the
-context budget is exhausted.
-
 ### Things you must NOT do
 
+- Do NOT write Odin code yourself for TripleA entities — always
+  delegate to a subagent. (Exception: JDK shim files under the
+  "JDK shim policy" above are orchestrator-owned infrastructure
+  and the orchestrator writes them directly.)
 - Do NOT use the `Explore` agent for translation (read-only).
 - Do NOT mark entities `is_implemented = 1` based on a `blocked:`
-  reply (mark them `0` if they were previously `1` but the proc
-  is actually missing).
+  reply.
 - Do NOT cross `method_layer` boundaries within a single parallel
   batch in Phase B.
+- Do NOT modify the snapshot harness or generated `.odin` test
+  files under `triplea/conversion/odin_tests/`.
 - Do NOT bypass safety flags (`--no-verify`, etc.) in any git
   operations.
-
-The orchestrator MAY:
-- Write Odin code directly for any TripleA entity, struct, or
-  method when delegation overhead isn't worth it (a small
-  signature fix, a single missing accessor, a clear inline
-  port from Java).
-- Modify the snapshot harness and generated test files under
-  `triplea/conversion/odin_tests/` to reconcile real type
-  shape drift, mirroring changes back into
-  `templates/odin_test_common/` and `scripts/patch_triplea.py`.
-- Update `port.sqlite` directly to fix drift discovered during
-  Phase C (rows incorrectly marked implemented, missing
-  closures, etc.).
-- Re-run `scripts/build_called_layered_tables.py` or other
-  bootstrap scripts when the call graph needs reconciliation.
 
 ---
 

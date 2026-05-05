@@ -23,6 +23,7 @@ territory_new :: proc(name: string, water: bool, data: ^Game_Data) -> ^Territory
 	parent := named_attachable_new(name, data)
 	self.named_attachable = parent^
 	free(parent)
+	self.named_attachable.default_named.named.kind = .Territory
 	self.water = water
 	self.owner = player_list_get_null_player(game_data_get_player_list(data))
 	self.unit_collection = unit_collection_new(cast(^Named_Unit_Holder)self, data)

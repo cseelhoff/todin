@@ -389,7 +389,7 @@ server_game_add_player_types_to_game_data :: proc(
 			server_game_is_or_are(self, name),
 			label,
 		)
-		history_writer_add_child_to_event(history_writer, line)
+		i_delegate_history_writer_add_child_to_event(history_writer, line)
 		p := player_list_get_player_id(game_data_get_player_list(data), name)
 		who_kind := "Human"
 		if player_is_ai(player) {
@@ -418,7 +418,7 @@ server_game_add_player_types_to_game_data :: proc(
 			name,
 			server_game_is_or_are(self, name),
 		)
-		history_writer_add_child_to_event(history_writer, line)
+		i_delegate_history_writer_add_child_to_event(history_writer, line)
 		p := player_list_get_player_id(game_data_get_player_list(data), name)
 		new_who_am_i: string = "Human:Client"
 		if game_player_get_who_am_i(p) != new_who_am_i {

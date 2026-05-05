@@ -29,7 +29,7 @@ Named_Kind :: enum {
 }
 
 Named :: struct {
-	base: Default_Named_Base,
+	using base: Default_Named_Base,
 	kind: Named_Kind,
 	get_name: proc(self: ^Named) -> string,
 }

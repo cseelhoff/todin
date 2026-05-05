@@ -4,7 +4,7 @@ package game
 // Holder for static 'game started' state. Java declares this as an
 // enum with no instances and a single private static boolean field.
 
-Game_State :: struct {}
+Framework_Game_State :: struct {}
 
 game_state_started: bool = false
 
@@ -12,8 +12,8 @@ game_state_started: bool = false
 //   - games.strategy.engine.framework.GameState
 
 // Synthetic enum $values() accessor. The Java enum has no constants.
-game_state_values :: proc() -> []Game_State {
-	return []Game_State{}
+game_state_values :: proc() -> []Framework_Game_State {
+	return []Framework_Game_State{}
 }
 
 // games.strategy.engine.framework.GameState#notStarted()

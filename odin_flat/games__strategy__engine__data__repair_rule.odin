@@ -6,6 +6,7 @@ Repair_Rule :: struct {
         using default_named: Default_Named,
 	costs:        ^Integer_Map,
 	results:      ^Integer_Map,
+	rule:         Rule,
 }
 
 repair_rule_new :: proc(name: string, data: ^Game_Data, costs: ^Integer_Map, results: ^Integer_Map) -> ^Repair_Rule {
@@ -21,6 +22,11 @@ repair_rule_new :: proc(name: string, data: ^Game_Data, costs: ^Integer_Map, res
 	free(base)
 	self.costs = integer_map_new_copy(costs)
 	self.results = integer_map_new_copy(results)
+	self.rule = Rule{
+		add_cost    = repair_rule_rule_add_cost,
+		get_name    = repair_rule_rule_get_name,
+		get_results = repair_rule_rule_get_results,
+	}
 	return self
 }
 
@@ -54,6 +60,23 @@ repair_rule_add_cost :: proc(self: ^Repair_Rule, resource: ^Resource, quantity: 
 
 repair_rule_to_string :: proc(self: ^Repair_Rule) -> string {
 	return fmt.aprintf("RepairRule:%s", default_named_get_name(&self.default_named))
+}
+
+// Vtable bridges that recover the outer Repair_Rule from its embedded
+// Rule field, mirroring Java's `extends Rule` polymorphism.
+repair_rule_rule_add_cost :: proc(self: ^Rule, resource: ^Resource, quantity: i32) {
+	rr := cast(^Repair_Rule)(uintptr(self) - offset_of(Repair_Rule, rule))
+	repair_rule_add_cost(rr, resource, quantity)
+}
+
+repair_rule_rule_get_name :: proc(self: ^Rule) -> string {
+	rr := cast(^Repair_Rule)(uintptr(self) - offset_of(Repair_Rule, rule))
+	return default_named_get_name(&rr.default_named)
+}
+
+repair_rule_rule_get_results :: proc(self: ^Rule) -> ^Integer_Map {
+	rr := cast(^Repair_Rule)(uintptr(self) - offset_of(Repair_Rule, rule))
+	return rr.results
 }
 
 // Java owners covered by this file:

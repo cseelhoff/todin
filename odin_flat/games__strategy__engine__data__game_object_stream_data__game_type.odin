@@ -8,8 +8,11 @@ Game_Object_Stream_Data_Game_Type :: enum {
 	PRODUCTIONFRONTIER,
 }
 
+@(private="file")
+game_object_stream_data_game_type_values_array := [?]Game_Object_Stream_Data_Game_Type{.PLAYERID, .UNITTYPE, .TERRITORY, .PRODUCTIONRULE, .PRODUCTIONFRONTIER}
+
 game_object_stream_data_game_type_values :: proc() -> []Game_Object_Stream_Data_Game_Type {
-	return []Game_Object_Stream_Data_Game_Type{.PLAYERID, .UNITTYPE, .TERRITORY, .PRODUCTIONRULE, .PRODUCTIONFRONTIER}
+	return game_object_stream_data_game_type_values_array[:]
 }
 
 game_object_stream_data_game_type_values_public :: proc() -> []Game_Object_Stream_Data_Game_Type {
