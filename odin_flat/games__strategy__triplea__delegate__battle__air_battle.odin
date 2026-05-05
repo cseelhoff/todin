@@ -496,3 +496,30 @@ air_battle_finish_battle_and_remove_from_tracker_headless :: proc(
 	)
 }
 
+
+// games.strategy.triplea.delegate.battle.AirBattle#addAttackChange(Route,Collection<Unit>,Map<Unit,Set<Unit>>)
+// Java: appends each unit not already in attacking_units (filter not-contains)
+// then returns ChangeFactory.EMPTY_CHANGE. The targets map is unused here.
+air_battle_add_attack_change :: proc(
+	self: ^Air_Battle,
+	route: ^Route,
+	units: [dynamic]^Unit,
+	targets: ^map[^Unit]map[^Unit]struct{},
+) -> ^Change {
+	_ = route
+	_ = targets
+	for u in units {
+		seen := false
+		for existing in self.attacking_units {
+			if existing == u {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			append(&self.attacking_units, u)
+		}
+	}
+	empty := change_factory_1_new()
+	return &empty.change
+}

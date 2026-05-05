@@ -60,6 +60,11 @@ remote_messenger_register_remote :: proc(
 	unified_messenger_add_implementor(self.unified_messenger, name, implementor, false)
 }
 
+// games.strategy.engine.message.RemoteMessenger#unregisterRemote(games.strategy.engine.message.RemoteName)
+remote_messenger_unregister_remote :: proc(self: ^Remote_Messenger, name: ^Remote_Name) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.message.RemoteMessenger
 

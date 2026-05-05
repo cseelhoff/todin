@@ -86,8 +86,9 @@ abstract_place_delegate_update_undoable_placement_indexes :: proc(self: ^Abstrac
 // Three-way comparator (Java Comparator<Unit>): construction units sort first.
 // Returned as a plain (non-capturing) proc value mirroring Java's static lambda.
 abstract_place_delegate_unit_construction_compare :: proc(u1: ^Unit, u2: ^Unit) -> i32 {
-	construction_1 := matches_unit_is_construction(u1)
-	construction_2 := matches_unit_is_construction(u2)
+	construction_p, construction_c := matches_unit_is_construction()
+	construction_1 := construction_p(construction_c, u1)
+	construction_2 := construction_p(construction_c, u2)
 	if construction_1 == construction_2 {
 		return 0
 	}
@@ -211,12 +212,14 @@ Abstract_Place_Delegate_Unit_Requires_Predicate_Ctx :: struct {
 
 abstract_place_delegate_unit_which_requires_units_has_required_units_test :: proc(ctx: rawptr, unit_which_requires_units: ^Unit) -> bool {
 	c := cast(^Abstract_Place_Delegate_Unit_Requires_Predicate_Ctx)ctx
-	if !matches_unit_requires_units_on_creation(unit_which_requires_units) {
+	requires_p, requires_c := matches_unit_requires_units_on_creation()
+	if !requires_p(requires_c, unit_which_requires_units) {
 		return true
 	}
 	// Do not need to remove unowned here; the in-list match excludes unowned.
 	units_at_start_of_turn_in_producer := abstract_place_delegate_units_at_start_of_step_in_territory(c.self, c.to)
-	if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_producer) {
+	has_p_1, has_c_1 := matches_unit_which_requires_units_has_required_units_in_list(units_at_start_of_turn_in_producer)
+	if has_p_1(has_c_1, unit_which_requires_units) {
 		return true
 	}
 	if c.count_neighbors && territory_is_water(c.to) {
@@ -226,7 +229,8 @@ abstract_place_delegate_unit_which_requires_units_has_required_units_test :: pro
 		producers := abstract_place_delegate_get_all_producers(c.self, c.to, c.self.player, single, true)
 		for current in producers {
 			units_at_start_of_turn_in_current := abstract_place_delegate_units_at_start_of_step_in_territory(c.self, current)
-			if matches_unit_which_requires_units_has_required_units_in_list(unit_which_requires_units, units_at_start_of_turn_in_current) {
+			has_p_2, has_c_2 := matches_unit_which_requires_units_has_required_units_in_list(units_at_start_of_turn_in_current)
+			if has_p_2(has_c_2, unit_which_requires_units) {
 				return true
 			}
 		}
@@ -2847,4 +2851,47 @@ abstract_place_delegate_place_units_with_bid_mode :: proc(
 ) -> Maybe(string) {
 	_ = bid_mode
 	return abstract_place_delegate_place_units(self, units, at)
+}
+
+// --- I_Abstract_Place_Delegate vtable adapters ---
+//
+// Concrete-impl thunks that match the proc fields on
+// I_Abstract_Place_Delegate. Each one casts iface.concrete back to
+// ^Abstract_Place_Delegate and forwards to the existing concrete proc.
+// Subclasses (Bid_Place_Delegate, No_Air_Check_Place_Delegate,
+// Place_Delegate) embed Abstract_Place_Delegate transitively, so they
+// can reuse this adapter by passing &self.abstract_place_delegate.
+
+@(private="file")
+abstract_place_delegate_ipd_get_placeable_units_ :: proc(
+	iface: ^I_Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	to:    ^Territory,
+) -> ^Placeable_Units {
+	impl := cast(^Abstract_Place_Delegate)iface.concrete
+	return abstract_place_delegate_get_placeable_units(impl, units, to)
+}
+
+@(private="file")
+abstract_place_delegate_ipd_place_units_with_bid_mode_ :: proc(
+	iface: ^I_Abstract_Place_Delegate,
+	units: [dynamic]^Unit,
+	at:    ^Territory,
+	mode:  I_Abstract_Place_Delegate_Bid_Mode,
+) -> Maybe(string) {
+	impl := cast(^Abstract_Place_Delegate)iface.concrete
+	return abstract_place_delegate_place_units_with_bid_mode(impl, units, at, mode)
+}
+
+// Build a heap-allocated I_Abstract_Place_Delegate vtable bound to the given
+// concrete Abstract_Place_Delegate (or any subclass, via its embedded
+// abstract_place_delegate field).
+abstract_place_delegate_to_i_abstract_place_delegate :: proc(
+	self: ^Abstract_Place_Delegate,
+) -> ^I_Abstract_Place_Delegate {
+	iface := new(I_Abstract_Place_Delegate)
+	iface.concrete = self
+	iface.get_placeable_units = abstract_place_delegate_ipd_get_placeable_units_
+	iface.place_units_with_bid_mode = abstract_place_delegate_ipd_place_units_with_bid_mode_
+	return iface
 }

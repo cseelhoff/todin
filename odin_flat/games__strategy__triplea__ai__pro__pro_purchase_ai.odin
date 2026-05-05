@@ -3054,7 +3054,7 @@ pro_purchase_ai_purchase_factory :: proc(
 	delete(empty_ta)
 	max_value: f64 = 0.0
 	max_territory: ^Territory = nil
-	water_p, water_c := matches_territory_has_neighbor_matching_water(self.player)
+	water_p, water_c := matches_territory_has_water_neighbor(game_data_get_map(pro_data_get_data(self.pro_data)))
 	can_move_land_p, can_move_land_c := pro_matches_territory_can_move_land_units(
 		self.player, false,
 	)

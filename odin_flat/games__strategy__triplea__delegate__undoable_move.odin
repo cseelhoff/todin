@@ -117,3 +117,9 @@ undoable_move_was_transport_unloaded :: proc(self: ^Undoable_Move, transport: ^U
 	return transport in self.unloaded
 }
 
+
+// Java: UndoableMove inherits AbstractUndoableMove#addChange(Change)
+// Forwarder for callers that hold an Undoable_Move pointer directly.
+undoable_move_add_change :: proc(self: ^Undoable_Move, change: ^Change) {
+	abstract_undoable_move_add_change(&self.abstract_undoable_move, change)
+}

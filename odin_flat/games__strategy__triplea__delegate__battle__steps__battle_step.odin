@@ -2,6 +2,23 @@ package game
 
 Battle_Step :: struct {
 	using i_executable: I_Executable,
+
+	// games.strategy.triplea.delegate.battle.steps.BattleStep#getAllStepDetails()
+	// Default impl returns an empty list per BattleStep's
+	// `default List<StepDetails> getAllStepDetails() { return List.of(); }`.
+	// Concrete subtypes that override this assign their own thunk in
+	// their `_new` constructor.
+	get_all_step_details: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details,
+}
+
+// Public dispatch proc for getAllStepDetails(). Falls back to an empty
+// list when the field is nil (matches the Java default method).
+battle_step_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	if self.get_all_step_details != nil {
+		return self.get_all_step_details(self)
+	}
+	out: [dynamic]^Battle_Step_Step_Details
+	return out
 }
 
 // Java: static List<BattleStep> BattleStep.getAll(BattleState, BattleActions)

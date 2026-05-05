@@ -18,7 +18,7 @@ headless_auto_save_file_utils_lambda_get_auto_save_file_name_0 :: proc(v: string
 }
 
 headless_auto_save_file_utils_get_auto_save_file_name :: proc(self: ^Headless_Auto_Save_File_Utils, base_file_name: string) -> string {
-	env := os.get_env("triplea.name")
+	env := os.get_env("triplea.name", context.allocator)
 	prefix := ""
 	if len(env) > 0 {
 		prefix = headless_auto_save_file_utils_lambda_get_auto_save_file_name_0(env)

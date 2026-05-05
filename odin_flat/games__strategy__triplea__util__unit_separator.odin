@@ -125,8 +125,7 @@ unit_separator_lambda_get_comparator_unit_categories_10 :: proc(
 	}
 	// `unit_attachment_get_attack` is a plain getter in the Odin port; the
 	// player argument from the Java side has no effect on the returned value.
-	_ = current_player
-	return unit_attachment_get_attack(att)
+	return unit_attachment_get_attack(att, current_player)
 }
 
 // Predicate used by `categorize(...)`:
@@ -163,8 +162,7 @@ unit_separator_lambda_get_comparator_unit_categories_11 :: proc(
 	if player == nil {
 		player = unit_category_get_owner(uc)
 	}
-	_ = player
-	return unit_attachment_get_attack(att)
+	return unit_attachment_get_attack(att, player)
 }
 
 // Java:

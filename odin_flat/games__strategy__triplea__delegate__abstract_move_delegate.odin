@@ -159,3 +159,13 @@ abstract_move_delegate_end :: proc(self: ^Abstract_Move_Delegate) {
 	clear(&self.moves_to_undo)
 }
 
+// games.strategy.triplea.delegate.AbstractMoveDelegate#getBridge()
+// Inherited via Lombok @Getter on AbstractDelegate's `bridge` field.
+// Returns the IDelegateBridge stored on the embedded Abstract_Delegate
+// (reached transparently through the `using` chain
+// Base_Triple_A_Delegate -> Abstract_Delegate). Delegate_Bridge is a
+// type alias for I_Delegate_Bridge.
+abstract_move_delegate_get_bridge :: proc(self: ^Abstract_Move_Delegate) -> ^I_Delegate_Bridge {
+	return self.bridge
+}
+

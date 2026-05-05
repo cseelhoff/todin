@@ -168,3 +168,85 @@ i_battle_add_attack_change :: proc(
 	}
 	return non_fighting_battle_add_attack_change(cast(^Non_Fighting_Battle)self, route, units, targets)
 }
+
+// games.strategy.triplea.delegate.battle.IBattle#fixUpNullPlayer(GamePlayer)
+// Body lives on AbstractBattle (no concrete subtype overrides it). Mirrors:
+//   if (attacker.isNull() && !ObjectUtils.referenceEquals(attacker, nullPlayer)) attacker = nullPlayer;
+//   if (defender.isNull() && !ObjectUtils.referenceEquals(defender, nullPlayer)) defender = nullPlayer;
+// Pointer identity in Odin is just `!=`, matching ObjectUtils.referenceEquals.
+i_battle_fix_up_null_player :: proc(self: ^I_Battle, null_player: ^Game_Player) {
+	ab := cast(^Abstract_Battle)self
+	if game_player_is_null(ab.attacker) && ab.attacker != null_player {
+		ab.attacker = null_player
+	}
+	if game_player_is_null(ab.defender) && ab.defender != null_player {
+		ab.defender = null_player
+	}
+}
+
+// games.strategy.triplea.delegate.battle.IBattle#fight(IDelegateBridge)
+// Java IBattle.fight is abstract. The five concrete subtypes each
+// override it. Odin dispatch mirrors Java's runtime virtual call by
+// branching on the Abstract_Battle discriminators (set by each
+// concrete constructor) plus `battle_type` for the bombing-raid
+// case (which shares is_must_fight_battle = false /
+// is_finished_battle = false with NonFightingBattle but is the
+// only subtype with battle_type == BOMBING_RAID):
+//   - MustFightBattle.fight              → must_fight_battle_fight
+//   - FinishedBattle.fight               → finished_battle_fight
+//   - StrategicBombingRaidBattle.fight   → strategic_bombing_raid_battle_fight
+//   - NonFightingBattle.fight            → not yet ported (unopposed conquest)
+//   - AirBattle.fight                    → not yet ported (air-only / interceptor)
+// The NFB / AirBattle Odin procs do not yet exist; the trailing
+// branches fall through to a no-op. Following the same coverage
+// note as i_battle_units_lost_in_preceding_battle, those flows are
+// orthogonal to the deterministic single-battle AI snapshot
+// scenarios the harness exercises today and will be wired when the
+// concrete fight() ports land.
+i_battle_fight :: proc(self: ^I_Battle, bridge: ^I_Delegate_Bridge) {
+	ab := cast(^Abstract_Battle)self
+	if ab.is_must_fight_battle {
+		must_fight_battle_fight(cast(^Must_Fight_Battle)self, bridge)
+		return
+	}
+	if ab.is_finished_battle {
+		finished_battle_fight(cast(^Finished_Battle)self, bridge)
+		return
+	}
+	if ab.battle_type == .BOMBING_RAID {
+		strategic_bombing_raid_battle_fight(cast(^Strategic_Bombing_Raid_Battle)self, bridge)
+		return
+	}
+	// Non_Fighting_Battle / Air_Battle: concrete fight() not yet ported.
+}
+
+// games.strategy.triplea.delegate.battle.IBattle#removeAttack(Route, Collection<Unit>)
+// Java: per-impl removes the units from the concrete battle's attacking
+// list and returns a CompositeChange (typically empty). Both AirBattle
+// and MustFightBattle share the same body shape: filter out units in the
+// removal collection from attacking_units and return new CompositeChange().
+i_battle_remove_attack :: proc(
+	self: ^I_Battle,
+	route: ^Route,
+	units: [dynamic]^Unit,
+) -> ^Change {
+	_ = route
+	ab := cast(^Abstract_Battle)self
+	n := 0
+	for u in ab.attacking_units {
+		keep := true
+		for r in units {
+			if u == r {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			ab.attacking_units[n] = u
+			n += 1
+		}
+	}
+	resize(&ab.attacking_units, n)
+	composite := composite_change_new()
+	return &composite.change
+}

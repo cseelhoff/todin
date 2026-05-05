@@ -533,6 +533,21 @@ unit_hits_unit_can_take_hit_without_being_killed :: proc(self: ^Unit) -> i32 {
 	return unit_attachment_get_hit_points(unit_get_unit_attachment(self)) - 1 - self.hits
 }
 
+// games.strategy.engine.data.DynamicallyModifiable#getPropertyOrThrow(String)
+//
+// Java default method on the DynamicallyModifiable interface:
+//   return getProperty(name).orElseThrow(
+//       () -> new IllegalArgumentException("unknown property named '" + name + "'"));
+// Unit's `getProperty` resolves to `getPropertyOrEmpty` (already ported as
+// `unit_get_property_or_empty`), which returns nil for the absent case.
+unit_get_property_or_throw :: proc(self: ^Unit, name: string) -> ^Mutable_Property {
+	p := unit_get_property_or_empty(self, name)
+	if p == nil {
+		panic(fmt.tprintf("unknown property named '%s'", name))
+	}
+	return p
+}
+
 // games.strategy.engine.data.Unit#lambda$getPropertyOrEmpty$0(Unit$PropertyName)
 //
 // Java: the inner `unitPropertyName -> switch (unitPropertyName) { ... }`
@@ -1089,4 +1104,15 @@ unit_get_how_much_more_damage_can_this_unit_take :: proc(self: ^Unit, t: ^Territ
 		)
 	}
 	return max(i32)
+}
+
+// Alias matching the unit_utils.odin call-site naming convention
+// (it elides the Java getter prefix). Delegates to
+// unit_get_how_much_damage_can_this_unit_take_total above.
+unit_how_much_damage_can_this_unit_take_total :: proc(self: ^Unit, t: ^Territory) -> i32 {
+	return unit_get_how_much_damage_can_this_unit_take_total(self, t)
+}
+
+unit_get_data :: proc(self: ^Unit) -> ^Game_Data {
+	return self.game_data
 }

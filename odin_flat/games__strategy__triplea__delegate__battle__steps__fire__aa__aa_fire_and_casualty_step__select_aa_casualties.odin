@@ -110,3 +110,12 @@ aa_fire_and_casualty_step_select_aa_casualties_apply :: proc(
 		battle_state_get_battle_site(bs),
 	)
 }
+
+// Stateless wrapper matching the fire_round_steps_factory_builder
+// casualty_selector proc-value signature.
+aa_fire_and_casualty_step_select_aa_casualties_apply_stateless :: proc(
+	bridge: ^I_Delegate_Bridge,
+	step: ^Select_Casualties,
+) -> ^Casualty_Details {
+	return aa_fire_and_casualty_step_select_aa_casualties_apply(nil, bridge, step)
+}

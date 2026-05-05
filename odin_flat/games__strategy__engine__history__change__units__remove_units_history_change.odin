@@ -218,6 +218,6 @@ remove_units_history_change_perform :: proc(
 	text, _ = strings.replace_all(text, "${territory}", territory_name)
 
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(writer, text, all_killed_units)
+	i_delegate_history_writer_add_child_to_event(writer, text, cast(rawptr)&all_killed_units)
 }
 

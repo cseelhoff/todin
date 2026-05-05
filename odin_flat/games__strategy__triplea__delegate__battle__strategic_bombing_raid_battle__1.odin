@@ -58,14 +58,14 @@ strategic_bombing_raid_battle_1_add_post_bombing_to_history :: proc(
 			outer.bombing_raid_total,
 			suffix,
 		)
-		history_writer_add_child_to_event(history_writer, msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	} else {
 		msg := fmt.aprintf(
 			"Bombing raid costs %d %s",
 			outer.bombing_raid_total,
 			my_formatter_pluralize_quantity("PU", outer.bombing_raid_total),
 		)
-		history_writer_add_child_to_event(history_writer, msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	}
 }
 
@@ -252,7 +252,7 @@ strategic_bombing_raid_battle_1_execute :: proc(
 				outer.bombing_raid_total / 10,
 				my_formatter_pluralize_quantity("vp", outer.bombing_raid_total / 10),
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 		}
 	}
 	strategic_bombing_raid_battle_1_kill_any_suicide_attackers(self, bridge)

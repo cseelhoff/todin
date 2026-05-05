@@ -281,7 +281,7 @@ pro_purchase_option_new :: proc(
 	if is_infra {
 		self.hit_points = 0
 	}
-	self.attack = f64(unit_attachment_get_attack_with_player(unit_attachment, player)) * f64(self.quantity)
+	self.attack = f64(unit_attachment_get_attack(unit_attachment, player)) * f64(self.quantity)
 	self.amphib_attack = self.attack + 0.5 * f64(unit_attachment_get_is_marine(unit_attachment)) * f64(self.quantity)
 	self.defense = f64(unit_attachment_get_defense(unit_attachment, player)) * f64(self.quantity)
 	self.transport_cost = unit_attachment_get_transport_cost(unit_attachment) * self.quantity

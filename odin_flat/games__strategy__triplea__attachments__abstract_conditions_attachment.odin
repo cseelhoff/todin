@@ -197,3 +197,26 @@ abstract_conditions_attachment_test_all_conditions_recursive :: proc(
 	}
 	return all_conditions_tested_so_far
 }
+
+// AbstractConditionsAttachment#isSatisfied(Map<ICondition, Boolean>)
+// Java: return isSatisfied(testedConditions, null);
+// Java 2-arg form (delegate_bridge unused outside RulesAttachment override):
+//   if (testedConditions.containsKey(this)) return testedConditions.get(this);
+//   return areConditionsMet(new ArrayList<>(getConditions()), testedConditions,
+//       getConditionType()) != getInvert();
+abstract_conditions_attachment_is_satisfied :: proc(
+	self: ^Abstract_Conditions_Attachment,
+	tested_conditions: map[^I_Condition]bool,
+) -> bool {
+	self_ic := cast(^I_Condition)rawptr(self)
+	if v, ok := tested_conditions[self_ic]; ok {
+		return v
+	}
+	rules_to_test := make([dynamic]^I_Condition, 0, len(self.conditions))
+	defer delete(rules_to_test)
+	for sub in self.conditions {
+		append(&rules_to_test, cast(^I_Condition)rawptr(sub))
+	}
+	met := are_conditions_met_local(rules_to_test[:], tested_conditions, self.condition_type)
+	return met != self.invert
+}

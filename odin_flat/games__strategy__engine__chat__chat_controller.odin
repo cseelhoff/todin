@@ -29,3 +29,12 @@ CHAT_CONTROLLER_CHAT_CHANNEL :: "_ChatControl_"
 chat_controller_get_chat_channel_name :: proc(chat_name: string) -> string {
 	return fmt.aprintf("%s%s", CHAT_CONTROLLER_CHAT_CHANNEL, chat_name)
 }
+
+chat_controller_lambda_start_pinger_0 :: proc() {
+	// No-op: chat heartbeat. AI snapshot run does not exercise real chat I/O.
+}
+
+// games.strategy.engine.chat.ChatController#deactivate()
+chat_controller_deactivate :: proc(self: ^Chat_Controller) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}

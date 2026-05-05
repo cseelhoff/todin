@@ -250,7 +250,7 @@ pro_non_combat_move_ai_check_can_hold :: proc(
 	if pro_territory_get_battle_result(pro_territory) == nil {
 		pro_territory_set_battle_result(
 			pro_territory,
-			pro_odds_calculator_calculate_battle_results(self.calc, self.pro_data, pro_territory),
+			pro_odds_calculator_calculate_battle_results_2(self.calc, self.pro_data, pro_territory),
 		)
 	}
 	result := pro_territory_get_battle_result(pro_territory)
@@ -999,7 +999,9 @@ pro_non_combat_move_ai_pred_validate_move :: proc(ctx_ptr: rawptr, r: ^Route) ->
 	}
 	units := []^Unit{ctx.u}
 	md := move_description_new_units_route(units, r)
-	res := move_validator_validate_move(ctx.validator, md, ctx.self_ai.player)
+	empty_undoable: [dynamic]^Undoable_Move
+	defer delete(empty_undoable)
+	res := move_validator_validate_move(ctx.validator, md, ctx.self_ai.player, empty_undoable)
 	return move_validation_result_is_move_valid(res)
 }
 
@@ -1519,7 +1521,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 					transport,
 					max_amphib_units_to_add,
 				)
-				pro_territory_get_transport_territory_map(max_value_territory)[transport] =
+				max_value_territory.transport_territory_map[transport] =
 					max_unload_from_territory
 				delete_key(&current_transport_move_map, transport)
 				for unit in max_amphib_units_to_add {
@@ -1616,7 +1618,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 						transport,
 						max_amphib_units_to_add,
 					)
-					pro_territory_get_transport_territory_map(unload_to_territory)[transport] =
+					unload_to_territory.transport_territory_map[transport] =
 						pro_territory_get_territory(max_value_territory)
 					pro_logger_trace(
 						fmt.tprintf(
@@ -1632,7 +1634,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 						transport,
 						max_amphib_units_to_add,
 					)
-					pro_territory_get_transport_territory_map(max_value_territory)[transport] =
+					max_value_territory.transport_territory_map[transport] =
 						pro_territory_get_territory(max_value_territory)
 					pro_logger_trace(
 						fmt.tprintf(
@@ -1946,7 +1948,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				delete(possible_unload_territories)
 				pro_territory_add_temp_units(pro_destination, amphib_units)
 				pro_territory_put_temp_amphib_attack_map(pro_destination, transport, amphib_units)
-				pro_territory_get_transport_territory_map(pro_destination)[transport] =
+				pro_destination.transport_territory_map[transport] =
 					min_territory
 				for unit in amphib_units {
 					delete_key(&current_unit_move_map, unit)
@@ -3714,7 +3716,7 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					delete(load_from_territories)
 
 					if min_territory != nil {
-						pro_territory_get_transport_territory_map(pro_territory)[transport] =
+						pro_territory.transport_territory_map[transport] =
 							min_territory
 						pro_territory_add_temp_units(pro_territory, amphib_units_to_add)
 						pro_territory_put_temp_amphib_attack_map(
@@ -4047,7 +4049,9 @@ pro_non_combat_move_ai_lambda__move_consumables_to_factories__14 :: proc(
 	}
 	units := []^Unit{u}
 	md := move_description_new_units_route(units, r)
-	res := move_validator_validate_move(validator, md, player)
+	empty_undoable: [dynamic]^Undoable_Move
+	defer delete(empty_undoable)
+	res := move_validator_validate_move(validator, md, player, empty_undoable)
 	return move_validation_result_is_move_valid(res)
 }
 
@@ -4148,7 +4152,9 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 			)
 			units := []^Unit{u}
 			md := move_description_new_units_route(units, r)
-			result := move_validator_validate_move(move_validator, md, self.player)
+			empty_undoable: [dynamic]^Undoable_Move
+			defer delete(empty_undoable)
+			result := move_validator_validate_move(move_validator, md, self.player, empty_undoable)
 			if !move_validation_result_is_move_valid(result) {
 				continue
 			}

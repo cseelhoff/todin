@@ -88,6 +88,15 @@ dummy_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^Dummy_Delegat
 	return self.sound_channel
 }
 
+// games.strategy.triplea.odds.calculator.DummyDelegateBridge#getResourceLoader()
+// Java: throw new UnsupportedOperationException("should never be called");
+// The battle-calculator dummy has no UI/resources surface; AI snapshot
+// callers test the loader for absence (politics_delegate skips when
+// nil), so returning nil is the Optional.empty() equivalent.
+dummy_delegate_bridge_get_resource_loader :: proc(self: ^Dummy_Delegate_Bridge) -> ^Resource_Loader {
+	return nil
+}
+
 dummy_delegate_bridge_set_battle :: proc(self: ^Dummy_Delegate_Bridge, battle: ^Must_Fight_Battle) {
 	self.battle = battle
 }

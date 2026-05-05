@@ -18,6 +18,20 @@ die_roll_data_get_value :: proc(self: ^I_Display_Die_Roll_Data) -> i32 {
 	return self.value
 }
 
+// Constructor used by IDisplay BombingResults / NotifyDice messages
+// to wrap a Die into the wire-format die-roll data record.
+make_I_Display_Die_Roll_Data :: proc(d: ^Die) -> ^I_Display_Die_Roll_Data {
+	self := new(I_Display_Die_Roll_Data)
+	self.rolled_at = d.rolled_at
+	self.value = d.value
+	switch d.type {
+	case .MISS:    self.type = "MISS"
+	case .HIT:     self.type = "HIT"
+	case .IGNORED: self.type = "IGNORED"
+	}
+	return self
+}
+
 die_roll_data_to_die_list :: proc(dice_roll_data: [dynamic]^I_Display_Die_Roll_Data) -> [dynamic]^Die {
 	result: [dynamic]^Die
 	for d in dice_roll_data {

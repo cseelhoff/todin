@@ -353,3 +353,66 @@ abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
 	}
 }
 
+// games.strategy.triplea.ai.AbstractAi#purchase(boolean,int,IPurchaseDelegate,GameData,GamePlayer)
+//   Java declaration:
+//     protected abstract void purchase(
+//         boolean purchaseForBid, int pusToSpend,
+//         IPurchaseDelegate purchaseDelegate, GameData data, GamePlayer player);
+//   Abstract — no body. Concrete subclasses (Pro_Ai, etc.) override.
+abstract_ai_purchase :: proc(
+	self: ^Abstract_Ai,
+	purchase_for_bid: bool,
+	pus_to_spend: i32,
+	purchase_delegate: ^I_Purchase_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	// abstract in Java; subclass override required
+}
+
+// games.strategy.triplea.ai.AbstractAi#tech(ITechDelegate,GameData,GamePlayer)
+//   Java declaration:
+//     protected abstract void tech(ITechDelegate techDelegate, GameData data, GamePlayer player);
+//   Abstract — no body. Concrete subclasses override.
+abstract_ai_tech :: proc(
+	self: ^Abstract_Ai,
+	tech_delegate: ^I_Tech_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	// abstract in Java; subclass override required
+}
+
+// games.strategy.triplea.ai.AbstractAi#move(boolean,IMoveDelegate,GameData,GamePlayer)
+//   Java declaration:
+//     protected abstract void move(
+//         boolean nonCombat, IMoveDelegate moveDel, GameData data, GamePlayer player);
+//   Abstract — no body. Concrete subclasses override.
+abstract_ai_move :: proc(
+	self: ^Abstract_Ai,
+	non_combat: bool,
+	move_del: ^I_Move_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	// abstract in Java; subclass override required
+}
+
+// games.strategy.triplea.ai.AbstractAi#place(boolean,IAbstractPlaceDelegate,GameState,GamePlayer)
+//   Java declaration:
+//     protected abstract void place(
+//         boolean placeForBid, IAbstractPlaceDelegate placeDelegate,
+//         GameState data, GamePlayer player);
+//   Abstract — no body. Concrete subclasses override. Call site passes
+//   ^Game_Data (Game_Data embeds Game_State at the head, mirroring Java's
+//   inheritance), matching the rest of the file's start() dispatch.
+abstract_ai_place :: proc(
+	self: ^Abstract_Ai,
+	place_for_bid: bool,
+	place_delegate: ^I_Abstract_Place_Delegate,
+	data: ^Game_Data,
+	player: ^Game_Player,
+) {
+	// abstract in Java; subclass override required
+}
+

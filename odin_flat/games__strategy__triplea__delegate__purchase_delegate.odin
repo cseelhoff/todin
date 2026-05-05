@@ -658,3 +658,34 @@ purchase_delegate_start :: proc(self: ^Purchase_Delegate) {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.PurchaseDelegate
 
+
+// Per-impl thunks bridging an I_Purchase_Delegate vtable invocation back
+// to the concrete Purchase_Delegate.
+@(private = "file")
+purchase_delegate_ipd_purchase_ :: proc(
+	self: ^I_Purchase_Delegate,
+	production_rules: ^Integer_Map,
+) -> string {
+	return purchase_delegate_purchase(cast(^Purchase_Delegate)self.concrete, production_rules)
+}
+
+@(private = "file")
+purchase_delegate_ipd_purchase_repair_ :: proc(
+	self: ^I_Purchase_Delegate,
+	production_rules: map[^Unit]^Integer_Map,
+) -> string {
+	return purchase_delegate_purchase_repair(cast(^Purchase_Delegate)self.concrete, production_rules)
+}
+
+// Build a heap-allocated I_Purchase_Delegate vtable bound to the given
+// concrete Purchase_Delegate (or any subclass via its embedded
+// purchase_delegate field).
+purchase_delegate_to_i_purchase_delegate :: proc(
+	self: ^Purchase_Delegate,
+) -> ^I_Purchase_Delegate {
+	iface := new(I_Purchase_Delegate)
+	iface.concrete = self
+	iface.purchase = purchase_delegate_ipd_purchase_
+	iface.purchase_repair = purchase_delegate_ipd_purchase_repair_
+	return iface
+}

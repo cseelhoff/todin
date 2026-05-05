@@ -9,14 +9,14 @@ import "core:strconv"
 // Java: boolean serverIsPassworded() — !Strings.isNullOrEmpty(System.getProperty(SERVER_PASSWORD)).
 // SERVER_PASSWORD = "triplea.server.password".
 system_property_reader_server_is_passworded :: proc() -> bool {
-	return os.get_env("triplea.server.password") != ""
+	return os.get_env("triplea.server.password", context.allocator) != ""
 }
 
 // Java: Optional<InetAddress> customHost() — reads "customHost" system property.
 // Odin: returns the raw host string (empty if unset). Hostname resolution is
 // deferred to callers; Odin has no direct stdlib equivalent of InetAddress.
 system_property_reader_custom_host :: proc() -> string {
-	return os.get_env("customHost")
+	return os.get_env("customHost", context.allocator)
 }
 
 // Java: customHost -> { try { return InetAddress.getByName(customHost); }
@@ -35,7 +35,7 @@ lambda_system_property_reader_custom_host_0 :: proc(s: string) -> (host: string,
 // Java: Optional<Integer> customPort() — reads "customPort" via Integer.getInteger.
 // Odin: returns (port, ok); ok=false when unset or unparseable.
 system_property_reader_custom_port :: proc() -> (port: int, ok: bool) {
-	raw := os.get_env("customPort")
+	raw := os.get_env("customPort", context.allocator)
 	if raw == "" {
 		return 0, false
 	}
@@ -45,5 +45,5 @@ system_property_reader_custom_port :: proc() -> (port: int, ok: bool) {
 // Java: String gameComments() — reads LOBBY_GAME_COMMENTS ("triplea.lobby.game.comments").
 // Odin: returns the env var value or "" when unset.
 system_property_reader_game_comments :: proc() -> string {
-	return os.get_env("triplea.lobby.game.comments")
+	return os.get_env("triplea.lobby.game.comments", context.allocator)
 }

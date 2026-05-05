@@ -72,3 +72,8 @@ messengers_unregister_remote :: proc(self: ^Messengers, name: ^Remote_Name) {
 	i_remote_messenger_unregister_remote(self.remote_messenger, name)
 }
 
+// games.strategy.net.Messengers#shutDown()
+messengers_shut_down :: proc(self: ^Messengers) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}
+

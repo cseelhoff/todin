@@ -203,7 +203,9 @@ unit_attachment_is_suicide_on_hit :: proc(self: ^Unit_Attachment) -> bool {retur
 unit_attachment_get_artillery :: proc(self: ^Unit_Attachment) -> bool {return self.artillery}
 unit_attachment_get_artillery_supportable :: proc(self: ^Unit_Attachment) -> bool {return self.artillery_supportable}
 // Java: int getAttack() (package-private overload returning the field).
-unit_attachment_get_attack :: proc(self: ^Unit_Attachment) -> i32 {return self.attack}
+// No-player no-arg variant — Odin doesn't support overloading; the
+// player-tech-aware form keeps the bare name `unit_attachment_get_attack`.
+unit_attachment_get_attack_no_player :: proc(self: ^Unit_Attachment) -> i32 {return self.attack}
 unit_attachment_get_blockade :: proc(self: ^Unit_Attachment) -> i32 {return self.blockade}
 // Java: getBombard() returns bombard if positive, else falls back to attack.
 unit_attachment_get_bombard :: proc(self: ^Unit_Attachment) -> i32 {
@@ -758,7 +760,6 @@ unit_attachment_get_listed_units :: proc(
 		ut := unit_type_list_get_unit_type(utl, name)
 		if ut == nil {
 			suffix := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(suffix)
 			fmt.panicf("No unit called: %s%s", name, suffix)
 		}
 		append(&out, ut)
@@ -1087,7 +1088,7 @@ unit_attachment_get_movement_with_player :: proc(self: ^Unit_Attachment, player:
 // Java: public int getAttack(final GamePlayer player)
 //   final int bonus = getTechTracker().getAttackBonus(player, getUnitType());
 //   return Math.min(getData().getDiceSides(), Math.max(0, attack + bonus));
-unit_attachment_get_attack_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+unit_attachment_get_attack :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
 	bonus := tech_tracker_get_attack_bonus(player, unit_attachment_get_unit_type(self))
 	data := game_data_component_get_data(&self.default_attachment.game_data_component)
 	return min(game_data_get_dice_sides(data), max(i32(0), self.attack + bonus))
@@ -1128,30 +1129,60 @@ unit_attachment_get_defense_rolls_with_player :: proc(self: ^Unit_Attachment, pl
 	return max(i32(0), self.defense_rolls + bonus)
 }
 
+// Java: private boolean getCanBlitz() { return canBlitz; }
+//   No-arg form; suffixed `_no_player` to disambiguate from the
+//   tech-aware `unit_attachment_get_can_blitz(self, player)` overload
+//   below, since Odin lacks function overloading.
+unit_attachment_get_can_blitz_no_player :: proc(self: ^Unit_Attachment) -> bool {
+	return self.can_blitz
+}
+
 // Java: public boolean getCanBlitz(final GamePlayer player)
 //   return canBlitz || getTechTracker().canBlitz(player, getUnitType());
-unit_attachment_get_can_blitz_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
+unit_attachment_get_can_blitz :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
 	return self.can_blitz || tech_tracker_can_blitz(player, unit_attachment_get_unit_type(self))
+}
+
+// Java: private boolean getCanBombard() { return canBombard; }
+//   No-arg form; suffixed `_no_player` to disambiguate from the
+//   tech-aware `unit_attachment_get_can_bombard(self, player)` overload
+//   below, since Odin lacks function overloading.
+unit_attachment_get_can_bombard_no_player :: proc(self: ^Unit_Attachment) -> bool {
+	return self.can_bombard
 }
 
 // Java: public boolean getCanBombard(final GamePlayer player)
 //   return canBombard || getTechTracker().canBombard(player, getUnitType());
-unit_attachment_get_can_bombard_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
+unit_attachment_get_can_bombard :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> bool {
 	return self.can_bombard || tech_tracker_can_bombard(player, unit_attachment_get_unit_type(self))
+}
+
+// Java: private int getAttackAa()  { return attackAa; }
+//   No-arg form; suffixed `_no_player` to disambiguate from the
+//   tech-aware `unit_attachment_get_attack_aa(self, player)` overload
+//   below, since Odin lacks function overloading.
+unit_attachment_get_attack_aa_no_player :: proc(self: ^Unit_Attachment) -> i32 {
+	return self.attack_aa
 }
 
 // Java: public int getAttackAa(final GamePlayer player)
 //   final int bonus = getTechTracker().getRadarBonus(player, getUnitType());
 //   return Math.max(0, Math.min(getAttackAaMaxDieSides(), attackAa + bonus));
-unit_attachment_get_attack_aa_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+unit_attachment_get_attack_aa :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
 	bonus := tech_tracker_get_radar_bonus(player, unit_attachment_get_unit_type(self))
 	return max(i32(0), min(unit_attachment_get_attack_aa_max_die_sides(self), self.attack_aa + bonus))
+}
+
+// Java: private int getOffensiveAttackAa()  { return offensiveAttackAa; }
+//   No-arg form; see comment on `unit_attachment_get_attack_aa_no_player`.
+unit_attachment_get_offensive_attack_aa_no_player :: proc(self: ^Unit_Attachment) -> i32 {
+	return self.offensive_attack_aa
 }
 
 // Java: public int getOffensiveAttackAa(final GamePlayer player)
 //   final int bonus = getTechTracker().getRadarBonus(player, getUnitType());
 //   return Math.max(0, Math.min(getOffensiveAttackAaMaxDieSides(), offensiveAttackAa + bonus));
-unit_attachment_get_offensive_attack_aa_with_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+unit_attachment_get_offensive_attack_aa :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
 	bonus := tech_tracker_get_radar_bonus(player, unit_attachment_get_unit_type(self))
 	return max(
 		i32(0),
@@ -1658,3 +1689,21 @@ unit_attachment_set_artillery_supportable_str :: proc(self: ^Unit_Attachment, s:
 		unit_support_attachment_add_target(unit_type, data)
 	}
 }
+
+// Java: public int getMovement(final GamePlayer player)
+//   final int bonus = getTechTracker().getMovementBonus(player, getUnitType());
+//   return Math.max(0, movement + bonus);
+unit_attachment_get_movement :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_movement_bonus(player, unit_attachment_get_unit_type(self))
+	return max(i32(0), self.movement + bonus)
+}
+
+// Java: public int getAttack(final GamePlayer player)
+//   final int bonus = getTechTracker().getAttackBonus(player, getUnitType());
+//   return Math.min(getData().getDiceSides(), Math.max(0, attack + bonus));
+unit_attachment_get_attack_for_player :: proc(self: ^Unit_Attachment, player: ^Game_Player) -> i32 {
+	bonus := tech_tracker_get_attack_bonus(player, unit_attachment_get_unit_type(self))
+	data := game_data_component_get_data(&self.default_attachment.game_data_component)
+	return min(game_data_get_dice_sides(data), max(i32(0), self.attack + bonus))
+}
+

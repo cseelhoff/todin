@@ -27,6 +27,21 @@ at the start of the session, then proceed.
 1. **Sanity check** the workspace and load progress notes:
    - View `/memories/session/triplea-port-progress.md` (create it if
      missing — see template at the bottom of this file).
+   - **If Phase A is done (`s_done == s_total`), run the missing-proc
+     scanner FIRST** (see "Missing-proc augmentation" section below
+     for full rationale):
+     ```sh
+     python3 scripts/scan_missing_procs.py --commit
+     ```
+     This parses `odin check` `Undeclared name:` diagnostics and
+     INSERTs any genuinely-missing methods into `port.sqlite` so the
+     Phase B query below picks them up. Read
+     `missing_procs_report.json` afterward and triage:
+     `unresolved_constants` (add as Odin top-level `const :: "..."`
+     decls, NOT methods table rows), `unresolved_lambdas` (no-op
+     stubs in the calling file), `unresolved_unknown_owner` /
+     `unresolved_no_java_match` (real Odin call-site bugs — fix the
+     caller). Skip this step while Phase A is still running.
    - Run:
      ```sh
      sqlite3 port.sqlite "SELECT \
@@ -252,6 +267,49 @@ at the start of the session, then proceed.
    - Print: `Stopping at <s_done>/<s_total> structs, <m_done>/<m_total>
      methods. Re-run resume-prompt.md to continue.`
    - Call `task_complete`.
+
+### Missing-proc augmentation (orchestrator-owned, run at the top of every loop iteration once Phase A is done)
+
+The bootstrap pipeline (extract_entities + JaCoCo + static call graph)
+systematically under-reports procs in four cases:
+
+  1. javac-synthetic lambdas / anonymous inner classes
+  2. Reflective factories (`Class.forName(...).getDeclaredConstructor()`)
+  3. JIT-inlined or short-circuit-skipped lines that JaCoCo records
+     as "uncovered" even though a covered caller depends on them
+  4. Lombok `@Getter`/`@Setter`/`@Builder` synthesized accessors
+     whose source-line range no AST extractor traverses
+
+The compiler is the source of truth: every `Undeclared name: X` that
+`odin check odin_flat/` emits is a row missing from `methods`.
+**Run `scripts/scan_missing_procs.py --commit` at the top of every
+orchestrator iteration once Phase A is complete** (and any time a
+Phase B subagent reports `blocked: missing <proc>` whose proc is on
+the AI path). The script:
+
+  - parses `odin check` output for `Undeclared name`
+  - greedy-prefix-matches each undeclared name against the snake_case
+    of every `structs.struct_key` to identify the owner class
+  - resolves the Java method via direct match → Lombok synthesis →
+    walk-extends/implements chain
+  - INSERTs each match as a new `methods` row (`is_implemented = 0`,
+    `method_layer = MAX(method_layer)+1`) so it gets queued at the
+    end of the next Phase B batch
+  - emits `missing_procs_report.json` listing:
+      * `inserted` (queued for Phase B),
+      * `unresolved_constants` (uppercase identifiers — handle as
+        `package game` const decls or as struct fields, not methods),
+      * `unresolved_lambdas` (synthetic — orchestrator stubs no-ops),
+      * `unresolved_unknown_owner` (snake-prefix didn't match —
+        usually a real Odin call-site bug, not a missing port),
+      * `unresolved_no_java_match` (owner found but no Java method —
+        often the porting agent invented a non-existent method, or
+        Lombok synthesis the script can't yet model)
+
+After the script commits, re-read `m_done`/`m_total` for the new totals
+and resume the regular Phase B loop. Triage `unresolved_no_java_match`
+and `unresolved_unknown_owner` cases as Odin call-site bugs (edit the
+caller to use a real method, or add a trivial coercion proc).
 
 ### JDK shim policy (orchestrator-owned)
 

@@ -18,6 +18,14 @@ Tech_Advance :: struct {
 	// wire substantive impls; Generic_Tech_Advance forwards to its
 	// wrapped advance.
 	perform: proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge),
+	// Property key returned by Java `getProperty()`. Each predefined
+	// subtype's factory sets this to the matching TECH_PROPERTY_* string.
+	property: string,
+}
+
+// Java: public abstract String getProperty().
+tech_advance_get_property :: proc(self: ^Tech_Advance) -> string {
+	return self.property
 }
 
 // Public dispatch wrapper. Java: ta.perform(player, bridge).
@@ -54,6 +62,7 @@ Tech_Advance_Factory :: #type proc(data: ^Game_Data) -> ^Tech_Advance
 make_super_subs_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Super_Subs_Advance)
 	s.named.base.name = "Super subs"
+	s.tech_advance.property = TECH_PROPERTY_SUPER_SUBS
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return super_subs_advance_has_tech(transmute(^Super_Subs_Advance)self, ta)
@@ -65,6 +74,7 @@ make_super_subs_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_jet_power_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Jet_Power_Advance)
 	s.named.base.name = "Jet Power"
+	s.tech_advance.property = TECH_PROPERTY_JET_POWER
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return jet_power_advance_has_tech(transmute(^Jet_Power_Advance)self, ta)
@@ -76,6 +86,7 @@ make_jet_power_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_improved_shipyards_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Improved_Shipyards_Advance)
 	s.named.base.name = "Shipyards"
+	s.tech_advance.property = TECH_PROPERTY_IMPROVED_SHIPYARDS
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return improved_shipyards_advance_has_tech(transmute(^Improved_Shipyards_Advance)self, ta)
@@ -90,6 +101,7 @@ make_improved_shipyards_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_aa_radar_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Aa_Radar_Advance)
 	s.named.base.name = "AA Radar"
+	s.tech_advance.property = TECH_PROPERTY_AA_RADAR
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return aa_radar_advance_has_tech(transmute(^Aa_Radar_Advance)self, ta)
@@ -101,6 +113,7 @@ make_aa_radar_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_long_range_aircraft_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Long_Range_Aircraft_Advance)
 	s.named.base.name = "Long Range Aircraft"
+	s.tech_advance.property = TECH_PROPERTY_LONG_RANGE_AIRCRAFT
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return long_range_aircraft_advance_has_tech(transmute(^Long_Range_Aircraft_Advance)self, ta)
@@ -112,6 +125,7 @@ make_long_range_aircraft_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_heavy_bomber_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Heavy_Bomber_Advance)
 	s.named.base.name = "Heavy Bomber"
+	s.tech_advance.property = TECH_PROPERTY_HEAVY_BOMBER
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return heavy_bomber_advance_has_tech(transmute(^Heavy_Bomber_Advance)self, ta)
@@ -123,6 +137,7 @@ make_heavy_bomber_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_improved_artillery_support_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Improved_Artillery_Support_Advance)
 	s.named.base.name = "Improved Artillery Support"
+	s.tech_advance.property = TECH_PROPERTY_IMPROVED_ARTILLERY_SUPPORT
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return improved_artillery_support_advance_has_tech(transmute(^Improved_Artillery_Support_Advance)self, ta)
@@ -134,6 +149,7 @@ make_improved_artillery_support_advance :: proc(data: ^Game_Data) -> ^Tech_Advan
 make_rockets_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Rockets_Advance)
 	s.named.base.name = "Rockets Advance"
+	s.tech_advance.property = TECH_PROPERTY_ROCKETS
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return rockets_advance_has_tech(transmute(^Rockets_Advance)self, ta)
@@ -145,6 +161,7 @@ make_rockets_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_paratroopers_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Paratroopers_Advance)
 	s.named.base.name = "Paratroopers"
+	s.tech_advance.property = TECH_PROPERTY_PARATROOPERS
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return paratroopers_advance_has_tech(transmute(^Paratroopers_Advance)self, ta)
@@ -156,6 +173,7 @@ make_paratroopers_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_increased_factory_production_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Increased_Factory_Production_Advance)
 	s.named.base.name = "Increased Factory Production"
+	s.tech_advance.property = TECH_PROPERTY_INCREASED_FACTORY_PRODUCTION
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return increased_factory_production_advance_has_tech(transmute(^Increased_Factory_Production_Advance)self, ta)
@@ -167,6 +185,7 @@ make_increased_factory_production_advance :: proc(data: ^Game_Data) -> ^Tech_Adv
 make_war_bonds_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(War_Bonds_Advance)
 	s.named.base.name = "War Bonds"
+	s.tech_advance.property = TECH_PROPERTY_WAR_BONDS
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return war_bonds_advance_has_tech(transmute(^War_Bonds_Advance)self, ta)
@@ -178,6 +197,7 @@ make_war_bonds_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_mechanized_infantry_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Mechanized_Infantry_Advance)
 	s.named.base.name = "Mechanized Infantry"
+	s.tech_advance.property = TECH_PROPERTY_MECHANIZED_INFANTRY
 	s.game_data = data
 	s.tech_advance.has_tech = proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
 		return mechanized_infantry_advance_has_tech(transmute(^Mechanized_Infantry_Advance)self, ta)
@@ -189,6 +209,7 @@ make_mechanized_infantry_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_industrial_technology_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Industrial_Technology_Advance)
 	s.named.base.name = "Industrial Technology"
+	s.tech_advance.property = TECH_PROPERTY_INDUSTRIAL_TECHNOLOGY
 	s.game_data = data
 	s.tech_advance.perform = proc(self: ^Tech_Advance, player: ^Game_Player, bridge: ^I_Delegate_Bridge) {
 		industrial_technology_advance_perform(transmute(^Industrial_Technology_Advance)self, player, bridge)
@@ -200,6 +221,7 @@ make_industrial_technology_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 make_destroyer_bombard_tech_advance :: proc(data: ^Game_Data) -> ^Tech_Advance {
 	s := new(Destroyer_Bombard_Tech_Advance)
 	s.named.base.name = "Destroyer Bombard"
+	s.tech_advance.property = TECH_PROPERTY_DESTROYER_BOMBARD
 	s.game_data = data
 	return &s.tech_advance
 }

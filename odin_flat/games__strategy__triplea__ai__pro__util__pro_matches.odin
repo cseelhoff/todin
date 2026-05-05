@@ -31,9 +31,14 @@ pro_matches_pred_no_canals_between_territories :: proc(
 	end_territory: ^Territory,
 ) -> bool {
 	ctx := cast(^Pro_Matches_Ctx_no_canals_between_territories)ctx_ptr
-	r := route_new(start_territory, end_territory)
+	tail: [dynamic]^Territory
+	defer delete(tail)
+	append(&tail, end_territory)
+	r := route_new(start_territory, tail)
 	validator := move_validator_new(game_player_get_data(ctx.player), false)
-	return move_validator_validate_canal(validator, r, nil, ctx.player) == nil
+	empty: [dynamic]^Unit
+	defer delete(empty)
+	return move_validator_validate_canal(validator, r, empty, true, ctx.player) == nil
 }
 
 pro_matches_no_canals_between_territories :: proc(
@@ -2737,9 +2742,14 @@ pro_matches_lambda_no_canals_between_territories :: proc(
 	start_territory: ^Territory,
 	end_territory: ^Territory,
 ) -> bool {
-	r := route_new(start_territory, end_territory)
+	tail: [dynamic]^Territory
+	defer delete(tail)
+	append(&tail, end_territory)
+	r := route_new(start_territory, tail)
 	validator := move_validator_new(game_player_get_data(player), false)
-	return move_validator_validate_canal(validator, r, nil, player) == nil
+	empty: [dynamic]^Unit
+	defer delete(empty)
+	return move_validator_validate_canal(validator, r, empty, true, player) == nil
 }
 
 // ---------------------------------------------------------------------------

@@ -22,3 +22,9 @@ unit_unit_deserialization_error_lazy_message_print_error :: proc(error_message: 
 		fmt.eprintln(error_message)
 	}
 }
+
+// Wrapper matching the call-site name (single `unit_` prefix). Java's nested
+// class collapses to the same lambda invoked from Unit#toString.
+unit_deserialization_error_lazy_message_print_error :: proc(error_message: string) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}

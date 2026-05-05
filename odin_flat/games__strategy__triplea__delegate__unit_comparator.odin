@@ -91,6 +91,22 @@ unit_comparator_get_lowest_to_highest_movement_comparator :: proc(
 	return unit_comparator_lowest_to_highest_movement_compare, rawptr(ctx)
 }
 
+// Less-than adapter over the 3-way comparator above. Java callers use
+// Comparator<Unit>; Odin sort/AA-fire helpers want a `proc(rawptr, ^Unit, ^Unit) -> bool`.
+unit_comparator_lowest_to_highest_movement_less_than :: proc(ctx: rawptr, a, b: ^Unit) -> bool {
+	return unit_comparator_lowest_to_highest_movement_compare(ctx, a, b) < 0
+}
+
+unit_comparator_get_lowest_to_highest_movement_less_than :: proc(
+) -> (
+	proc(rawptr, ^Unit, ^Unit) -> bool,
+	rawptr,
+) {
+	ctx := new(Unit_Comparator_Lowest_To_Highest_Movement_Ctx)
+	ctx.cache = make(map[^Unit]f64)
+	return unit_comparator_lowest_to_highest_movement_less_than, rawptr(ctx)
+}
+
 // ---------------------------------------------------------------------------
 // lambda$getIncreasingCapacityComparator$2
 // ---------------------------------------------------------------------------

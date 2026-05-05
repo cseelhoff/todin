@@ -89,7 +89,7 @@ roll_dice_factory_roll_battle_dice :: proc(
 
 	history_writer := i_delegate_bridge_get_history_writer(bridge)
 	history_msg := fmt.aprintf("%s : %s", annotation, my_formatter_as_dice(dice_roll))
-	history_writer_add_child_to_event(history_writer, history_msg, dice_roll)
+	i_delegate_history_writer_add_child_to_event(history_writer, history_msg, dice_roll)
 	return dice_roll
 }
 
@@ -216,7 +216,7 @@ roll_dice_factory_roll_aa_dice :: proc(
 
 	history_writer := i_delegate_bridge_get_history_writer(bridge)
 	history_msg := fmt.aprintf("%s : %s", annotation, my_formatter_as_dice(dice_roll))
-	history_writer_add_child_to_event(history_writer, history_msg, dice_roll)
+	i_delegate_history_writer_add_child_to_event(history_writer, history_msg, dice_roll)
 	return dice_roll
 }
 

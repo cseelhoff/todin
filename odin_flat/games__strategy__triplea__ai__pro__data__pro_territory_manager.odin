@@ -2299,10 +2299,12 @@ pro_territory_manager_remove_territories_that_cant_be_conquered :: proc(
 		)
 		delete(combined)
 		t_local := t
-		for _, territories in unit_attack_map {
+		for unit_key in unit_attack_map {
+			territories := unit_attack_map[unit_key]
 			delete_key(&territories, t_local)
 		}
-		for _, territories in transport_attack_map {
+		for unit_key in transport_attack_map {
+			territories := transport_attack_map[unit_key]
 			delete_key(&territories, t_local)
 		}
 	}

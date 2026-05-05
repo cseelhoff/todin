@@ -26,6 +26,12 @@ map_description_yaml_from_file :: proc(
 	return nil, false
 }
 
+// Provisioned stub for installed-maps-listing discovery (launcher
+// path, not exercised by the AI snapshot harness).
+map_description_yaml_from_map :: proc(folder: Path) -> (^Map_Description_Yaml, bool) {
+	return nil, false
+}
+
 // Lombok @Getter for `mapName`.
 map_description_yaml_get_map_name :: proc(self: ^Map_Description_Yaml) -> string {
 	return self.map_name

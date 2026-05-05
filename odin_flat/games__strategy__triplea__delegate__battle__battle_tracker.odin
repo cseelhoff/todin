@@ -598,7 +598,7 @@ battle_tracker_add_change_change_ownership :: proc(
 	oc := owner_change_new(territory, new_owner)
 	take_over := &oc.change
 	history_writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
+	i_delegate_history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
 	battle_tracker_add_change(bridge, change_tracker, take_over)
 	territory_notify_changed(territory)
 	if change_tracker != nil {
@@ -654,7 +654,7 @@ battle_tracker_add_change_charge_for_entering_neutrals :: proc(
 			my_formatter_pluralize_quantity("PU", -pu_charge_real),
 			territory.name,
 		)
-		history_writer_add_child_to_event(history_writer, msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	} else {
 		fmt.eprintln(
 			"Player,",
@@ -671,7 +671,7 @@ battle_tracker_add_change_charge_for_entering_neutrals :: proc(
 			territory.name,
 			pu_charge_ideal,
 		)
-		history_writer_add_child_to_event(history_writer, msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	}
 }
 
@@ -791,7 +791,7 @@ battle_tracker_lambda_write_history_on_take_over_for_convoy_route_4 :: proc(
 				convoy.name,
 				territory.name,
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 		}
 	} else if relationship_tracker_is_at_war(relationship_tracker, new_owner, convoy_owner) {
 		convoy_attached := territory_attachment_get_convoy_attached(cta)
@@ -810,7 +810,7 @@ battle_tracker_lambda_write_history_on_take_over_for_convoy_route_4 :: proc(
 				convoy.name,
 				territory.name,
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 		}
 	}
 }
@@ -932,7 +932,7 @@ battle_tracker_add_changes_on_take_over_allied_capitol :: proc(
 		take_over_friendly_territories := change_factory_change_owner(allied_territory, terr_orig_owner)
 		battle_tracker_add_change(bridge, change_tracker, take_over_friendly_territories)
 		oc := cast(^Owner_Change)take_over_friendly_territories
-		history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
+		i_delegate_history_writer_add_child_to_event(history_writer, owner_change_to_string(oc))
 		// give back the factories as well
 		uc := territory_get_unit_collection(allied_territory)
 		infrastructure_units := make([dynamic]^Unit)
@@ -1050,7 +1050,7 @@ battle_tracker_add_changes_on_take_over_capitol :: proc(
 			game_player.name,
 			whose_capital.name,
 		)
-		history_writer_add_child_to_event(history_writer, msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, msg)
 	} else if whose_capital == territory_get_owner(territory) {
 		pus := resource_list_get_resource_or_throw(game_data_get_resource_list(data), "PUs")
 		captured_pu_count := resource_collection_get_quantity(
@@ -1077,7 +1077,7 @@ battle_tracker_add_changes_on_take_over_capitol :: proc(
 				my_formatter_pluralize_quantity("PU", captured_pu_count),
 				whose_capital.name,
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 		} else {
 			msg := fmt.aprintf(
 				"%s captures %d%s while taking %s capital",
@@ -1086,7 +1086,7 @@ battle_tracker_add_changes_on_take_over_capitol :: proc(
 				my_formatter_pluralize_quantity("PU", captured_pu_count),
 				whose_capital.name,
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 			add := change_factory_change_resources_change(game_player, pus, captured_pu_count)
 			battle_tracker_add_change(bridge, change_tracker, add)
 		}
@@ -1134,7 +1134,7 @@ battle_tracker_capture_or_destroy_units :: proc(
 			}
 		}
 		if len(destroyed) > 0 {
-			history_writer_add_child_to_event(history_writer, "Some non-combat units are destroyed: ")
+			i_delegate_history_writer_add_child_to_event(history_writer, "Some non-combat units are destroyed: ")
 			battle_tracker_add_change(
 				bridge,
 				change_tracker,
@@ -1158,7 +1158,7 @@ battle_tracker_capture_or_destroy_units :: proc(
 				"%s destroys some units instead of capturing them",
 				game_player.name,
 			)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 			battle_tracker_add_change(
 				bridge,
 				change_tracker,
@@ -1181,7 +1181,7 @@ battle_tracker_capture_or_destroy_units :: proc(
 		}
 		if len(destroyed) > 0 {
 			msg := fmt.aprintf("%s destroys some disabled combat units", game_player.name)
-			history_writer_add_child_to_event(history_writer, msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, msg)
 			battle_tracker_add_change(
 				bridge,
 				change_tracker,
@@ -1275,7 +1275,7 @@ battle_tracker_capture_or_destroy_units :: proc(
 						game_player.name,
 						unit_to_string_no_owner(u),
 					)
-					history_writer_add_child_to_event(history_writer, msg)
+					i_delegate_history_writer_add_child_to_event(history_writer, msg)
 					battle_tracker_add_change(bridge, change_tracker, &changes.change)
 					// don't forget to remove this unit from the list
 					for cand, idx in non_com {

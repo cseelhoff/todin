@@ -56,7 +56,7 @@ i18n_resource_bundle_get_text :: proc(self: ^I18n_Resource_Bundle, key: string) 
 @(private="file") i18n_locale: Locale
 @(private="file") i18n_locale_init: bool
 
-@(private="file") ensure_i18n_locale :: proc() {
+ensure_i18n_locale :: proc() {
 	if i18n_locale_init {
 		return
 	}

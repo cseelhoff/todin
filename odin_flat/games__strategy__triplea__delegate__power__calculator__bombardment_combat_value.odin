@@ -159,3 +159,104 @@ bombardment_combat_value_get_strength :: proc(
 	)
 }
 
+
+// ============================================================
+// Combat_Value / Strength_Calculator adapters for Bombardment
+// ============================================================
+
+@(private="file")
+bcv_get_strength_ :: proc(cv: ^Combat_Value) -> ^Strength_Calculator {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_strength_to_strength_calculator(
+                bombardment_combat_value_get_strength(impl),
+        )
+}
+
+@(private="file")
+bcv_get_roll_ :: proc(cv: ^Combat_Value) -> ^Roll_Calculator {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return main_offense_combat_value_main_offense_roll_to_roll_calculator(
+                bombardment_combat_value_get_roll(impl),
+        )
+}
+
+@(private="file")
+bcv_choose_best_roll_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> bool {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_combat_value_choose_best_roll(impl, unit)
+}
+
+@(private="file")
+bcv_get_dice_sides_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> i32 {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_combat_value_get_dice_sides(impl, unit)
+}
+
+@(private="file")
+bcv_get_battle_side_ :: proc(cv: ^Combat_Value) -> Battle_State_Side {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_combat_value_get_battle_side(impl)
+}
+
+@(private="file")
+bcv_get_friend_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return impl.friend_units
+}
+
+@(private="file")
+bcv_get_enemy_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return impl.enemy_units
+}
+
+@(private="file")
+bcv_build_with_no_unit_supports_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_combat_value_to_combat_value(
+                bombardment_combat_value_build_with_no_unit_supports(impl),
+        )
+}
+
+@(private="file")
+bcv_build_opposite_combat_value_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        impl := cast(^Bombardment_Combat_Value)cv.concrete
+        return bombardment_combat_value_to_combat_value(
+                bombardment_combat_value_build_opposite_combat_value(impl),
+        )
+}
+
+bombardment_combat_value_to_combat_value :: proc(self: ^Bombardment_Combat_Value) -> ^Combat_Value {
+        cv := new(Combat_Value)
+        cv.concrete                    = self
+        cv.get_strength                = bcv_get_strength_
+        cv.get_roll                    = bcv_get_roll_
+        cv.choose_best_roll            = bcv_choose_best_roll_
+        cv.get_dice_sides              = bcv_get_dice_sides_
+        cv.get_battle_side             = bcv_get_battle_side_
+        cv.get_friend_units            = bcv_get_friend_units_
+        cv.get_enemy_units             = bcv_get_enemy_units_
+        cv.build_with_no_unit_supports = bcv_build_with_no_unit_supports_
+        cv.build_opposite_combat_value = bcv_build_opposite_combat_value_
+        return cv
+}
+
+@(private="file")
+bs_get_strength_ :: proc(sc: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value {
+        impl := cast(^Bombardment_Combat_Value_Bombardment_Strength)sc.concrete
+        return bombardment_strength_get_strength(impl, unit)
+}
+
+@(private="file")
+bs_get_support_given_ :: proc(sc: ^Strength_Calculator) -> map[^Unit]^Integer_Map {
+        impl := cast(^Bombardment_Combat_Value_Bombardment_Strength)sc.concrete
+        return bombardment_strength_get_support_given(impl)
+}
+
+bombardment_strength_to_strength_calculator :: proc(self: ^Bombardment_Combat_Value_Bombardment_Strength) -> ^Strength_Calculator {
+        sc := new(Strength_Calculator)
+        sc.concrete          = self
+        sc.get_strength      = bs_get_strength_
+        sc.get_support_given = bs_get_support_given_
+        return sc
+}

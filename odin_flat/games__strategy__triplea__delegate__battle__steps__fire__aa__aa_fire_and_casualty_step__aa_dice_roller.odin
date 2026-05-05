@@ -61,3 +61,12 @@ aa_fire_and_casualty_step_aa_dice_roller_apply :: proc(
 	return dice
 }
 
+
+// Stateless wrapper matching the fire_round_steps_factory_builder
+// dice_roller proc-value signature.
+aa_fire_and_casualty_step_aa_dice_roller_apply_stateless :: proc(
+	bridge: ^I_Delegate_Bridge,
+	step: ^Roll_Dice_Step,
+) -> ^Dice_Roll {
+	return aa_fire_and_casualty_step_aa_dice_roller_apply(nil, bridge, step)
+}

@@ -110,3 +110,12 @@ firing_group_splitter_aa_apply :: proc(
 	return firing_groups
 }
 
+
+// Wrapper matching the fire_round_steps_factory_builder firing_group_splitter
+// proc-value signature `(rawptr, ^Battle_State) -> [dynamic]^Firing_Group`.
+firing_group_splitter_aa_apply_raw :: proc(
+	self_raw: rawptr,
+	state: ^Battle_State,
+) -> [dynamic]^Firing_Group {
+	return firing_group_splitter_aa_apply(cast(^Firing_Group_Splitter_Aa)self_raw, state)
+}

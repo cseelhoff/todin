@@ -30,7 +30,8 @@ remote_interface_helper_lambda_get_method_1 :: proc(method: ^Method, method_numb
 	if !method.has_remote_action_code {
 		return false
 	}
-	return method_get_remote_action_code(method) == method_number
+	value, _ := method_get_remote_action_code(method)
+	return value == method_number
 }
 
 // Java iterates remoteInterface.getMethods() and returns the unique

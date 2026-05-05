@@ -82,3 +82,13 @@ i_display_report_message_to_players :: proc(self: ^I_Display, players_to_send_to
 	self.report_message_to_players(self, players_to_send_to, players_to_exclude, message, title)
 }
 
+// games.strategy.engine.display.IDisplay#shutDown()
+i_display_shut_down :: proc(self: ^I_Display) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}
+
+// games.strategy.engine.display.IDisplay#showBattle(java.util.UUID,games.strategy.engine.data.Territory,java.lang.String,java.util.Collection,java.util.Collection,java.util.Collection,java.util.Collection,java.util.Collection,java.util.Map,games.strategy.engine.data.GamePlayer,games.strategy.engine.data.GamePlayer,boolean,games.strategy.triplea.delegate.battle.IBattle$BattleType,java.util.Collection)
+i_display_show_battle :: proc(self: ^I_Display, battle_id: Uuid, location: ^Territory, battle_title: string, attacking_units: [dynamic]^Unit, defending_units: [dynamic]^Unit, killed_units: [dynamic]^Unit, attacking_waiting_to_die: [dynamic]^Unit, defending_waiting_to_die: [dynamic]^Unit, dependent_units: map[^Unit][dynamic]^Unit, attacker: ^Game_Player, defender: ^Game_Player, is_amphibious: bool, battle_type: I_Battle_Battle_Type, amphibious_land_attackers: [dynamic]^Unit) {
+	// Interface declaration: empty body matches the abstract Java method.
+}
+

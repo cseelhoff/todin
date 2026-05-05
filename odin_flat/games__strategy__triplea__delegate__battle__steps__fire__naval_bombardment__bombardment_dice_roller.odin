@@ -66,3 +66,12 @@ naval_bombardment_bombardment_dice_roller_apply :: proc(
 
 	return roll_dice_factory_roll_battle_dice(firing_units, player, bridge, annotation, cv)
 }
+
+// Stateless wrapper matching the fire_round_steps_factory_builder
+// dice_roller proc-value signature.
+naval_bombardment_bombardment_dice_roller_apply_stateless :: proc(
+	bridge: ^I_Delegate_Bridge,
+	step: ^Roll_Dice_Step,
+) -> ^Dice_Roll {
+	return naval_bombardment_bombardment_dice_roller_apply(nil, bridge, step)
+}

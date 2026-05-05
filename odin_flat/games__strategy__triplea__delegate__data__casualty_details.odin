@@ -410,12 +410,14 @@ casualty_details_ensure_units_are_damaged_first :: proc(
 		all_targets_copy := make([dynamic]^Unit, 0, len(src))
 		for u in src do append(&all_targets_copy, u)
 
+		value_local := value
 		casualty_details_redistribute_hits(
-			&value,
+			&value_local,
 			&all_targets_copy,
 			should_take_hits_first,
 			&targets_hit_with_correct_order,
 		)
+		old_targets_to_take_hits[key] = value_local
 
 		delete(all_targets_copy)
 

@@ -147,3 +147,8 @@ unit_type_get_unit_attachment :: proc(self: ^Unit_Type) -> ^Unit_Attachment {
 	}
 	return self.unit_attachment
 }
+
+// Java: inherited from NamedAttachable / DefaultNamed#getName().
+unit_type_get_name :: proc(self: ^Unit_Type) -> string {
+	return default_named_get_name(&self.named_attachable.default_named)
+}

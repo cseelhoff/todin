@@ -116,11 +116,11 @@ naval_bombardment_get_steps :: proc(self: ^Naval_Bombardment) -> [dynamic]^Battl
 	builder = fire_round_steps_factory_builder_return_fire(builder, &return_fire_local)
 	builder = fire_round_steps_factory_builder_dice_roller(
 		builder,
-		naval_bombardment_bombardment_dice_roller_apply,
+		naval_bombardment_bombardment_dice_roller_apply_stateless,
 	)
 	builder = fire_round_steps_factory_builder_casualty_selector(
 		builder,
-		naval_bombardment_bombardment_casualty_selector_apply,
+		naval_bombardment_bombardment_casualty_selector_apply_stateless,
 	)
 
 	factory := fire_round_steps_factory_builder_build(builder)

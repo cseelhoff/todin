@@ -30,7 +30,7 @@ aa_defense_strength_get_strength :: proc(
 ) -> ^Strength_Value {
 	sv := strength_value_of(
 		aa_defense_combat_value_get_dice_sides(self.calculator, unit),
-		unit_attachment_get_attack_aa_with_player(
+		unit_attachment_get_attack_aa(
 			unit_get_unit_attachment(unit),
 			unit_get_owner(unit),
 		),

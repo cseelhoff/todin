@@ -25,3 +25,25 @@ make_Installed_Map_3 :: proc(
 		content_root         = new_clone(install_path),
 	}
 }
+
+// Provisioned stubs: the launcher's installed-maps discovery code is
+// not on the WW2v5 AI snapshot path (snapshots load a pre-resolved
+// XML), so these getters return zero-values.
+installed_map_get_map_name :: proc(self: ^Installed_Map) -> string {
+	return ""
+}
+
+installed_map_find_content_root :: proc(self: ^Installed_Map) -> (Path, bool) {
+	return Path{}, false
+}
+
+installed_map_get_game_names :: proc(self: ^Installed_Map) -> []string {
+	return nil
+}
+
+installed_map_get_game_xml_file_path :: proc(
+	self: ^Installed_Map,
+	name: string,
+) -> (Path, bool) {
+	return Path{}, false
+}

@@ -47,7 +47,7 @@ main_offense_combat_value_main_offense_strength_get_strength :: proc(
 	unit: ^Unit,
 ) -> ^Strength_Value {
 	ua := unit_get_unit_attachment(unit)
-	strength: i32 = unit_attachment_get_attack(ua)
+	strength: i32 = unit_attachment_get_attack_no_player(ua)
 	is_marine := unit_attachment_get_is_marine(ua)
 	if is_marine != 0 && unit_get_was_amphibious(unit) {
 		strength += is_marine

@@ -158,3 +158,124 @@ main_offense_combat_value_get_strength :: proc(
 		available_supports_copy(self.strength_support_from_enemies),
 	)
 }
+
+// ============================================================
+// Combat_Value / Strength_Calculator / Roll_Calculator adapters
+// ============================================================
+
+@(private="file")
+mocv_get_strength_ :: proc(cv: ^Combat_Value) -> ^Strength_Calculator {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_main_offense_strength_to_strength_calculator(
+                main_offense_combat_value_get_strength(impl),
+        )
+}
+
+@(private="file")
+mocv_get_roll_ :: proc(cv: ^Combat_Value) -> ^Roll_Calculator {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_main_offense_roll_to_roll_calculator(
+                main_offense_combat_value_get_roll(impl),
+        )
+}
+
+@(private="file")
+mocv_choose_best_roll_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> bool {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_choose_best_roll(impl, unit)
+}
+
+@(private="file")
+mocv_get_dice_sides_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> i32 {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_get_dice_sides(impl, unit)
+}
+
+@(private="file")
+mocv_get_battle_side_ :: proc(cv: ^Combat_Value) -> Battle_State_Side {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_get_battle_side(impl)
+}
+
+@(private="file")
+mocv_get_friend_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return impl.friend_units
+}
+
+@(private="file")
+mocv_get_enemy_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return impl.enemy_units
+}
+
+@(private="file")
+mocv_build_with_no_unit_supports_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_offense_combat_value_to_combat_value(
+                main_offense_combat_value_build_with_no_unit_supports(impl),
+        )
+}
+
+@(private="file")
+mocv_build_opposite_combat_value_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        impl := cast(^Main_Offense_Combat_Value)cv.concrete
+        return main_defense_combat_value_to_combat_value(
+                main_offense_combat_value_build_opposite_combat_value(impl),
+        )
+}
+
+main_offense_combat_value_to_combat_value :: proc(self: ^Main_Offense_Combat_Value) -> ^Combat_Value {
+        cv := new(Combat_Value)
+        cv.concrete                    = self
+        cv.get_strength                = mocv_get_strength_
+        cv.get_roll                    = mocv_get_roll_
+        cv.choose_best_roll            = mocv_choose_best_roll_
+        cv.get_dice_sides              = mocv_get_dice_sides_
+        cv.get_battle_side             = mocv_get_battle_side_
+        cv.get_friend_units            = mocv_get_friend_units_
+        cv.get_enemy_units             = mocv_get_enemy_units_
+        cv.build_with_no_unit_supports = mocv_build_with_no_unit_supports_
+        cv.build_opposite_combat_value = mocv_build_opposite_combat_value_
+        return cv
+}
+
+@(private="file")
+mos_get_strength_ :: proc(sc: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value {
+        impl := cast(^Main_Offense_Combat_Value_Main_Offense_Strength)sc.concrete
+        return main_offense_combat_value_main_offense_strength_get_strength(impl, unit)
+}
+
+@(private="file")
+mos_get_support_given_ :: proc(sc: ^Strength_Calculator) -> map[^Unit]^Integer_Map {
+        impl := cast(^Main_Offense_Combat_Value_Main_Offense_Strength)sc.concrete
+        return main_offense_combat_value_main_offense_strength_get_support_given(impl)
+}
+
+main_offense_combat_value_main_offense_strength_to_strength_calculator :: proc(self: ^Main_Offense_Combat_Value_Main_Offense_Strength) -> ^Strength_Calculator {
+        sc := new(Strength_Calculator)
+        sc.concrete          = self
+        sc.get_strength      = mos_get_strength_
+        sc.get_support_given = mos_get_support_given_
+        return sc
+}
+
+@(private="file")
+mor_get_roll_ :: proc(rc: ^Roll_Calculator, unit: ^Unit) -> ^Roll_Value {
+        impl := cast(^Main_Offense_Combat_Value_Main_Offense_Roll)rc.concrete
+        return main_offense_combat_value_main_offense_roll_get_roll(impl, unit)
+}
+
+@(private="file")
+mor_get_support_given_ :: proc(rc: ^Roll_Calculator) -> map[^Unit]^Integer_Map {
+        impl := cast(^Main_Offense_Combat_Value_Main_Offense_Roll)rc.concrete
+        return main_offense_combat_value_main_offense_roll_get_support_given(impl)
+}
+
+main_offense_combat_value_main_offense_roll_to_roll_calculator :: proc(self: ^Main_Offense_Combat_Value_Main_Offense_Roll) -> ^Roll_Calculator {
+        rc := new(Roll_Calculator)
+        rc.concrete          = self
+        rc.get_roll          = mor_get_roll_
+        rc.get_support_given = mor_get_support_given_
+        return rc
+}

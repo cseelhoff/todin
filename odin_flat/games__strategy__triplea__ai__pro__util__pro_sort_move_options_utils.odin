@@ -300,6 +300,14 @@ pro_sort_move_options_utils_calculate_attack_efficiency :: proc(
 			if include_unit {
 				append(&attacking_units, unit)
 			}
+			support_rules_set := unit_type_list_get_support_rules(
+				game_data_get_unit_type_list(data),
+			)
+			support_attachments: [dynamic]^Unit_Support_Attachment
+			defer delete(support_attachments)
+			for usa in support_rules_set {
+				append(&support_attachments, usa)
+			}
 			cv := combat_value_builder_main_builder_build(
 				combat_value_builder_main_builder_territory_effects(
 					combat_value_builder_main_builder_game_dice_sides(
@@ -318,9 +326,7 @@ pro_sort_move_options_utils_calculate_attack_efficiency :: proc(
 									),
 									game_data_get_sequence(data),
 								),
-								unit_type_list_get_support_rules(
-									game_data_get_unit_type_list(data),
-								),
+								support_attachments,
 							),
 							properties_get_lhtr_heavy_bombers(game_data_get_properties(data)),
 						),

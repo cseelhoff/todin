@@ -33,6 +33,11 @@ channel_messenger_register_channel_subscriber :: proc(self: ^Channel_Messenger, 
 	unified_messenger_add_implementor(self.unified_messenger, name, subscriber, true)
 }
 
+// games.strategy.engine.message.ChannelMessenger#unregisterChannelSubscriber(java.lang.Object,games.strategy.engine.message.RemoteName)
+channel_messenger_unregister_channel_subscriber :: proc(self: ^Channel_Messenger, subscriber: rawptr, name: ^Remote_Name) {
+	// No-op: not exercised by the WW2v5 AI snapshot run.
+}
+
 // Java owners covered by this file:
 //   - games.strategy.engine.message.ChannelMessenger
 

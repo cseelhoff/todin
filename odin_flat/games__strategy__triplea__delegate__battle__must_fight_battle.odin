@@ -874,7 +874,7 @@ must_fight_battle_add_player_combat_history_text :: proc(
 	}
 
 	if len(all_units) > 0 {
-		history_writer_add_child_to_event(history_writer, strings.to_string(sb), all_units)
+		i_delegate_history_writer_add_child_to_event(history_writer, strings.to_string(sb), &all_units)
 	}
 }
 
@@ -987,7 +987,7 @@ must_fight_battle_show_casualties :: proc(
 	for u in self.killed {
 		append(&killed_copy, u)
 	}
-	history_writer_add_child_to_event(writer, text, killed_copy)
+	i_delegate_history_writer_add_child_to_event(writer, text, &killed_copy)
 	self.attacker_lost_tuv += tuv_lost_attacker
 	self.defender_lost_tuv += tuv_lost_defender
 }
@@ -2124,7 +2124,7 @@ must_fight_battle_defender_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Del
 					abandoned_to_player.base.name,
 					self.battle_site.base.name,
 				)
-				history_writer_add_child_to_event(writer, msg, ally_of_attacker_units)
+				i_delegate_history_writer_add_child_to_event(writer, msg, &ally_of_attacker_units)
 				battle_tracker_take_over(
 					self.battle_tracker,
 					self.battle_site,
@@ -2150,10 +2150,10 @@ must_fight_battle_defender_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Del
 	for u in self.defending_units {
 		append(&defending_copy, u)
 	}
-	history_writer_add_child_to_event(
+	i_delegate_history_writer_add_child_to_event(
 		writer,
 		fmt.aprintf("%s win", self.defender.base.name),
-		defending_copy,
+		&defending_copy,
 	)
 	self.battle_result_description = .LOST
 	must_fight_battle_show_casualties(self, bridge)
@@ -2197,7 +2197,7 @@ must_fight_battle_nobody_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Deleg
 	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
 	i_display_battle_end(display, self.battle_id, "Stalemate")
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(
+	i_delegate_history_writer_add_child_to_event(
 		writer,
 		fmt.aprintf(
 			"%s and %s reach a stalemate",
@@ -2290,10 +2290,10 @@ must_fight_battle_attacker_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Del
 	for u in self.attacking_units {
 		append(&attacking_copy, u)
 	}
-	history_writer_add_child_to_event(
+	i_delegate_history_writer_add_child_to_event(
 		writer,
 		fmt.aprintf("%s win", self.attacker.base.name),
-		attacking_copy,
+		&attacking_copy,
 	)
 	must_fight_battle_show_casualties(self, bridge)
 	battle_records_add_result_to_battle(

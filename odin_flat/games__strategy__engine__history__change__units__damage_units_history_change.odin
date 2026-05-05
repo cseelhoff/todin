@@ -81,6 +81,6 @@ damage_units_history_change_perform :: proc(
 	}
 	transcript := fmt.aprintf("Units damaged: %s", my_formatter_units_to_text(units))
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(writer, transcript, units)
+	i_delegate_history_writer_add_child_to_event(writer, transcript, cast(rawptr)&units)
 }
 

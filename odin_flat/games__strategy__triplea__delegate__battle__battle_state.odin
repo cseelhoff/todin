@@ -58,3 +58,8 @@ battle_state_get_territory_effects :: proc(self: ^Battle_State) -> [dynamic]^Ter
 	return (cast(^Must_Fight_Battle)self).territory_effects
 }
 
+
+// games.strategy.triplea.delegate.battle.BattleState#getBattleId
+battle_state_get_battle_id :: proc(self: ^Battle_State) -> Uuid {
+	return (cast(^Must_Fight_Battle)self).battle_id
+}

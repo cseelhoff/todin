@@ -83,6 +83,12 @@ territory_get_unit_collection :: proc(self: ^Territory) -> ^Unit_Collection {
 	return self.unit_collection
 }
 
+// games.strategy.engine.data.Territory#getData() (inherited from
+// GameDataComponent via NamedAttachable -> DefaultNamed).
+territory_get_data :: proc(self: ^Territory) -> ^Game_Data {
+	return game_data_component_get_data(&self.named_attachable.default_named.game_data_component)
+}
+
 // games.strategy.engine.data.Territory#setOwner(GamePlayer)
 // Java:
 //   this.owner = Optional.ofNullable(owner).orElse(getData().getPlayerList().getNullPlayer());
@@ -109,4 +115,61 @@ territory_notify_changed :: proc(self: ^Territory) {
 territory_notify_attachment_changed :: proc(self: ^Territory) {
 	data := game_data_component_get_data(&self.named_attachable.default_named.game_data_component)
 	game_data_notify_territory_attachment_changed(data, self)
+}
+
+// games.strategy.engine.data.Territory#getName()
+// Forwarder to the embedded Default_Named accessor (Territory extends
+// NamedAttachable, which extends DefaultNamed).
+territory_get_name :: proc(self: ^Territory) -> string {
+	return default_named_get_name(&self.named_attachable.default_named)
+}
+
+// games.strategy.engine.data.Territory#getMatches(Predicate)
+// Inherited default from UnitHolder:
+//   return getUnitCollection().getMatches(matcher);
+// Odin convention: predicates carry a closure-emulating `ctx: rawptr`
+// alongside the proc value (Odin proc literals can't capture). Callers
+// throughout odin_flat/ pass `(pred, ctx)` pairs returned by the
+// pro_matches helpers.
+territory_get_matches :: proc(self: ^Territory, matcher: proc(rawptr, ^Unit) -> bool, ctx: rawptr) -> [dynamic]^Unit {
+	uc := self.unit_collection
+	result: [dynamic]^Unit
+	if uc == nil {
+		return result
+	}
+	for u in uc.units {
+		if matcher(ctx, u) {
+			append(&result, u)
+		}
+	}
+	return result
+}
+
+// games.strategy.engine.data.Territory#getUnits()
+// Inherited default from UnitHolder:
+//   return getUnitCollection().getUnits();
+territory_get_units :: proc(self: ^Territory) -> [dynamic]^Unit {
+	if self.unit_collection == nil {
+		empty: [dynamic]^Unit
+		return empty
+	}
+	return unit_collection_get_units(self.unit_collection)
+}
+
+// games.strategy.engine.data.Territory#anyUnitsMatch(Predicate)
+// Inherited default from UnitHolder:
+//   return getUnitCollection().anyUnitsMatch(matcher);
+// Mirrors `territory_get_matches`'s (pred, ctx) closure-emulation
+// signature so existing call sites (e.g. pro_territory_manager) work.
+territory_any_units_match :: proc(self: ^Territory, pred: proc(rawptr, ^Unit) -> bool, ctx: rawptr) -> bool {
+	uc := self.unit_collection
+	if uc == nil {
+		return false
+	}
+	for u in uc.units {
+		if pred(ctx, u) {
+			return true
+		}
+	}
+	return false
 }

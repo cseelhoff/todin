@@ -150,8 +150,8 @@ serialized_history_read_resolve :: proc(self: ^Serialized_History) -> ^History {
 		case .Event_Child:
 			// EventChildWriter.write(historyWriter):
 			//   historyWriter.addChildToEvent(new EventChild(text, renderingData))
-			child := event_child_new(tw.ec_text, tw.ec_rendering_data)
-			history_writer_add_child_to_event(hw, child.text, child.rendering_data)
+			child := event_child_new(tw.ec_text, any{data = tw.ec_rendering_data, id = nil})
+			history_writer_add_child_to_event(hw, child)
 		case .Round:
 			// RoundHistorySerializer.write(historyWriter):
 			//   historyWriter.startNextRound(roundNo)
@@ -162,8 +162,12 @@ serialized_history_read_resolve :: proc(self: ^Serialized_History) -> ^History {
 			history_writer_start_next_step(hw, tw.step_name, tw.delegate_name, tw.step_player, tw.display_name)
 		case .Event:
 			// EventHistorySerializer.write(historyWriter):
-			//   historyWriter.startEvent(description, renderingData)
-			history_writer_start_event(hw, tw.event_description, tw.event_rendering)
+			//   historyWriter.startEvent(eventName);
+			//   if (renderingData != null) writer.setRenderingData(renderingData);
+			history_writer_start_event(hw, tw.event_description)
+			if tw.event_rendering != nil {
+				history_writer_set_rendering_data(hw, any{data = tw.event_rendering, id = nil})
+			}
 		}
 	}
 	return history

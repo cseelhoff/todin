@@ -56,7 +56,7 @@ politics_delegate_notify_failure :: proc(
 		i_delegate_bridge_get_game_player(self.bridge).named.base.name,
 		my_formatter_attachment_name_to_text(paa.name),
 	)
-	history_writer_add_child_to_event(
+	i_delegate_history_writer_add_child_to_event(
 		i_delegate_bridge_get_history_writer(self.bridge),
 		transcript_text,
 	)
@@ -216,7 +216,7 @@ apply_chance_change :: proc(
 	if success || !history_child {
 		i_delegate_history_writer_start_event(writer, msg)
 	} else {
-		history_writer_add_child_to_event(writer, msg)
+		i_delegate_history_writer_add_child_to_event(writer, msg)
 	}
 	new_chance_ptr := new(string)
 	new_chance_ptr^ = new_chance
@@ -276,7 +276,7 @@ politics_delegate_action_roll_succeeds :: proc(
 		roll_result,
 		result_word,
 	)
-	history_writer_add_child_to_event(
+	i_delegate_history_writer_add_child_to_event(
 		i_delegate_bridge_get_history_writer(self.bridge),
 		fmt.tprintf(
 			"%s : %s",
@@ -549,7 +549,7 @@ politics_delegate_chain_alliances_together :: proc(bridge: ^I_Delegate_Bridge) {
 					bridge,
 					change_factory_relationship_change(p1, p3, current, allied_type),
 				)
-				history_writer_add_child_to_event(
+				i_delegate_history_writer_add_child_to_event(
 					writer,
 					fmt.tprintf(
 						"%s and %s are joined together in an %s treaty",
@@ -610,7 +610,7 @@ politics_delegate_chain_alliances_together :: proc(bridge: ^I_Delegate_Bridge) {
 					bridge,
 					change_factory_relationship_change(p1, p3, current, war_type),
 				)
-				history_writer_add_child_to_event(
+				i_delegate_history_writer_add_child_to_event(
 					writer,
 					fmt.tprintf(
 						"%s and %s declare %s on each other",
@@ -692,7 +692,7 @@ politics_delegate_get_myself_out_of_alliance :: proc(
 						change,
 						change_factory_relationship_change(p3, player, current_other, new_type),
 					)
-					history_writer_add_child_to_event(
+					i_delegate_history_writer_add_child_to_event(
 						writer,
 						fmt.tprintf(
 							"%s and %s sign a %s treaty",
@@ -792,7 +792,7 @@ politics_delegate_get_neutral_out_of_war_with_allies :: proc(
 							change,
 							change_factory_relationship_change(p3, p4, current_other, new_type),
 						)
-						history_writer_add_child_to_event(
+						i_delegate_history_writer_add_child_to_event(
 							writer,
 							fmt.tprintf(
 								"%s and %s sign a %s treaty",
@@ -932,7 +932,7 @@ politics_delegate_change_relationships :: proc(
 			change,
 			change_factory_relationship_change(player1, player2, old_relation, new_relation),
 		)
-		history_writer_add_child_to_event(
+		i_delegate_history_writer_add_child_to_event(
 			writer,
 			fmt.tprintf(
 				"%s succeeds on action: %s: Changing Relationship for %s and %s from %s to %s",
@@ -1009,5 +1009,13 @@ politics_delegate_attempt_action :: proc(
 	} else {
 		politics_delegate_notify_no_valid_action(self)
 	}
+}
+
+// games.strategy.triplea.delegate.PoliticsDelegate#<init>()
+// Java's implicit no-arg constructor. PoliticsDelegate declares no
+// fields of its own; embedded Base_Triple_A_Delegate is zero-initialized.
+politics_delegate_new :: proc() -> ^Politics_Delegate {
+	self := new(Politics_Delegate)
+	return self
 }
 

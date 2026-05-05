@@ -165,3 +165,15 @@ default_delegate_bridge_get_remote_player_current :: proc(self: ^Default_Delegat
 		default_delegate_bridge_get_game_player(self),
 	)
 }
+
+// games.strategy.engine.delegate.DefaultDelegateBridge#getResourceLoader()
+// Java: return Optional.of(game.getResourceLoader());
+//
+// AbstractGame#getResourceLoader() throws if the loader has not been
+// set; Optional.of() likewise rejects null. The Odin port collapses
+// Optional<ResourceLoader> to a plain `^Resource_Loader` where nil
+// means absent — Server_Game embeds Abstract_Game (`using abstract_game`)
+// so the loader lives at `self.game.resource_loader`.
+default_delegate_bridge_get_resource_loader :: proc(self: ^Default_Delegate_Bridge) -> ^Resource_Loader {
+	return self.game.resource_loader
+}

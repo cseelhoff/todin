@@ -195,7 +195,7 @@ transform_damaged_units_history_change_lambda_perform_4 :: proc(
 		default_named_get_name(&self.location.named_attachable.default_named),
 	)
 	writer := i_delegate_bridge_get_history_writer(bridge)
-	history_writer_add_child_to_event(writer, transform_transcript_text, old_units)
+	i_delegate_history_writer_add_child_to_event(writer, transform_transcript_text, cast(rawptr)&old_units)
 }
 
 // Java: public void perform(final IDelegateBridge bridge)

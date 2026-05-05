@@ -132,7 +132,6 @@ relationship_type_attachment_set_arche_type :: proc(self: ^Relationship_Type_Att
 		self.arche_type = RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_NEUTRAL
 	case:
 		err := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(err)
 		fmt.panicf(
 			"archeType must be %s,%s or %s for %s",
 			RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR,

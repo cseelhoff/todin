@@ -72,7 +72,6 @@ political_action_attachment_get_relationship_changes :: proc(
 		p1 := player_list_get_player_id(player_list, tokens[0])
 		if p1 == nil {
 			err := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(err)
 			fmt.panicf(
 				"Invalid relationshipChange declaration: %s \n first player: %s unknown%s",
 				entry,
@@ -83,7 +82,6 @@ political_action_attachment_get_relationship_changes :: proc(
 		p2 := player_list_get_player_id(player_list, tokens[1])
 		if p2 == nil {
 			err := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(err)
 			fmt.panicf(
 				"Invalid relationshipChange declaration: %s \n second player: %s unknown%s",
 				entry,

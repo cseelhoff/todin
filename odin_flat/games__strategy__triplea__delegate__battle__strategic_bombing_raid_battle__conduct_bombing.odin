@@ -451,7 +451,7 @@ strategic_bombing_raid_battle_conduct_bombing_find_cost :: proc(
 				unit_get_type(current).named.base.name,
 			)
 			history_writer := i_delegate_bridge_get_history_writer(bridge)
-			history_writer_add_child_to_event(history_writer, history_msg)
+			i_delegate_history_writer_add_child_to_event(history_writer, history_msg)
 			report_long := fmt.aprintf(
 				"Bombing raid in %s rolls: %s and causes: %d damage to unit: %s",
 				outer.battle_site.name,
@@ -513,7 +513,7 @@ strategic_bombing_raid_battle_conduct_bombing_find_cost :: proc(
 			my_formatter_pluralize_quantity("PU", cost),
 		)
 		history_writer := i_delegate_bridge_get_history_writer(bridge)
-		history_writer_add_child_to_event(history_writer, history_msg)
+		i_delegate_history_writer_add_child_to_event(history_writer, history_msg)
 	}
 	outer.bombing_raid_total = cost
 }

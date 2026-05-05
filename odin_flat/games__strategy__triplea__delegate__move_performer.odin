@@ -106,7 +106,7 @@ move_performer_pre_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Exe
 	for battle in pending {
 		for unit in self.units {
 			optional_route := abstract_move_delegate_get_route_used_to_move_into(
-				abstract_move_delegate_get_undoable_moves(performer.move_delegate),
+				performer.move_delegate.moves_to_undo,
 				unit,
 				route_get_start(self.route),
 			)
@@ -195,6 +195,10 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 	for k, _ in paratrooper_map {
 		dependent_on_something_til_end[k] = {}
 	}
+	dependent_til_end_list := make([dynamic]^Unit)
+	for k, _ in dependent_on_something_til_end {
+		append(&dependent_til_end_list, k)
+	}
 
 	present_from_start_til_end := make([dynamic]^Unit)
 	for u in arrived {
@@ -206,7 +210,7 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 	change := composite_change_new()
 
 	// markFuelCostResourceChange must be done before we load/unload units
-	composite_change_add(change, route_get_fuel_changes(self.units, self.route, game_player, data))
+	composite_change_add(change, route_get_fuel_changes(self.units[:], self.route, game_player, data))
 
 	move_performer_mark_transports_movement(performer, arrived, transporting, self.route)
 
@@ -316,7 +320,7 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 						arrived_set[u] = {}
 					}
 					targets[target] = arrived_set
-					battle_tracker_add_battle_bombing(
+					battle_tracker_add_battle(
 						move_performer_get_battle_tracker(performer),
 						self.route,
 						arrived_copy_for_battles,
@@ -324,8 +328,8 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 						game_player,
 						performer.bridge,
 						performer.current_move,
-						dependent_on_something_til_end,
-						targets,
+						dependent_til_end_list,
+						&targets,
 						false,
 					)
 				}
@@ -361,10 +365,13 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 				move_performer_get_battle_tracker(performer),
 				self.route,
 				arrived_copy_for_battles,
+				false,
 				game_player,
 				performer.bridge,
 				performer.current_move,
-				dependent_on_something_til_end,
+				dependent_til_end_list,
+				nil,
+				false,
 			)
 		}
 
@@ -430,7 +437,7 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 	undoable_move_add_change(performer.current_move, cast(^Change)change)
 	desc := fmt.tprintf(
 		"%s moved from %s to %s",
-		my_formatter_units_to_text_no_owner(arrived),
+		my_formatter_units_to_text_no_owner(arrived, nil),
 		territory_to_string(route_get_start(self.route)),
 		territory_to_string(route_get_end(self.route)),
 	)
@@ -688,7 +695,7 @@ move_performer_fire_aa :: proc(
 		self.aa_in_move_util = aa_in_move_util_new()
 	}
 	aa_in_move_util_initialize(self.aa_in_move_util, self.bridge)
-	cmp, cmp_ctx := unit_comparator_get_lowest_to_highest_movement_comparator()
+	cmp, cmp_ctx := unit_comparator_get_lowest_to_highest_movement_less_than()
 	units_to_remove := aa_in_move_util_fire_aa(
 		self.aa_in_move_util,
 		route,

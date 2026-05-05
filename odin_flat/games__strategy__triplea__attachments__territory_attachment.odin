@@ -372,7 +372,6 @@ territory_attachment_get_named :: proc(
 territory_attachment_get_capital_or_throw :: proc(self: ^Territory_Attachment) -> string {
 	if self.capital == "" {
 		msg := territory_attachment_lambda_get_capital_or_throw_7(self)
-		defer delete(msg)
 		fmt.panicf("%s", msg)
 	}
 	return self.capital
@@ -414,7 +413,6 @@ territory_attachment_get_capture_ownership_changes :: proc(
 				encoded,
 				tokens[:],
 			)
-			defer delete(msg)
 			fmt.panicf("%s", msg)
 		}
 		to_player := player_list_get_player_id(players, tokens[1])
@@ -424,7 +422,6 @@ territory_attachment_get_capture_ownership_changes :: proc(
 				encoded,
 				tokens[:],
 			)
-			defer delete(msg)
 			fmt.panicf("%s", msg)
 		}
 		change := new(Territory_Attachment_Capture_Ownership_Change)
@@ -747,9 +744,7 @@ territory_attachment_get_first_owned_capital_or_first_unowned_capital :: proc(
 	game_map: ^Game_Map,
 ) -> ^Territory {
 	capitals := make([dynamic]^Territory)
-	defer delete(capitals)
 	no_neighbor_capitals := make([dynamic]^Territory)
-	defer delete(no_neighbor_capitals)
 	player_name := default_named_get_name(&player.named_attachable.default_named)
 	territories := game_map_get_territories(game_map)
 	for current in territories {
@@ -767,6 +762,8 @@ territory_attachment_get_first_owned_capital_or_first_unowned_capital :: proc(
 		if player == territory_get_owner(current) {
 			neighbors := game_map_get_neighbors(game_map, current)
 			if len(neighbors) != 0 {
+				delete(capitals)
+				delete(no_neighbor_capitals)
 				return current
 			}
 			append(&no_neighbor_capitals, current)
@@ -775,14 +772,24 @@ territory_attachment_get_first_owned_capital_or_first_unowned_capital :: proc(
 		}
 	}
 	if len(capitals) != 0 {
-		return capitals[0]
+		result := capitals[0]
+		delete(capitals)
+		delete(no_neighbor_capitals)
+		return result
 	}
 	if len(no_neighbor_capitals) != 0 {
-		return no_neighbor_capitals[0]
+		result := no_neighbor_capitals[0]
+		delete(capitals)
+		delete(no_neighbor_capitals)
+		return result
 	}
 	if game_player_get_optional(player) {
+		delete(capitals)
+		delete(no_neighbor_capitals)
 		return nil
 	}
+	delete(capitals)
+	delete(no_neighbor_capitals)
 	fmt.panicf("Capital not found for: %s", player_name)
 }
 

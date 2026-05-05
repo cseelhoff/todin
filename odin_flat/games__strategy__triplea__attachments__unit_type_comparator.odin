@@ -34,7 +34,7 @@ unit_type_comparator_compare :: proc(self: ^Unit_Type_Comparator, a, b: ^Unit_Ty
 	if c := cmp_bool(unit_attachment_is_sea(ua_a), unit_attachment_is_sea(ua_b)); c != 0 {
 		return c
 	}
-	if c := int(unit_attachment_get_attack(ua_a)) - int(unit_attachment_get_attack(ua_b)); c != 0 {
+	if c := int(unit_attachment_get_attack_no_player(ua_a)) - int(unit_attachment_get_attack_no_player(ua_b)); c != 0 {
 		return c
 	}
 	na := default_named_get_name(&a.named_attachable.default_named)

@@ -1,0 +1,19 @@
+{
+  "summary": {
+    "diagnostics_found": 0,
+    "inserted": 0,
+    "unresolved_constants": 0,
+    "unresolved_lambdas": 0,
+    "unresolved_unknown_owner": 0,
+    "unresolved_no_java_match": 0,
+    "skipped_already_defined": 0,
+    "committed": true,
+    "next_method_layer": 25
+  },
+  "inserted": [],
+  "unresolved_constants": [],
+  "unresolved_lambdas": [],
+  "unresolved_unknown_owner": [],
+  "unresolved_no_java_match": [],
+  "skipped_already_defined": []
+}

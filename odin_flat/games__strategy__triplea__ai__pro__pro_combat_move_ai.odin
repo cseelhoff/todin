@@ -2122,7 +2122,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 		if min_win_territory != nil {
 			if min_unload_from_territory != nil {
-				pro_territory_get_transport_territory_map(attack_map[min_win_territory])[transport] =
+				attack_map[min_win_territory].transport_territory_map[transport] =
 					min_unload_from_territory
 			}
 			pro_territory_add_units(attack_map[min_win_territory], min_amphib_units_to_add)
@@ -2226,7 +2226,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 			}
 		}
 		if min_win_territory != nil {
-			pro_territory_get_bombard_territory_map(attack_map[min_win_territory])[unit] =
+			attack_map[min_win_territory].bombard_territory_map[unit] =
 				min_bombard_from_territory
 			pro_territory_set_battle_result(attack_map[min_win_territory], nil)
 			delete_key(&sorted_unit_attack_options, unit)

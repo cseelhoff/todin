@@ -13,6 +13,15 @@ I_Client_Channel :: struct {
 	player_listing_changed: proc(self: ^I_Client_Channel, listing: ^Player_Listing),
 }
 
+// Java: RemoteName CHANNEL_NAME =
+//   new RemoteName("games.strategy.engine.framework.ui.IClientChannel.CHANNEL", IClientChannel.class);
+i_client_channel_channel_name :: proc() -> ^Remote_Name {
+	return remote_name_new(
+		"games.strategy.engine.framework.ui.IClientChannel.CHANNEL",
+		class_new("games.strategy.engine.framework.startup.mc.IClientChannel", "IClientChannel"),
+	)
+}
+
 // games.strategy.engine.framework.startup.mc.IClientChannel#doneSelectingPlayers(byte[],java.util.Map)
 i_client_channel_done_selecting_players :: proc(self: ^I_Client_Channel, game_data: []u8, players_to_node: map[string]^I_Node) {
 	self.done_selecting_players(self, game_data, players_to_node)

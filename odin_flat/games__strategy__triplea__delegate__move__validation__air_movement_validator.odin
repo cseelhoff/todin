@@ -959,7 +959,6 @@ air_movement_validator_max_movement_left_for_these_air_units_being_validated :: 
 // passed to MoveValidationResult.addDisallowedUnit by both
 // validateAirCaughtByMovingCarriersAndOwnedAndAlliedAir and
 // getAirThatMustLandOnCarriers.
-@(private = "file")
 NOT_ALL_AIR_UNITS_CAN_LAND :: "Not all air units can land"
 
 // Java: private static boolean canFindLand(

@@ -136,7 +136,7 @@ server_model_notify_channel_players_changed :: proc(self: ^Server_Model) {
 	}
 	channel := cast(^I_Client_Channel)messengers_get_channel_broadcaster(
 		self.messengers,
-		"games.strategy.engine.framework.startup.mc.IClientChannel.CHANNEL_NAME",
+		i_client_channel_channel_name(),
 	)
 	if channel == nil {
 		return
@@ -189,3 +189,12 @@ server_model_set_remote_model_listener :: proc(
 server_model_set_server_launcher :: proc(self: ^Server_Model, launcher: ^Server_Launcher) {
 	self.server_launcher = launcher
 }
+
+// games.strategy.engine.framework.startup.mc.ServerModel#getPlayerListingInternal()
+// No-op stub: PlayerListing is only consumed by client UI code that the
+// WW2v5 AI snapshot harness never invokes. Returning nil is safe because
+// every call site nil-checks the channel broadcaster first.
+server_model_get_player_listing_internal :: proc(self: ^Server_Model) -> ^Player_Listing {
+	return nil
+}
+

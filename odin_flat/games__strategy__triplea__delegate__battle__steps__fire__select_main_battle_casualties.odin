@@ -185,3 +185,12 @@ select_main_battle_casualties_apply :: proc(
 	return casualty_details
 }
 
+
+// Stateless wrapper matching the fire_round_steps_factory_builder
+// casualty_selector proc-value signature.
+select_main_battle_casualties_apply_stateless :: proc(
+	bridge: ^I_Delegate_Bridge,
+	step: ^Select_Casualties,
+) -> ^Casualty_Details {
+	return select_main_battle_casualties_apply(nil, bridge, step)
+}

@@ -65,7 +65,7 @@ files_list :: proc(p: Path) -> [dynamic]Path {
 		return out
 	}
 	defer os.close(fd)
-	entries, ferr := os.read_dir(fd, -1)
+	entries, ferr := os.read_dir(fd, -1, context.allocator)
 	if ferr != nil {
 		return out
 	}

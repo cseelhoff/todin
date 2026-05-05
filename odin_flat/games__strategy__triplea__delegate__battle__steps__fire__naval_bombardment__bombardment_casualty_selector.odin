@@ -84,3 +84,12 @@ naval_bombardment_bombardment_casualty_selector_apply :: proc(
 		true,
 	)
 }
+
+// Stateless wrapper matching the fire_round_steps_factory_builder
+// casualty_selector proc-value signature.
+naval_bombardment_bombardment_casualty_selector_apply_stateless :: proc(
+	bridge: ^I_Delegate_Bridge,
+	step: ^Select_Casualties,
+) -> ^Casualty_Details {
+	return naval_bombardment_bombardment_casualty_selector_apply(nil, bridge, step)
+}

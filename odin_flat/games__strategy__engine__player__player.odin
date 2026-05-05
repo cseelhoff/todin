@@ -72,6 +72,21 @@ Player :: struct {
                 scramble_to: ^Territory,
                 possible_scramblers: map[^Territory]^Tuple([dynamic]^Unit, [dynamic]^Unit),
         ) -> map[^Territory][dynamic]^Unit,
+        confirm_enemy_casualties: proc(self: ^Player, battle_id: Uuid, message: string, hit_player: ^Game_Player),
+        confirm_own_casualties:   proc(self: ^Player, battle_id: Uuid, message: string),
+        accept_action: proc(
+                self: ^Player,
+                player_sending_proposal: ^Game_Player,
+                acceptance_question: string,
+                politics: bool,
+        ) -> bool,
+        should_bomber_bomb: proc(self: ^Player, territory: ^Territory) -> bool,
+        what_should_bomber_bomb: proc(
+                self: ^Player,
+                territory: ^Territory,
+                potential_targets: [dynamic]^Unit,
+                bombers: [dynamic]^Unit,
+        ) -> ^Unit,
 }
 
 // games.strategy.engine.player.Player#selectAttackUnits(Territory)
@@ -311,3 +326,75 @@ player_report_error :: proc(self: ^Player, error: string) {
 	}
 }
 
+// games.strategy.engine.player.IRemotePlayer#reportMessage(String, String)
+// No-op stub: UI message reporting is not exercised by the WW2v5 AI
+// snapshot harness (no human-facing toast/dialog is rendered).
+i_remote_player_report_message :: proc(self: ^Player, short_message: string, long_message: string) {
+}
+
+
+// games.strategy.engine.player.Player#confirmEnemyCasualties(UUID,String,GamePlayer)
+//   Void interface method; vtable dispatch. AI/snapshot harness
+//   implementations leave the field nil (no UI confirmation step in
+//   headless runs) — treat as a no-op to mirror Java's contract.
+player_confirm_enemy_casualties :: proc(self: ^Player, battle_id: Uuid, message: string, hit_player: ^Game_Player) {
+	if self != nil && self.confirm_enemy_casualties != nil {
+		self.confirm_enemy_casualties(self, battle_id, message, hit_player)
+	}
+}
+
+// games.strategy.engine.player.Player#confirmOwnCasualties(UUID,String)
+//   Void interface method; vtable dispatch. No-op when field is nil
+//   (headless / snapshot runs do not pause for confirmation).
+player_confirm_own_casualties :: proc(self: ^Player, battle_id: Uuid, message: string) {
+	if self != nil && self.confirm_own_casualties != nil {
+		self.confirm_own_casualties(self, battle_id, message)
+	}
+}
+
+// games.strategy.engine.player.Player#acceptAction(GamePlayer,String,boolean)
+//   Vtable dispatch. AI/snapshot harness implementations may leave
+//   the field nil; mirroring Java's AbstractAi default (rejects all
+//   action proposals so the headless game proceeds deterministically
+//   without inter-player negotiation), we return false.
+player_accept_action :: proc(
+	self: ^Player,
+	player_sending_proposal: ^Game_Player,
+	acceptance_question: string,
+	politics: bool,
+) -> bool {
+	if self != nil && self.accept_action != nil {
+		return self.accept_action(self, player_sending_proposal, acceptance_question, politics)
+	}
+	return false
+}
+
+// games.strategy.engine.player.Player#shouldBomberBomb(Territory)
+//   Vtable dispatch. AI/snapshot harness impls leave the field nil;
+//   mirror Java's AbstractAi default (return false to skip optional
+//   bombing prompts during deterministic snapshot replay).
+player_should_bomber_bomb :: proc(self: ^Player, territory: ^Territory) -> bool {
+	if self != nil && self.should_bomber_bomb != nil {
+		return self.should_bomber_bomb(self, territory)
+	}
+	return false
+}
+
+// games.strategy.engine.player.Player#whatShouldBomberBomb(Territory, Collection<Unit>, Collection<Unit>)
+//   Vtable dispatch. AI/snapshot harness impls leave the field nil;
+//   mirror Java's AbstractAi default (pick first available potential
+//   target, or nil when the list is empty).
+player_what_should_bomber_bomb :: proc(
+	self: ^Player,
+	territory: ^Territory,
+	potential_targets: [dynamic]^Unit,
+	bombers: [dynamic]^Unit,
+) -> ^Unit {
+	if self != nil && self.what_should_bomber_bomb != nil {
+		return self.what_should_bomber_bomb(self, territory, potential_targets, bombers)
+	}
+	if len(potential_targets) > 0 {
+		return potential_targets[0]
+	}
+	return nil
+}

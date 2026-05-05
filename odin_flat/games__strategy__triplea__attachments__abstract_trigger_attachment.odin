@@ -232,3 +232,30 @@ abstract_trigger_attachment_trigger_set_used_for_this_round :: proc(
 	return change
 }
 
+
+// Java: protected void use(IDelegateBridge bridge)
+//   if (!usedThisRound && uses > 0 && getWhen().isEmpty())
+//     bridge.addChange(ChangeFactory.attachmentPropertyChange(this, true, "usedThisRound"));
+// Decrement-on-use is handled later by trigger_set_used_for_this_round.
+abstract_trigger_attachment_use :: proc(t: ^Trigger_Attachment, bridge: ^I_Delegate_Bridge) {
+	if !t.used_this_round && t.uses > 0 && len(t.when_triggers) == 0 {
+		flag := new(bool)
+		flag^ = true
+		i_delegate_bridge_add_change(
+			bridge,
+			change_factory_attachment_property_change(
+				cast(^I_Attachment)rawptr(t),
+				rawptr(flag),
+				"usedThisRound",
+			),
+		)
+	}
+}
+
+// Java: protected boolean testChance(IDelegateBridge bridge)
+// Abstract_Trigger_Attachment has no chance_to_hit / chance_dice_sides
+// fields in the Odin port, so chance gating is a no-op (always succeed)
+// matching the Java fast-path branch where hitTarget >= diceSides.
+abstract_trigger_attachment_test_chance :: proc(t: ^Trigger_Attachment, bridge: ^I_Delegate_Bridge) -> bool {
+	return true
+}

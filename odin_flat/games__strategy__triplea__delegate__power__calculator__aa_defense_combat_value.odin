@@ -98,3 +98,102 @@ aa_defense_combat_value_get_strength :: proc(self: ^Aa_Defense_Combat_Value) -> 
 		available_supports_copy(self.strength_support_from_enemies),
 	)
 }
+
+// ============================================================
+// Combat_Value / Strength_Calculator adapters for AA Defense
+// ============================================================
+
+@(private="file")
+adcv_get_strength_ :: proc(cv: ^Combat_Value) -> ^Strength_Calculator {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return aa_defense_strength_to_strength_calculator(
+                aa_defense_combat_value_get_strength(impl),
+        )
+}
+
+@(private="file")
+adcv_get_roll_ :: proc(cv: ^Combat_Value) -> ^Roll_Calculator {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return aa_roll_to_roll_calculator(aa_defense_combat_value_get_roll(impl))
+}
+
+@(private="file")
+adcv_choose_best_roll_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> bool {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return aa_defense_combat_value_choose_best_roll(impl, unit)
+}
+
+@(private="file")
+adcv_get_dice_sides_ :: proc(cv: ^Combat_Value, unit: ^Unit) -> i32 {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return aa_defense_combat_value_get_dice_sides(impl, unit)
+}
+
+@(private="file")
+adcv_get_battle_side_ :: proc(cv: ^Combat_Value) -> Battle_State_Side {
+        // Java: AaDefenseCombatValue#getBattleSide() = Side.DEFENSE.
+        return .DEFENSE
+}
+
+@(private="file")
+adcv_get_friend_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return impl.friend_units
+}
+
+@(private="file")
+adcv_get_enemy_units_ :: proc(cv: ^Combat_Value) -> [dynamic]^Unit {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return impl.enemy_units
+}
+
+@(private="file")
+adcv_build_with_no_unit_supports_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        impl := cast(^Aa_Defense_Combat_Value)cv.concrete
+        return aa_defense_combat_value_to_combat_value(
+                aa_defense_combat_value_build_with_no_unit_supports(impl),
+        )
+}
+
+@(private="file")
+adcv_build_opposite_combat_value_ :: proc(cv: ^Combat_Value) -> ^Combat_Value {
+        // AaDefenseCombatValue#buildOppositeCombatValue() not yet ported;
+        // Java returns an AaOffenseCombatValue. Stubbed to nil until ported.
+        return nil
+}
+
+aa_defense_combat_value_to_combat_value :: proc(self: ^Aa_Defense_Combat_Value) -> ^Combat_Value {
+        cv := new(Combat_Value)
+        cv.concrete                    = self
+        cv.get_strength                = adcv_get_strength_
+        cv.get_roll                    = adcv_get_roll_
+        cv.choose_best_roll            = adcv_choose_best_roll_
+        cv.get_dice_sides              = adcv_get_dice_sides_
+        cv.get_battle_side             = adcv_get_battle_side_
+        cv.get_friend_units            = adcv_get_friend_units_
+        cv.get_enemy_units             = adcv_get_enemy_units_
+        cv.build_with_no_unit_supports = adcv_build_with_no_unit_supports_
+        cv.build_opposite_combat_value = adcv_build_opposite_combat_value_
+        return cv
+}
+
+@(private="file")
+ads_get_strength_ :: proc(sc: ^Strength_Calculator, unit: ^Unit) -> ^Strength_Value {
+        impl := cast(^Aa_Defense_Combat_Value_Aa_Defense_Strength)sc.concrete
+        return aa_defense_strength_get_strength(impl, unit)
+}
+
+@(private="file")
+ads_get_support_given_ :: proc(sc: ^Strength_Calculator) -> map[^Unit]^Integer_Map {
+        // Java: AaDefenseStrength#getSupportGiven() returns combined support;
+        // not yet ported — return empty map placeholder.
+        return make(map[^Unit]^Integer_Map)
+}
+
+aa_defense_strength_to_strength_calculator :: proc(self: ^Aa_Defense_Combat_Value_Aa_Defense_Strength) -> ^Strength_Calculator {
+        sc := new(Strength_Calculator)
+        sc.concrete          = self
+        sc.get_strength      = ads_get_strength_
+        sc.get_support_given = ads_get_support_given_
+        return sc
+}

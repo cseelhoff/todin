@@ -1305,7 +1305,7 @@ matches_pred_territory_is_blitzable :: proc(ctx_ptr: rawptr, t: ^Territory) -> b
 	if battle_tracker_was_conquered(bt, t) && !battle_tracker_was_blitzed(bt, t) {
 		return false
 	}
-	allow_infrastructure := !properties_get_w_w2_v2(props) &&
+	allow_infrastructure := !properties_get_ww2_v2(props) &&
 		!properties_get_blitz_through_factories_and_aa_restricted(props)
 	en_p, en_c := matches_enemy_unit(c.player)
 	in_p, in_c := matches_unit_is_infrastructure()
@@ -2514,7 +2514,7 @@ Matches_Ctx_unit_has_attack_value_of_at_least :: struct {
 
 matches_pred_unit_has_attack_value_of_at_least :: proc(ctx_ptr: rawptr, u: ^Unit) -> bool {
 	c := cast(^Matches_Ctx_unit_has_attack_value_of_at_least)ctx_ptr
-	return unit_attachment_get_attack(unit_get_unit_attachment(u), unit_get_owner(u)) >= c.attack_value
+	return unit_attachment_get_attack_for_player(unit_get_unit_attachment(u), unit_get_owner(u)) >= c.attack_value
 }
 
 matches_unit_has_attack_value_of_at_least :: proc(
@@ -2666,7 +2666,7 @@ matches_pred_unit_has_required_units_to_move :: proc(ctx_ptr: rawptr, unit: ^Uni
 	}
 	for combo in requires_lists {
 		have_all := true
-		for ut in unit_attachment_get_listed_units(ua, combo) {
+		for ut in unit_attachment_get_listed_units(ua, combo[:]) {
 			found := false
 			for u in allied {
 				if unit_get_type(u) == ut {
@@ -4008,7 +4008,7 @@ matches_pred_unit_which_requires_units_has_required_units_in_list :: proc(
 	}
 	ua := unit_get_unit_attachment(uwru)
 	for combo in unit_attachment_get_requires_units(ua) {
-		listed := unit_attachment_get_listed_units(ua, combo)
+		listed := unit_attachment_get_listed_units(ua, combo[:])
 		have_all := true
 		for ut in listed {
 			found := false

@@ -275,3 +275,38 @@ pro_purchase_option_map_new :: proc(player: ^Game_Player, data: ^Game_Data) -> ^
 	return self
 }
 
+
+// Java: public List<ProPurchaseOption> getAllOptions()
+// Set-union of land + landZeroMove + air + sea + aa + factory + special.
+// Caller must `delete` the returned dynamic array.
+pro_purchase_option_map_get_all_options :: proc(self: ^Pro_Purchase_Option_Map) -> [dynamic]^Pro_Purchase_Option {
+	seen: map[^Pro_Purchase_Option]struct {}
+	defer delete(seen)
+	result: [dynamic]^Pro_Purchase_Option
+	land_options := pro_purchase_option_map_get_land_options(self)
+	defer delete(land_options)
+	for o in land_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	for o in self.land_zero_move_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	for o in self.air_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	sea_options := pro_purchase_option_map_get_sea_options(self)
+	defer delete(sea_options)
+	for o in sea_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	for o in self.aa_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	for o in self.factory_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	for o in self.special_options {
+		if _, ok := seen[o]; !ok { seen[o] = {}; append(&result, o) }
+	}
+	return result
+}

@@ -920,3 +920,7 @@ game_data_reset_history :: proc(self: ^Game_Data) {
 game_data_lambda_to_bytes_0 :: proc(self: ^Game_Data, os: ^Output_Stream) {
         game_data_manager_save_game(os, self)
 }
+// games.strategy.engine.data.GameData#getDiceSides()
+game_data_get_dice_sides :: proc(self: ^Game_Data) -> i32 {
+        return self.dice_sides
+}

@@ -82,7 +82,7 @@ unit_property_name_lambda_parse_from_string_0 :: proc(s: string, prop: ^Unit_Pro
 }
 
 unit_property_name_values :: proc() -> []Unit_Property_Name {
-	return []Unit_Property_Name{
+	@(static) values := [?]Unit_Property_Name{
 		.Transported_By,
 		.Unloaded,
 		.Loaded_This_Turn,
@@ -102,6 +102,7 @@ unit_property_name_values :: proc() -> []Unit_Property_Name {
 		.Airborne,
 		.Charged_Flat_Fuel_Cost,
 	}
+	return values[:]
 }
 
 unit_property_name_values_public :: proc() -> []Unit_Property_Name {

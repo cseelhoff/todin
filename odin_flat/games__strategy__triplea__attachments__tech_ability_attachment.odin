@@ -2,6 +2,24 @@ package game
 
 import "core:fmt"
 
+// Java: TechAdvance.TECH_PROPERTY_* string constants. Mirror the Java
+// declarations verbatim; values are the property keys consumed by
+// `TechAttachment` and the predefined-technology lookup map.
+TECH_PROPERTY_SUPER_SUBS                  :: "superSub"
+TECH_PROPERTY_JET_POWER                   :: "jetPower"
+TECH_PROPERTY_IMPROVED_SHIPYARDS          :: "shipyards"
+TECH_PROPERTY_AA_RADAR                    :: "aARadar"
+TECH_PROPERTY_LONG_RANGE_AIRCRAFT         :: "longRangeAir"
+TECH_PROPERTY_HEAVY_BOMBER                :: "heavyBomber"
+TECH_PROPERTY_IMPROVED_ARTILLERY_SUPPORT  :: "improvedArtillerySupport"
+TECH_PROPERTY_ROCKETS                     :: "rocket"
+TECH_PROPERTY_PARATROOPERS                :: "paratroopers"
+TECH_PROPERTY_INCREASED_FACTORY_PRODUCTION :: "increasedFactoryProduction"
+TECH_PROPERTY_WAR_BONDS                   :: "warBonds"
+TECH_PROPERTY_MECHANIZED_INFANTRY         :: "mechanizedInfantry"
+TECH_PROPERTY_INDUSTRIAL_TECHNOLOGY       :: "industrialTechnology"
+TECH_PROPERTY_DESTROYER_BOMBARD           :: "destroyerBombard"
+
 // Java: TechAbilityAttachment.ABILITY_CAN_BLITZ / ABILITY_CAN_BOMBARD.
 // Public string constants enumerating the abilities understood by
 // `setUnitAbilitiesGained`.
@@ -289,7 +307,6 @@ tech_ability_attachment_split_and_validate :: proc(
 	string_array := default_attachment_split_on_colon(value)
 	if len(value) == 0 || len(string_array) > 2 {
 		suffix := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(suffix)
 		fmt.panicf("%s cannot be empty or have more than two fields%s", name, suffix)
 	}
 	return string_array
@@ -313,7 +330,6 @@ tech_ability_attachment_get_int_in_range :: proc(
 	}
 	if int_value < min_value || int_value > max {
 		suffix := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(suffix)
 		undefined_clause := ""
 		if allow_undefined {
 			undefined_clause = " -1 (no effect), or be"
@@ -365,7 +381,6 @@ tech_ability_attachment_set_rocket_dice_number :: proc(
 	defer delete(s)
 	if len(s) != 2 {
 		suffix := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(suffix)
 		fmt.panicf("rocketDiceNumber must have two fields%s", suffix)
 	}
 	if self.rocket_dice_number == nil {
@@ -393,7 +408,6 @@ tech_ability_attachment_set_unit_abilities_gained :: proc(
 	defer delete(s)
 	if len(s) < 2 {
 		suffix := default_attachment_this_error_msg(&self.default_attachment)
-		defer delete(suffix)
 		fmt.panicf(
 			"unitAbilitiesGained must list the unit type, then all abilities gained%s",
 			suffix,
@@ -413,7 +427,6 @@ tech_ability_attachment_set_unit_abilities_gained :: proc(
 		ability := s[i]
 		if !(ability == ABILITY_CAN_BLITZ || ability == ABILITY_CAN_BOMBARD) {
 			suffix := default_attachment_this_error_msg(&self.default_attachment)
-			defer delete(suffix)
 			fmt.panicf(
 				"unitAbilitiesGained so far only supports: %s and %s%s",
 				ABILITY_CAN_BLITZ,
