@@ -335,7 +335,7 @@ function renderNextTask(t) {
     if (t.kind === 'TEST_DEP') {
       const action = document.createElement('div');
       action.className = 'action';
-      action.textContent = 'Test the deepest yellow dependency, then `scripts/mark_test_status.py <KEY> {green|red}`:';
+      action.textContent = 'Classify EVERY yellow sibling first (write targeted test, mark green or red). Only drill into a sibling once it is confirmed red. Suggested visit order (deepest first):';
       frag.appendChild(action);
       const ul = document.createElement('ul');
       for (const c of t.deepest_yellow_children) {

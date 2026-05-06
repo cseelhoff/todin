@@ -327,7 +327,8 @@ player_select_casualties :: proc(
 			allow_multiple_hits_per_unit,
 		)
 	}
-	return casualty_details_new_auto_calculated(true)
+	// Java AbstractAi default: return new CasualtyDetails(defaultCasualties, false).
+	return casualty_details_new_from_list_auto_calculated(default_casualties, false)
 }
 
 // games.strategy.engine.player.Player#reportError(java.lang.String)

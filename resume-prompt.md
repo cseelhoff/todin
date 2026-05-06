@@ -801,17 +801,24 @@ it is the canonical methodology and the orchestrator MUST follow
 it for every Phase C failure. Summary:
 
 1. From the failing snapshot's JSON diff (or panic frame),
-   identify the failing Odin proc and translate to its Java
-   `method_key`.
-2. `SELECT method_layer FROM methods WHERE method_key = '<KEY>';`
-3. If `method_layer == 0` → re-port that proc from `.java`,
-   line-for-line.
-4. Otherwise, list dependencies via `dependencies` table, run a
-   targeted snapshot test for each, and recurse on any that fail.
-   Recursion strictly decreases `method_layer` and terminates at
-   layer 0.
-5. The unique proc whose own dependencies all pass but whose own
-   output diverges IS the bug site. Re-port it from `.java`,
+   identify the failing Odin proc, translate to its Java
+   `method_key`, and mark it **red** with
+   `scripts/mark_test_status.py <KEY> red --note '<symptom>'`.
+2. Run `python3 scripts/next_task.py`. The picker chooses the
+   deepest red and lists its yellow (unclassified) dependencies.
+3. **Classify every yellow sibling first.** Yellow means
+   UNKNOWN, not "the bug." Write a targeted test for each yellow
+   sibling, run it, and mark the result green or red via
+   `scripts/mark_test_status.py`. Order does not matter, but you
+   MUST visit every yellow sibling before drilling.
+4. If any sibling came back red, re-run `next_task.py` — the
+   picker will choose it as the new deepest red and you drill
+   there. If every sibling came back green, the picker pops up
+   to `INVESTIGATE_PROC` on the original red — the bug is in its
+   own body. Recursion strictly decreases `method_layer` and
+   terminates at layer 0 leaves.
+5. The unique proc whose own dependencies all pass but whose
+   own output diverges IS the bug site. Re-port it from `.java`,
    never invent code.
 6. **Never write Odin from scratch.** Open the original Java
    method at `java_file_path:java_lines`, read it in full, and
@@ -822,7 +829,10 @@ it for every Phase C failure. Summary:
    (when the diff genuinely traces to harness data the loader
    isn't carrying) edit `templates/odin_test_common/json_loader.odin`
    + `scripts/patch_triplea.py` and re-run bootstrap.
-8. Record each layer-0 fix in `/memories/repo/phase-c-state.md`
+8. **Never drill into a yellow node directly.** It might be
+   perfectly correct; classifying it red first is the only way
+   to bound the search.
+9. Record each layer-0 fix in `/memories/repo/phase-c-state.md`
    so future resume sessions see the audit trail.
 
 The drill-down is order-of-magnitude cheaper than guess-and-check

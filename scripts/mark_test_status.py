@@ -11,6 +11,19 @@ Status semantics (drill-down doctrine):
     red    = entity has failing tests OR is the known cause of a downstream failure.
     yellow = untested / unknown (default for any entity not yet visited).
 
+Drill-down workflow (enforced by scripts/next_task.py):
+    1. The picker chooses the deepest red proc.
+    2. Yellow children of that red are UNCLASSIFIED, not "the bug."
+       You MUST evaluate every yellow sibling (write a targeted test,
+       mark green or red) before drilling.  Order does not matter, but
+       all yellow siblings must be classified first.
+    3. If any sibling came back red, drill into the deepest such red
+       on the next picker iteration.  If every sibling came back green,
+       the picker pops up to INVESTIGATE_PROC on the parent red — the
+       bug is in its own body.
+    4. Never drill into a yellow node directly (it might be perfectly
+       fine and waste an iteration); always classify it red first.
+
 `entity_key` is the exact `primary_key` value from the `entities` table
 (e.g. `proc:games.strategy.engine.framework.ServerGame#runNextStep()` or
 `struct:games.strategy.triplea.delegate.battle.BattleDelegate`).

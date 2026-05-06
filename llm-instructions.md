@@ -556,10 +556,22 @@ exact algorithm that governs this entire workflow:
      `override`}, joined to `methods`). Each dep's status comes
      from `test_status` (default **yellow** when unrecorded).
   3. Emit one of three task kinds:
-       - **`TEST_DEP`** — the red has at least one yellow dep.
-         The picker returns the deepest yellow(s); your job is to
-         write a targeted test, run it, then call
-         `scripts/mark_test_status.py <KEY> {green|red}`.
+       - **`TEST_DEP`** — the chosen red has at least one yellow
+         dep. **Yellow means UNKNOWN, not "the bug."** Your
+         job is to *classify every yellow sibling first* by
+         writing a targeted test for each one and marking it
+         **green** or **red** via
+         `scripts/mark_test_status.py <KEY> {green|red}`. Order
+         doesn't matter, but you must visit them all before
+         drilling. Then:
+           * If any sibling came back **red**, drill into the
+             deepest such red on the next picker iteration
+             (it will surface automatically).
+           * If every sibling came back **green**, the picker
+             will pop up to `INVESTIGATE_PROC` on the original
+             red — the bug is in that proc's own body.
+         **Never** assume the deepest yellow is the bug and
+         drill into it without first classifying its siblings.
        - **`INVESTIGATE_PROC`** — every dep is green (or the
          proc is a leaf with no recorded deps). The bug is
          inside this proc itself: re-read the original Java in
@@ -571,7 +583,7 @@ exact algorithm that governs this entire workflow:
 
 You **MUST** start every drill-down iteration by running the
 picker and quoting its `kind` + `red` + (if `TEST_DEP`)
-deepest-yellow list in your trace table / progress note. Do not
+yellow-children list in your trace table / progress note. Do not
 guess what to test next — the picker has the deterministic
 answer. Same view is rendered at the top of the dashboard
 (`/api/next`).

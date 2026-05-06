@@ -187,10 +187,12 @@ select_main_battle_casualties_apply :: proc(
 
 
 // Stateless wrapper matching the fire_round_steps_factory_builder
-// casualty_selector proc-value signature.
+// casualty_selector proc-value signature. Creates a fresh
+// Select_Main_Battle_Casualties on each call (mirrors Java where each
+// FirstStrike / General step constructs `new SelectMainBattleCasualties()`).
 select_main_battle_casualties_apply_stateless :: proc(
 	bridge: ^I_Delegate_Bridge,
 	step: ^Select_Casualties,
 ) -> ^Casualty_Details {
-	return select_main_battle_casualties_apply(nil, bridge, step)
+	return select_main_battle_casualties_apply(select_main_battle_casualties_new(), bridge, step)
 }

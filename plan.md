@@ -96,16 +96,21 @@ When a snapshot diverges, **do NOT guess**. Use the layered drill-down
 procedure in `llm-instructions.md` "Layered drill-down debugging":
 
 1. Identify the failing proc → look up its `method_layer` in
-   `port.sqlite`.
-2. If `method_layer > 0`, list its dependencies from the
-   `dependencies` table and run targeted tests on each.
-3. Recurse on any failing dependency. The recursion strictly
-   decreases layer and terminates at layer 0.
-4. The bug is either a layer-0 leaf with a wrong body, or a
-   higher-layer proc whose own dependencies all pass but whose
-   output still diverges.
-5. Fix by re-porting from the original `.java` source, faithful
-   line-for-line. Never write Odin logic from scratch.
+   `port.sqlite`. Mark it **red** in `test_status`.
+2. Run `python3 scripts/next_task.py`. The picker chooses the
+   deepest red and lists its yellow (unclassified) dependencies.
+3. **Classify every yellow dependency first** — write a targeted
+   test for each, mark the result green or red. Yellow means
+   UNKNOWN, not "the bug"; never drill into a yellow node
+   directly.
+4. If any sibling came back red, the picker will choose it as
+   the new deepest red on the next iteration; drill there.
+5. If every sibling came back green, the picker pops up to
+   `INVESTIGATE_PROC` on the original red — the bug is in its
+   own body. Re-read the original Java in full and fix the Odin
+   port line-for-line.
+6. The recursion strictly decreases layer and terminates at
+   layer 0 leaves. Never write Odin logic from scratch.
 
 ## Rules
 
