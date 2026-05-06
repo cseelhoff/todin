@@ -22,6 +22,12 @@
             # Odin compiler (Odin is the target language)
             odin
 
+            # Native debuggers for the Odin port (Odin emits DWARF; both work).
+            # lldb pairs with the VS Code "CodeLLDB" extension (vadimcn.vscode-lldb).
+            # gdb pairs with the VS Code "C/C++" extension (ms-vscode.cpptools).
+            lldb
+            gdb
+
             # Glue scripting + database
             python3
             sqlite

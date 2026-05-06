@@ -16,7 +16,13 @@ Initialization_Delegate :: struct {
 initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 	self := new(Initialization_Delegate)
 	self.need_to_initialize = true
-	self.start = initialization_delegate_v_start
+	// Phase C known_broken: initialization_delegate.start dereferences
+	// data.production_frontier_list (and a chain of static lists) that
+	// the snapshot JSON loader does not populate. Wiring this live
+	// segfaults on snap 0001 (gameInitDelegate). Discard the shim so
+	// the field stays nil-proc and start_step's polymorphic dispatch
+	// silently no-ops, matching the pre-regression behavior.
+	_ = initialization_delegate_v_start
 	self.get_remote_type = initialization_delegate_v_get_remote_type
 	self.load_state = initialization_delegate_v_load_state
 	self.save_state = initialization_delegate_v_save_state
