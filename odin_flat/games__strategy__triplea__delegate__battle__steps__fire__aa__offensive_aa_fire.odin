@@ -9,6 +9,8 @@ offensive_aa_fire_new :: proc(battle_state: ^Battle_State, battle_actions: ^Batt
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.side = .OFFENSE
+	self.battle_step.get_all_step_details = aa_fire_and_casualty_step_v_get_all_step_details
+	self.battle_step.i_executable.execute = aa_fire_and_casualty_step_v_execute
 	return self
 }
 

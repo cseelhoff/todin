@@ -16,6 +16,7 @@ remove_unprotected_units_general_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = remove_unprotected_units_general_v_get_all_step_details
+	self.battle_step.i_executable.execute = remove_unprotected_units_v_execute
 	return self
 }
 

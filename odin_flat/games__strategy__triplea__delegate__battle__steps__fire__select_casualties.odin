@@ -3,11 +3,16 @@ package game
 import "core:fmt"
 
 Select_Casualties :: struct {
+	using battle_step: Battle_Step,
 	battle_state:     ^Battle_State,
 	side:             Battle_State_Side,
 	firing_group:     ^Firing_Group,
 	fire_round_state: ^Fire_Round_State,
 	select_casualties: proc(bridge: ^I_Delegate_Bridge, step: ^Select_Casualties) -> ^Casualty_Details,
+}
+
+select_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	select_casualties_execute(cast(^Select_Casualties)self, stack, bridge)
 }
 
 select_casualties_new :: proc(
@@ -23,6 +28,7 @@ select_casualties_new :: proc(
 	self.firing_group = firing_group
 	self.fire_round_state = fire_round_state
 	self.select_casualties = select_casualties
+	self.battle_step.i_executable.execute = select_casualties_v_execute
 	return self
 }
 

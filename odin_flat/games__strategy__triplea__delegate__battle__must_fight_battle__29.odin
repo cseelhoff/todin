@@ -16,7 +16,12 @@ must_fight_battle_29_new :: proc(outer: ^Must_Fight_Battle, executable: ^I_Execu
 	self := new(Must_Fight_Battle_29)
 	self.this_0 = outer
 	self.loop = executable
+	self.i_executable.execute = must_fight_battle_29_v_execute
 	return self
+}
+
+must_fight_battle_29_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	must_fight_battle_29_execute(cast(^Must_Fight_Battle_29)self, stack, bridge)
 }
 
 // games.strategy.triplea.delegate.battle.MustFightBattle$29#execute

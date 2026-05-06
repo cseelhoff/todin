@@ -65,41 +65,33 @@ fire_round_steps_factory_create_steps :: proc(self: ^Fire_Round_Steps_Factory) -
 	for firing_group in groups {
 		fire_round_state := fire_round_state_new()
 
-		roll_dice_step := new(Roll_Dice_Step)
-		roll_dice_step^ = Roll_Dice_Step{
-			battle_state     = self.battle_state,
-			side             = self.side,
-			firing_group     = firing_group,
-			fire_round_state = fire_round_state,
-			roll_dice        = self.dice_roller,
-		}
-		roll_dice_battle_step := new(Battle_Step)
-		append(&result, roll_dice_battle_step)
+		roll_dice_step := roll_dice_step_new(
+			self.battle_state,
+			self.side,
+			firing_group,
+			fire_round_state,
+			self.dice_roller,
+		)
+		append(&result, &roll_dice_step.battle_step)
 
-		select_casualties := new(Select_Casualties)
-		select_casualties^ = Select_Casualties{
-			battle_state      = self.battle_state,
-			side              = self.side,
-			firing_group      = firing_group,
-			fire_round_state  = fire_round_state,
-			select_casualties = self.casualty_selector,
-		}
-		select_casualties_battle_step := new(Battle_Step)
-		append(&result, select_casualties_battle_step)
+		select_casualties := select_casualties_new(
+			self.battle_state,
+			self.side,
+			firing_group,
+			fire_round_state,
+			self.casualty_selector,
+		)
+		append(&result, &select_casualties.battle_step)
 
-		mark_casualties := new(Mark_Casualties)
-		mark_casualties^ = Mark_Casualties{
-			battle_state     = self.battle_state,
-			battle_actions   = self.battle_actions,
-			side             = self.side,
-			firing_group     = firing_group,
-			fire_round_state = fire_round_state,
-			return_fire      = self.return_fire,
-		}
+		mark_casualties := mark_casualties_new(
+			self.battle_state,
+			self.battle_actions,
+			self.side,
+			firing_group,
+			fire_round_state,
+			self.return_fire,
+		)
 		append(&result, &mark_casualties.battle_step)
-
-		_ = roll_dice_step
-		_ = select_casualties
 	}
 	return result
 }
@@ -121,45 +113,35 @@ fire_round_steps_factory_builder :: proc() -> ^Fire_Round_Steps_Factory_Fire_Rou
 fire_round_steps_factory_lambda__create_steps__0 :: proc(self: ^Fire_Round_Steps_Factory, firing_group: ^Firing_Group) -> [dynamic]^Battle_Step {
 	fire_round_state := fire_round_state_new()
 
-	roll_dice_step := new(Roll_Dice_Step)
-	roll_dice_step^ = Roll_Dice_Step{
-		battle_state     = self.battle_state,
-		side             = self.side,
-		firing_group     = firing_group,
-		fire_round_state = fire_round_state,
-		roll_dice        = self.dice_roller,
-	}
+	roll_dice_step := roll_dice_step_new(
+		self.battle_state,
+		self.side,
+		firing_group,
+		fire_round_state,
+		self.dice_roller,
+	)
 
-	select_casualties := new(Select_Casualties)
-	select_casualties^ = Select_Casualties{
-		battle_state      = self.battle_state,
-		side              = self.side,
-		firing_group      = firing_group,
-		fire_round_state  = fire_round_state,
-		select_casualties = self.casualty_selector,
-	}
+	select_casualties := select_casualties_new(
+		self.battle_state,
+		self.side,
+		firing_group,
+		fire_round_state,
+		self.casualty_selector,
+	)
 
-	mark_casualties := new(Mark_Casualties)
-	mark_casualties^ = Mark_Casualties{
-		battle_state     = self.battle_state,
-		battle_actions   = self.battle_actions,
-		side             = self.side,
-		firing_group     = firing_group,
-		fire_round_state = fire_round_state,
-		return_fire      = self.return_fire,
-	}
+	mark_casualties := mark_casualties_new(
+		self.battle_state,
+		self.battle_actions,
+		self.side,
+		firing_group,
+		fire_round_state,
+		self.return_fire,
+	)
 
-	// Roll_Dice_Step / Select_Casualties don't embed Battle_Step (see the
-	// note on fire_round_steps_factory_create_steps); wrap them with fresh
-	// Battle_Step entries to preserve the Java List<BattleStep> shape.
 	result := make([dynamic]^Battle_Step, 0, 3)
-	roll_dice_battle_step := new(Battle_Step)
-	append(&result, roll_dice_battle_step)
-	select_casualties_battle_step := new(Battle_Step)
-	append(&result, select_casualties_battle_step)
+	append(&result, &roll_dice_step.battle_step)
+	append(&result, &select_casualties.battle_step)
 	append(&result, &mark_casualties.battle_step)
 
-	_ = roll_dice_step
-	_ = select_casualties
 	return result
 }

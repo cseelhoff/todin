@@ -1422,6 +1422,7 @@ must_fight_battle_new :: proc(
 	self := new(Must_Fight_Battle)
 	self.dependent_battle = base^
 	free(base)
+	self.is_must_fight_battle = true
 
 	// Java field initializers (run before the constructor body in Java).
 	self.attacking_waiting_to_die = make([dynamic]^Unit)

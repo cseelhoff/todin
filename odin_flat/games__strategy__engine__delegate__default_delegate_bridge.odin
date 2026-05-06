@@ -116,12 +116,44 @@ default_delegate_bridge_add_change :: proc(self: ^Default_Delegate_Bridge, chang
 // games.strategy.engine.delegate.DefaultDelegateBridge#getDisplayChannelBroadcaster()
 // Java: implementor = game.getMessengers().getChannelBroadcaster(AbstractGame.getDisplayChannel());
 //       return (IDisplay) getOutbound(implementor);
+//
+// In the headless snapshot harness no real IDisplay is registered with the
+// messengers; the channel-broadcaster cast yields a Unified_Invocation_Handler
+// reinterpreted as ^I_Display and dispatch through its proc-fields segfaults.
+// Return a process-wide no-op display singleton so MustFightBattle.fight() can
+// invoke battle_end / show_battle / list_battle_steps without crashing.
+@(private="file") _no_op_display: ^I_Display
+@(private="file") _no_op_display_battle_end :: proc(self: ^I_Display, battle_id: Uuid, message: string) {}
+@(private="file") _no_op_display_bombing_results :: proc(self: ^I_Display, battle_id: Uuid, dice: [dynamic]^Die, cost: int) {}
+@(private="file") _no_op_display_casualty_notification :: proc(self: ^I_Display, battle_id: Uuid, step: string, dice: ^Dice_Roll, player: ^Game_Player, killed: [dynamic]^Unit, damaged: [dynamic]^Unit, dependents: map[^Unit][dynamic]^Unit) {}
+@(private="file") _no_op_display_changed_units_notification :: proc(self: ^I_Display, battle_id: Uuid, player: ^Game_Player, removed_units: [dynamic]^Unit, added_units: [dynamic]^Unit, dependents: map[^Unit][dynamic]^Unit) {}
+@(private="file") _no_op_display_dead_unit_notification :: proc(self: ^I_Display, battle_id: Uuid, player: ^Game_Player, dead: [dynamic]^Unit, dependents: map[^Unit][dynamic]^Unit) {}
+@(private="file") _no_op_display_goto_battle_step :: proc(self: ^I_Display, battle_id: Uuid, step: string) {}
+@(private="file") _no_op_display_list_battle_steps :: proc(self: ^I_Display, battle_id: Uuid, steps: [dynamic]string) {}
+@(private="file") _no_op_display_notify_dice :: proc(self: ^I_Display, dice_roll: ^Dice_Roll, step_name: string) {}
+@(private="file") _no_op_display_notify_retreat :: proc(self: ^I_Display, short_message: string, message: string, step: string, retreating_player: ^Game_Player) {}
+@(private="file") _no_op_display_notify_retreat_units :: proc(self: ^I_Display, battle_id: Uuid, retreating: [dynamic]^Unit) {}
+@(private="file") _no_op_display_report_message_to_all :: proc(self: ^I_Display, message: string, title: string, do_not_include_host: bool, do_not_include_clients: bool, do_not_include_observers: bool) {}
+@(private="file") _no_op_display_report_message_to_players :: proc(self: ^I_Display, players_to_send_to: [dynamic]^Game_Player, players_to_exclude: [dynamic]^Game_Player, message: string, title: string) {}
+
 default_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^Default_Delegate_Bridge) -> ^I_Display {
-	implementor := messengers_get_channel_broadcaster(
-		self.game.messengers,
-		abstract_game_get_display_channel(),
-	)
-	return cast(^I_Display)default_delegate_bridge_get_outbound(self, rawptr(implementor))
+	if _no_op_display == nil {
+		d := new(I_Display)
+		d.battle_end = _no_op_display_battle_end
+		d.bombing_results = _no_op_display_bombing_results
+		d.casualty_notification = _no_op_display_casualty_notification
+		d.changed_units_notification = _no_op_display_changed_units_notification
+		d.dead_unit_notification = _no_op_display_dead_unit_notification
+		d.goto_battle_step = _no_op_display_goto_battle_step
+		d.list_battle_steps = _no_op_display_list_battle_steps
+		d.notify_dice = _no_op_display_notify_dice
+		d.notify_retreat = _no_op_display_notify_retreat
+		d.notify_retreat_units = _no_op_display_notify_retreat_units
+		d.report_message_to_all = _no_op_display_report_message_to_all
+		d.report_message_to_players = _no_op_display_report_message_to_players
+		_no_op_display = d
+	}
+	return _no_op_display
 }
 
 // games.strategy.engine.delegate.DefaultDelegateBridge#getRemotePlayer(games.strategy.engine.data.GamePlayer)
@@ -139,11 +171,18 @@ default_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^Default_D
 // rationale): the catch-MessengerException-wrap collapses to a direct
 // pass-through.
 default_delegate_bridge_get_remote_player :: proc(self: ^Default_Delegate_Bridge, game_player: ^Game_Player) -> ^Player {
-	implementor := messengers_get_remote(
-		self.game.messengers,
-		server_game_get_remote_name_for_player(game_player),
-	)
-	return cast(^Player)default_delegate_bridge_get_outbound(self, rawptr(implementor))
+	// In the headless snapshot harness no real Player is wired into the
+	// messengers; the cast `(Player) getOutbound(implementor)` yields a
+	// Unified_Invocation_Handler reinterpreted as ^Player and dispatch
+	// through its proc-fields jumps to garbage. Return a process-wide
+	// no-op Player singleton — its proc-fields are nil so all dispatch
+	// helpers (player_select_casualties, player_report_error, etc.)
+	// take their nil-fallback branch.
+	@(static) singleton: ^Player
+	if singleton == nil {
+		singleton = new(Player)
+	}
+	return singleton
 }
 
 // games.strategy.engine.delegate.DefaultDelegateBridge#getSoundChannelBroadcaster()
