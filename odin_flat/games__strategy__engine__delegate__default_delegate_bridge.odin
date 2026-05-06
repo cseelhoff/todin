@@ -89,6 +89,16 @@ default_delegate_bridge_get_outbound :: proc(
 	)
 }
 
+// TEST-ONLY instrumentation hook (dep_mark_attacking_transports golden test).
+// When dbg_add_change_capture_enabled is true, every top-level Change passed
+// to default_delegate_bridge_add_change is captured into
+// dbg_add_change_capture_changes BEFORE the composite-singleton unwrap and
+// the server_game_add_change forwarding, and the proc short-circuits so the
+// test does not need a fully-wired Server_Game. Production code never sets
+// the flag; the hook is invisible to the snapshot harness.
+dbg_add_change_capture_enabled: bool
+dbg_add_change_capture_changes: [dynamic]^Change
+
 // games.strategy.engine.delegate.DefaultDelegateBridge#addChange(games.strategy.engine.data.Change)
 // Java:
 //   if (change instanceof CompositeChange) {
@@ -100,6 +110,10 @@ default_delegate_bridge_get_outbound :: proc(
 // The composite-with-one-child shortcut unwraps trivial wrappers so that
 // the broadcaster sees the inner change directly.
 default_delegate_bridge_add_change :: proc(self: ^Default_Delegate_Bridge, change: ^Change) {
+	if dbg_add_change_capture_enabled {
+		append(&dbg_add_change_capture_changes, change)
+		return
+	}
 	if change != nil && change.kind == .Composite_Change {
 		c := cast(^Composite_Change)change
 		children := composite_change_get_changes(c)

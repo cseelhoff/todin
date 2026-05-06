@@ -806,11 +806,21 @@ it for every Phase C failure. Summary:
    `scripts/mark_test_status.py <KEY> red --note '<symptom>'`.
 2. Run `python3 scripts/next_task.py`. The picker chooses the
    deepest red and lists its yellow (unclassified) dependencies.
-3. **Classify every yellow sibling first.** Yellow means
-   UNKNOWN, not "the bug." Write a targeted test for each yellow
-   sibling, run it, and mark the result green or red via
-   `scripts/mark_test_status.py`. Order does not matter, but you
-   MUST visit every yellow sibling before drilling.
+3. **Classify every yellow sibling first via a fixture-driven
+   golden test.** Yellow means UNKNOWN, not "the bug." For each
+   yellow sibling, follow the methodology in
+   `llm-instructions.md` §"How to classify a yellow proc":
+   either prove coverage by an existing passing snapshot
+   (instrument-and-rerun, post-state diff empty), or write a
+   targeted test that loads a real `before.json` fixture, calls
+   the proc with the parent's actual call-site arguments, and
+   value-compares the outputs against a golden derived from the
+   Java reference. Mark the result green or red via
+   `scripts/mark_test_status.py`. **Crash-only / non-nil /
+   non-empty / trivial-input assertions are forbidden as proof
+   of green.** If you cannot build a real golden test for a
+   sibling, leave it yellow — never mark green to "make
+   progress."
 4. If any sibling came back red, re-run `next_task.py` — the
    picker will choose it as the new deepest red and you drill
    there. If every sibling came back green, the picker pops up
@@ -830,10 +840,14 @@ it for every Phase C failure. Summary:
    isn't carrying) edit `templates/odin_test_common/json_loader.odin`
    + `scripts/patch_triplea.py` and re-run bootstrap.
 8. **Never drill into a yellow node directly.** It might be
-   perfectly correct; classifying it red first is the only way
-   to bound the search.
-9. Record each layer-0 fix in `/memories/repo/phase-c-state.md`
-   so future resume sessions see the audit trail.
+   perfectly correct; classifying it via real golden test is
+   the only way to bound the search.
+9. **Never mark a proc green based on "doesn't crash."** False
+   greens hide bugs at the wrong layer and defeat the whole
+   drill-down. If the only test you can write is a smoke test,
+   the proc must stay yellow.
+10. Record each layer-0 fix in `/memories/repo/phase-c-state.md`
+    so future resume sessions see the audit trail.
 
 The drill-down is order-of-magnitude cheaper than guess-and-check
 debugging: it bounds the search space to a strict subtree of

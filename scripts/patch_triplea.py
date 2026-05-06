@@ -63,7 +63,10 @@ PRS_REL = (
 )
 
 GRADLE_MARKER = "Added by triplea-port-bootstrap"
+AGENT_GRADLE_MARKER = "triplea-port-bootstrap: snapshot agent"
 PRS_MARKER = "// triplea-port-bootstrap: fixedSeed"
+
+SNAPSHOT_AGENT_REL = "conversion/snapshot-agent"
 
 GRADLE_BLOCK_GROOVY = """
 // Added by triplea-port-bootstrap to make jacocoTestReport aggregate
@@ -125,6 +128,51 @@ tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
 }
 """
 
+AGENT_GRADLE_BLOCK_GROOVY = """
+// triplea-port-bootstrap: snapshot agent
+// When -PsnapshotAgent=<path-to-jar> is passed, attach the Byte Buddy
+// snapshot agent to the test JVM. Per-call config + output dir are passed
+// via -Dsnapshot.config and -Dsnapshot.outDir (set by
+// scripts/capture_proc_snapshot.py).
+tasks.withType(Test).configureEach {
+    if (project.hasProperty('snapshotAgent')) {
+        def agentJar = project.property('snapshotAgent')
+        def methodsFile = project.findProperty('snapshotMethods') ?: "${rootProject.projectDir}/conversion/snapshot-agent/jfr-methods.txt"
+        def configFile  = project.findProperty('snapshotConfig')  ?: "${rootProject.projectDir}/conversion/snapshot-agent/snapshot.config"
+        def outDir      = System.getProperty('snapshot.outDir', "${project.layout.buildDirectory.get()}/snapshots")
+        jvmArgs "-javaagent:${agentJar}=methods=${methodsFile},config=${configFile},outDir=${outDir}"
+        jvmArgs "-XX:+EnableDynamicAgentLoading"
+        systemProperty 'snapshot.outDir', outDir
+        if (System.getProperty('snapshot.rounds') != null) {
+            systemProperty 'snapshot.rounds', System.getProperty('snapshot.rounds')
+        }
+    }
+}
+"""
+
+AGENT_GRADLE_BLOCK_KTS = """
+// triplea-port-bootstrap: snapshot agent
+// When -PsnapshotAgent=<path-to-jar> is passed, attach the Byte Buddy
+// snapshot agent to the test JVM. Per-call config + output dir are passed
+// via -Dsnapshot.config and -Dsnapshot.outDir (set by
+// scripts/capture_proc_snapshot.py).
+tasks.withType<Test>().configureEach {
+    if (project.hasProperty("snapshotAgent")) {
+        val agentJar = project.property("snapshotAgent") as String
+        val methodsFile = (project.findProperty("snapshotMethods") as String?)
+            ?: "${rootProject.projectDir}/conversion/snapshot-agent/jfr-methods.txt"
+        val configFile = (project.findProperty("snapshotConfig") as String?)
+            ?: "${rootProject.projectDir}/conversion/snapshot-agent/snapshot.config"
+        val outDir = System.getProperty("snapshot.outDir")
+            ?: "${project.layout.buildDirectory.get()}/snapshots"
+        jvmArgs("-javaagent:${agentJar}=methods=${methodsFile},config=${configFile},outDir=${outDir}")
+        jvmArgs("-XX:+EnableDynamicAgentLoading")
+        systemProperty("snapshot.outDir", outDir)
+        System.getProperty("snapshot.rounds")?.let { systemProperty("snapshot.rounds", it) }
+    }
+}
+"""
+
 
 def patch_gradle(triplea: Path) -> None:
     smoke = triplea / "game-app" / "smoke-testing"
@@ -139,9 +187,19 @@ def patch_gradle(triplea: Path) -> None:
     txt = target.read_text()
     if GRADLE_MARKER in txt:
         print(f"  gradle: already patched ({target.name}, {flavor})")
-        return
-    target.write_text(txt.rstrip() + "\n" + block)
-    print(f"  gradle: patched {target.name} ({flavor})")
+    else:
+        target.write_text(txt.rstrip() + "\n" + block)
+        print(f"  gradle: patched {target.name} ({flavor})")
+
+    # Append the snapshot-agent JVM-args block (separate marker so the two
+    # patches are independent and can be added/refreshed in either order).
+    agent_block = AGENT_GRADLE_BLOCK_KTS if flavor == "kotlin DSL" else AGENT_GRADLE_BLOCK_GROOVY
+    txt = target.read_text()
+    if AGENT_GRADLE_MARKER in txt:
+        print(f"  gradle: agent block already present")
+    else:
+        target.write_text(txt.rstrip() + "\n" + agent_block)
+        print(f"  gradle: appended snapshot-agent JVM-args block")
 
 
 def patch_plain_random_source(triplea: Path) -> None:
@@ -229,6 +287,41 @@ def inject_odin_test_common(triplea: Path) -> None:
         print(f"  odin: wrote {name}")
 
 
+def inject_snapshot_agent(triplea: Path) -> None:
+    """Install the Byte Buddy snapshot agent under triplea/conversion/snapshot-agent/.
+
+    Mirror-copies the entire templates/snapshot-agent/ tree (gradle build,
+    settings, agent + interceptor sources, master jfr-methods.txt, and the
+    default snapshot.config.template). The first build of
+    `cd <triplea>/conversion/snapshot-agent && ../../gradlew jar` produces a
+    fat-jar with byte-buddy 1.17.7 bundled.
+    """
+    src_root = TEMPLATES / "snapshot-agent"
+    dst_root = triplea / SNAPSHOT_AGENT_REL
+    if not src_root.is_dir():
+        sys.exit(f"  snapshot-agent: template missing at {src_root}")
+    written = 0
+    skipped = 0
+    for src in src_root.rglob("*"):
+        if src.is_dir():
+            continue
+        rel = src.relative_to(src_root)
+        dst = dst_root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if dst.is_file() and dst.read_bytes() == src.read_bytes():
+            skipped += 1
+            continue
+        shutil.copyfile(src, dst)
+        written += 1
+    # Materialise a default snapshot.config from the template if not present.
+    cfg = dst_root / "snapshot.config"
+    tpl = dst_root / "snapshot.config.template"
+    if tpl.is_file() and not cfg.is_file():
+        shutil.copyfile(tpl, cfg)
+        print(f"  snapshot-agent: seeded snapshot.config from template")
+    print(f"  snapshot-agent: {written} new/updated, {skipped} unchanged")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--triplea",
@@ -246,6 +339,7 @@ def main() -> None:
     patch_gradle(triplea)
     patch_plain_random_source(triplea)
     inject_odin_test_common(triplea)
+    inject_snapshot_agent(triplea)
     print("done")
 
 

@@ -7,22 +7,57 @@ Usage:
     scripts/mark_test_status.py --summary
 
 Status semantics (drill-down doctrine):
-    green  = entity is covered by tests AND those tests pass.
-    red    = entity has failing tests OR is the known cause of a downstream failure.
-    yellow = untested / unknown (default for any entity not yet visited).
+    green  = entity is covered by a FIXTURE-DRIVEN GOLDEN TEST whose
+             outputs are value-compared to a golden derived from the
+             Java reference, AND that test passes, AND every transitive
+             call-graph descendant is also green.
+
+             Acceptable proof of green is exactly one of:
+               (a) The proc is provably entered (instrumentation /
+                   coverage) by at least one passing snapshot in
+                   conversion/odin_tests/server_game_run_next_step/
+                   whose post-state diff against after.json is empty.
+               (b) A targeted Odin test that loads a real before.json
+                   fixture via tc.load_game_state, calls the proc with
+                   the parent's actual call-site arguments, and
+                   value-compares outputs / observable side effects
+                   against a golden derived from the Java method body.
+               (c) For pure dispatch shims only: a vtable test, IFF
+                   every concrete override is itself green by (a)/(b).
+
+             FORBIDDEN as proof of green (auto-disqualifying):
+               - testing.expect(t, true, "no crash")
+               - expect(x != nil) as the only assertion
+               - expect(len(out) > 0) without comparing contents
+               - tests driving only headless / nil-channel / empty-list
+                 early-return paths
+               - tests with synthesized nil/zero inputs instead of a
+                 real before.json fixture
+
+    red    = entity has a failing fixture-driven test, OR is the known
+             cause of a downstream golden mismatch.
+    yellow = untested / unknown (default for any entity not yet
+             visited). Yellow is the CORRECT status for a proc whose
+             only available test is crash-only or trivial-input — do
+             not promote to green.
 
 Drill-down workflow (enforced by scripts/next_task.py):
     1. The picker chooses the deepest red proc.
     2. Yellow children of that red are UNCLASSIFIED, not "the bug."
-       You MUST evaluate every yellow sibling (write a targeted test,
-       mark green or red) before drilling.  Order does not matter, but
-       all yellow siblings must be classified first.
+       You MUST evaluate every yellow sibling via a FIXTURE-DRIVEN
+       GOLDEN TEST (see methodology in llm-instructions.md §"How to
+       classify a yellow proc") and mark green or red. If you cannot
+       build a real golden test for a sibling, LEAVE IT YELLOW —
+       never mark green to "make progress."
     3. If any sibling came back red, drill into the deepest such red
        on the next picker iteration.  If every sibling came back green,
        the picker pops up to INVESTIGATE_PROC on the parent red — the
        bug is in its own body.
     4. Never drill into a yellow node directly (it might be perfectly
-       fine and waste an iteration); always classify it red first.
+       fine and waste an iteration); always classify it via a real
+       golden test first.
+    5. Never mark a proc green based on "doesn't crash." False greens
+       hide bugs at the wrong layer and defeat the entire drill-down.
 
 `entity_key` is the exact `primary_key` value from the `entities` table
 (e.g. `proc:games.strategy.engine.framework.ServerGame#runNextStep()` or

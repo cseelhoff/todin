@@ -8,9 +8,11 @@ Then open http://localhost:8765/ in a browser. The page polls
 `/api/tree` every 2 s and renders each red entity together with its
 direct (one-layer-down) call dependencies, colored by `test_status`:
 
-    green  = tests passing
+    green  = covered by a fixture-driven golden test (real before.json
+             + value comparison vs Java-derived golden); tests passing
     red    = tests failing / known cause of a downstream failure
-    yellow = untested / unknown
+    yellow = untested / unknown (also: crash-only / trivial-input tests
+             do NOT promote to green — leave yellow)
 
 Stdlib-only (http.server, sqlite3, json). No external deps.
 """
@@ -335,7 +337,7 @@ function renderNextTask(t) {
     if (t.kind === 'TEST_DEP') {
       const action = document.createElement('div');
       action.className = 'action';
-      action.textContent = 'Classify EVERY yellow sibling first (write targeted test, mark green or red). Only drill into a sibling once it is confirmed red. Suggested visit order (deepest first):';
+      action.textContent = 'Classify EVERY yellow sibling via a fixture-driven golden test (load real before.json, call with parent\'s actual args, value-compare to Java-derived golden). Crash-only / non-nil / non-empty / trivial-input asserts are FORBIDDEN as proof of green — leave yellow if you cannot build a real golden test. See llm-instructions.md §"How to classify a yellow proc". Suggested visit order (deepest first):';
       frag.appendChild(action);
       const ul = document.createElement('ul');
       for (const c of t.deepest_yellow_children) {

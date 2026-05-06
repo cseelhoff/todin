@@ -99,10 +99,18 @@ procedure in `llm-instructions.md` "Layered drill-down debugging":
    `port.sqlite`. Mark it **red** in `test_status`.
 2. Run `python3 scripts/next_task.py`. The picker chooses the
    deepest red and lists its yellow (unclassified) dependencies.
-3. **Classify every yellow dependency first** — write a targeted
-   test for each, mark the result green or red. Yellow means
-   UNKNOWN, not "the bug"; never drill into a yellow node
-   directly.
+3. **Classify every yellow dependency via a fixture-driven
+   golden test** (see `llm-instructions.md` §"How to classify a
+   yellow proc"). Acceptable proof of green is one of:
+   (a) the proc fires under a passing snapshot whose post-state
+   matches `after.json`, confirmed by instrumentation; or
+   (b) a targeted test that loads a real `before.json`, calls
+   the proc with the parent's real call-site arguments, and
+   value-compares outputs to a golden derived from Java.
+   **Crash-only / non-nil / non-empty / trivial-input asserts
+   are forbidden as proof of green.** Yellow means UNKNOWN, not
+   "the bug"; never drill into a yellow node directly. If you
+   cannot build a real golden test for a dep, leave it yellow.
 4. If any sibling came back red, the picker will choose it as
    the new deepest red on the next iteration; drill there.
 5. If every sibling came back green, the picker pops up to
@@ -111,6 +119,8 @@ procedure in `llm-instructions.md` "Layered drill-down debugging":
    port line-for-line.
 6. The recursion strictly decreases layer and terminates at
    layer 0 leaves. Never write Odin logic from scratch.
+7. Never mark a proc green based on "doesn't crash." False
+   greens hide bugs at the wrong layer and defeat the drill-down.
 
 ## Rules
 

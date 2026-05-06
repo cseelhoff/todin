@@ -1,0 +1,36 @@
+# Snapshot Agent Configuration (default template)
+# ================================================
+# This file is the default config installed alongside the agent.
+# scripts/capture_proc_snapshot.py rewrites a per-call copy of this file
+# (with include filters set to a single class + method) before invoking the
+# smoke test. Edit this file directly only when you want to change the
+# defaults applied to ALL captures.
+
+# --- Tick Counter master method list ---
+# Every method listed here gets a tick-counter increment on entry (cheap).
+# Methods NOT listed here are invisible to the agent.
+methods.file=conversion/snapshot-agent/jfr-methods.txt
+
+# --- Snapshot Tick Range ---
+# Capture before/after dumps when the tick counter is in this inclusive range.
+# Set rangeStart=0 rangeEnd=0 to disable all snapshots (tick counting still runs).
+snapshot.rangeStart=1
+snapshot.rangeEnd=50000000
+
+# --- Output ---
+snapshot.outDir=build/snapshots
+
+# --- Method Filters (snapshots only — tick counting is unaffected) ---
+# When ANY include filter is set, ONLY matches get snapshotted. Excludes always win.
+# Substring match against simple class name and/or method name.
+#
+#   snapshot.include.classes=MustFightBattle
+#   snapshot.include.methods=determineStepStrings
+#   snapshot.exclude.classes=UnifiedInvocationHandler,PlayerBridge
+#   snapshot.exclude.methods=hashCode,equals,toString,lambda$
+
+# --- Serialization toggles ---
+# Full GameData JSON is ~50-200ms per call. Disable when only return/params matter.
+snapshot.saveGameData=true
+snapshot.saveParams=true
+snapshot.saveReturn=true

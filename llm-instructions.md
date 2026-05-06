@@ -452,23 +452,60 @@ CREATE TABLE test_status (
 
 Semantics — exactly three states:
 
-  - **green**: the entity has at least one targeted test
-    (Odin unit test, vtable test, or per-proc snapshot) AND
-    every such test currently passes AND **every transitive
-    call-graph descendant is also green**.  This is the
-    invariant: a green proc cannot be a transitive caller of
-    a red proc.  If a "passing" test exists but the proc still
+  - **green**: the entity is covered by **at least one
+    fixture-driven test that compares observable outputs against
+    a golden value derived from the Java reference**, AND that
+    test currently passes, AND **every transitive call-graph
+    descendant is also green**.
+
+    What counts as a fixture-driven golden test (any one of):
+
+      a. A snapshot test in `conversion/odin_tests/server_game_run_next_step/`
+         whose execution path **provably enters the proc** (use a
+         temporary `eprintln` counter or an explicit instrumentation
+         build-tag to confirm coverage) AND whose post-state diff
+         against `after.json` is empty.
+      b. A targeted Odin test that loads a real `before.json`
+         fixture via `tc.load_game_state`, calls the proc with
+         the **exact arguments the parent passes at its real
+         call site** (capture via a temporary trace in the parent
+         if needed), and **value-compares** the proc's outputs
+         and observable side effects (history-channel events,
+         change-factory mutations, returned collections) against
+         a golden expectation derived from the Java method body
+         or from a Java-side reference run.
+      c. A vtable test asserting the proc is bound to the
+         correct concrete impl, IF the proc is purely a dispatch
+         shim (zero behaviour of its own) AND every concrete
+         override is itself green by criterion (a) or (b).
+
+    **Crash-only / liveness-only assertions are FORBIDDEN as
+    proof of green.** The following do NOT classify a proc green:
+    `testing.expect(t, true, "no crash")`, `expect(x != nil)`,
+    `expect(len(out) > 0)`, "returned without panicking", or any
+    assertion that does not value-compare the proc's output to a
+    golden derived from Java semantics. A proc that is exercised
+    on a trivial early-return path (e.g. `headless=true` short
+    circuit, `nil` channel guard, empty input list) is **not**
+    green either — the test must drive the same realistic inputs
+    the failing snapshot's parent feeds it.
+
+    Invariant: a green proc cannot be a transitive caller of a
+    red proc. If a "passing" test exists but the proc still
     transitively calls a red, that test is missing behaviour
     coverage (it exercises dispatch / a happy path that doesn't
     reach the broken callee) — the parent must stay yellow until
     the red descendant is fixed.
-  - **red**: the entity has a failing test, OR the trace-table
-    drill-down has positively identified it as the cause of
-    a downstream failure even before its own test exists.
-  - **yellow** (default): untested / unknown — no targeted
-    test has been written yet, or the entity has not been
+
+  - **red**: the entity has a failing fixture-driven test, OR
+    the trace-table drill-down has positively identified it as
+    the cause of a downstream golden mismatch.
+  - **yellow** (default): untested / unknown — no fixture-driven
+    golden test has been written yet, or the proc has not been
     visited by the drill-down. Every entity not in the
-    `test_status` table is implicitly yellow.
+    `test_status` table is implicitly yellow. **Yellow is the
+    correct status for a proc whose only available test is
+    crash-only or trivial-input** — do not promote it to green.
 
 The invariant is enforced two ways:
 
@@ -559,11 +596,17 @@ exact algorithm that governs this entire workflow:
        - **`TEST_DEP`** — the chosen red has at least one yellow
          dep. **Yellow means UNKNOWN, not "the bug."** Your
          job is to *classify every yellow sibling first* by
-         writing a targeted test for each one and marking it
-         **green** or **red** via
-         `scripts/mark_test_status.py <KEY> {green|red}`. Order
-         doesn't matter, but you must visit them all before
-         drilling. Then:
+         building a **fixture-driven golden test** for each one
+         (per the methodology in "How to classify a yellow proc"
+         below) and marking it **green** or **red** via
+         `scripts/mark_test_status.py <KEY> {green|red}`.
+         A green mark is only legitimate if the test value-
+         compares the proc's outputs to a golden derived from
+         the Java reference. Crash-only / non-nil / non-empty /
+         trivial-input assertions are explicitly forbidden as
+         proof of green — if that's all you have, the proc must
+         stay yellow and you escalate to `INVESTIGATE_PARENT`
+         (see below) instead of marking it. Then:
            * If any sibling came back **red**, drill into the
              deepest such red on the next picker iteration
              (it will surface automatically).
@@ -600,6 +643,97 @@ Termination: when `python3 scripts/next_task.py` reports
 the symptom you started from, the drill-down is done. Pop the
 trace table and write the one-line note in
 `/memories/repo/phase-c-state.md`.
+
+#### How to classify a yellow proc (mandatory methodology)
+
+Every yellow → green transition MUST be backed by a
+fixture-driven golden test. Use the following decision procedure
+in order; do **not** skip steps, do **not** invent shortcuts.
+
+**Step 1 — Coverage by an existing green snapshot.**
+
+Run the full snapshot suite and record which snapshots pass
+(`scripts/run_full_snapshot_status.py` or equivalent). For each
+yellow proc, check whether any **passing** snapshot's execution
+path enters the proc on a non-trivial branch:
+
+  1. Add a temporary one-line `eprintln` at the top of the proc
+     body, behind `when ODIN_DEBUG` or a guarded counter — never
+     a permanent log line.
+  2. Re-run the passing snapshot suite. If the proc fires under
+     a snapshot whose `after.json` diff is empty, the proc is
+     covered by a passing golden comparison and may be marked
+     **green** (note: `covered by snapshot <id> (post-state
+     matches golden)`). The instrumentation MUST be removed
+     before marking — record the snapshot id in the note as
+     evidence.
+  3. If no passing snapshot fires the proc on a realistic
+     branch, proceed to step 2.
+
+**Step 2 — Targeted fixture-driven golden test.**
+
+When step 1 fails, write a focused Odin test in
+`triplea/conversion/odin_tests/<topic>/`:
+
+  1. Load a real `before.json` via `tc.load_game_state(SNAP_DIR,
+     "<id>", "before.json")`. Pick the snapshot that drives the
+     parent red proc — the dep must see the same fixture state
+     it would see at runtime.
+  2. **Capture the parent's call-site arguments** — instrument
+     the parent proc temporarily to print the arg list (unit
+     counts, territory names, player names, flags) at the point
+     it calls the dep, run the failing snapshot once, copy the
+     observed values into the test, then remove the trace.
+  3. Build a `Default_Delegate_Bridge` the same way
+     `test_server_game_run_next_step` does (matching messengers,
+     `Delegate_Execution_Manager`, history writer) so dispatch
+     paths through `getOutbound` work.
+  4. Call the proc with those captured arguments.
+  5. **Value-compare** outputs against a golden:
+       - For procs returning a collection: assert specific
+         elements / counts derived from the Java method body
+         (or from the corresponding entries in `after.json` if
+         the proc's output is a sub-tree of the post-state).
+       - For procs with side effects on history / change /
+         attachment state: snapshot the affected sub-tree before
+         the call, call, snapshot again, and assert the diff
+         matches the Java reference diff.
+       - For procs returning a primitive: assert the exact
+         expected value, not just `!= 0` or `> 0`.
+  6. The golden expectation is derived from the Java source by
+     reading the method top-to-bottom and tracing what it would
+     produce on the captured inputs. Cite the Java line range in
+     a one-line comment at the top of the test, e.g.
+     `// Golden derived from MustFightBattle.java:1234-1267`.
+
+**Step 3 — If neither step 1 nor step 2 is feasible, leave the
+proc yellow.**
+
+If the proc is only reachable through a currently-red snapshot
+and no realistic fixture exists for it (e.g. it depends on
+runtime state the loader can't reproduce yet), the picker will
+eventually pop the parent red into `INVESTIGATE_PROC` and you
+fix the parent in place. **Do NOT manufacture a green via a
+crash-only smoke test.** The cost of a false green is a hidden
+bug at the wrong layer, exactly the failure mode this whole
+doctrine exists to prevent.
+
+**Forbidden test shapes (auto-disqualifying):**
+
+  - `testing.expect(t, true, "no crash")` after the call.
+  - `expect(x != nil)` as the only assertion on a returned
+    pointer.
+  - `expect(len(out) > 0)` without comparing the contents.
+  - Tests that drive only the headless / nil-channel / empty-
+    list early-return path of the proc.
+  - Tests whose inputs are synthesized from `nil` / zero values
+    rather than loaded from a real `before.json` fixture.
+  - Tests that exercise dispatch-shim wiring without exercising
+    the concrete impl (vtable tests are only acceptable as
+    proof of green when criterion (c) above is satisfied).
+
+If you find yourself writing one of the above, stop and either
+build the real fixture-driven test or leave the proc yellow.
 
 1. **Identify the failing proc.** From the JSON diff (or panic
    stack frame), pinpoint the specific Odin proc whose output

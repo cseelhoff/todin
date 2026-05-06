@@ -16,15 +16,24 @@ Algorithm (matches the user-spec):
     4. Decide one of three task kinds:
          - **TEST_DEP**: the red has at least one yellow dependency.
            Yellow means UNKNOWN, not "the bug."  The next move is
-           to *classify every yellow sibling first* by writing a
-           targeted test for each one and marking it green or red.
-           Only after every yellow sibling has been classified does
-           the picker drill into a confirmed red (which will surface
-           automatically as the new deepest red on the next call) —
-           or pop up to INVESTIGATE_PROC if every sibling came back
-           green.  The picker lists yellow siblings deepest-first
-           purely as a stable visit order; the order does not imply
-           that the deepest yellow is the bug.
+           to *classify every yellow sibling first* via a
+           FIXTURE-DRIVEN GOLDEN TEST (see llm-instructions.md
+           §"How to classify a yellow proc"): either prove coverage
+           by an existing passing snapshot (instrument-and-rerun),
+           or write a targeted test that loads a real before.json,
+           calls the proc with the parent's actual call-site
+           arguments, and value-compares outputs to a golden
+           derived from Java.  Crash-only / non-nil / non-empty /
+           trivial-input asserts are FORBIDDEN as proof of green —
+           if you cannot build a real golden test, leave the proc
+           yellow.  Only after every yellow sibling has been
+           classified does the picker drill into a confirmed red
+           (which will surface automatically as the new deepest red
+           on the next call) — or pop up to INVESTIGATE_PROC if
+           every sibling came back green.  The picker lists yellow
+           siblings deepest-first purely as a stable visit order;
+           the order does not imply that the deepest yellow is the
+           bug.
          - **INVESTIGATE_PROC**: every dep is green (or there are
            no recorded deps).  The bug is inside this proc itself —
            re-read the original Java, diff against the Odin port.
@@ -311,7 +320,10 @@ def _format(task: dict, top: int = 0, conn: sqlite3.Connection | None = None) ->
             "  Yellow means UNKNOWN, not \"the bug.\"  You MUST classify"
         )
         out.append(
-            "  EVERY yellow sibling (write a targeted test, mark green or red)"
+            "  EVERY yellow sibling via a FIXTURE-DRIVEN GOLDEN TEST"
+        )
+        out.append(
+            "  (see llm-instructions.md §\"How to classify a yellow proc\")"
         )
         out.append(
             "  before drilling.  Only drill into a sibling once it is confirmed red."
@@ -325,18 +337,56 @@ def _format(task: dict, top: int = 0, conn: sqlite3.Connection | None = None) ->
             out.append(f"        java:    {_fmt_path(c['java_path'], c['java_lines'])}")
             out.append(f"        odin:    {_fmt_path(c['odin_path'])}")
         out.append("")
-        out.append("Action (per yellow sibling):")
+        out.append("Action (per yellow sibling) — fixture-driven golden test:")
         out.append(
-            "  1. Write a targeted test that drives the dep with the "
-            "inputs the red caller would feed it."
+            "  1. Try coverage first: instrument the dep with a temporary"
         )
-        out.append("  2. Run the test.")
         out.append(
-            "  3. Mark the result: "
+            "     eprintln, re-run the full snapshot suite, and check whether"
+        )
+        out.append(
+            "     a passing snapshot fires it.  If yes, mark green with note"
+        )
+        out.append(
+            "     `covered by snapshot <id>` and remove the instrumentation."
+        )
+        out.append(
+            "  2. Otherwise write a targeted test that:"
+        )
+        out.append(
+            "       a. Loads a real before.json via tc.load_game_state."
+        )
+        out.append(
+            "       b. Calls the dep with the parent's actual call-site"
+        )
+        out.append(
+            "          arguments (capture via temporary trace in the parent)."
+        )
+        out.append(
+            "       c. VALUE-COMPARES outputs / observable side effects to a"
+        )
+        out.append(
+            "          golden derived from the Java method body."
+        )
+        out.append(
+            "  3. FORBIDDEN as proof of green: \"no crash\", `!= nil`, "
+            "`len > 0`,"
+        )
+        out.append(
+            "     headless / nil-channel / empty-list early-return paths,"
+        )
+        out.append(
+            "     synthesized nil/zero inputs.  If that's all you can write,"
+        )
+        out.append(
+            "     LEAVE THE PROC YELLOW — never mark green to make progress."
+        )
+        out.append(
+            "  4. Mark the result: "
             "`scripts/mark_test_status.py <KEY> {green|red} --note '...'`."
         )
         out.append(
-            "  4. Re-run `scripts/next_task.py`.  If a sibling came back red "
+            "  5. Re-run `scripts/next_task.py`.  If a sibling came back red "
             "the picker will choose it as the new deepest red and you drill in."
         )
         out.append(

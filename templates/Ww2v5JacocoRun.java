@@ -35,8 +35,8 @@ public class Ww2v5JacocoRun {
   /** Round cap for the JaCoCo run. Replaced at patch time. */
   private static final int MAX_ROUNDS = __ROUND_CAP__;
 
-  /** Round cap for the snapshot run. Snapshots blow up quadratically; keep small. */
-  private static final int SNAPSHOT_ROUNDS = 1;
+  /** Default round cap for the snapshot run. Override with -Dsnapshot.rounds=N. */
+  private static final int SNAPSHOT_ROUNDS_DEFAULT = 2;
 
   /** Deterministic seed for the snapshot run. */
   private static final long SNAPSHOT_SEED = 42L;
@@ -77,8 +77,9 @@ public class Ww2v5JacocoRun {
       SnapshotHarness harness =
           new SnapshotHarness(game, outDir, rangeStart, rangeEnd);
 
+      int rounds = Integer.getInteger("snapshot.rounds", SNAPSHOT_ROUNDS_DEFAULT);
       while (!game.isGameOver()) {
-        if (game.getData().getSequence().getRound() > SNAPSHOT_ROUNDS) {
+        if (game.getData().getSequence().getRound() > rounds) {
           break;
         }
         harness.wrapStep(() -> game.runNextStep());
