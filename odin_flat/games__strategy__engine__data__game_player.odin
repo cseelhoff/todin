@@ -328,3 +328,9 @@ game_player_am_not_dead_yet :: proc(self: ^Game_Player) -> bool {
 game_player_get_name :: proc(self: ^Game_Player) -> string {
 	return default_named_get_name(&self.named_attachable.default_named)
 }
+
+// games.strategy.engine.data.GamePlayer#setIsDisabled(boolean)
+// Java field setter (used by GameData.preGameDisablePlayers).
+game_player_set_is_disabled :: proc(self: ^Game_Player, value: bool) {
+	self.is_disabled = value
+}

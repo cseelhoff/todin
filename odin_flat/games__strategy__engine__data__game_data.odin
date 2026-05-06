@@ -990,3 +990,100 @@ game_data_lambda_to_bytes_0 :: proc(self: ^Game_Data, os: ^Output_Stream) {
 game_data_get_dice_sides :: proc(self: ^Game_Data) -> i32 {
         return self.dice_sides
 }
+
+// games.strategy.engine.data.GameData#removePlayerStepsFromSequence(Set<GamePlayer>)
+// Java body (verbatim semantics):
+//   final int currentIndex = sequence.getStepIndex();
+//   int index = 0;
+//   int toSubtract = 0;
+//   final Iterator<GameStep> stepIter = sequence.iterator();
+//   while (stepIter.hasNext()) {
+//     final GameStep step = stepIter.next();
+//     if (playersWhoShouldBeRemoved.contains(step.getPlayerId())) {
+//       stepIter.remove();
+//       if (index < currentIndex) toSubtract++;
+//     }
+//     index++;
+//   }
+//   sequence.setStepIndex(Math.max(0, Math.min(sequence.size() - 1, currentIndex - toSubtract)));
+//
+// Odin keeps `steps` as `[dynamic]^Game_Step` so we walk it once and
+// rebuild the kept slice in place (cheaper and safer than mid-iter
+// removal). The index/toSubtract arithmetic mirrors the Java pre-removal
+// counters byte-for-byte.
+game_data_remove_player_steps_from_sequence :: proc(self: ^Game_Data, players_who_should_be_removed: map[^Game_Player]struct{}) {
+	current_index := game_sequence_get_step_index(self.sequence)
+	index: i32 = 0
+	to_subtract: i32 = 0
+	kept: [dynamic]^Game_Step
+	for step in self.sequence.steps {
+		_, removed := players_who_should_be_removed[game_step_get_player_id(step)]
+		if removed {
+			if index < current_index {
+				to_subtract += 1
+			}
+		} else {
+			append(&kept, step)
+		}
+		index += 1
+	}
+	delete(self.sequence.steps)
+	self.sequence.steps = kept
+	new_size := game_sequence_size(self.sequence)
+	target := current_index - to_subtract
+	if target > new_size - 1 {
+		target = new_size - 1
+	}
+	if target < 0 {
+		target = 0
+	}
+	game_sequence_set_step_index(self.sequence, target)
+}
+
+// games.strategy.engine.data.GameData#preGameDisablePlayers(Predicate<GamePlayer>)
+// Java body:
+//   final Set<GamePlayer> playersWhoShouldBeRemoved = new HashSet<>();
+//   playerList.getPlayers().stream()
+//     .filter(p -> (p.getCanBeDisabled() && shouldDisablePlayer.test(p)))
+//     .forEach(p -> { p.setIsDisabled(true); playersWhoShouldBeRemoved.add(p); });
+//   if (!playersWhoShouldBeRemoved.isEmpty()) {
+//     removePlayerStepsFromSequence(playersWhoShouldBeRemoved);
+//   }
+//
+// Predicate is represented in this port as the (proc, ctx) pair convention
+// used elsewhere (see e.g. matches_is_territory_owned_by).
+game_data_pre_game_disable_players :: proc(
+	self: ^Game_Data,
+	should_disable_player: proc(rawptr, ^Game_Player) -> bool,
+	pred_ctx: rawptr,
+) {
+	players_who_should_be_removed := make(map[^Game_Player]struct{})
+	defer delete(players_who_should_be_removed)
+	for p in player_list_get_players(self.player_list) {
+		if game_player_get_can_be_disabled(p) && should_disable_player(pred_ctx, p) {
+			game_player_set_is_disabled(p, true)
+			players_who_should_be_removed[p] = {}
+		}
+	}
+	if len(players_who_should_be_removed) > 0 {
+		game_data_remove_player_steps_from_sequence(self, players_who_should_be_removed)
+	}
+}
+
+// games.strategy.engine.data.GameData#getSaveGameFileName()
+// Java body:
+//   return Optional.ofNullable(getProperties().get(SAVE_GAME_FILE_NAME_PROPERTY, null));
+//
+// Optional<String> is represented as (string, bool); empty == ("", false).
+GAME_DATA_SAVE_GAME_FILE_NAME_PROPERTY :: "save.game.file.name"
+
+game_data_get_save_game_file_name :: proc(self: ^Game_Data) -> (string, bool) {
+	v := game_properties_get(self.properties, GAME_DATA_SAVE_GAME_FILE_NAME_PROPERTY)
+	if v == nil {
+		return "", false
+	}
+	if s, ok := v.(string); ok {
+		return s, true
+	}
+	return "", false
+}

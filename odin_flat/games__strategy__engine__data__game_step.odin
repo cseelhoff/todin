@@ -146,3 +146,9 @@ game_step_get_delegate :: proc(self: ^Game_Step) -> ^I_Delegate {
 	data := game_data_component_get_data(&self.game_data_component)
 	return game_data_get_delegate(data, self.delegate_name)
 }
+
+// games.strategy.engine.data.GameStep#getMaxRunCount()
+// Lombok @Getter on `private int maxRunCount = -1;`.
+game_step_get_max_run_count :: proc(self: ^Game_Step) -> i32 {
+	return self.max_run_count
+}

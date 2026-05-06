@@ -153,3 +153,11 @@ unit_type_get_unit_attachment :: proc(self: ^Unit_Type) -> ^Unit_Attachment {
 unit_type_get_name :: proc(self: ^Unit_Type) -> string {
 	return default_named_get_name(&self.named_attachable.default_named)
 }
+
+// games.strategy.engine.data.UnitType#create(GamePlayer)
+// Java body: return create(owner, false, 0, 0);
+// (1-arg overload that delegates to the full 5-arg form via the
+// 4-arg internal `create(owner, isTemp, hitsTaken, bombingUnitDamage)`.)
+unit_type_create_for_owner :: proc(self: ^Unit_Type, owner: ^Game_Player) -> ^Unit {
+	return unit_type_create(self, owner, false, 0, 0)
+}

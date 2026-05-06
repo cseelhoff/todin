@@ -383,6 +383,212 @@ the root cause:
 > only as routing nodes; their `is_implemented` is irrelevant —
 > the override implementation is what needs porting.
 
+#### Mandatory: maintain a running drill-down trace table
+
+Before, during, and after **every** drill-down step, you MUST
+print a running **two-column trace table** showing the current
+descent path from the originally-failing proc down to the node
+under analysis. The table is a stack: append a row when you
+descend into a dependency, pop the last row when a dependency
+passes its targeted test and you back out, never silently skip
+rows. Re-print the full table at each of these moments:
+
+  1. After step 2 — initial node identified, table has one row.
+  2. Before deciding which dependency to descend into (step 4),
+     so the choice is auditable.
+  3. After descending — append the new row, then re-print.
+  4. Before committing to a fix at a layer-0 leaf or at a
+     "dependencies-pass-but-this-proc-fails" node — the trace
+     IS the justification; it bounds the bug site to one row.
+  5. After every fix, walking back up: pop rows as their
+     targeted tests turn green, re-printing the shortened
+     table each pop, until you reach the original failing
+     proc and confirm it now passes.
+
+Format (Markdown, exactly two columns, layer descending):
+
+| layer | method_key                                                  |
+|------:|-------------------------------------------------------------|
+|   34  | proc:games.strategy.triplea.ai.AbstractAi#start(java.lang.String) |
+|   13  | proc:games.strategy.engine.delegate.IPurchaseDelegate#purchase(...) |
+|   12  | proc:games.strategy.triplea.delegate.PurchaseDelegate#purchase(...) |
+
+Generate each new row from the same SQL the drill-down already
+uses (step 4 below), copying its `method_layer` and
+`depends_on_key` columns into the trace.
+
+Why this is mandatory:
+
+  - It makes recursion termination provable — every appended row
+    has strictly lower `method_layer` than the row above it; if
+    that invariant ever breaks, the drill-down has gone wrong
+    (most often: descended into an abstract routing node instead
+    of its `override` target — see the iter-7 note above).
+  - It gives the next session (or the next reviewer) the exact
+    bug-site witness without re-deriving it.
+  - It prevents the failure mode of "I think the bug is in
+    proc X" without naming the chain that justifies X — every
+    fix MUST cite the trace table that pinpointed it.
+
+Record the final trace table (the one whose bottom row is the
+fixed proc) in `/memories/repo/phase-c-state.md` together with
+the fix summary, per step 10 below.
+
+#### Mandatory: track per-proc test status in port.sqlite
+
+Every proc / struct touched during a drill-down has a colored
+test-status flag stored in the `test_status` table of
+`port.sqlite`. The schema is:
+
+```sql
+CREATE TABLE test_status (
+    entity_key  TEXT PRIMARY KEY,        -- matches entities.primary_key
+    status      TEXT NOT NULL DEFAULT 'yellow'
+                CHECK(status IN ('green','red','yellow')),
+    note        TEXT,
+    updated_at  TEXT NOT NULL
+);
+```
+
+Semantics — exactly three states:
+
+  - **green**: the entity has at least one targeted test
+    (Odin unit test, vtable test, or per-proc snapshot) AND
+    every such test currently passes AND **every transitive
+    call-graph descendant is also green**.  This is the
+    invariant: a green proc cannot be a transitive caller of
+    a red proc.  If a "passing" test exists but the proc still
+    transitively calls a red, that test is missing behaviour
+    coverage (it exercises dispatch / a happy path that doesn't
+    reach the broken callee) — the parent must stay yellow until
+    the red descendant is fixed.
+  - **red**: the entity has a failing test, OR the trace-table
+    drill-down has positively identified it as the cause of
+    a downstream failure even before its own test exists.
+  - **yellow** (default): untested / unknown — no targeted
+    test has been written yet, or the entity has not been
+    visited by the drill-down. Every entity not in the
+    `test_status` table is implicitly yellow.
+
+The invariant is enforced two ways:
+
+  1. `scripts/mark_test_status.py <KEY> green` REFUSES to mark a
+     proc green when any transitive call-graph descendant is red
+     (returns exit code 3).  Pass `--force` only after auditing
+     that the test really does cover the relevant behaviour
+     despite the red below — this is rare and should be noted.
+  2. `scripts/validate_test_status.py` finds existing violations.
+     Run it before committing test_status changes:
+
+     ```sh
+     python3 scripts/validate_test_status.py          # report only
+     python3 scripts/validate_test_status.py --fix    # demote violators to yellow
+     ```
+
+     The fixer demotes each offending green to yellow with an
+     audit note `auto-demoted: green parent of red descendant <KEY>`.
+
+You MUST update the table at every drill-down moment that
+changes a known status:
+
+  1. When you mark a proc as the trace-table top row (it has
+     a failing snapshot) → mark **red**.
+  2. When you descend into a dependency to validate it →
+     write its targeted test, run it, then mark **green** or
+     **red** based on the result.
+  3. When a fix flips a previously red proc green → mark
+     **green** and set `note` to a one-line "what fixed it".
+  4. When you discover an entity has no test at all and the
+     drill-down does not implicate it → leave it yellow
+     (do not invent green statuses).
+
+Use the helper script (do **not** hand-write SQL):
+
+```sh
+python3 scripts/mark_test_status.py \
+    "proc:games.strategy.engine.framework.ServerGame#runNextStep()" \
+    red --note "snapshot 0013/0014/0015 fail"
+
+python3 scripts/mark_test_status.py \
+    "proc:games.strategy.triplea.ai.AbstractAi#purchase(...)" \
+    green --note "vtable test test_pro_ai_purchase_vtable_wired green"
+
+python3 scripts/mark_test_status.py summary
+python3 scripts/mark_test_status.py list red
+```
+
+The `entity_key` is the exact `primary_key` from the `entities`
+table — copy it from the same SQL the trace table is built from
+so the two views stay aligned. Use `--force` only when marking
+a synthetic key (e.g. an Odin-only helper that has no Java
+peer).
+
+The status table powers a realtime dashboard — start it with:
+
+```sh
+python3 scripts/test_status_dashboard.py            # http://127.0.0.1:8765/
+```
+
+The page polls `/api/tree` every 2 s and renders every red
+entity together with its direct (one-layer-down) dependencies,
+each colored by its current `test_status`. This is the canonical
+view for monitoring drill-down progress: red cluster = current
+work front; yellow children = not-yet-validated deps to descend
+into; green children = deps whose targeted test already passed.
+Keep the dashboard open while drilling so the trace table and
+the colored tree stay in sync.
+
+#### Mandatory: ask the picker for the next task
+
+Every drill-down iteration begins with a single command:
+
+```sh
+python3 scripts/next_task.py
+```
+
+The picker is a deterministic, read-only function of
+`test_status` ⨯ `dependencies` ⨯ `methods`. It implements the
+exact algorithm that governs this entire workflow:
+
+  1. Pick the **deepest red** proc (lowest `method_layer`).
+  2. Look at its direct call-graph dependencies (rows of
+     `dependencies` with `edge_kind` ∈ {`static`, `virtual`,
+     `override`}, joined to `methods`). Each dep's status comes
+     from `test_status` (default **yellow** when unrecorded).
+  3. Emit one of three task kinds:
+       - **`TEST_DEP`** — the red has at least one yellow dep.
+         The picker returns the deepest yellow(s); your job is to
+         write a targeted test, run it, then call
+         `scripts/mark_test_status.py <KEY> {green|red}`.
+       - **`INVESTIGATE_PROC`** — every dep is green (or the
+         proc is a leaf with no recorded deps). The bug is
+         inside this proc itself: re-read the original Java in
+         full, diff against the Odin port, fix line-by-line, and
+         flip the status to green when its targeted test passes.
+       - **`NO_REDS`** — `test_status` has no red entries; mark
+         the next failing snapshot's top-of-stack proc red to
+         seed the next iteration.
+
+You **MUST** start every drill-down iteration by running the
+picker and quoting its `kind` + `red` + (if `TEST_DEP`)
+deepest-yellow list in your trace table / progress note. Do not
+guess what to test next — the picker has the deterministic
+answer. Same view is rendered at the top of the dashboard
+(`/api/next`).
+
+JSON form for tooling / sub-agent dispatch:
+
+```sh
+python3 scripts/next_task.py --json
+python3 scripts/next_task.py --top 5   # also show top-N reds
+```
+
+Termination: when `python3 scripts/next_task.py` reports
+`NO_REDS` AND the failing snapshot suite is back to green for
+the symptom you started from, the drill-down is done. Pop the
+trace table and write the one-line note in
+`/memories/repo/phase-c-state.md`.
+
 1. **Identify the failing proc.** From the JSON diff (or panic
    stack frame), pinpoint the specific Odin proc whose output
    diverges from Java. Translate it back to its Java
@@ -423,6 +629,10 @@ the root cause:
    - If not, write a minimal call-site test that feeds the
      dependency's recorded inputs from `dependencies` /
      snapshot JSON and compares its output to the Java capture.
+   - **Update `test_status` immediately:** call
+     `scripts/mark_test_status.py <KEY> green` or `... red`
+     based on the result. This is what populates the realtime
+     dashboard and makes the drill-down auditable.
 
 6. **Recurse.** For every dependency that fails its targeted
    test, repeat steps 2-5. The recursion is finite: each step
@@ -433,11 +643,15 @@ the root cause:
    - **Some dependency at layer 0 fails** → that's the bug.
      Fix it by re-porting from the original `.java` source.
      Re-test the dependency, then re-test its callers, walking
-     back up the chain.
+     back up the chain. As each proc's targeted test flips
+     green, run `scripts/mark_test_status.py <KEY> green` so
+     the dashboard reflects the cleared layer.
    - **All dependencies pass but the original proc still
      fails** → the bug is in the original proc's own body
      (its translation logic, not anything it calls). Fix that
-     proc by re-porting from Java.
+     proc by re-porting from Java. Mark the proc red while
+     debugging; flip it to green only after its own targeted
+     test passes.
 
 8. **Always re-port from `.java`, never write Odin from scratch.**
    The Java sources at `java_file_path` are the single source of

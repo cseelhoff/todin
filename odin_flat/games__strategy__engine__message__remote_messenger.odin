@@ -31,12 +31,50 @@ remote_messenger_get_remote :: proc(
 	name: ^Remote_Name,
 	ignore_results: bool,
 ) -> ^I_Remote {
+	// Single-process / in-VM fast path: when a local implementor is
+	// already registered for this remote name (the case in the
+	// snapshot harness because ServerGame#setupDelegateMessaging
+	// registers every delegate via newInboundImplementation, which
+	// returns the raw delegate pointer in this port), return it
+	// directly so callers can `cast(^Battle_Delegate)` etc. The UIH
+	// proxy round-trip is only meaningful when the implementor lives
+	// across the network, which the AI snapshot run never exercises.
+	// In Java this is the same observable behavior the dynamic Proxy
+	// produces for a single-VM end-point.
+	if local := remote_messenger_lookup_local_implementor(self, name); local != nil {
+		return cast(^I_Remote)local
+	}
 	ih := unified_invocation_handler_new(
 		self.unified_messenger,
 		remote_name_get_name(name),
 		ignore_results,
 	)
 	return cast(^I_Remote)ih
+}
+
+// Helper for the single-VM fast path above: peek into the
+// UnifiedMessenger's local end-point map and return the sole local
+// implementor for `name`, or nil if there are zero or multiple.
+// Returning nil for the "multiple" case preserves the Java
+// IllegalStateException("Too many implementors") semantics — the
+// fallback UIH path will then surface the error on first invocation
+// rather than silently picking one.
+@(private = "file")
+remote_messenger_lookup_local_implementor :: proc(self: ^Remote_Messenger, name: ^Remote_Name) -> rawptr {
+	if self == nil || self.unified_messenger == nil {
+		return nil
+	}
+	end_point, ok := self.unified_messenger.local_end_points[remote_name_get_name(name)]
+	if !ok || end_point == nil {
+		return nil
+	}
+	if len(end_point.implementors) != 1 {
+		return nil
+	}
+	for impl in end_point.implementors {
+		return impl
+	}
+	return nil
 }
 
 // Java: public IRemote getRemote(final RemoteName remoteName) {

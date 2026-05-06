@@ -5,6 +5,18 @@ import "core:math/rand"
 
 Abstract_Ai :: struct {
 	using abstract_base_player: Abstract_Base_Player,
+	// Vtable for Java's abstract methods (purchase / tech / move / place).
+	// Concrete AI subclasses install thunks here in their constructor
+	// (see pro_ai_new). Nil field == "no override" => the abstract
+	// dispatcher is a no-op, mirroring an unbound Java abstract.
+	purchase: proc(
+		self: ^Abstract_Ai,
+		purchase_for_bid: bool,
+		pus_to_spend: i32,
+		purchase_delegate: ^I_Purchase_Delegate,
+		data: ^Game_Data,
+		player: ^Game_Player,
+	),
 }
 
 // Java owners covered by this file:
@@ -358,7 +370,10 @@ abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
 //     protected abstract void purchase(
 //         boolean purchaseForBid, int pusToSpend,
 //         IPurchaseDelegate purchaseDelegate, GameData data, GamePlayer player);
-//   Abstract — no body. Concrete subclasses (Pro_Ai, etc.) override.
+//   Abstract — no body. Concrete subclasses (Pro_Ai, etc.) override
+//   via the `purchase` proc field on Abstract_Ai installed by their
+//   constructor (see pro_ai_new). Nil field => no-op (matches an
+//   unbound Java abstract called via reflection).
 abstract_ai_purchase :: proc(
 	self: ^Abstract_Ai,
 	purchase_for_bid: bool,
@@ -367,7 +382,10 @@ abstract_ai_purchase :: proc(
 	data: ^Game_Data,
 	player: ^Game_Player,
 ) {
-	// abstract in Java; subclass override required
+	if self != nil && self.purchase != nil {
+		self.purchase(self, purchase_for_bid, pus_to_spend, purchase_delegate, data, player)
+	}
+	// else: abstract in Java; subclass override required
 }
 
 // games.strategy.triplea.ai.AbstractAi#tech(ITechDelegate,GameData,GamePlayer)

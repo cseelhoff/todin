@@ -19,6 +19,14 @@ Test_Server_Game :: struct {
 @(private = "file")
 test_server_game_player_to_gp: map[^Player]^Game_Player
 
+// Per-Player back-reference to the Pro_Ai instance bound to this
+// nation. Required because Odin proc-fields can't capture closures,
+// so the start-thunk has to look up its target via this parallel map.
+// Populated below in test_server_game_run_next_step at the same
+// time as test_server_game_player_to_gp.
+@(private = "file")
+test_server_game_player_to_ai: map[^Player]^Pro_Ai
+
 @(private = "file")
 test_server_game_player_is_ai_true :: proc(self: ^Player) -> bool {
 	return true
@@ -41,6 +49,18 @@ test_server_game_player_get_name_from_gp :: proc(self: ^Player) -> string {
 	return default_named_get_name(&gp.named_attachable.default_named)
 }
 
+// Player.start vtable thunk: dispatches to abstract_ai_start on the
+// bound Pro_Ai. Mirrors Java's `AbstractAi implements Player`
+// dispatch via reflection. If no Pro_Ai is bound (e.g. the Neutral
+// player skipped during construction), the thunk is a no-op so a
+// stray dispatch can't crash mid-step.
+@(private = "file")
+test_server_game_player_start :: proc(self: ^Player, step_name: string) {
+	ai := test_server_game_player_to_ai[self]
+	if ai == nil { return }
+	abstract_ai_start(cast(^Abstract_Ai)ai, step_name)
+}
+
 // Adapter for the snapshot harness. Each snapshot test wraps a loaded
 // Game_Data in a Test_Server_Game and invokes this proc; the proc
 // composes a minimal Server_Game from the harness's field set and
@@ -56,6 +76,11 @@ test_server_game_player_get_name_from_gp :: proc(self: ^Player) -> string {
 // so the stub messengers/network layer is never exercised in a
 // way that requires real I/O.
 test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
+	// Clear per-run parallel maps from any previous snapshot run
+	// (snapshot_runner invokes this proc once per snapshot).
+	clear(&test_server_game_player_to_gp)
+	clear(&test_server_game_player_to_ai)
+
 	// Pin RNG seed for snapshot determinism (Java:
 	// PlainRandomSource.fixedSeed = 42L).
 	if plain_random_source_fixed_seed == nil {
@@ -186,6 +211,13 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		ai.get_name = test_server_game_player_get_name_from_gp
 		ai.get_player_label = test_server_game_player_label_hard_ai
 		ai.get_game_player = test_server_game_player_get_gp
+		// Wire .start so abstract_ai_start dispatches when the engine
+		// invokes player_start during wait_for_player_to_finish_step.
+		// Without this the AI's purchase / move / place calls never run
+		// and PUs / unit moves silently flatline (snapshots 0013, 0014,
+		// 0021, 0029 etc.). The Pro_Ai backing this thunk is built
+		// below.
+		ai.start = test_server_game_player_start
 		// Stash the Game_Player pointer so the proc-fields can recover
 		// it: I_Remote has no fields here, so reuse `name` slot is not
 		// available — we rely on a parallel map below.
@@ -262,6 +294,46 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	)
 
 	sg.random_stats = random_stats_new(messengers.remote_messenger)
+
+	// Register every WW2v5 delegate as its `IDelegate` remote on the
+	// unified messenger. PlayerBridge#getRemoteDelegate fetches the
+	// current delegate by remote name; without this registration the
+	// remote_messenger fast-path can't find a local implementor, so
+	// it falls back to the UIH proxy and the
+	// `cast(^Battle_Delegate)i_remote` in abstract_ai_battle reads
+	// garbage fields (concretely: nil battle_tracker → SIGSEGV at
+	// snapshot 0015). Java ServerGame's ctor calls this; the harness
+	// constructs Server_Game manually, so we replay the call here.
+	server_game_setup_delegate_messaging(sg, self.data)
+
+	// L35 wiring: after Server_Game is fully populated (data, messengers,
+	// listener bus, delegates), construct one Pro_Ai per AI nation and
+	// bind it to the Player stub via test_server_game_player_to_ai +
+	// abstract_base_player_initialize(pro, bridge, gp). The bridge is
+	// built from an I_Game shim wrapping sg; PlayerBridge registers a
+	// GAME_STEP_CHANGED listener on the shared event bus, so when
+	// server_game_start_step fires notify_game_step_changed the
+	// bridge's step_name updates and abstract_base_player_start's poll
+	// loop short-circuits immediately (verified by
+	// test_abstract_base_player_start_short_circuits_when_bridge_matches).
+	{
+		i_game_shim := abstract_game_as_i_game(&sg.abstract_game)
+		// Don't free i_game_shim: the listener registered by
+		// player_bridge_new captures it for the run-step lifetime.
+		for gp, ai in sg.game_players {
+			pro := pro_ai_new(
+				default_named_get_name(&gp.named_attachable.default_named),
+				"Hard (AI)",
+			)
+			bridge := player_bridge_new(i_game_shim)
+			abstract_base_player_initialize(
+				&pro.abstract_base_player,
+				bridge,
+				gp,
+			)
+			test_server_game_player_to_ai[ai] = pro
+		}
+	}
 
 	server_game_run_next_step(sg)
 

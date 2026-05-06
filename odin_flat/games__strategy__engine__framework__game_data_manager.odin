@@ -120,3 +120,24 @@ game_data_manager_save_game :: proc(out: ^Output_Stream, game_data: ^Game_Data) 
 	_ = out
 	game_data_manager_save_game_uncompressed(out, game_data, game_data_manager_options_for_save_game())
 }
+
+// games.strategy.engine.framework.GameDataManager#loadGame(InputStream)
+// Java body:
+//   try (GZIPInputStream input = new GZIPInputStream(is)) {
+//     return loadGameUncompressed(input);
+//   } catch (final EOFException e) { ...log... }
+//     catch (final ZipException e) { ...log... }
+//     catch (final Exception e)    { ...log... }
+//   return Optional.empty();
+//
+// GZIPInputStream is a JDK shim with no implementation in this port
+// (mirrors the opaque-IO regime documented on
+// game_data_manager_load_game_uncompressed): there is no compressed
+// stream to inflate, so the call collapses to forwarding the raw
+// stream to load_game_uncompressed, which itself returns nil. The AI
+// snapshot harness never enters this code path. Optional<GameData> is
+// ^Game_Data with nil meaning empty (same convention as the
+// uncompressed entry point).
+game_data_manager_load_game :: proc(is_stream: ^Input_Stream) -> ^Game_Data {
+	return game_data_manager_load_game_uncompressed(is_stream)
+}

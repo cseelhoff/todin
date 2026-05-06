@@ -661,3 +661,9 @@ end_round_delegate_start :: proc(self: ^End_Round_Delegate) {
 	}
 }
 
+
+// games.strategy.triplea.delegate.EndRoundDelegate#getWinners()
+// Lombok @Getter on `private Collection<GamePlayer> winners = new ArrayList<>();`.
+end_round_delegate_get_winners :: proc(self: ^End_Round_Delegate) -> [dynamic]^Game_Player {
+	return self.winners
+}

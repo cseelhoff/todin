@@ -1768,3 +1768,9 @@ territory_attachment_get_property_or_empty :: proc(
 	}
 	return nil
 }
+
+// games.strategy.triplea.attachments.TerritoryAttachment#getVictoryCity()
+// Lombok @Getter on `private int victoryCity = 0;`.
+territory_attachment_get_victory_city :: proc(self: ^Territory_Attachment) -> i32 {
+	return self.victory_city
+}

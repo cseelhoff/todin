@@ -20,3 +20,13 @@ repair_frontier_list_get_repair_frontier :: proc(self: ^Repair_Frontier_List, na
 	return self.repair_frontiers[name]
 }
 
+
+// games.strategy.engine.data.RepairFrontierList#getRepairFrontierNames()
+// Java body: return repairFrontiers.keySet();
+repair_frontier_list_get_repair_frontier_names :: proc(self: ^Repair_Frontier_List) -> [dynamic]string {
+	out := make([dynamic]string, 0, len(self.repair_frontiers))
+	for name, _ in self.repair_frontiers {
+		append(&out, name)
+	}
+	return out
+}

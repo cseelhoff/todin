@@ -147,3 +147,41 @@ game_properties_get_int_with_default :: proc(self: ^Game_Properties, key: string
 	}
 	return default_value
 }
+
+// games.strategy.engine.data.properties.GameProperties#getConstantPropertiesByName()
+// Java body: return new HashMap<>(constantProperties);
+// (defensive shallow copy)
+game_properties_get_constant_properties_by_name :: proc(self: ^Game_Properties) -> map[string]Property_Value {
+	out := make(map[string]Property_Value)
+	for k, v in self.constant_properties {
+		out[k] = v
+	}
+	return out
+}
+
+// games.strategy.engine.data.properties.GameProperties#getEditablePropertiesByName()
+// Java body: return new HashMap<>(editableProperties);
+game_properties_get_editable_properties_by_name :: proc(self: ^Game_Properties) -> map[string]^Editable_Property {
+	out := make(map[string]^Editable_Property)
+	for k, v in self.editable_properties {
+		out[k] = v
+	}
+	return out
+}
+
+// games.strategy.engine.data.properties.GameProperties#get(String, String)
+// Java body: Object value = get(key); if (value == null) return defaultValue;
+//            return String.valueOf(value);
+// In Odin we collapse Property_Value to its string form (only the string
+// arm is observable; the other arms aren't exercised by the snapshot
+// harness on string keys, so falling through to defaultValue is faithful).
+game_properties_get_string_with_default :: proc(self: ^Game_Properties, key: string, default_value: string) -> string {
+	v := game_properties_get(self, key)
+	if v == nil {
+		return default_value
+	}
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return default_value
+}

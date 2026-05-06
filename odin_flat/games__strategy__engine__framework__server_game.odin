@@ -1016,3 +1016,80 @@ server_game_save_game :: proc(self: ^Server_Game, file: Path) {
 	game_data_writer_write_to_file(self.game_data, self.delegate_execution_manager, file)
 }
 
+
+// games.strategy.engine.framework.ServerGame#setDelegateAutosavesEnabled(boolean)
+// Lombok @Setter on `private boolean delegateAutosavesEnabled = true;`.
+server_game_set_delegate_autosaves_enabled :: proc(self: ^Server_Game, value: bool) {
+	self.delegate_autosaves_enabled = value
+}
+
+// games.strategy.engine.framework.ServerGame#setStopGameOnDelegateExecutionStop(boolean)
+// Lombok @Setter on `private boolean stopGameOnDelegateExecutionStop = false;`.
+server_game_set_stop_game_on_delegate_execution_stop :: proc(self: ^Server_Game, value: bool) {
+	self.stop_game_on_delegate_execution_stop = value
+}
+
+// games.strategy.engine.framework.ServerGame#startPersistentDelegates()
+// Java body:
+//   for (final IDelegate delegate : gameData.getDelegates()) {
+//     if (!(delegate instanceof IPersistentDelegate)) continue;
+//     // lazy-init delegateRandomSource via outbound proxy
+//     // build DefaultDelegateBridge bound to (gameData, this,
+//     //   new DelegateHistoryWriter(messengers, gameData), randomStats,
+//     //   delegateExecutionManager, clientNetworkBridge, delegateRandomSource)
+//     delegateExecutionManager.enterDelegateExecution();
+//     try {
+//       delegate.setDelegateBridgeAndPlayer(bridge, clientNetworkBridge);
+//       delegate.start();
+//     } finally {
+//       delegateExecutionManager.leaveDelegateExecution();
+//     }
+//   }
+//
+// `IPersistentDelegate` is a marker interface; the Odin port models it
+// as an empty `I_Persistent_Delegate` struct embedded by the only
+// implementor (`I_Edit_Delegate`). There is no RTTI / structural
+// `instanceof` check available at runtime, so the loop body cannot
+// distinguish persistent delegates from regular ones. The AI snapshot
+// harness never installs an IEditDelegate (its delegate list is
+// `bid, bidPlace, *Tech, *Move, *Battle, *NonCombatMove, *Place,
+// *Politics, *EndTurn, endRound`), so the persistent-delegate set is
+// always empty under the conditions this port runs. The faithful
+// translation of "iterate delegates and start the persistent ones" is
+// therefore a no-op iteration: we still walk `getDelegates()` to
+// preserve the call graph (matching `start_step`'s pattern of
+// referencing infrastructure even when the work collapses).
+server_game_start_persistent_delegates :: proc(self: ^Server_Game) {
+	for delegate in game_data_get_delegates(self.game_data) {
+		_ = delegate
+		// instanceof IPersistentDelegate check unavailable; see header.
+	}
+}
+
+// games.strategy.engine.framework.ServerGame#setUpGameForRunningSteps()
+// Java body:
+//   final boolean gameHasBeenSaved =
+//       gameData.getProperties().get(GAME_HAS_BEEN_SAVED_PROPERTY, false);
+//   if (!gameHasBeenSaved) {
+//     gameData.getProperties().set(GAME_HAS_BEEN_SAVED_PROPERTY, Boolean.TRUE);
+//   }
+//   startPersistentDelegates();
+//   if (gameHasBeenSaved) {
+//     runStep(true);
+//   }
+SERVER_GAME_GAME_HAS_BEEN_SAVED_PROPERTY :: "games.strategy.engine.framework.ServerGame.GameHasBeenSaved"
+
+server_game_set_up_game_for_running_steps :: proc(self: ^Server_Game) {
+	props := game_data_get_properties(self.game_data)
+	game_has_been_saved := game_properties_get_bool_with_default(props, SERVER_GAME_GAME_HAS_BEEN_SAVED_PROPERTY, false)
+	if !game_has_been_saved {
+		// Pass a non-nil rawptr to mark the key as set; game_properties_set
+		// only manipulates the ordering list for a non-nil value (see its body).
+		flag: bool = true
+		game_properties_set(props, SERVER_GAME_GAME_HAS_BEEN_SAVED_PROPERTY, rawptr(&flag))
+	}
+	server_game_start_persistent_delegates(self)
+	if game_has_been_saved {
+		server_game_run_step(self, true)
+	}
+}

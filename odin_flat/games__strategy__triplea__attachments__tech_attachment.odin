@@ -699,3 +699,19 @@ tech_attachment_get_property_or_empty :: proc(
 	return nil
 }
 
+
+// games.strategy.triplea.attachments.TechAttachment#getDestroyerBombard()
+tech_attachment_get_destroyer_bombard :: proc(self: ^Tech_Attachment) -> bool {
+	return self.destroyer_bombard
+}
+
+// games.strategy.triplea.attachments.TechAttachment#getIndustrialTechnology()
+tech_attachment_get_industrial_technology :: proc(self: ^Tech_Attachment) -> bool {
+	return self.industrial_technology
+}
+
+// games.strategy.triplea.attachments.TechAttachment#getGenericTech()
+// Lombok @Getter on `private final Map<String, Boolean> genericTech = new HashMap<>();`.
+tech_attachment_get_generic_tech :: proc(self: ^Tech_Attachment) -> map[string]bool {
+	return self.generic_tech
+}
