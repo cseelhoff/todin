@@ -430,37 +430,17 @@ def _open_db() -> sqlite3.Connection:
 
 
 def _build_tree() -> dict:
-    """Produce a recursive call-tree rooted at the top-most red procs.
+    """Forward drill-down call-tree rooted at each top-most red proc.
 
-    Mental model: the user wants to see a tree like
-
-        ServerGame#runNextStep   (red, root)
-        ├─ runStep               (yellow, on path to a red)
-        │   └─ AbstractAi#battle (red)
-        │       └─ BattleDelegate#fightBattle (red)
-        │           ├─ BattleTracker#getPendingBattle (yellow leaf)
-        │           └─ ... etc
-        └─ ... yellow / green direct deps of the root red
-
-    Algorithm:
-      1. Collect every red's set of *ancestors* (nodes that transitively
-         call it via static/virtual/override edges).  Also collect each
-         red's *immediate children* so they always render as context.
-      2. `interesting = reds ∪ ⋃ ancestors(red) ∪ ⋃ children(red)`.
-      3. `top_reds` = reds with no red ancestor (the call-stack roots).
-      4. From each top red, recursively descend through callees, but
-         ONLY emit a child node if it's interesting (either red, on a
-         path to a red, or the direct child of a red — so the
-         immediate context of every red is always visible).  Cycles
-         and depth>16 produce a `cycle=true` leaf.
-      5. Non-red leaves are NOT recursed into; we don't want to drag
-         in the entire transitive call graph of every green dep.
-
-    Tree shape:
-      {"summary": {green,red,yellow}, "roots": [Node, ...]}
-      Node = {key, status, note, layer, edge_kind, java_path,
-              odin_path, on_path_to_red: bool, cycle: bool,
-              children: [Node, ...]}
+    Mirrors `scripts/next_task.py`'s methodology: walk the call graph
+    FORWARD from each red that has no red ancestor (the topmost red),
+    recursing through any node that lies on a path to a red so the
+    deeper reds appear nested in their natural call context. Yellow /
+    green leaves directly under a red render as immediate context;
+    yellow / green nodes that are NOT on a path to any red are not
+    expanded further. Every method_key renders at most ONCE across
+    the forest — repeats become `cycle=true` placeholder leaves — so
+    a high-fan-in proc like `MustFightBattle#fight` shows up once.
     """
     conn = _open_db()
     try:
@@ -478,7 +458,6 @@ def _build_tree() -> dict:
         for row in conn.execute("SELECT status, COUNT(*) FROM test_status GROUP BY status"):
             summary[row[0]] = row[1]
 
-        # --- Status & metadata maps (single round-trip each) -----------
         status_map: dict[str, tuple[str, str | None]] = {}
         for row in conn.execute("SELECT entity_key, status, note FROM test_status"):
             status_map[row["entity_key"]] = (row["status"], row["note"])
@@ -487,7 +466,46 @@ def _build_tree() -> dict:
         if not red_keys:
             return {"summary": summary, "roots": []}
 
-        # Cache method metadata for every key we might render.
+        # --- Reverse BFS from every red to collect ancestors -----------
+        # Any node that transitively calls a red has a red descendant
+        # and is therefore "on a path to a red" — we recurse through
+        # those when building the tree. We also note, per red, which
+        # OTHER reds appear in its ancestor set, so a red R is topmost
+        # iff no other red is among its ancestors.
+        ancestors: set[str] = set()                            # nodes with a red descendant
+        red_ancestors_per_red: dict[str, set[str]] = {r: set() for r in red_keys}
+        red_set = set(red_keys)
+        for r in red_keys:
+            sub_seen: set[str] = {r}
+            frontier = [r]
+            while frontier:
+                ph = ",".join("?" * len(frontier))
+                rows = conn.execute(
+                    f"""SELECT DISTINCT primary_key
+                        FROM dependencies
+                        WHERE depends_on_key IN ({ph})
+                          AND edge_kind IN ('static','virtual','override')""",
+                    frontier,
+                ).fetchall()
+                next_frontier: list[str] = []
+                for row in rows:
+                    p = row["primary_key"]
+                    if p in sub_seen:
+                        continue
+                    sub_seen.add(p)
+                    next_frontier.append(p)
+                    ancestors.add(p)
+                    if p in red_set:
+                        red_ancestors_per_red[r].add(p)
+                frontier = next_frontier
+                if len(sub_seen) > 20000:  # safety cap
+                    break
+
+        top_reds = [r for r in red_keys if not red_ancestors_per_red[r]]
+        if not top_reds:  # all reds form a cycle
+            top_reds = list(red_keys)
+
+        # Method-metadata cache, lazily populated.
         meta_map: dict[str, dict] = {}
 
         def load_meta(keys: list[str]) -> None:
@@ -497,11 +515,11 @@ def _build_tree() -> dict:
             chunk = 800
             for i in range(0, len(todo), chunk):
                 part = todo[i:i + chunk]
-                ph = ",".join("?" * len(part))
+                php = ",".join("?" * len(part))
                 for row in conn.execute(
                     f"""SELECT method_key, method_layer, java_file_path,
                               java_lines, odin_file_path
-                        FROM methods WHERE method_key IN ({ph})""",
+                       FROM methods WHERE method_key IN ({php})""",
                     part,
                 ):
                     meta_map[row["method_key"]] = {
@@ -510,77 +528,12 @@ def _build_tree() -> dict:
                         "java_lines": row["java_lines"],
                         "odin_path": row["odin_file_path"],
                     }
-                # mark missing so we don't re-query
                 for k in part:
                     meta_map.setdefault(k, {"layer": None, "java_path": None,
                                             "java_lines": None, "odin_path": None})
 
-        # --- Step 1: BFS upward from every red to collect ancestors. ---
-        # A node X is an "ancestor of red R" if some chain of call
-        # edges leads X -> ... -> R.
-        ancestors: set[str] = set()
-        seen = set(red_keys)
-        frontier = list(red_keys)
-        # `red_ancestors_per_red[R]` = ancestors of R (used for top-red detection).
-        red_ancestors_per_red: dict[str, set[str]] = {r: set() for r in red_keys}
+        load_meta(list(red_keys) + list(ancestors))
 
-        # We need to track which red(s) each ancestor walked up from,
-        # so we can compute red-of-red ancestry for top-red detection.
-        # Cheaper alternative: a red R is a top-red iff for every other
-        # red Y, Y has no path down to R.  Walking up from R and noting
-        # any red we hit gives exactly the set of red ancestors of R.
-        for r in red_keys:
-            sub_seen: set[str] = {r}
-            sub_frontier = [r]
-            while sub_frontier:
-                next_frontier: list[str] = []
-                ph = ",".join("?" * len(sub_frontier))
-                rows = conn.execute(
-                    f"""SELECT DISTINCT primary_key, depends_on_key
-                        FROM dependencies
-                        WHERE depends_on_key IN ({ph})
-                          AND edge_kind IN ('static','virtual','override')""",
-                    sub_frontier,
-                ).fetchall()
-                for row in rows:
-                    p = row["primary_key"]
-                    if p in sub_seen:
-                        continue
-                    sub_seen.add(p)
-                    next_frontier.append(p)
-                    ancestors.add(p)
-                    if status_map.get(p, ("yellow", None))[0] == "red":
-                        red_ancestors_per_red[r].add(p)
-                sub_frontier = next_frontier
-                # safety cap: AI-callable graph is moderate, but cap anyway.
-                if len(sub_seen) > 5000:
-                    break
-
-        # --- Step 2: collect direct children of every red as context. -
-        red_children_set: set[str] = set()
-        ph = ",".join("?" * len(red_keys))
-        for row in conn.execute(
-            f"""SELECT DISTINCT depends_on_key FROM dependencies
-                WHERE primary_key IN ({ph})
-                  AND edge_kind IN ('static','virtual','override')""",
-            red_keys,
-        ):
-            red_children_set.add(row["depends_on_key"])
-
-        interesting: set[str] = set(red_keys) | ancestors | red_children_set
-
-        # --- Step 3: top reds = reds with no red ancestor. -------------
-        top_reds = sorted(
-            (r for r in red_keys if not red_ancestors_per_red[r]),
-            key=lambda r: -(_safe_layer(r, status_map, meta_map) or -1),
-        )
-        if not top_reds:
-            top_reds = red_keys[:1]
-
-        # Pre-load metadata for all interesting keys for fast tree build.
-        load_meta(list(interesting) + top_reds)
-
-        # --- Step 4: recursive expand. --------------------------------
         def fetch_call_children(parent_key: str) -> list[dict]:
             rows = list(conn.execute(
                 """SELECT d.depends_on_key AS key,
@@ -607,229 +560,75 @@ def _build_tree() -> dict:
                     "java_path": m.get("java_path"),
                     "java_lines": m.get("java_lines"),
                     "odin_path": m.get("odin_path"),
-                    "on_path_to_red": k in ancestors,
-                    "cycle": False,
-                    "children": [],
                 })
+            # red first (drill targets), then yellow (next tests),
+            # then green; within each band, deepest layer (lowest
+            # number) first to mirror next_task.py's ordering.
             order = {"red": 0, "yellow": 1, "green": 2}
             out.sort(key=lambda c: (
                 order.get(c["status"], 3),
-                -(c["layer"] if c["layer"] is not None else -1),
+                (c["layer"] if c["layer"] is not None else 1 << 30),
                 c["key"],
             ))
             return out
 
-        def expand(node: dict, parent_is_red: bool, visited: set[str], depth: int) -> dict:
-            # When to recurse:
-            #   - This node is red (always show its full red subtree).
-            #   - This node is on a path to a red (ancestor of some red).
-            # When NOT to recurse:
-            #   - Plain green/yellow leaf with no red descendant.
-            should_recurse = node["status"] == "red" or node["key"] in ancestors
-            if not should_recurse:
-                return node
-            if node["key"] in visited or depth > 16:
-                node["cycle"] = True
-                return node
-            visited = visited | {node["key"]}
-            for child in fetch_call_children(node["key"]):
-                # Filter children: keep red, or on-path-to-red, or any
-                # direct child of a red (= immediate context for the bug).
-                keep = (
-                    child["status"] == "red"
-                    or child["on_path_to_red"]
-                    or node["status"] == "red"
-                )
-                if not keep:
-                    continue
-                node["children"].append(
-                    expand(child, node["status"] == "red", visited, depth + 1)
-                )
-            return node
+        # Global dedup: each method_key renders fully once; later
+        # occurrences become `cycle=true` placeholder leaves.
+        rendered: set[str] = set()
 
-        roots: list[dict] = []
-        for rk in top_reds:
-            st, note = status_map.get(rk, ("red", None))
-            m = meta_map.get(rk, {})
-            seed = {
-                "key": rk,
+        def build(key: str, edge_kind: str, parent_status: str, depth: int) -> dict:
+            st, note = status_map.get(key, ("yellow", None))
+            m = meta_map.get(key, {})
+            node = {
+                "key": key,
                 "status": st,
                 "note": note,
                 "layer": m.get("layer"),
-                "edge_kind": "root",
+                "edge_kind": edge_kind,
                 "java_path": m.get("java_path"),
                 "java_lines": m.get("java_lines"),
                 "odin_path": m.get("odin_path"),
-                "on_path_to_red": True,
                 "cycle": False,
                 "children": [],
             }
-            roots.append(expand(seed, False, set(), 0))
+            if key in rendered:
+                node["cycle"] = True
+                return node
+            rendered.add(key)
+            if depth > 64:
+                node["cycle"] = True
+                return node
+            # Recurse if this node is red OR sits on a path to a red.
+            on_path = key in ancestors
+            if st != "red" and not on_path:
+                return node
+            for child in fetch_call_children(key):
+                # Keep the child if:
+                #   * it's red (a deeper drill target),
+                #   * it's on a path to some red (yellow spine), or
+                #   * the parent itself is red (immediate context).
+                ck = child["key"]
+                cst = child["status"]
+                if cst == "red" or ck in ancestors or st == "red":
+                    node["children"].append(
+                        build(ck, child["edge_kind"], st, depth + 1)
+                    )
+            return node
 
+        # Top reds: deepest layer (highest number = closest to entry) first.
+        top_reds_sorted = sorted(
+            top_reds,
+            key=lambda k: (
+                -(meta_map.get(k, {}).get("layer")
+                  if meta_map.get(k, {}).get("layer") is not None else -1),
+                k,
+            ),
+        )
+        roots = [build(k, "root", "root", 0) for k in top_reds_sorted]
         return {"summary": summary, "roots": roots}
     finally:
         conn.close()
 
-
-def _safe_layer(key: str, status_map: dict, meta_map: dict) -> int | None:
-    m = meta_map.get(key)
-    if m and m.get("layer") is not None:
-        return m["layer"]
-    return None
-    conn = _open_db()
-    try:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS test_status (
-                entity_key TEXT PRIMARY KEY,
-                status TEXT NOT NULL DEFAULT 'yellow'
-                       CHECK(status IN ('green','red','yellow')),
-                note TEXT,
-                updated_at TEXT NOT NULL
-            )"""
-        )
-
-        summary = {"green": 0, "red": 0, "yellow": 0}
-        for row in conn.execute("SELECT status, COUNT(*) FROM test_status GROUP BY status"):
-            summary[row[0]] = row[1]
-
-        # All reds, with metadata.
-        red_rows = list(
-            conn.execute(
-                """
-                SELECT ts.entity_key AS key,
-                       ts.note        AS note,
-                       m.method_layer AS layer,
-                       m.java_file_path AS java_path,
-                       m.java_lines   AS java_lines,
-                       m.odin_file_path AS odin_path
-                FROM test_status ts
-                LEFT JOIN methods m ON m.method_key = ts.entity_key
-                WHERE ts.status = 'red'
-                """
-            )
-        )
-        red_keys = {r["key"] for r in red_rows}
-        if not red_rows:
-            return {"summary": summary, "roots": []}
-
-        # Identify which reds are depended on by ANOTHER red.  Those
-        # are NOT roots — they'll show up as nested children below
-        # their red parent.  Self-edges (a red that calls itself) are
-        # excluded so a self-recursive red still surfaces as a root.
-        non_root_reds: set[str] = set()
-        if red_keys:
-            placeholders = ",".join("?" * len(red_keys))
-            for row in conn.execute(
-                f"""
-                SELECT DISTINCT depends_on_key
-                FROM dependencies
-                WHERE primary_key IN ({placeholders})
-                  AND depends_on_key IN ({placeholders})
-                  AND primary_key != depends_on_key
-                  AND edge_kind IN ('static','virtual','override')
-                """,
-                (*red_keys, *red_keys),
-            ):
-                non_root_reds.add(row[0])
-
-        roots = sorted(
-            (r for r in red_rows if r["key"] not in non_root_reds),
-            key=lambda r: (
-                # deepest (highest layer) first — top of the call stack
-                -(r["layer"] if r["layer"] is not None else -1),
-                r["key"],
-            ),
-        )
-        # If somehow ALL reds form a cycle (every red is depended on
-        # by another red), `roots` would be empty.  Fall back to the
-        # deepest-layer red so the page still shows something.
-        if not roots:
-            roots = sorted(
-                red_rows,
-                key=lambda r: (-(r["layer"] if r["layer"] is not None else -1), r["key"]),
-            )[:1]
-
-        # Pre-fetch every test_status row in one shot so child status
-        # lookups are O(1).
-        status_map: dict[str, tuple[str, str | None]] = {}
-        for row in conn.execute("SELECT entity_key, status, note FROM test_status"):
-            status_map[row["entity_key"]] = (row["status"], row["note"])
-
-        def fetch_children(parent_key: str) -> list[dict]:
-            rows = list(
-                conn.execute(
-                    """
-                    SELECT d.depends_on_key   AS key,
-                           GROUP_CONCAT(DISTINCT d.edge_kind) AS edge_kinds,
-                           m.method_layer     AS layer,
-                           m.java_file_path   AS java_path,
-                           m.java_lines       AS java_lines,
-                           m.odin_file_path   AS odin_path
-                    FROM dependencies d
-                    JOIN methods m ON m.method_key = d.depends_on_key
-                    WHERE d.primary_key = ?
-                      AND d.edge_kind IN ('static','virtual','override')
-                    GROUP BY d.depends_on_key
-                    """,
-                    (parent_key,),
-                )
-            )
-            out: list[dict] = []
-            for row in rows:
-                st, note = status_map.get(row["key"], ("yellow", None))
-                out.append({
-                    "key": row["key"],
-                    "status": st,
-                    "note": note,
-                    "layer": row["layer"],
-                    "edge_kind": row["edge_kinds"],
-                    "java_path": row["java_path"],
-                    "java_lines": row["java_lines"],
-                    "odin_path": row["odin_path"],
-                })
-            # red first, then yellow, then green; within each, deepest first.
-            order = {"red": 0, "yellow": 1, "green": 2}
-            out.sort(key=lambda c: (
-                order.get(c["status"], 3),
-                -(c["layer"] if c["layer"] is not None else -1),
-                c["key"],
-            ))
-            return out
-
-        # Recursively expand: red nodes get children; non-red are leaves.
-        # `visited` prevents infinite recursion on call-graph cycles.
-        def expand(node: dict, visited: set[str], depth: int) -> dict:
-            node = dict(node)
-            node["children"] = []
-            node["cycle"] = False
-            if node["status"] != "red":
-                return node
-            if node["key"] in visited or depth > 12:
-                node["cycle"] = True
-                return node
-            visited = visited | {node["key"]}
-            for child in fetch_children(node["key"]):
-                node["children"].append(expand(child, visited, depth + 1))
-            return node
-
-        root_nodes: list[dict] = []
-        for r in roots:
-            st, note = status_map.get(r["key"], ("red", r["note"]))
-            seed = {
-                "key": r["key"],
-                "status": st,
-                "note": note,
-                "layer": r["layer"],
-                "edge_kind": "root",
-                "java_path": r["java_path"],
-                "java_lines": r["java_lines"],
-                "odin_path": r["odin_path"],
-            }
-            root_nodes.append(expand(seed, set(), 0))
-
-        return {"summary": summary, "roots": root_nodes}
-    finally:
-        conn.close()
 
 
 class _Handler(BaseHTTPRequestHandler):

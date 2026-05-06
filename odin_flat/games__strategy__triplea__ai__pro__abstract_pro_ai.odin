@@ -51,7 +51,27 @@ abstract_pro_ai_new :: proc(
 	self.stored_purchase_territories = nil
 	self.stored_political_actions = nil
 	self.stored_strafing_territories = make([dynamic]^Territory)
+	self.purchase = abstract_pro_ai_v_purchase
 	return self
+}
+
+@(private = "file")
+abstract_pro_ai_v_purchase :: proc(
+	self:               ^Abstract_Ai,
+	purchase_for_bid:   bool,
+	pus_to_spend:       i32,
+	purchase_delegate:  ^I_Purchase_Delegate,
+	data:               ^Game_Data,
+	player:             ^Game_Player,
+) {
+	abstract_pro_ai_purchase(
+		cast(^Abstract_Pro_Ai)self,
+		purchase_for_bid,
+		pus_to_spend,
+		purchase_delegate,
+		data,
+		player,
+	)
 }
 
 abstract_pro_ai_get_pro_data :: proc(self: ^Abstract_Pro_Ai) -> ^Pro_Data {

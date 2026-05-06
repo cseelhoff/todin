@@ -1,11 +1,11 @@
 {
-  "scanned_at": "2026-05-06T10:07:06.243997+00:00",
+  "scanned_at": "2026-05-06T12:54:59.339336+00:00",
   "files_scanned": 1218,
   "structs_total": 1439,
   "constructors_total": 663,
-  "wirings_examined": 213,
+  "wirings_examined": 214,
   "by_status": {
-    "ok": 213,
+    "ok": 214,
     "missing": 0,
     "missing_kind": 0
   },
