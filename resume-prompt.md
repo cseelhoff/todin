@@ -809,18 +809,42 @@ it for every Phase C failure. Summary:
 3. **Classify every yellow sibling first via a fixture-driven
    golden test.** Yellow means UNKNOWN, not "the bug." For each
    yellow sibling, follow the methodology in
-   `llm-instructions.md` §"How to classify a yellow proc":
-   either prove coverage by an existing passing snapshot
-   (instrument-and-rerun, post-state diff empty), or write a
-   targeted test that loads a real `before.json` fixture, calls
-   the proc with the parent's actual call-site arguments, and
-   value-compares the outputs against a golden derived from the
-   Java reference. Mark the result green or red via
-   `scripts/mark_test_status.py`. **Crash-only / non-nil /
-   non-empty / trivial-input assertions are forbidden as proof
-   of green.** If you cannot build a real golden test for a
-   sibling, leave it yellow — never mark green to "make
-   progress."
+   `llm-instructions.md` §"How to classify a yellow proc". The
+   preferred path is:
+
+     a. Try coverage first — instrument the proc with a
+        temporary `eprintln` and re-run the snapshot suite; if
+        a passing snapshot fires it on a non-trivial branch,
+        green.
+     b. **Capture Java goldens with `scripts/capture_proc_snapshot.py`**
+        when the proc has a return value or pure-state output.
+        It runs the Byte Buddy snapshot agent under
+        `Ww2v5JacocoRun.runWithSnapshots` and writes
+        `before.json`, `after.json`, `return.txt` per call to
+        `triplea/conversion/odin_tests/dep_<snake_class>_<snake_method>/snapshots/`.
+        Defaults: 10 MiB / 10 min caps (hard kill at +60 s);
+        override with `--max-bytes` / `--max-minutes`. Combat-
+        phase procs typically need `--rounds 3`.
+     c. Then add a `when #config(PROBE_<NAME>, false)` log line
+        in the Odin proc, run the snapshot suite with
+        `-define:PROBE_<NAME>=true`, and visually compare the
+        probe output against the captured `return.txt`s.
+     d. Targeted Odin fixture test (Step 3 of the methodology)
+        when the proc's effects can't be serialised by the
+        agent — e.g. side effects via `bridge.addChange`,
+        history events, or sound emissions. Use the
+        `dbg_*_capture_enabled` hooks; see
+        `dep_mark_attacking_transports/` for a worked example.
+
+   Remove probes / instrumentation BEFORE marking status, and
+   re-run the snapshot suite to confirm the baseline `Results: N
+   passed, M failed` count is unchanged. Mark the result green
+   or red via `scripts/mark_test_status.py` with a note that
+   cites the goldens dir and the observed divergence.
+   **Crash-only / non-nil / non-empty / trivial-input
+   assertions are forbidden as proof of green.** If you cannot
+   build a real golden test for a sibling, leave it yellow —
+   never mark green to "make progress."
 4. If any sibling came back red, re-run `next_task.py` — the
    picker will choose it as the new deepest red and you drill
    there. If every sibling came back green, the picker pops up

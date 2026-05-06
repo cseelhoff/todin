@@ -39,6 +39,44 @@ public class SnapshotInterceptor {
     // Layer lookup: method signature -> layer number (loaded from layer files)
     public static volatile Map<String, Integer> methodToLayer = Map.of();
 
+    // Safety caps — once exceeded, shouldSnapshot() returns false so no further
+    // tick-* dirs are produced. Default caps are intentionally tight; raise
+    // them via snapshot.config or -Dsnapshot.maxBytes / -Dsnapshot.maxMillis
+    // when capturing big methods.
+    public static volatile long maxBytes = 10L * 1024 * 1024;   // 10 MiB total
+    public static volatile long maxMillis = 10L * 60 * 1000;    // 10 minutes wall clock
+    public static volatile int  maxSnapshots = 100;             // hard count limit
+    public static final java.util.concurrent.atomic.AtomicLong bytesWritten =
+            new java.util.concurrent.atomic.AtomicLong(0);
+    public static final java.util.concurrent.atomic.AtomicInteger snapshotsTaken =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+    public static volatile long startMillis = 0;
+    public static final java.util.concurrent.atomic.AtomicBoolean capExceeded =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** Returns true once any cap has been hit. Logs once. */
+    public static boolean capsExceeded() {
+        if (capExceeded.get()) return true;
+        if (startMillis == 0) startMillis = System.currentTimeMillis();
+        long bytes = bytesWritten.get();
+        long elapsed = System.currentTimeMillis() - startMillis;
+        int taken = snapshotsTaken.get();
+        String reason = null;
+        if (bytes >= maxBytes) reason = "maxBytes=" + maxBytes + " (wrote " + bytes + ")";
+        else if (elapsed >= maxMillis) reason = "maxMillis=" + maxMillis + " (elapsed " + elapsed + ")";
+        else if (taken >= maxSnapshots) reason = "maxSnapshots=" + maxSnapshots + " (took " + taken + ")";
+        if (reason != null && capExceeded.compareAndSet(false, true)) {
+            System.err.println("[SnapshotAgent] CAP EXCEEDED: " + reason
+                    + " — further snapshots will be skipped. Override via snapshot.maxBytes / snapshot.maxMillis / snapshot.maxSnapshots.");
+            try {
+                java.nio.file.Files.writeString(
+                        java.nio.file.Path.of(outputDir, "CAP_EXCEEDED.txt"),
+                        reason + "\n");
+            } catch (Exception ignored) {}
+        }
+        return capExceeded.get();
+    }
+
     /**
      * Called on method entry. Increments tick, and if in range, saves the "before" snapshot.
      * Returns the tick value so @Advice.Exit can use it.
@@ -56,7 +94,9 @@ public class SnapshotInterceptor {
         try {
             long tick = COUNTER.incrementAndGet();
 
-            if (tick >= rangeStart && tick <= rangeEnd && shouldSnapshot(methodSignature)) {
+            if (tick >= rangeStart && tick <= rangeEnd
+                    && !capsExceeded()
+                    && shouldSnapshot(methodSignature)) {
                 if (cachedGameDataClass == null) {
                     try {
                         cachedGameDataClass = Class.forName("games.strategy.engine.data.GameData");
@@ -64,6 +104,7 @@ public class SnapshotInterceptor {
                 }
                 Object gameData = extractGameData(self);
                 saveBeforeSnapshot(tick, methodSignature, args, cachedGameDataClass, gameData);
+                snapshotsTaken.incrementAndGet();
             }
 
             return tick;
@@ -84,7 +125,9 @@ public class SnapshotInterceptor {
             @Advice.Thrown Throwable thrown,
             @Advice.This(optional = true, typing = Assigner.Typing.DYNAMIC) Object self) {
         try {
-            if (tick >= rangeStart && tick <= rangeEnd && shouldSnapshot(methodSignature)) {
+            if (tick >= rangeStart && tick <= rangeEnd
+                    && !capExceeded.get()
+                    && shouldSnapshot(methodSignature)) {
                 Object gameData = extractGameData(self);
                 saveAfterSnapshot(tick, methodSignature, returnValue, thrown, cachedGameDataClass, gameData);
             }
@@ -241,6 +284,7 @@ public class SnapshotInterceptor {
             }
             String json = (String) cachedSerializeMethod.invoke(cachedSerializer, gameData);
             Files.writeString(file, json);
+            bytesWritten.addAndGet(json.length());
         } catch (Exception e) {
             try {
                 Files.writeString(file, "{\"error\": \"" + e.getMessage().replace("\"", "'") + "\"}");
@@ -411,6 +455,15 @@ public class SnapshotInterceptor {
             excludeClassSubstrings = parseSet(props.getProperty("snapshot.exclude.classes", ""));
             includeLayers = parseIntSet(props.getProperty("snapshot.include.layers", ""));
             excludeLayers = parseIntSet(props.getProperty("snapshot.exclude.layers", ""));
+
+            // Safety caps. -D system properties take precedence over the config file.
+            maxBytes = Long.parseLong(System.getProperty("snapshot.maxBytes",
+                    props.getProperty("snapshot.maxBytes", String.valueOf(maxBytes))));
+            maxMillis = Long.parseLong(System.getProperty("snapshot.maxMillis",
+                    props.getProperty("snapshot.maxMillis", String.valueOf(maxMillis))));
+            maxSnapshots = Integer.parseInt(System.getProperty("snapshot.maxSnapshots",
+                    props.getProperty("snapshot.maxSnapshots", String.valueOf(maxSnapshots))));
+            startMillis = System.currentTimeMillis();
 
             System.out.println("[SnapshotInterceptor] Config loaded from " + configPath);
             System.out.println("[SnapshotInterceptor] Range: " + rangeStart + "-" + rangeEnd);

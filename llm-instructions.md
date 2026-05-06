@@ -670,9 +670,106 @@ path enters the proc on a non-trivial branch:
   3. If no passing snapshot fires the proc on a realistic
      branch, proceed to step 2.
 
-**Step 2 — Targeted fixture-driven golden test.**
+**Step 2 — Java-side capture via `capture_proc_snapshot.py`
+(preferred when the proc has a return value or pure-state
+output).**
 
-When step 1 fails, write a focused Odin test in
+The Byte Buddy snapshot agent at `templates/snapshot-agent/`
+can capture before/after `GameData` plus the actual return
+value of any Java method on demand. Use it to obtain the
+golden directly from a Java run, avoiding manual derivation
+from the Java source. Workflow:
+
+  1. Run the capture (defaults: 10 MiB / 10 minute caps;
+     overridable with `--max-bytes` / `--max-minutes`):
+
+     ```sh
+     python3 scripts/capture_proc_snapshot.py \
+         --class <FQCN> \
+         --method <methodName> \
+         --rounds 3
+     ```
+
+     Combat-phase procs need `--rounds 3` or higher so battles
+     fire under WW2v5 seed 42; round-1-only procs work with
+     `--rounds 1`. The script:
+       - builds (or reuses) the agent jar,
+       - narrows the methods file to entries from the target
+         class for ~50× speedup,
+       - runs `Ww2v5JacocoRun.runWithSnapshots` with
+         `-PsnapshotAgent=<jar>`,
+       - filters tick dirs to ones whose `before-meta.txt`
+         matches `<Class>.<method>(`,
+       - renumbers them `0001..NNNN` under
+         `triplea/conversion/odin_tests/dep_<snake_class>_<snake_method>/snapshots/`,
+       - emits `before.json`, `after.json`, `before-meta.txt`,
+         `after-meta.txt`, and `return.txt` per snap.
+
+  2. Inspect the captured returns to confirm the proc fired
+     on the path of interest and that returns vary (or are
+     legitimately constant):
+
+     ```sh
+     for f in .../snapshots/*/return.txt; do
+         printf "%s: " "$(basename $(dirname $f))"; cat $f
+     done
+     ```
+
+     If the agent emitted `CAP_EXCEEDED.txt` in scratch, the
+     driver surfaces a warning. Re-run with larger
+     `--max-bytes` / `--max-minutes` only when justified — the
+     defaults are tight on purpose because a runaway capture
+     will fill the disk.
+
+  3. Add a coverage probe at the top of the Odin proc behind
+     `when #config(PROBE_<NAME>, false)` — log the same shape
+     of output the Java agent recorded:
+
+     ```odin
+     when #config(PROBE_DETERMINE_STEP_STRINGS, false) {
+         fmt.eprintf("[PROBE_STEPS] %d strings: %v\n",
+             len(self.step_strings), self.step_strings)
+     }
+     ```
+
+     Then run:
+
+     ```sh
+     odin test conversion/odin_tests/server_game_run_next_step \
+         -collection:flat=/home/caleb/todin/odin_flat \
+         -collection:test_common=conversion/odin_tests/test_common \
+         -define:ODIN_TEST_TRACK_MEMORY=false \
+         -define:PROBE_<NAME>=true 2>&1 | grep PROBE_
+     ```
+
+  4. **Compare the probe lines against the captured
+     `return.txt`s.** If they match — green; if they diverge —
+     red. Either way, the diff itself is gold for fixing the
+     proc: it tells you exactly which inputs it differs on
+     (different snapshot ids → different `return.txt` lines).
+
+  5. Remove the probe via `replace_string_in_file` BEFORE
+     marking status. Re-run the snapshot suite to confirm the
+     baseline `Results: N passed, M failed` count is
+     unchanged.
+
+  6. Mark with full diagnostic context:
+
+     ```sh
+     scripts/mark_test_status.py '<METHOD_KEY>' {green|red} \
+         --note 'Java goldens (NN captures) for <fixture>: <expected>. Odin probe in snap <id>: <observed>. Goldens at triplea/conversion/odin_tests/dep_<...>/snapshots/.'
+     ```
+
+**Step 3 — Targeted Odin fixture test (when capture is
+infeasible).**
+
+Use this when the proc has no return value, when its effects
+are observed via change-factory mutations / history events
+that the agent cannot serialise, or when the parent's call
+site arguments depend on runtime state the agent's classpath
+filtering cannot reach.
+
+Write a focused Odin test in
 `triplea/conversion/odin_tests/<topic>/`:
 
   1. Load a real `before.json` via `tc.load_game_state(SNAP_DIR,
@@ -706,8 +803,20 @@ When step 1 fails, write a focused Odin test in
      a one-line comment at the top of the test, e.g.
      `// Golden derived from MustFightBattle.java:1234-1267`.
 
-**Step 3 — If neither step 1 nor step 2 is feasible, leave the
-proc yellow.**
+  Side-effect-capture hooks (already wired into the codebase):
+
+  - `dbg_add_change_capture_enabled` / `dbg_add_change_capture_changes`
+    in `default_delegate_bridge.odin` — capture every
+    `bridge.addChange(...)` call.
+  - `dbg_history_capture_enabled` in `delegate_history_writer.odin`
+    — capture history events.
+  - `dbg_sound_capture_enabled` in `headless_sound_channel.odin`
+    — capture sound channel emissions.
+
+  See `dep_mark_attacking_transports/` for a worked example.
+
+**Step 4 — If none of steps 1-3 is feasible, leave the proc
+yellow.**
 
 If the proc is only reachable through a currently-red snapshot
 and no realistic fixture exists for it (e.g. it depends on

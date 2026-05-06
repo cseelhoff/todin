@@ -130,7 +130,8 @@ def build_agent_jar(triplea: Path) -> Path:
 
 
 def run_smoke_test(triplea: Path, agent_jar: Path, config: Path,
-                   methods: Path, out_dir: Path, rounds: int | None) -> None:
+                   methods: Path, out_dir: Path, rounds: int | None,
+                   max_bytes: int, max_minutes: float) -> None:
     cmd = [
         str(triplea / "gradlew"), "--no-daemon",
         ":game-app:smoke-testing:test",
@@ -140,12 +141,23 @@ def run_smoke_test(triplea: Path, agent_jar: Path, config: Path,
         f"-PsnapshotConfig={config}",
         f"-PsnapshotMethods={methods}",
         f"-Dsnapshot.outDir={out_dir}",
+        f"-Dsnapshot.maxBytes={max_bytes}",
+        f"-Dsnapshot.maxMillis={int(max_minutes * 60 * 1000)}",
         "-x", "jacocoTestReport",
     ]
     if rounds is not None:
         cmd.append(f"-Dsnapshot.rounds={rounds}")
-    print(f"[capture] running smoke test (this is the slow step)...", flush=True)
-    subprocess.check_call(cmd, cwd=triplea)
+    # Driver-side hard kill: agent's wall-clock cap is best-effort. We add a
+    # 60-second grace and SIGKILL the gradle subprocess if it overruns. This
+    # is the last line of defense against a runaway capture filling the disk.
+    grace_secs = max_minutes * 60 + 60
+    print(f"[capture] running smoke test (timeout {grace_secs:.0f}s, maxBytes={max_bytes})...", flush=True)
+    try:
+        subprocess.run(cmd, cwd=triplea, timeout=grace_secs, check=True)
+    except subprocess.TimeoutExpired:
+        fail(f"smoke test exceeded {max_minutes} min wall clock and was killed. "
+             f"Raise --max-minutes if this proc legitimately needs more time. "
+             f"Scratch dir under {out_dir} preserved for inspection.")
 
 
 def parse_meta(meta_file: Path) -> dict:
@@ -212,6 +224,10 @@ def main() -> None:
                     help="Destination snapshots dir (default: <triplea>/conversion/odin_tests/<dep_name>/snapshots)")
     ap.add_argument("--rounds", type=int, default=None,
                     help="Override SNAPSHOT_ROUNDS (default: 2). Larger = more chance to hit combat-phase procs.")
+    ap.add_argument("--max-bytes", type=int, default=10 * 1024 * 1024,
+                    help="Cap on total bytes written by the agent (default: 10 MiB). Override for big methods.")
+    ap.add_argument("--max-minutes", type=float, default=10.0,
+                    help="Wall-clock cap in minutes (default: 10). Driver SIGKILLs gradle 60s past this.")
     ap.add_argument("--keep-raw", action="store_true",
                     help="Don't delete the scratch tick-* dump dir after post-processing.")
     args = ap.parse_args()
@@ -235,7 +251,13 @@ def main() -> None:
     print(f"[capture] scratch: {scratch}")
     try:
         cfg, methods = write_per_call_config(triplea, args.class_fqcn, args.method, scratch)
-        run_smoke_test(triplea, agent_jar, cfg, methods, scratch, args.rounds)
+        run_smoke_test(triplea, agent_jar, cfg, methods, scratch, args.rounds,
+                       args.max_bytes, args.max_minutes)
+        # Surface the agent's CAP_EXCEEDED notice if present.
+        cap_marker = scratch / "CAP_EXCEEDED.txt"
+        if cap_marker.is_file():
+            print(f"[capture] WARNING: {cap_marker.read_text().strip()}")
+            print(f"[capture] Some captures may be missing. Re-run with larger --max-bytes / --max-minutes if needed.")
         n = post_process(scratch, dest, args.class_fqcn, args.method)
         if n == 0:
             fail("no tick-* dumps matched the filter — was the method actually entered?")
