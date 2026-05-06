@@ -82,23 +82,24 @@ step 2 "patch TripleA build files"
 python3 "$SCRIPTS/patch_triplea.py" --triplea "$TRIPLEA_DIR" --rounds "$ROUNDS"
 
 # ---------------------------------------------------------------------------
-# 3. Compile Java (so we have .class files for entity extraction)
+# 3. Compile Java (main + test) so we have .class files for entity
+#    extraction. Test classes hold the JaCoCo entry-point harness
+#    (Ww2v5JacocoRun, SnapshotHarness, GameTestUtils); they're the
+#    runtime top-of-stack and must be in the dependency graph for
+#    layering to bottom-out correctly.
 # ---------------------------------------------------------------------------
-step 3 "compile Java sources"
-( cd "$TRIPLEA_DIR" && ./gradlew --no-daemon compileJava \
+step 3 "compile Java sources (main + test)"
+( cd "$TRIPLEA_DIR" && ./gradlew --no-daemon \
+    compileJava compileTestJava \
     -x checkstyleMain -x checkstyleTest -x pmdMain -x pmdTest )
 
 # ---------------------------------------------------------------------------
-# 4. Extract entities + dependencies into port.sqlite
+# 4. Run Ww2v5JacocoRun under JaCoCo (skip if --skip-test).
+#    Note: entity extraction (formerly step 4) is now step 5 below — it
+#    runs AFTER JaCoCo so the test classes are guaranteed compiled and
+#    the harness procs are scanned in the same javap pass as main.
 # ---------------------------------------------------------------------------
-step 4 "extract entities + dependencies via javap"
-python3 "$SCRIPTS/extract_entities.py" \
-  --db "$PORT_DB" --triplea "$TRIPLEA_DIR"
-
-# ---------------------------------------------------------------------------
-# 5. Run Ww2v5JacocoRun under JaCoCo (skip if --skip-test)
-# ---------------------------------------------------------------------------
-step 5 "run Ww2v5JacocoRun under JaCoCo"
+step 4 "run Ww2v5JacocoRun under JaCoCo"
 if [ "$SKIP_TEST" -eq 1 ]; then
   log "skipping (--skip-test), expecting existing jacoco.xml"
 else
@@ -112,6 +113,17 @@ fi
 
 JACOCO_XML="$TRIPLEA_DIR/game-app/smoke-testing/build/jacoco.xml"
 [ -f "$JACOCO_XML" ] || { echo "missing $JACOCO_XML"; exit 1; }
+
+# ---------------------------------------------------------------------------
+# 5. Extract entities + dependencies via javap (main + test)
+#    Runs after JaCoCo so test classes are guaranteed compiled and the
+#    harness procs (Ww2v5JacocoRun, SnapshotHarness, GameTestUtils) are
+#    scanned in the same pass. INCLUDE_TEST_CLASSES=1 also flips them
+#    is_test_harness=1 in the entities table.
+# ---------------------------------------------------------------------------
+step 5 "extract entities + dependencies via javap (main + test)"
+INCLUDE_TEST_CLASSES=1 python3 "$SCRIPTS/extract_entities.py" \
+  --db "$PORT_DB" --triplea "$TRIPLEA_DIR" --include-tests
 
 # ---------------------------------------------------------------------------
 # 5b. (Optional) Run Ww2v5JacocoRun.runWithSnapshots — seeded 1-round dump
@@ -140,7 +152,9 @@ step 6 "apply JaCoCo coverage"
 python3 "$SCRIPTS/apply_jacoco.py" --db "$PORT_DB" --xml "$JACOCO_XML"
 
 # ---------------------------------------------------------------------------
-# 7. Build called-only methods + structs tables, layered via SCC
+# 7. Build called-only methods + structs tables, layered via SCC.
+#    Synthesizes virtual-dispatch override edges so abstract/interface
+#    procs participate in layering instead of bottoming out at layer 0.
 # ---------------------------------------------------------------------------
 step 7 "build methods + structs tables (SCC-layered)"
 python3 "$SCRIPTS/build_called_layered_tables.py" --db "$PORT_DB"

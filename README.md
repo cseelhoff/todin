@@ -101,29 +101,19 @@ Three edits, all idempotent:
 python3 scripts/patch_triplea.py --triplea triplea --rounds 8
 ```
 
-### 3. Compile Java sources
+### 3. Compile Java sources (main + test)
+
+The smoke-testing module's test classes hold the actual JaCoCo entry-point
+(`Ww2v5JacocoRun.run`, `SnapshotHarness.wrapStep`, `GameTestUtils`). They
+are scanned by `extract_entities.py --include-tests` so layering bottoms
+out at the real top-of-stack.
 
 ```sh
-( cd triplea && ./gradlew --no-daemon compileJava \
+( cd triplea && ./gradlew --no-daemon compileJava compileTestJava \
     -x checkstyleMain -x checkstyleTest -x pmdMain -x pmdTest )
 ```
 
-### 4. Extract entities + dependencies via javap
-
-This walks every `.class` file and parses `javap -p -c` output to extract:
-- One `struct:fqcn` row per class/interface/enum.
-- One `proc:fqcn#name(args)` row per method.
-- One edge per `extends`/`implements`/`new`/`invoke*`/`get/putfield`
-  reference.
-
-```sh
-python3 scripts/extract_entities.py \
-    --db port.sqlite --triplea triplea
-```
-
-Output: ~12,000–14,000 entities, ~50,000–60,000 dependency edges.
-
-### 5. Run Ww2v5JacocoRun under JaCoCo
+### 4. Run Ww2v5JacocoRun under JaCoCo
 
 ```sh
 ( cd triplea && ./gradlew --no-daemon \
@@ -135,6 +125,29 @@ Output: ~12,000–14,000 entities, ~50,000–60,000 dependency edges.
 ```
 
 This produces `triplea/game-app/smoke-testing/build/jacoco.xml`.
+
+### 5. Extract entities + dependencies via javap
+
+Runs after JaCoCo so the test classes are guaranteed compiled and the
+harness procs are scanned in the same javap pass as main.
+
+This walks every `.class` file and parses `javap -p -c -s -v` output to extract:
+- One `struct:fqcn` row per class/interface/enum (with `struct_kind`).
+- One `proc:fqcn#name(args)` row per method (with `is_abstract`).
+- One edge per `extends`/`implements`/`new`/`invoke*`/`get/putfield`
+  reference, plus method-reference lambdas pulled from the constant pool.
+- Each row scanned from `build/classes/java/test` is tagged
+  `is_test_harness = 1`.
+
+Run with `--include-tests` (or `INCLUDE_TEST_CLASSES=1`) to include the
+harness:
+
+```sh
+INCLUDE_TEST_CLASSES=1 python3 scripts/extract_entities.py \
+    --db port.sqlite --triplea triplea --include-tests
+```
+
+Output: ~20,000 entities, ~130,000 dependency edges.
 
 ### 6. Apply JaCoCo coverage
 

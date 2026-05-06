@@ -4,6 +4,8 @@ import "core:testing"
 import "core:log"
 import game "../../odin_flat"
 
+FILTER_SNAP :: #config(FILTER_SNAP, "")
+
 // Generic snapshot test runner.
 // advance_step: if true, advances sequence.current_index after calling run_proc
 //   (needed when the proc doesn't advance the step itself, e.g. delegate stubs)
@@ -78,6 +80,8 @@ run_snapshot_tests_server_game :: proc(
 	fail_count := 0
 
 	for id in ids {
+		if FILTER_SNAP != "" && id != FILTER_SNAP { continue }
+		log.infof("=== running snapshot %s ===", id)
 		before := load_game_state(snapshot_dir, id, "before.json")
 		if before == nil {
 			testing.expectf(t, false, "Failed to load before.json for snapshot %s", id)

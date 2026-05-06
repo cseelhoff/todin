@@ -40,11 +40,16 @@ game_properties_new :: proc(data: ^Game_Data) -> ^Game_Properties {
 // branches contribute no observable Property_Value; only constant_properties
 // holds typed values in this port.
 game_properties_get :: proc(self: ^Game_Properties, key: string) -> Property_Value {
-	if _, ok := self.editable_properties[key]; ok {
-		// Editable_Property shim has no value field; fall through.
+	// Mirrors GameProperties.get(String): editable -> player -> constant.
+	if found, ok := self.editable_properties[key]; ok && found != nil {
+		if v := editable_property_get_value(found); v != nil {
+			return v
+		}
 	}
-	if _, ok := self.player_properties[key]; ok {
-		// Editable_Property shim has no value field; fall through.
+	if found, ok := self.player_properties[key]; ok && found != nil {
+		if v := editable_property_get_value(found); v != nil {
+			return v
+		}
 	}
 	if v, ok := self.constant_properties[key]; ok {
 		return v

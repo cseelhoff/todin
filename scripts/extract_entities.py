@@ -54,6 +54,21 @@ CLASS_DIR_GLOBS = [
     "http-clients/*/build/classes/java/main",
 ]
 
+# Test-source class roots. The smoke-testing module's test classes hold
+# the actual entry-point of the JaCoCo trace (`Ww2v5JacocoRun.run`,
+# `SnapshotHarness.wrapStep`, `GameTestUtils.setUpGameWithAis`). They are
+# NOT scanned by default because we don't port them to Odin (the Odin
+# port uses its own `test_server_game.odin` harness). Set
+# `INCLUDE_TEST_CLASSES=1` (or pass `--include-tests`) to add them so
+# layering captures the full call chain from the harness top down
+# through the engine. Test-class entities are tagged `is_test_harness=1`
+# so reporting + auto-impl scripts can skip them.
+TEST_CLASS_DIR_GLOBS = [
+    "game-app/*/build/classes/java/test",
+    "lib/*/build/classes/java/test",
+    "http-clients/*/build/classes/java/test",
+]
+
 EXCLUDED_PACKAGE_PREFIXES = (
     "java.", "javax.", "jakarta.", "lombok.",
     "org.slf4j.", "ch.qos.", "com.google.",
@@ -99,22 +114,34 @@ def _is_ui_taint_source(fqcn: str) -> bool:
     return fqcn.startswith(UI_PACKAGE_PREFIXES) or fqcn.startswith(UI_TRIPLEA_PREFIXES)
 
 
-def find_class_dirs(triplea: Path) -> list[Path]:
-    """Locate every .../build/classes/java/main directory below TRIPLEA_DIR."""
-    out: list[Path] = []
+def find_class_dirs(triplea: Path,
+                    include_tests: bool = False) -> list[tuple[Path, bool]]:
+    """Locate every .../build/classes/java/{main,test} directory.
+
+    Returns list of (path, is_test) pairs. Test roots are only included
+    when `include_tests=True`.
+    """
+    out: list[tuple[Path, bool]] = []
     for pattern in CLASS_DIR_GLOBS:
-        out.extend(p for p in triplea.glob(pattern) if p.is_dir())
+        for p in triplea.glob(pattern):
+            if p.is_dir():
+                out.append((p, False))
+    if include_tests:
+        for pattern in TEST_CLASS_DIR_GLOBS:
+            for p in triplea.glob(pattern):
+                if p.is_dir():
+                    out.append((p, True))
     return out
 
 
-def walk_class_files(roots: list[Path]) -> list[tuple[Path, str]]:
-    """Yield (absolute path, fqcn-from-relative-path) for every .class file."""
-    found: list[tuple[Path, str]] = []
-    for root in roots:
+def walk_class_files(roots: list[tuple[Path, bool]]) -> list[tuple[Path, str, bool]]:
+    """Yield (absolute path, fqcn-from-relative-path, is_test) for every .class file."""
+    found: list[tuple[Path, str, bool]] = []
+    for root, is_test in roots:
         for cf in root.rglob("*.class"):
             rel = cf.relative_to(root)
             fqcn = str(rel.with_suffix("")).replace(os.sep, ".")
-            found.append((cf, fqcn))
+            found.append((cf, fqcn, is_test))
     return found
 
 
@@ -275,6 +302,7 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
     impl: list[str] = []
     methods: list[dict] = []
     struct_deps_from_fields: set[str] = set()
+    struct_kind: str = "class"  # default if we fail to detect
 
     i = 0
     n = len(lines)
@@ -300,6 +328,20 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
             impl_raw = (m.group(3) or "").strip()
             ext = _split_types(ext_raw)
             impl = _split_types(impl_raw)
+        # Determine the struct kind from the signature line.
+        #   `interface` -> 'interface'
+        #   `enum`      -> 'enum'
+        #   `abstract class` -> 'abstract_class'
+        #   `class` (without abstract) -> 'class'
+        sig_text = lines[sig_idx]
+        if re.search(r"\binterface\s+[\w$.]+", sig_text):
+            struct_kind = "interface"
+        elif re.search(r"\benum\s+[\w$.]+", sig_text):
+            struct_kind = "enum"
+        elif re.search(r"\babstract\s+class\s+[\w$.]+", sig_text):
+            struct_kind = "abstract_class"
+        else:
+            struct_kind = "class"
         i = sig_idx + 1
         # In verbose mode the actual class body opens 400+ lines later
         # with a standalone `{` after the constant pool dump. Skip past
@@ -436,6 +478,16 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
                     "args_java": args,
                     "deps_struct": struct_deps,
                     "deps_proc": proc_deps,
+                    # Abstract / interface methods have a `descriptor:` line
+                    # but no `Code:` block — javap emits no bytecode for
+                    # them, so the `body` we collected is empty. This signal
+                    # is what `build_called_layered_tables.py` uses to
+                    # synthesize virtual-dispatch edges to concrete
+                    # overriders, so the abstract proc participates in
+                    # layering instead of bottoming out at layer 0.
+                    "is_abstract": (len(body) == 0)
+                            or (" abstract " in line)
+                            or line.lstrip().startswith("abstract "),
                 })
             i = k
             continue
@@ -477,7 +529,7 @@ def parse_javap(text: str) -> tuple[str, list[str], list[str], list[dict]]:
             for c in descriptor_classes(mdesc):
                 if not _excluded(c):
                     cp_struct_deps.add(c)
-    return fqcn, ext, impl, methods, struct_deps_from_fields, cp_struct_deps, cp_proc_deps
+    return fqcn, ext, impl, methods, struct_deps_from_fields, cp_struct_deps, cp_proc_deps, struct_kind
 
 
 def _excluded(fqcn: str) -> bool:
@@ -547,16 +599,16 @@ def build_java_source_index(triplea: Path) -> dict[str, str]:
 # Worker: run javap on one class file and return parsed result
 # ---------------------------------------------------------------------------
 
-def _javap_one(class_file: str):
+def _javap_one(class_file: str, is_test: bool = False):
     try:
         out = subprocess.run(
             ["javap", "-p", "-c", "-s", "-v", class_file],
             capture_output=True, text=True, check=True, timeout=60,
         ).stdout
     except Exception:
-        return class_file, "", [], [], [], set(), set(), set()
-    fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs = parse_javap(out)
-    return class_file, fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs
+        return class_file, "", [], [], [], set(), set(), set(), "class", is_test
+    fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs, struct_kind = parse_javap(out)
+    return class_file, fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs, struct_kind, is_test
 
 
 # ---------------------------------------------------------------------------
@@ -569,6 +621,13 @@ def main() -> None:
     ap.add_argument("--triplea",
                     default=os.environ.get("TRIPLEA_DIR", "triplea"))
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 4)
+    ap.add_argument(
+        "--include-tests",
+        action="store_true",
+        default=os.environ.get("INCLUDE_TEST_CLASSES", "0") == "1",
+        help=("also scan build/classes/java/test roots; harness entries "
+              "are tagged is_test_harness=1"),
+    )
     args = ap.parse_args()
 
     triplea = Path(args.triplea).resolve()
@@ -577,11 +636,12 @@ def main() -> None:
     if not triplea.is_dir():
         sys.exit(f"TRIPLEA_DIR not a directory: {triplea}")
 
-    class_dirs = find_class_dirs(triplea)
+    class_dirs = find_class_dirs(triplea, include_tests=args.include_tests)
     if not class_dirs:
         sys.exit(f"no compiled .class roots under {triplea}; "
                  f"run `gradle compileJava` first")
-    print(f"scanning {len(class_dirs)} class roots...")
+    print(f"scanning {len(class_dirs)} class roots "
+          f"(include_tests={args.include_tests})...")
     cls_files = walk_class_files(class_dirs)
     print(f"  {len(cls_files)} .class files")
 
@@ -592,12 +652,14 @@ def main() -> None:
     print(f"running javap with {args.workers} workers...")
     parsed: list = []
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
-        futs = {ex.submit(_javap_one, str(p)): p for p, _ in cls_files}
+        futs = {ex.submit(_javap_one, str(p), is_test): p for p, _, is_test in cls_files}
         done = 0
         for fut in as_completed(futs):
-            _, fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs = fut.result()
+            (_, fqcn, ext, impl, methods, field_deps,
+             cp_structs, cp_procs, struct_kind, is_test) = fut.result()
             if fqcn:
-                parsed.append((fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs))
+                parsed.append((fqcn, ext, impl, methods, field_deps,
+                               cp_structs, cp_procs, struct_kind, is_test))
             done += 1
             if done % 500 == 0:
                 print(f"    {done}/{len(cls_files)}")
@@ -622,15 +684,48 @@ def main() -> None:
                             INTEGER NOT NULL DEFAULT 0,
             included        INTEGER NOT NULL DEFAULT 1,
             actually_called_in_ai_test INTEGER NOT NULL DEFAULT 0,
-            is_ui          INTEGER NOT NULL DEFAULT 0
+            is_ui          INTEGER NOT NULL DEFAULT 0,
+            -- Struct kind for struct: rows: 'class' | 'abstract_class'
+            -- | 'interface' | 'enum'. NULL for proc: rows.
+            struct_kind    TEXT,
+            -- Abstract / interface methods have no Code: block in javap
+            -- output. Used by build_called_layered_tables.py to
+            -- synthesize virtual-dispatch edges into concrete overrider
+            -- impls so the abstract proc participates in layering.
+            -- 0 for struct: rows and concrete methods.
+            is_abstract    INTEGER NOT NULL DEFAULT 0,
+            -- 1 for entries scanned from build/classes/java/test (the
+            -- JaCoCo entry-point harness: Ww2v5JacocoRun, SnapshotHarness,
+            -- GameTestUtils, ...). These are NOT porting targets but
+            -- are layered so the call-chain from harness top-of-stack
+            -- down through the engine is visible for drill-down.
+            is_test_harness INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE dependencies (
             primary_key   TEXT,
             depends_on_key TEXT,
-            PRIMARY KEY (primary_key, depends_on_key)
+            -- 'static'   = static call edge (invokestatic, invokespecial, lambda)
+            -- 'virtual'  = virtual-dispatch edge (invokevirtual to a non-final
+            --             method or invokeinterface), captured at the
+            --             declared receiver type. Both this row AND the
+            --             synthesized 'override' rows below participate in
+            --             layering for callers, but only the synthesized
+            --             row contributes the actual transitive dep on the
+            --             implementation.
+            -- 'override' = synthesized edge from an abstract / interface
+            --             method to a concrete overrider. Generated by
+            --             build_called_layered_tables.py.
+            -- 'extends'  = struct->struct subclass / implements edge.
+            -- 'field'    = struct->struct field type edge.
+            -- 'cp_ref'   = struct->{struct,proc} constant-pool reference
+            --             (Methodref / MethodHandle attributed at class
+            --             scope; covers method-reference lambdas).
+            edge_kind     TEXT NOT NULL DEFAULT 'static',
+            PRIMARY KEY (primary_key, depends_on_key, edge_kind)
         );
         CREATE INDEX idx_dep_pk ON dependencies(primary_key);
         CREATE INDEX idx_dep_target ON dependencies(depends_on_key);
+        CREATE INDEX idx_dep_kind ON dependencies(edge_kind);
         """
     )
 
@@ -648,7 +743,7 @@ def main() -> None:
     # so a subclass of a tainted TripleA class is itself tainted.
     triplea_parents: dict[str, list[str]] = {}
     ui_tainted: set[str] = set()
-    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs in parsed:
+    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs, struct_kind, is_test in parsed:
         parents = ext + impl
         triplea_parents[fqcn] = [p for p in parents if not _excluded(p)]
         # the `org.triplea.swing.*` helper package is itself UI by
@@ -688,52 +783,57 @@ def main() -> None:
     print(f"  UI-tainted classes (Swing/AWT ancestry): {len(ui_tainted)}")
 
     entity_rows: list[tuple] = []
-    dep_rows: set[tuple[str, str]] = set()
+    dep_rows: set[tuple[str, str, str]] = set()
 
-    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs in parsed:
+    for fqcn, ext, impl, methods, field_deps, cp_structs, cp_procs, struct_kind, is_test in parsed:
         # struct row
         top = fqcn.split("$", 1)[0]
         java_path = java_idx.get(top, "")
         is_ui = 1 if fqcn in ui_tainted else 0
+        is_test_harness = 1 if is_test else 0
         entity_rows.append((
             f"struct:{fqcn}", java_path, "", "", None, 0, 1, 0, is_ui,
+            struct_kind, 0, is_test_harness,
         ))
         # struct-level dep edges
         for parent in ext + impl:
             if not _excluded(parent):
-                dep_rows.add((f"struct:{fqcn}", f"struct:{parent}"))
+                dep_rows.add((f"struct:{fqcn}", f"struct:{parent}", "extends"))
         # field-type dep edges (including generic type-arguments lost to
         # bytecode erasure but recovered from javap's source-form lines).
         for ft in field_deps:
             if not _excluded(ft) and ft != fqcn:
-                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}"))
+                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}", "field"))
         # constant-pool method-reference targets (`Foo::new`, `Foo::bar`)
         # — attributed at class scope since javap doesn't tell us which
         # invokedynamic site uses each pool entry.
         for ft in cp_structs:
             if not _excluded(ft) and ft != fqcn:
-                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}"))
+                dep_rows.add((f"struct:{fqcn}", f"struct:{ft}", "cp_ref"))
         for pk in cp_procs:
-            dep_rows.add((f"struct:{fqcn}", pk))
+            dep_rows.add((f"struct:{fqcn}", pk, "cp_ref"))
         # method rows + their deps
         for m in methods:
             args_str = ",".join(m["args_java"])
             mkey = f"proc:{fqcn}#{m['name']}({args_str})"
-            entity_rows.append((mkey, java_path, "", "", None, 0, 1, 0, is_ui))
-            # owner edge
-            dep_rows.add((mkey, f"struct:{fqcn}"))
+            entity_rows.append((
+                mkey, java_path, "", "", None, 0, 1, 0, is_ui,
+                None, 1 if m.get("is_abstract") else 0, is_test_harness,
+            ))
+            # owner edge (struct membership)
+            dep_rows.add((mkey, f"struct:{fqcn}", "static"))
             for s in m["deps_struct"]:
                 if not _excluded(s):
-                    dep_rows.add((mkey, f"struct:{s}"))
+                    dep_rows.add((mkey, f"struct:{s}", "static"))
             for p in m["deps_proc"]:
-                dep_rows.add((mkey, p))
+                dep_rows.add((mkey, p, "static"))
 
     cur.executemany(
-        "INSERT OR IGNORE INTO entities VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT OR IGNORE INTO entities VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         entity_rows,
     )
     cur.executemany(
-        "INSERT OR IGNORE INTO dependencies VALUES (?,?)",
+        "INSERT OR IGNORE INTO dependencies VALUES (?,?,?)",
         list(dep_rows),
     )
     conn.commit()

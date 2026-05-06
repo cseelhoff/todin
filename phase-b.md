@@ -8,6 +8,24 @@ This prompt covers Phase B only (method bodies). If `structs` still has
 unimplemented rows, stop and use [`resume-prompt.md`](./resume-prompt.md)
 instead — Phase B assumes Phase A is 100% done.
 
+#### Layering policy (iter-7 onward)
+
+The `methods` / `dependencies` tables now include synthesized
+**virtual-dispatch override edges** and (optionally) test-harness procs.
+What this changes for Phase B:
+
+- A method with `methods.is_abstract = 1` is a routing node from an
+  interface or abstract base. It has no body to port. Its
+  `is_implemented` flag should be set to 1 by
+  `auto_implement_trivial_methods.py` (or you may set it manually).
+- Skip rows with `methods.is_test_harness = 1` — these come from
+  `Ww2v5JacocoRun` / `SnapshotHarness` / `GameTestUtils`. They drive
+  the JaCoCo trace but are NOT porting targets (the Odin port has its
+  own harness in `triplea/conversion/odin_tests/`).
+- Layer numbers may shift on rebuild (most go UP, none go down). Treat
+  each iteration's layer as authoritative; do not memoize layers
+  across rebuilds.
+
 ### Your loop (run until done, then call `task_complete`)
 
 1. **Sanity check** the workspace and load progress notes:

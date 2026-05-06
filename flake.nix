@@ -58,7 +58,7 @@
             echo "Run ./bootstrap.sh to build the full port-tracking database."
             echo "Or step through README.md one command at a time."
             echo ""
-            echo "Tip: run \`nix develop -c zsh -i\` to drop into an interactive zsh."
+            # echo "Tip: run \`nix develop -c zsh -i\` to drop into an interactive zsh."
           '';
         };
       });

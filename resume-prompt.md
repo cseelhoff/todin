@@ -790,6 +790,48 @@ This is the genuine Phase C porting work. Each `known_broken` row
 is a discrete trackable unit; progress is visible in the DB rather
 than scattered across LLM session memory.
 
+### Phase C: layered drill-down for snapshot diffs
+
+Once `known_broken=0` is reached, remaining snapshot failures are
+proc bugs (incorrect translation of a Java method body) or
+harness data gaps (json_loader / test_server_game.odin omitting a
+field the proc reads). Use the **layered drill-down** procedure
+defined in `llm-instructions.md` "Layered drill-down debugging" —
+it is the canonical methodology and the orchestrator MUST follow
+it for every Phase C failure. Summary:
+
+1. From the failing snapshot's JSON diff (or panic frame),
+   identify the failing Odin proc and translate to its Java
+   `method_key`.
+2. `SELECT method_layer FROM methods WHERE method_key = '<KEY>';`
+3. If `method_layer == 0` → re-port that proc from `.java`,
+   line-for-line.
+4. Otherwise, list dependencies via `dependencies` table, run a
+   targeted snapshot test for each, and recurse on any that fail.
+   Recursion strictly decreases `method_layer` and terminates at
+   layer 0.
+5. The unique proc whose own dependencies all pass but whose own
+   output diverges IS the bug site. Re-port it from `.java`,
+   never invent code.
+6. **Never write Odin from scratch.** Open the original Java
+   method at `java_file_path:java_lines`, read it in full, and
+   translate one statement at a time, preserving control flow,
+   variable names (snake_cased), and operator order. The Java
+   source is the only source of truth.
+7. **Never edit the snapshots themselves.** Edit the proc, or
+   (when the diff genuinely traces to harness data the loader
+   isn't carrying) edit `templates/odin_test_common/json_loader.odin`
+   + `scripts/patch_triplea.py` and re-run bootstrap.
+8. Record each layer-0 fix in `/memories/repo/phase-c-state.md`
+   so future resume sessions see the audit trail.
+
+The drill-down is order-of-magnitude cheaper than guess-and-check
+debugging: it bounds the search space to a strict subtree of
+`dependencies`, all of whose layers are < the failing proc's. The
+moment a layer-0 dependency fails its targeted test, you have a
+concrete, isolated bug site — fix it, re-test upward, and
+regressions become impossible to introduce blindly.
+
 ---
 
 (end of PROMPT)

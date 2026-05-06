@@ -144,7 +144,18 @@ def main() -> None:
             java_lines       TEXT,
             odin_file_path   TEXT,
             is_implemented   INTEGER NOT NULL DEFAULT 0,
-            method_layer     INTEGER
+            method_layer     INTEGER,
+            -- mirrors entities.is_abstract — abstract / interface methods
+            -- have no Code: block; their layer is computed from the
+            -- max layer of their concrete overriders (`override` edges
+            -- in dependencies).
+            is_abstract      INTEGER NOT NULL DEFAULT 0,
+            -- mirrors entities.is_test_harness — 1 for procs scanned
+            -- from build/classes/java/test (Ww2v5JacocoRun, SnapshotHarness
+            -- etc). These are layered alongside main procs so the call
+            -- chain from harness top-of-stack is visible, but auto-impl
+            -- and porting-progress reporting should skip them.
+            is_test_harness  INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE structs (
             struct_key       TEXT PRIMARY KEY,
@@ -154,23 +165,39 @@ def main() -> None:
             is_implemented   INTEGER NOT NULL DEFAULT 0,
             struct_layer     INTEGER,
             scc_id           INTEGER,
-            id_design_layer  INTEGER
+            id_design_layer  INTEGER,
+            -- 'class' | 'abstract_class' | 'interface' | 'enum'
+            struct_kind      TEXT,
+            is_test_harness  INTEGER NOT NULL DEFAULT 0
         );
     """)
 
     cur.execute("""
         INSERT INTO methods (method_key, owner_struct_key, java_file_path,
-                             java_lines, odin_file_path, is_implemented)
+                             java_lines, odin_file_path, is_implemented,
+                             is_abstract, is_test_harness)
         SELECT primary_key,
                'struct:' || substr(primary_key, 6, instr(primary_key,'#') - 6),
                java_file_path, java_lines, odin_file_path,
-               is_fully_implemented_error_free_no_todo_no_stub
+               is_fully_implemented_error_free_no_todo_no_stub,
+               COALESCE(is_abstract, 0),
+               COALESCE(is_test_harness, 0)
         FROM entities
-        WHERE primary_key LIKE 'proc:%' AND actually_called_in_ai_test = 1
+        WHERE primary_key LIKE 'proc:%'
           AND is_ui = 0
+          AND (
+              -- main-classes seed: anything JaCoCo observed executing.
+              actually_called_in_ai_test = 1
+              -- test-harness seed: include all harness procs so the call
+              -- chain from Ww2v5JacocoRun.run / SnapshotHarness.wrapStep
+              -- down through the engine appears in layering. Whether or
+              -- not JaCoCo instrumented them is irrelevant — if they're
+              -- in the test sourceSet, they're harness drivers.
+              OR COALESCE(is_test_harness, 0) = 1
+          )
     """)
     n_methods = cur.execute("SELECT COUNT(*) FROM methods").fetchone()[0]
-    print(f"  methods (JaCoCo seed): {n_methods}")
+    print(f"  methods (JaCoCo + harness seed): {n_methods}")
 
     # ---- include lambda$* siblings of any included class ----
     # Lambda methods are invoked exclusively via invokedynamic, which we
@@ -186,11 +213,13 @@ def main() -> None:
     added_lambdas = cur.execute("""
         INSERT OR IGNORE INTO methods
             (method_key, owner_struct_key, java_file_path, java_lines,
-             odin_file_path, is_implemented)
+             odin_file_path, is_implemented, is_abstract, is_test_harness)
         SELECT e.primary_key,
                'struct:' || substr(e.primary_key, 6, instr(e.primary_key,'#') - 6),
                e.java_file_path, e.java_lines, e.odin_file_path,
-               e.is_fully_implemented_error_free_no_todo_no_stub
+               e.is_fully_implemented_error_free_no_todo_no_stub,
+               COALESCE(e.is_abstract, 0),
+               COALESCE(e.is_test_harness, 0)
         FROM entities e
         WHERE e.primary_key LIKE 'proc:%'
           AND e.is_ui = 0
@@ -229,12 +258,14 @@ def main() -> None:
         added_calls = cur.execute("""
             INSERT OR IGNORE INTO methods
                 (method_key, owner_struct_key, java_file_path, java_lines,
-                 odin_file_path, is_implemented)
+                 odin_file_path, is_implemented, is_abstract, is_test_harness)
             SELECT DISTINCT
                    e.primary_key,
                    'struct:' || substr(e.primary_key, 6, instr(e.primary_key,'#') - 6),
                    e.java_file_path, e.java_lines, e.odin_file_path,
-                   e.is_fully_implemented_error_free_no_todo_no_stub
+                   e.is_fully_implemented_error_free_no_todo_no_stub,
+                   COALESCE(e.is_abstract, 0),
+                   COALESCE(e.is_test_harness, 0)
             FROM entities e
             JOIN dependencies d ON d.depends_on_key = e.primary_key
             WHERE e.primary_key LIKE 'proc:%'
@@ -250,10 +281,13 @@ def main() -> None:
 
     cur.execute("""
         INSERT INTO structs (struct_key, java_file_path, java_lines,
-                             odin_file_path, is_implemented)
+                             odin_file_path, is_implemented,
+                             struct_kind, is_test_harness)
         SELECT DISTINCT e.primary_key, e.java_file_path, e.java_lines,
                         e.odin_file_path,
-                        e.is_fully_implemented_error_free_no_todo_no_stub
+                        e.is_fully_implemented_error_free_no_todo_no_stub,
+                        e.struct_kind,
+                        COALESCE(e.is_test_harness, 0)
         FROM entities e
         WHERE e.primary_key LIKE 'struct:%'
           AND e.is_ui = 0
@@ -279,10 +313,12 @@ def main() -> None:
         added = cur.execute("""
             INSERT OR IGNORE INTO structs
                 (struct_key, java_file_path, java_lines, odin_file_path,
-                 is_implemented)
+                 is_implemented, struct_kind, is_test_harness)
             SELECT DISTINCT e.primary_key, e.java_file_path, e.java_lines,
                             e.odin_file_path,
-                            e.is_fully_implemented_error_free_no_todo_no_stub
+                            e.is_fully_implemented_error_free_no_todo_no_stub,
+                            e.struct_kind,
+                            COALESCE(e.is_test_harness, 0)
             FROM entities e
             JOIN dependencies d ON d.depends_on_key = e.primary_key
             WHERE e.primary_key LIKE 'struct:%'
@@ -317,13 +353,85 @@ def main() -> None:
         [(L, k) for k, L in layers_s.items()],
     )
 
+    # ---- synthesize virtual-dispatch override edges ----
+    #
+    # Why: javap's INVOKE_RE captures the *declared* receiver type from
+    # the constant pool. For `playerBridge.getRemoteDelegate().purchase(...)`
+    # bytecode this records `proc:IPurchaseDelegate#purchase(...)` (or
+    # `proc:AbstractAi#purchase(...)` when the Java source typed the
+    # receiver as AbstractAi). Those abstract / interface methods have
+    # no Code: block, so they have no outgoing edges -- layering bottoms
+    # them out at layer 0 and every caller never sees the transitive
+    # cost of the actual implementation.
+    #
+    # This pass walks every abstract proc M on type C, finds every
+    # subclass / implementor S of C in the struct dependency graph,
+    # and — if `proc:S#name(args)` exists in the methods set — emits a
+    # synthesized edge `M -> S.M`. The edge is recorded in `dependencies`
+    # with edge_kind='override' (visible for drill-down) and is also
+    # injected into `m_adj` below so the layering pass picks it up.
+    print("synthesizing virtual-dispatch override edges...")
+
+    # Build subclass/implementor index: parent_struct -> list[child_struct]
+    children: dict[str, list[str]] = defaultdict(list)
+    for child, parent in cur.execute(
+        "SELECT primary_key, depends_on_key FROM dependencies "
+        "WHERE primary_key LIKE 'struct:%' AND depends_on_key LIKE 'struct:%' "
+        "  AND edge_kind = 'extends'"
+    ):
+        children[parent].append(child)
+
+    def descendants(root: str) -> set[str]:
+        seen: set[str] = set()
+        stack = [root]
+        while stack:
+            n = stack.pop()
+            for c in children.get(n, ()):
+                if c not in seen:
+                    seen.add(c)
+                    stack.append(c)
+        return seen
+
+    # Index methods by (owner_struct_key, signature) where signature is
+    # everything from '#' onward.
+    method_index: dict[tuple[str, str], str] = {}
+    for mk, owner in cur.execute(
+        "SELECT method_key, owner_struct_key FROM methods"
+    ):
+        sig = mk[mk.index("#"):]  # "#name(args)"
+        method_index[(owner, sig)] = mk
+
+    abstract_procs = list(cur.execute(
+        "SELECT method_key, owner_struct_key FROM methods "
+        "WHERE is_abstract = 1"
+    ))
+    print(f"  {len(abstract_procs)} abstract procs to resolve")
+
+    override_rows: list[tuple[str, str, str]] = []
+    for abs_mk, owner in abstract_procs:
+        sig = abs_mk[abs_mk.index("#"):]
+        for desc_struct in descendants(owner):
+            concrete = method_index.get((desc_struct, sig))
+            if concrete and concrete != abs_mk:
+                override_rows.append((abs_mk, concrete, "override"))
+
+    if override_rows:
+        cur.executemany(
+            "INSERT OR IGNORE INTO dependencies VALUES (?,?,?)",
+            override_rows,
+        )
+    print(f"  synthesized {len(override_rows)} override edges")
+    conn.commit()
+
     # ---- layer the methods ----
     print("layering methods...")
     method_set = {r[0] for r in cur.execute("SELECT method_key FROM methods")}
     m_adj: dict[str, list[str]] = defaultdict(list)
+    # static + override edges from dependencies (proc -> proc)
     for u, v in cur.execute(
         "SELECT primary_key, depends_on_key FROM dependencies "
-        "WHERE primary_key LIKE 'proc:%' AND depends_on_key LIKE 'proc:%'"
+        "WHERE primary_key LIKE 'proc:%' AND depends_on_key LIKE 'proc:%' "
+        "  AND edge_kind IN ('static', 'override')"
     ):
         if u in method_set and v in method_set and u != v:
             m_adj[u].append(v)

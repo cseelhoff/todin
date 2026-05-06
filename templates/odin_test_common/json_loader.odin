@@ -135,6 +135,7 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 	// Territories
 	gd.game_map = new(game.Game_Map)
 	gd.game_map.territory_lookup = make(map[string]^game.Territory)
+	gd.game_map.connections = make(map[^game.Territory]map[^game.Territory]struct{})
 	if terr_arr, ok := get_array(root, "territories"); ok {
 		for item in terr_arr {
 			if t_obj, t_ok := item.(json.Object); t_ok {
@@ -142,7 +143,30 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 				if t != nil {
 					append(&gd.game_map.territories, t)
 					gd.game_map.territory_lookup[strings.clone(t.named.base.name)] = t
+					// Pre-create empty connection set so even isolated
+					// territories don't trip game_map_get_neighbors's
+					// "No neighbors" panic.
+					gd.game_map.connections[t] = make(map[^game.Territory]struct{})
 				}
+			}
+		}
+		// 2nd pass: wire neighbors. Snapshots carry the territory adjacency
+		// graph as `neighbors: [name, ...]` per territory; Java game-XML
+		// parser feeds each pair through GameMap.addConnection.
+		for item in terr_arr {
+			t_obj, t_ok := item.(json.Object)
+			if !t_ok { continue }
+			name := get_string(t_obj, "name")
+			t, found := gd.game_map.territory_lookup[name]
+			if !found || t == nil { continue }
+			n_arr, n_ok := get_array(t_obj, "neighbors")
+			if !n_ok { continue }
+			for n in n_arr {
+				n_str, sok := n.(json.String)
+				if !sok { continue }
+				other, o_found := gd.game_map.territory_lookup[n_str]
+				if !o_found || other == nil { continue }
+				game.game_map_add_connection(gd.game_map, t, other)
 			}
 		}
 	}
@@ -165,6 +189,32 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 				if u != nil {
 					gd.units_list.units[u.id] = u
 				}
+			}
+		}
+	}
+
+	// 2nd pass: backfill territory unit_collections from each territory's
+	// `units: [uuid, ...]` list. Java game-XML parser places units into
+	// territories at parse-time; the snapshot JSON serializes the topology
+	// flat so we must rebind here. Required by paths like
+	// move_delegate_repair_multiple_hit_point_units that walk
+	// territory.unit_collection.units.
+	if terr_arr, ok := get_array(root, "territories"); ok {
+		for item in terr_arr {
+			t_obj, t_ok := item.(json.Object)
+			if !t_ok { continue }
+			name := get_string(t_obj, "name")
+			t, found := gd.game_map.territory_lookup[name]
+			if !found || t == nil { continue }
+			u_arr, u_arr_ok := get_array(t_obj, "units")
+			if !u_arr_ok { continue }
+			for uid in u_arr {
+				uid_str, sok := uid.(json.String)
+				if !sok { continue }
+				u_id := string_to_uuid(uid_str)
+				u, u_found := gd.units_list.units[u_id]
+				if !u_found || u == nil { continue }
+				append(&t.unit_collection.units, u)
 			}
 		}
 	}
@@ -196,6 +246,21 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 		if constants, c_ok := get_object(props_obj, "constants"); c_ok {
 			for key, val in constants {
 				gd.properties.constant_properties[strings.clone(key)] = json_to_property_value(val)
+			}
+		}
+		// editables: { name: {"name": <str>, "value": <prim>} } -> Editable_Property{value}
+		if editables, e_ok := get_object(props_obj, "editables"); e_ok {
+			for key, val in editables {
+				ep := new(game.Editable_Property)
+				ep.name = strings.clone(key)
+				if obj, obj_ok := val.(json.Object); obj_ok {
+					if inner, inner_ok := obj["value"]; inner_ok {
+						ep.value = json_to_property_value(inner)
+					}
+				} else {
+					ep.value = json_to_property_value(val)
+				}
+				gd.properties.editable_properties[strings.clone(key)] = ep
 			}
 		}
 	}
@@ -661,6 +726,12 @@ deserialize_territory :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Te
 		}
 	}
 	t.unit_collection = new(game.Unit_Collection)
+	// Wire holder backref so unit_holder_get_unit_collection consumers
+	// (e.g. change_factory_remove_units) can read the holder's name/type
+	// off the collection. Java Territory ctor: unitCollection = new
+	// UnitCollection(this, gameData).
+	t.unit_collection.holder = cast(^game.Named_Unit_Holder)t
+	t.unit_collection.game_data_component.game_data = gd
 	// Territory attachment
 	if ta_obj, ok := get_object(obj, "territoryAttachment"); ok {
 		ta := new(game.Territory_Attachment)

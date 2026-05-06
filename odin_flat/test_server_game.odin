@@ -116,6 +116,32 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		}
 	}
 
+	// Backfill game_data on UnitType.unit_attachment and on
+	// RelationshipType.relationshipTypeAttachment. Battle delegate paths
+	// (e.g. unit_attachment_get_attack_for_player) deref
+	// default_attachment.game_data_component to call get_dice_sides.
+	if self.data.unit_type_list != nil {
+		for _, ut in self.data.unit_type_list.unit_types {
+			if ut == nil { continue }
+			ut.named_attachable.default_named.game_data_component.game_data = self.data
+			if ut.unit_attachment != nil {
+				ut.unit_attachment.default_attachment.game_data_component.game_data = self.data
+			}
+		}
+	}
+	if self.data.relationship_type_list != nil {
+		for _, rt in self.data.relationship_type_list.relationship_types {
+			if rt == nil { continue }
+			rt.named_attachable.default_named.game_data_component.game_data = self.data
+			if rt.attachments != nil {
+				if att, ok := rt.attachments["relationshipTypeAttachment"]; ok && att != nil {
+					rta := cast(^Relationship_Type_Attachment)att
+					rta.default_attachment.game_data_component.game_data = self.data
+				}
+			}
+		}
+	}
+
 	// JSON loader skips infrastructure fields that game_data_new()
 	// would populate (event listener bus, history, etc.). Rehydrate
 	// the listener bus so notify_game_step_changed → fire_game_data_event
@@ -132,6 +158,14 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// game_data_get_delegate(name) resolves the same way XML-loaded
 	// games do.
 	test_server_game_register_ww2v5_delegates(self.data)
+
+	// JSON loader doesn't materialize battle_records_list (Java game-XML
+	// init creates it via GameData ctor → battleRecordsList = new BRL(this)).
+	// Battle delegate end path calls AddBattleRecordsChange.perform which
+	// does &game_state.battle_records_list.battle_records — would deref nil.
+	if self.data.battle_records_list == nil {
+		self.data.battle_records_list = battle_records_list_new(self.data)
+	}
 	sg.vault = vault_new(messengers.channel_messenger)
 	sg.game_players = make(map[^Game_Player]^Player)
 	defer delete(sg.game_players)

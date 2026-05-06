@@ -92,16 +92,66 @@ Methods that call only methods from previous layers.
 Replay the full WW2v5 game in Odin with the same seed. JSON must be
 identical to the Java capture at every step.
 
+When a snapshot diverges, **do NOT guess**. Use the layered drill-down
+procedure in `llm-instructions.md` "Layered drill-down debugging":
+
+1. Identify the failing proc → look up its `method_layer` in
+   `port.sqlite`.
+2. If `method_layer > 0`, list its dependencies from the
+   `dependencies` table and run targeted tests on each.
+3. Recurse on any failing dependency. The recursion strictly
+   decreases layer and terminates at layer 0.
+4. The bug is either a layer-0 leaf with a wrong body, or a
+   higher-layer proc whose own dependencies all pass but whose
+   output still diverges.
+5. Fix by re-porting from the original `.java` source, faithful
+   line-for-line. Never write Odin logic from scratch.
+
 ## Rules
 
 (Verbatim from `llm-instructions.md`)
 
-- Only port entities flagged `actually_called_in_ai_test = 1`.
+- Only port entities flagged `actually_called_in_ai_test = 1` **OR** transitively
+  reachable from such entities through the call graph (the closure pass in
+  `build_called_layered_tables.py` already pulls these in).
 - Always port in ascending layer order.
 - No stubs. No "simplified". No "skipped".
 - ID-based data layout.
 - Match snapshot output byte-for-byte.
 - RNG is `SeededRandomSource(42)` always.
+
+## Layering policy (revised iter-7)
+
+Two systemic bugs in the original layering caused 45% of methods to bottom
+out at layer 0. Fixed in iter-7 of the pipeline:
+
+1. **Virtual-dispatch override edges.** javap's `INVOKE_RE` records the
+   *declared* receiver type from the constant pool. For
+   `playerBridge.getRemoteDelegate().purchase(...)` this writes
+   `proc:IPurchaseDelegate#purchase(...)` — an interface method with no
+   `Code:` block, hence no outgoing edges, hence layer 0. Callers never
+   saw the transitive dep on the actual `ProAi#purchase` implementation
+   (which itself runs the entire AI dispatch tree). Fix:
+   `build_called_layered_tables.py` now synthesizes one `override` edge
+   per (abstract method M on type C) → (concrete proc S.M for every
+   subtype S of C in the methods set), persisted to `dependencies` with
+   `edge_kind='override'` and fed into the method-layering adjacency.
+2. **Test-harness procs.** The actual top-of-stack is
+   `Ww2v5JacocoRun.run`, which lives in the smoke-testing test sourceSet
+   that JaCoCo doesn't instrument. The harness was therefore invisible
+   to the entire pipeline. Fix: `extract_entities.py` now optionally
+   scans `build/classes/java/test` (`--include-tests` /
+   `INCLUDE_TEST_CLASSES=1`) and tags scanned classes
+   `is_test_harness=1`. `build_called_layered_tables.py` seeds those
+   procs into the methods table even without a JaCoCo flag (they're the
+   drivers — they don't need one).
+
+After the fix:
+- Methods at layer 0 should number in the low hundreds (true leaves),
+  not thousands.
+- The chain `Ww2v5JacocoRun#run → ServerGame#runStep → … →
+  IPurchaseDelegate#purchase → ProAi#purchase → …` should appear with
+  monotonically descending layers.
 
 ## Tools
 

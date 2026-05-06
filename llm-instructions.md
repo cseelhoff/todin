@@ -359,8 +359,113 @@ Phase C starts only after Phase A and Phase B are 100% complete.
        -collection:flat=../../odin_flat \
        -collection:test_common=odin_tests/test_common
    ```
-3. For each failure, find the field that differs in the JSON diff,
-   trace back to the Odin code, fix. Do not edit the snapshots.
+3. For each failure, **drill down by `method_layer`** to find the
+   root-cause proc (see "Layered drill-down debugging" below). Do
+   not edit the snapshots. Do not write new logic from scratch —
+   every fix is a faithful re-port from the original `.java`.
+
+### Layered drill-down debugging (snapshot failure root-causing)
+
+When a snapshot test fails or crashes, **never start by guessing**
+which proc is wrong. The `methods` table's `method_layer` column
+plus the `dependencies` table give an exact procedure for finding
+the root cause:
+
+> **Note (iter-7).** The pipeline now records *both* the static
+> call edge (declared receiver type, e.g.
+> `proc:IPurchaseDelegate#purchase`) **and** synthesized
+> `override` edges to every concrete impl in the methods set
+> (e.g. `proc:ProAi#purchase`). When drilling down through a
+> dependency list you will see both the abstract proc *and* its
+> concrete override; descend into the override (it has the higher
+> `method_layer` and the actual logic). Abstract / interface
+> methods are flagged `methods.is_abstract = 1` and are present
+> only as routing nodes; their `is_implemented` is irrelevant —
+> the override implementation is what needs porting.
+
+1. **Identify the failing proc.** From the JSON diff (or panic
+   stack frame), pinpoint the specific Odin proc whose output
+   diverges from Java. Translate it back to its Java
+   `method_key`.
+
+2. **Look up its layer:**
+   ```sh
+   sqlite3 port.sqlite "SELECT method_key, method_layer, odin_file_path \
+     FROM methods WHERE method_key = '<KEY>';"
+   ```
+
+3. **If `method_layer == 0`**, this is a leaf proc — no tracked
+   dependencies. The bug must be inside its own body (or in a
+   piece of harness data the proc reads). **Re-read the original
+   Java method in full** at `java_file_path:java_lines`, diff
+   against the Odin port line-by-line, and reconcile. Stay as
+   faithful as humanly possible to the Java semantics; resist
+   the urge to "improve" or "simplify". This is where
+   conversion bugs hide.
+
+4. **If `method_layer > 0`**, list every dependency:
+   ```sh
+   sqlite3 -separator '|' port.sqlite "
+     SELECT d.depends_on_key, m.method_layer, m.odin_file_path
+     FROM dependencies d
+     JOIN methods m ON m.method_key = d.depends_on_key
+     WHERE d.primary_key = '<KEY>'
+     ORDER BY m.method_layer, d.depends_on_key;"
+   ```
+
+5. **Validate each dependency with its own targeted snapshot
+   test.** The default snapshot harness exercises whole game
+   steps, but per-proc snapshot fixtures may exist under
+   `triplea/conversion/odin_tests/<proc>/snapshots/` (the
+   bootstrap is capable of generating them — see
+   `BOOTSTRAP_SNAPSHOTS=1 ./bootstrap.sh`). For each dependency:
+   - If a per-proc snapshot exists, run it and check pass/fail.
+   - If not, write a minimal call-site test that feeds the
+     dependency's recorded inputs from `dependencies` /
+     snapshot JSON and compares its output to the Java capture.
+
+6. **Recurse.** For every dependency that fails its targeted
+   test, repeat steps 2-5. The recursion is finite: each step
+   strictly decreases `method_layer`, and layer 0 always
+   terminates the descent.
+
+7. **Termination cases:**
+   - **Some dependency at layer 0 fails** → that's the bug.
+     Fix it by re-porting from the original `.java` source.
+     Re-test the dependency, then re-test its callers, walking
+     back up the chain.
+   - **All dependencies pass but the original proc still
+     fails** → the bug is in the original proc's own body
+     (its translation logic, not anything it calls). Fix that
+     proc by re-porting from Java.
+
+8. **Always re-port from `.java`, never write Odin from scratch.**
+   The Java sources at `java_file_path` are the single source of
+   truth. When fixing a proc, open the Java method, read it in
+   full, and write the Odin port one statement at a time —
+   preserving control flow, variable names (snake-cased),
+   operator order, and short-circuit semantics. Do NOT
+   "modernize" the code. Do NOT add or remove logging,
+   defensive checks, or null-guards. Do NOT collapse Java's
+   step-by-step assignments into Odin one-liners. Idiomatic
+   sugar is fine for trivial accessors; **everything else must
+   visually mirror the Java**.
+
+9. **Triage harness vs. proc bugs honestly.** If the JSON diff
+   shows that a Java field present in the snapshot is `nil` /
+   missing in the Odin run, two equally valid causes exist:
+     1. The proc that should populate it is buggy.
+     2. The harness `json_loader` is failing to deserialize it.
+   Always confirm via the dependency drill-down before editing
+   anything. Editing the harness to mask a real proc bug, or
+   editing a proc to compensate for a harness deserialization
+   gap, both cause regressions later.
+
+10. **Record findings.** After fixing a layer-0 root cause,
+    write a one-line note in
+    `/memories/repo/phase-c-state.md` summarizing the bug, the
+    fix, and the snapshot ids that flipped green. This builds
+    institutional memory across resume sessions.
 
 ---
 
