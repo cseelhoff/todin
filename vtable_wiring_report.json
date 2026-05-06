@@ -1,12 +1,12 @@
 {
-  "scanned_at": "2026-05-06T01:22:26.600782+00:00",
+  "scanned_at": "2026-05-06T01:36:52.125380+00:00",
   "files_scanned": 1208,
   "structs_total": 1439,
   "constructors_total": 663,
   "wirings_examined": 217,
   "by_status": {
-    "ok": 209,
-    "missing": 8,
+    "ok": 210,
+    "missing": 7,
     "missing_kind": 0
   },
   "samples": {
@@ -80,16 +80,6 @@
         "status": "missing",
         "odin_file": "odin_flat/games__strategy__triplea__delegate__initialization_delegate.odin",
         "owner_struct_key": "struct:games.strategy.triplea.delegate.InitializationDelegate"
-      },
-      {
-        "struct": "Move_Delegate",
-        "field": "end",
-        "java_method": "end",
-        "parent_struct": "I_Delegate",
-        "constructor": "move_delegate_new",
-        "status": "missing",
-        "odin_file": "odin_flat/games__strategy__triplea__delegate__move_delegate.odin",
-        "owner_struct_key": "struct:games.strategy.triplea.delegate.MoveDelegate"
       }
     ],
     "missing_kind": []

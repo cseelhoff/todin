@@ -324,9 +324,12 @@ abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.load_state = abstract_end_turn_delegate_v_load_state
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.save_state = abstract_end_turn_delegate_v_save_state
 	// Remaining vtable wirings deliberately deferred (known_broken in
-	// port.sqlite.vtable_wiring): wiring these causes silent abort during
-	// snap 0019 (russianEndTurn step). Falls back to abstract_delegate_*
-	// defaults via the nil-check in i_delegate_*.
+	// port.sqlite.vtable_wiring): wiring abstract_end_turn_delegate.start
+	// panics during russianEndTurn (snap 0019) at territory_attachment_get
+	// "No territory attachment for: Afghanistan(non-water)" — the snapshot
+	// JSON loader does not deserialize territory attachments. Restoring
+	// requires extending json_loader.odin to populate per-territory
+	// territoryAttachment instances under territory.attachments.
 	_ = abstract_end_turn_delegate_v_delegate_currently_requires_user_input
 	_ = abstract_end_turn_delegate_v_end
 	_ = abstract_end_turn_delegate_v_load_state
