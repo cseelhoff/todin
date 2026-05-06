@@ -425,8 +425,8 @@ abstract_place_delegate_new :: proc() -> ^Abstract_Place_Delegate {
 	// wired (likely game_player_get_unit_collection / Place_Extended_State
 	// chain panics). Falls back to abstract_delegate_* defaults via the
 	// nil-check in i_delegate_*.
-	_ = abstract_place_delegate_v_delegate_currently_requires_user_input
-	_ = abstract_place_delegate_v_end
+	self.i_delegate.delegate_currently_requires_user_input = abstract_place_delegate_v_delegate_currently_requires_user_input
+	self.i_delegate.end = abstract_place_delegate_v_end
 	_ = abstract_place_delegate_v_get_remote_type
 	_ = abstract_place_delegate_v_load_state
 	_ = abstract_place_delegate_v_save_state

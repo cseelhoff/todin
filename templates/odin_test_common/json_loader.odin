@@ -501,6 +501,7 @@ deserialize_unit_attachment :: proc(obj: json.Object) -> ^game.Unit_Attachment {
 deserialize_player :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Game_Player {
 	p := new(game.Game_Player)
 	p.named.base.name = get_string(obj, "name")
+	p.named.kind = .Game_Player
 	p.optional = get_bool(obj, "optional")
 	p.can_be_disabled = get_bool(obj, "canBeDisabled")
 	p.is_disabled = get_bool(obj, "isDisabled")
@@ -648,6 +649,10 @@ xml_bool_opt :: proc(opts: json.Object, key: string) -> bool {
 deserialize_territory :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Territory {
 	t := new(game.Territory)
 	t.named.base.name = get_string(obj, "name")
+	// kind discriminator drives unit_holder_get_unit_collection's
+	// type-erasure switch — without it Territory's unit_collection is
+	// unreachable through the ^Unit_Holder interface.
+	t.named.kind = .Territory
 	t.water = get_bool(obj, "water")
 	owner_name := get_string(obj, "owner")
 	if owner_name != "" {

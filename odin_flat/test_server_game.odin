@@ -98,6 +98,14 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		if gp.technology_frontiers == nil {
 			gp.technology_frontiers = technology_frontier_list_new(self.data)
 		}
+		// Each player owns a unit collection (held but not yet placed
+		// units, e.g. just-purchased units awaiting Place). The JSON
+		// loader doesn't deserialize this; harness creates an empty one
+		// so abstract_place_delegate_currently_requires_user_input has
+		// something to call .is_empty() on.
+		if gp.units_held == nil {
+			gp.units_held = unit_collection_new(cast(^Named_Unit_Holder)gp, self.data)
+		}
 	}
 	if gm := game_data_get_map(self.data); gm != nil {
 		for t in gm.territories {

@@ -24,6 +24,7 @@ initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 	// WW2v5_1942_2nd.xml game file at test setup OR programmatically
 	// constructing minimal Territory_Attachment instances per territory.
 	_ = initialization_delegate_v_start
+	self.start = initialization_delegate_v_start
 	self.get_remote_type = initialization_delegate_v_get_remote_type
 	self.load_state = initialization_delegate_v_load_state
 	self.save_state = initialization_delegate_v_save_state
