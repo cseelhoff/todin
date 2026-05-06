@@ -331,7 +331,7 @@ abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
 	// requires extending json_loader.odin to populate per-territory
 	// territoryAttachment instances under territory.attachments.
 	_ = abstract_end_turn_delegate_v_delegate_currently_requires_user_input
-	_ = abstract_end_turn_delegate_v_end
+	self.i_delegate.end = abstract_end_turn_delegate_v_end
 	_ = abstract_end_turn_delegate_v_load_state
 	_ = abstract_end_turn_delegate_v_save_state
 	_ = abstract_end_turn_delegate_v_start

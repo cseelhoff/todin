@@ -85,6 +85,22 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 			step.game_data_component.game_data = self.data
 		}
 	}
+	// Backfill game_data_component on Game_Players, Territories, and
+	// Units so battle_delegate.start (and similar code paths that call
+	// game_player_get_data / territory_get_data) can resolve the data
+	// reference. Java code paths assume the parser sets this; the
+	// snapshot JSON loader does not.
+	for _, gp in self.data.player_list.players {
+		gp.named_attachable.default_named.game_data_component.game_data = self.data
+	}
+	if gm := game_data_get_map(self.data); gm != nil {
+		for t in gm.territories {
+			t.named_attachable.default_named.game_data_component.game_data = self.data
+			for u in territory_get_units(t) {
+				u.game_data_component.game_data = self.data
+			}
+		}
+	}
 
 	// JSON loader skips infrastructure fields that game_data_new()
 	// would populate (event listener bus, history, etc.). Rehydrate

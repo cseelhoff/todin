@@ -188,7 +188,8 @@ battle_delegate_new :: proc() -> ^Battle_Delegate {
 	self.get_remote_type = battle_delegate_v_get_remote_type
 	_ = battle_delegate_v_load_state
 	_ = battle_delegate_v_save_state
-	_ = battle_delegate_v_start
+	self.start = battle_delegate_v_start
+	self.end = battle_delegate_v_end
 	return self
 }
 

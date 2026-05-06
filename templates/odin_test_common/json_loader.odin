@@ -86,15 +86,13 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 		gd.sequence = deserialize_sequence(seq_obj)
 	}
 
-	// Resources (just names for now)
-	gd.resource_list = new(game.Resource_List)
-	gd.resource_list.resources = make(map[string]^game.Resource)
+	// Resources
+	gd.resource_list = game.resource_list_new(gd)
 	if res_arr, ok := get_array(root, "resources"); ok {
 		for item in res_arr {
 			if name, name_ok := item.(json.String); name_ok {
-				r := new(game.Resource)
-				r.named.base.name = strings.clone(name)
-				gd.resource_list.resources[strings.clone(name)] = r
+				r := game.resource_new_simple(strings.clone(name), gd)
+				game.resource_list_add_resource(gd.resource_list, r)
 			}
 		}
 	}
@@ -116,6 +114,13 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 	// Players
 	gd.player_list = new(game.Player_List)
 	gd.player_list.players = make(map[string]^game.Game_Player)
+	// Provision the "Neutral" null player so territories whose JSON
+	// "owner" string is "Neutral" can resolve to a non-nil Game_Player.
+	// Java's GamePlayer.getOwner() never returns null for a parsed
+	// territory; the XML game parser always assigns Neutral as a
+	// real Game_Player object whose isNull() returns true.
+	gd.player_list.null_player = game.player_list_create_null_player(gd)
+	gd.player_list.players[strings.clone("Neutral")] = gd.player_list.null_player
 	if pl_arr, ok := get_array(root, "players"); ok {
 		for item in pl_arr {
 			if p_obj, p_ok := item.(json.Object); p_ok {
@@ -200,10 +205,72 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 				name := get_string(rt_obj, "name")
 				rt := new(game.Relationship_Type)
 				rt.named.base.name = name
+				// Provision Relationship_Type_Attachment with arche_type
+				// inferred from the relation name (snapshot JSON only
+				// carries the name; archeType comes from XML in Java).
+				rta := new(game.Relationship_Type_Attachment)
+				switch name {
+				case "default_war_relation", "war":
+					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR
+				case "default_allied_relation", "allied":
+					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_ALLIED
+				case:
+					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_NEUTRAL
+				}
+				rt.attachments = make(map[string]^game.I_Attachment)
+				rt.attachments["relationshipTypeAttachment"] = cast(^game.I_Attachment)rta
 				gd.relationship_type_list.relationship_types[strings.clone(name)] = rt
 			}
 		}
 	}
+
+	// Relationships (must run AFTER relationship_types and player_list)
+	// Backfill the relationship_tracker's game_data backref so the
+	// set_*_relations procs can resolve the relationship type list.
+	gd.relationships.game_data_component.game_data = gd
+	// Ensure "null_relation" exists in the type list. The snapshot JSON
+	// only carries default_allied_relation / default_war_relation /
+	// self_relation; Java's parser also emits null_relation (used for
+	// player↔Neutral pairs by relationship_tracker_set_null_player_relations).
+	if _, has_null := gd.relationship_type_list.relationship_types["null_relation"]; !has_null {
+		nr := new(game.Relationship_Type)
+		nr.named.base.name = strings.clone("null_relation")
+		nr.attachments = make(map[string]^game.I_Attachment)
+		nrta := new(game.Relationship_Type_Attachment)
+		nrta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR
+		nr.attachments["relationshipTypeAttachment"] = cast(^game.I_Attachment)nrta
+		gd.relationship_type_list.relationship_types[strings.clone("null_relation")] = nr
+	}
+	if rel_arr, ok := get_array(root, "relationships"); ok {
+		for item in rel_arr {
+			if rel_obj, rel_ok := item.(json.Object); rel_ok {
+				p1_name := get_string(rel_obj, "player1")
+				p2_name := get_string(rel_obj, "player2")
+				type_name := get_string(rel_obj, "type")
+				round_created := get_i32(rel_obj, "roundCreated")
+				p1, p1_found := gd.player_list.players[p1_name]
+				p2, p2_found := gd.player_list.players[p2_name]
+				rt, rt_found := gd.relationship_type_list.relationship_types[type_name]
+				if p1_found && p2_found && rt_found {
+					rel := new(game.Relationship)
+					rel.relationship_type = rt
+					rel.round_created = round_created
+					// Java's Related_Players.equals/hashCode is order-
+					// agnostic, but Odin's map keys by struct identity.
+					// Insert both directions so lookup works either way.
+					key1 := game.make_Relationship_Tracker_Related_Players(p1, p2)
+					key2 := game.make_Relationship_Tracker_Related_Players(p2, p1)
+					gd.relationships.relationships[key1] = rel
+					gd.relationships.relationships[key2] = rel
+				}
+			}
+		}
+	}
+	// After explicit relationships are loaded, fill in player↔null and
+	// self relations the way Java's RelationshipTracker.setupRelations
+	// does. set_null_player_relations needs game_data backref.
+	game.relationship_tracker_set_self_relations(gd.relationships)
+	game.relationship_tracker_set_null_player_relations(gd.relationships)
 
 	// Post-linking: connect sequence step players to player objects
 	if gd.sequence != nil && gd.player_list != nil {
@@ -221,6 +288,91 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 					}
 				}
 			}
+		}
+	}
+
+	// Production rules
+	gd.production_rule_list = game.production_rule_list_new(gd)
+	if pr_arr, ok := get_array(root, "productionRules"); ok {
+		for item in pr_arr {
+			if pr_obj, pr_ok := item.(json.Object); pr_ok {
+				rule_name := get_string(pr_obj, "name")
+				pr := game.production_rule_new(rule_name, gd)
+				if costs_obj, cok := get_object(pr_obj, "costs"); cok {
+					for res_name, val in costs_obj {
+						amount := json_to_i32(val)
+						if r, found := gd.resource_list.resources[res_name]; found {
+							game.production_rule_add_cost(pr, r, amount)
+						}
+					}
+				}
+				if results_obj, rok := get_object(pr_obj, "results"); rok {
+					for key_name, val in results_obj {
+						amount := json_to_i32(val)
+						// Java NamedAttachable: try unit type first, fall back to resource.
+						if ut, found := gd.unit_type_list.unit_types[key_name]; found {
+							game.integer_map_put(&pr.results, rawptr(ut), amount)
+						} else if r, found := gd.resource_list.resources[key_name]; found {
+							game.integer_map_put(&pr.results, rawptr(r), amount)
+						}
+					}
+				}
+				game.production_rule_list_add_production_rule(gd.production_rule_list, pr)
+			}
+		}
+	}
+
+	// Production frontiers
+	gd.production_frontier_list = game.production_frontier_list_new(gd)
+	if pf_arr, ok := get_array(root, "productionFrontiers"); ok {
+		for item in pf_arr {
+			if pf_obj, pf_ok := item.(json.Object); pf_ok {
+				frontier_name := get_string(pf_obj, "name")
+				pf := game.production_frontier_new(frontier_name, gd)
+				if rules_arr, rok := get_array(pf_obj, "rules"); rok {
+					for r_val in rules_arr {
+						if rule_name, rn_ok := r_val.(json.String); rn_ok {
+							if rule := game.production_rule_list_get_production_rule(gd.production_rule_list, rule_name); rule != nil {
+								append(&pf.rules, rule)
+							}
+						}
+					}
+				}
+				game.production_frontier_list_add_production_frontier(gd.production_frontier_list, pf)
+			}
+		}
+	}
+
+	// Technology frontier (single object).
+	if tf_obj, ok := get_object(root, "technologyFrontier"); ok {
+		tf_name := get_string(tf_obj, "name")
+		gd.technology_frontier = game.technology_frontier_new(tf_name, gd)
+		if techs_arr, tok := get_array(tf_obj, "techs"); tok {
+			// Build a display-name → factory lookup by instantiating each
+			// predefined factory once and reading its name. Mirrors the Java
+			// TechAdvance.ALL_PREDEFINED_TECHNOLOGIES surface keyed by display name.
+			predefined := game.tech_advance_new_predefined_technology_map()
+			defer delete(predefined)
+			by_display: map[string]^game.Tech_Advance
+			by_display = make(map[string]^game.Tech_Advance)
+			for _, factory in predefined {
+				adv := factory(gd)
+				by_display[adv.named.base.name] = adv
+			}
+			for t_val in techs_arr {
+				if tech_name, tn_ok := t_val.(json.String); tn_ok {
+					if adv, found := by_display[tech_name]; found {
+						append(&gd.technology_frontier.techs, adv)
+					} else {
+						// Unknown tech (e.g. generic-tech XML name) — synthesize
+						// a placeholder Tech_Advance carrying just the display name.
+						placeholder := new(game.Tech_Advance)
+						placeholder.named.base.name = strings.clone(tech_name)
+						append(&gd.technology_frontier.techs, placeholder)
+					}
+				}
+			}
+			delete(by_display)
 		}
 	}
 

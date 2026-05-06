@@ -16,12 +16,13 @@ Initialization_Delegate :: struct {
 initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 	self := new(Initialization_Delegate)
 	self.need_to_initialize = true
-	// Phase C known_broken: initialization_delegate.start dereferences
-	// data.production_frontier_list (and a chain of static lists) that
-	// the snapshot JSON loader does not populate. Wiring this live
-	// segfaults on snap 0001 (gameInitDelegate). Discard the shim so
-	// the field stays nil-proc and start_step's polymorphic dispatch
-	// silently no-ops, matching the pre-regression behavior.
+	// Phase C known_broken: initialization_delegate.start (with json_loader
+	// productionFrontiers/Rules/resources wired) now panics on snap 0001
+	// "No territory attachment for: Alaska(non-water) with name:
+	// territoryAttachment". Static territory attachments come from the
+	// game XML, NOT the snapshot JSON. Restoring requires loading the
+	// WW2v5_1942_2nd.xml game file at test setup OR programmatically
+	// constructing minimal Territory_Attachment instances per territory.
 	_ = initialization_delegate_v_start
 	self.get_remote_type = initialization_delegate_v_get_remote_type
 	self.load_state = initialization_delegate_v_load_state
