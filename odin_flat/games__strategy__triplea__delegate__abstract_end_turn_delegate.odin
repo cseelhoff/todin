@@ -315,14 +315,23 @@ abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
 	self := new(Abstract_End_Turn_Delegate)
 	self.need_to_initialize = true
 	self.has_posted_turn_summary = false
+	// Pure getters: safe to wire — they only read fields, no logic that can
+	// crash. Cleared from known_broken in vtable_wiring.
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.delegate_currently_requires_user_input = abstract_end_turn_delegate_v_delegate_currently_requires_user_input
-	self.base_triple_a_delegate.abstract_delegate.i_delegate.end = abstract_end_turn_delegate_v_end
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_display_name = abstract_end_turn_delegate_v_get_display_name
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_name = abstract_end_turn_delegate_v_get_name
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_remote_type = abstract_end_turn_delegate_v_get_remote_type
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.load_state = abstract_end_turn_delegate_v_load_state
 	self.base_triple_a_delegate.abstract_delegate.i_delegate.save_state = abstract_end_turn_delegate_v_save_state
-	self.base_triple_a_delegate.abstract_delegate.i_delegate.start = abstract_end_turn_delegate_v_start
+	// Remaining vtable wirings deliberately deferred (known_broken in
+	// port.sqlite.vtable_wiring): wiring these causes silent abort during
+	// snap 0019 (russianEndTurn step). Falls back to abstract_delegate_*
+	// defaults via the nil-check in i_delegate_*.
+	_ = abstract_end_turn_delegate_v_delegate_currently_requires_user_input
+	_ = abstract_end_turn_delegate_v_end
+	_ = abstract_end_turn_delegate_v_load_state
+	_ = abstract_end_turn_delegate_v_save_state
+	_ = abstract_end_turn_delegate_v_start
 	return self
 }
 

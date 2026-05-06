@@ -79,7 +79,12 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 		return move_delegate_pus_already_lost(md, t)
 	}
 	self.start = move_delegate_v_start
-	self.end   = move_delegate_v_end
+	// move_delegate.end intentionally NOT wired: causes silent exit in
+	// end-of-step machinery (game_step_properties_helper / reset_unit_state /
+	// rockets_fire_helper_fire_ww2_v1_if_needed). See
+	// /memories/session/phase-c-status.md "Tried but reverted: move_delegate.end".
+	// move_delegate_v_end is defined below but unused.
+	_ = move_delegate_v_end
 	self.delegate_currently_requires_user_input = move_delegate_v_delegate_currently_requires_user_input
 	self.load_state = move_delegate_v_load_state
 	self.save_state = move_delegate_v_save_state

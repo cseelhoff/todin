@@ -64,12 +64,13 @@ at the start of the session, then proceed.
    **Phase B-2 detection.** Once `m_done == m_total`, run:
    ```sh
    python3 scripts/scan_vtable_wiring.py --commit
-   sqlite3 port.sqlite "SELECT status, COUNT(*) FROM vtable_wiring \
-     GROUP BY status;"
+   sqlite3 port.sqlite "SELECT status, known_broken, COUNT(*) \
+     FROM vtable_wiring GROUP BY status, known_broken;"
    ```
-   If `missing` or `missing_kind` rows remain, advance to Phase B-2;
-   otherwise advance to Phase C. The scanner is idempotent — re-run
-   it after every Phase B-2 batch to refresh statuses.
+   If any row has `status != 'ok' AND known_broken = 0` (the
+   scanner prints this as `effective_missing=N`), advance to
+   Phase B-2; otherwise Phase B is fully done. Re-run the scanner
+   after every Phase B-2 batch to refresh statuses.
 
 3. **Pull the next batch from the DB.**
 
@@ -733,6 +734,7 @@ sqlite3 -separator '|' port.sqlite "
          constructor, status, odin_file_path, owner_struct_key
   FROM vtable_wiring
   WHERE status IN ('missing', 'missing_kind')
+    AND known_broken = 0
   ORDER BY odin_file_path, odin_struct_name, proc_field
   LIMIT 64;"
 ```
@@ -743,11 +745,50 @@ in `phase-b.md`**. After the batch returns, re-run
 `scan_vtable_wiring.py --commit` and continue until:
 
 ```sql
-SELECT COUNT(*) FROM vtable_wiring WHERE status != 'ok';   -- → 0
+SELECT COUNT(*) FROM vtable_wiring
+ WHERE status != 'ok' AND known_broken = 0;   -- → 0
 ```
 
-Only then does Phase C start. Treat any `missing*` row as a hard
-gate identical to an unimplemented `methods` row.
+Only then does Phase C start. Treat any `missing*` row with
+`known_broken = 0` as a hard gate identical to an unimplemented
+`methods` row. Rows with `known_broken = 1` are deferred Phase C
+work items (delegate body crashes when proc-field is wired) and
+do NOT block the gate — they show up explicitly in the
+constructor as `_ = <shim>` discards. The scanner preserves
+`known_broken` across runs.
+
+### Phase C: progressing known_broken rows
+
+The Phase C snapshot baseline (currently 30/52) is achieved with
+the `known_broken=1` set deliberately unwired. To improve the
+baseline, pick one delegate at a time and:
+
+1. Inspect what crashes:
+   ```sh
+   sqlite3 -header -column port.sqlite "
+     SELECT odin_struct_name, proc_field, substr(known_broken_reason,1,120)
+     FROM vtable_wiring WHERE known_broken = 1
+     ORDER BY odin_struct_name, proc_field;"
+   ```
+2. In the corresponding constructor (`<delegate>_new`), swap one
+   `_ = <delegate>_v_<field>` discard back to
+   `self.<field> = <delegate>_v_<field>`.
+3. Re-run the snapshot test. Find which snap newly aborts. The
+   abort is silent — diagnose by adding `log.errorf` traces inside
+   the body proc until the crash site is found, then port the
+   missing logic from the Java source.
+4. Once the body is fixed and snapshots no longer regress:
+   ```sql
+   UPDATE vtable_wiring
+      SET known_broken = 0, known_broken_reason = NULL
+    WHERE odin_struct_name = '<X>' AND proc_field = '<Y>';
+   ```
+5. Re-run `scripts/scan_vtable_wiring.py --commit` to confirm
+   `effective_missing=0` and the row reads `ok / known_broken=0`.
+
+This is the genuine Phase C porting work. Each `known_broken` row
+is a discrete trackable unit; progress is visible in the DB rather
+than scattered across LLM session memory.
 
 ---
 

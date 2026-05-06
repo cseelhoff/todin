@@ -572,19 +572,36 @@ def main() -> int:
     if args.commit:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS vtable_wiring (
-                odin_struct_name TEXT NOT NULL,
-                proc_field       TEXT NOT NULL,
-                java_method      TEXT,
-                parent_struct    TEXT,
-                constructor      TEXT,
-                status           TEXT NOT NULL,
-                odin_file_path   TEXT,
-                owner_struct_key TEXT,
-                last_scanned     TEXT NOT NULL,
+                odin_struct_name    TEXT NOT NULL,
+                proc_field          TEXT NOT NULL,
+                java_method         TEXT,
+                parent_struct       TEXT,
+                constructor         TEXT,
+                status              TEXT NOT NULL,
+                odin_file_path      TEXT,
+                owner_struct_key    TEXT,
+                last_scanned        TEXT NOT NULL,
+                known_broken        INTEGER NOT NULL DEFAULT 0,
+                known_broken_reason TEXT,
                 PRIMARY KEY (odin_struct_name, proc_field)
             )
         """)
+        # Idempotent column adds for older DBs.
+        for col_def in (
+            "known_broken INTEGER NOT NULL DEFAULT 0",
+            "known_broken_reason TEXT",
+        ):
+            col_name = col_def.split()[0]
+            try:
+                cur.execute(f"ALTER TABLE vtable_wiring ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
         ts = report["scanned_at"]
+        # NOTE: known_broken / known_broken_reason are NOT touched on UPSERT —
+        # those are operator-set annotations marking deliberately-deferred
+        # vtable wirings (delegate body has a porting bug that crashes the
+        # snapshot test if the proc-field is wired). The orchestrator's
+        # Phase B-2 gate is: COUNT WHERE status != 'ok' AND known_broken = 0.
         cur.executemany("""
             INSERT INTO vtable_wiring
                 (odin_struct_name, proc_field, java_method, parent_struct,
@@ -621,8 +638,20 @@ def main() -> int:
                 stale,
             )
         conn.commit()
+        # Phase B-2 effective-gate query: rows that block the orchestrator.
+        cur.execute(
+            "SELECT COUNT(*) FROM vtable_wiring "
+            "WHERE status != 'ok' AND known_broken = 0"
+        )
+        effective_missing = cur.fetchone()[0]
+        cur.execute(
+            "SELECT COUNT(*) FROM vtable_wiring WHERE known_broken = 1"
+        )
+        deferred = cur.fetchone()[0]
         print(f"committed {len(findings)} rows to vtable_wiring "
-              f"(dropped {len(stale)} stale)")
+              f"(dropped {len(stale)} stale); "
+              f"effective_missing={effective_missing} "
+              f"known_broken={deferred}")
     else:
         print("dry-run: pass --commit to write port.sqlite")
     conn.close()

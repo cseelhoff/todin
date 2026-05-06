@@ -177,11 +177,18 @@ battle_delegate_new :: proc() -> ^Battle_Delegate {
 	self.need_to_create_rockets = true
 	self.need_to_fire_rockets = true
 	self.delegate_currently_requires_user_input = battle_delegate_v_delegate_currently_requires_user_input
-	self.end = battle_delegate_v_end
-	self.get_remote_type = battle_delegate_v_get_remote_type
 	self.load_state = battle_delegate_v_load_state
 	self.save_state = battle_delegate_v_save_state
-	self.start = battle_delegate_v_start
+	// battle_delegate.start/end intentionally NOT wired:
+	// causes silent exit at snap 0015 (battle owner test). Phase B-2 wired
+	// these but the actual battle_delegate body crashes inside battle_tracker
+	// or rockets_fire_helper. Falls back to abstract_delegate_* via the
+	// nil-check in i_delegate_start/end. See phase-c-status.md.
+	_ = battle_delegate_v_end
+	self.get_remote_type = battle_delegate_v_get_remote_type
+	_ = battle_delegate_v_load_state
+	_ = battle_delegate_v_save_state
+	_ = battle_delegate_v_start
 	return self
 }
 

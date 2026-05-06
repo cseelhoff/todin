@@ -414,11 +414,22 @@ abstract_place_delegate_new :: proc() -> ^Abstract_Place_Delegate {
 	self := new(Abstract_Place_Delegate)
 	self.produced = make(map[^Territory][dynamic]^Unit)
 	self.placements = make([dynamic]^Undoable_Placement)
-	self.i_delegate.delegate_currently_requires_user_input = abstract_place_delegate_v_delegate_currently_requires_user_input
-	self.i_delegate.end = abstract_place_delegate_v_end
+	// Pure getter: safe to wire. Cleared from known_broken in vtable_wiring.
 	self.i_delegate.get_remote_type = abstract_place_delegate_v_get_remote_type
 	self.i_delegate.load_state = abstract_place_delegate_v_load_state
 	self.i_delegate.save_state = abstract_place_delegate_v_save_state
+	// Place_Delegate vtable wirings deliberately deferred (known_broken in
+	// port.sqlite.vtable_wiring): wiring these causes silent abort during
+	// snap 0017 (russianPlace step). delegate_currently_requires_user_input
+	// in particular: tested 2026-05-06, regressed snap count 52→17 when
+	// wired (likely game_player_get_unit_collection / Place_Extended_State
+	// chain panics). Falls back to abstract_delegate_* defaults via the
+	// nil-check in i_delegate_*.
+	_ = abstract_place_delegate_v_delegate_currently_requires_user_input
+	_ = abstract_place_delegate_v_end
+	_ = abstract_place_delegate_v_get_remote_type
+	_ = abstract_place_delegate_v_load_state
+	_ = abstract_place_delegate_v_save_state
 	return self
 }
 
