@@ -147,6 +147,14 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 		}
 	}
 
+	// Overlay XML-derived TerritoryAttachment data. Snapshot JSON only
+	// carries dynamic per-step state; static map metadata (production,
+	// capital, isImpassable, etc.) lives in the game XML, which the
+	// snapshot harness has no parser for. The companion script
+	// `scripts/extract_ww2v5_territory_attachments.py` extracts them
+	// into a sidecar JSON file alongside the harness sources.
+	apply_xml_territory_attachments(gd)
+
 	// Units
 	gd.units_list = new(game.Units_List)
 	gd.units_list.units = make(map[game.Uuid]^game.Unit)
@@ -538,6 +546,105 @@ deserialize_tech_attachment :: proc(obj: json.Object) -> ^game.Tech_Attachment {
 	return ta
 }
 
+// Loads `ww2v5_territory_attachments.json` (produced by
+// scripts/extract_ww2v5_territory_attachments.py from the game XML) and
+// applies it to every territory that didn't already get a
+// TerritoryAttachment from the snapshot JSON. No-op if the file is
+// missing — most snapshots' before.json doesn't carry the static fields,
+// so the overlay is what populates production/isImpassable/capital.
+apply_xml_territory_attachments :: proc(gd: ^game.Game_Data) {
+	// The harness binary's working directory is `triplea/`, so the path
+	// is relative to that.
+	candidates := [?]string{
+		"conversion/odin_tests/test_common/ww2v5_territory_attachments.json",
+		"triplea/conversion/odin_tests/test_common/ww2v5_territory_attachments.json",
+	}
+	bytes: []u8
+	read_ok: bool
+	for path in candidates {
+		b, err := os.read_entire_file(path, context.allocator)
+		if err == nil {
+			bytes = b
+			read_ok = true
+			break
+		}
+	}
+	if !read_ok {
+		log.warnf("apply_xml_territory_attachments: sidecar JSON not found")
+		return
+	}
+	defer delete(bytes)
+	parsed, perr := json.parse(bytes)
+	if perr != nil { return }
+	defer json.destroy_value(parsed)
+	root, root_ok := parsed.(json.Object)
+	if !root_ok { return }
+	applied := 0
+
+	for terr_name, val in root {
+		t, found := gd.game_map.territory_lookup[terr_name]
+		if !found { continue }
+		if t.territory_attachment != nil { continue }
+		opts, opts_ok := val.(json.Object)
+		if !opts_ok { continue }
+		ta := new(game.Territory_Attachment)
+		// Default attachment backref so any code reaching
+		// game_data_component_get_data_or_throw on the TA finds gd.
+		ta.default_attachment.game_data_component.game_data = gd
+		if v, ok := opts["production"]; ok {
+			if s, sok := v.(json.String); sok {
+				if n, nerr := strconv.parse_int(s); nerr {
+					ta.production = i32(n)
+				}
+			}
+		}
+		if v, ok := opts["unitProduction"]; ok {
+			if s, sok := v.(json.String); sok {
+				if n, nerr := strconv.parse_int(s); nerr {
+					ta.unit_production = i32(n)
+				}
+			}
+		}
+		if v, ok := opts["victoryCity"]; ok {
+			if s, sok := v.(json.String); sok {
+				if n, nerr := strconv.parse_int(s); nerr {
+					ta.victory_city = i32(n)
+				}
+			}
+		}
+		if v, ok := opts["capital"]; ok {
+			if s, sok := v.(json.String); sok {
+				ta.capital = strings.clone(s)
+			}
+		}
+		ta.is_impassable    = xml_bool_opt(opts, "isImpassable")
+		ta.convoy_route     = xml_bool_opt(opts, "convoyRoute")
+		ta.naval_base       = xml_bool_opt(opts, "navalBase")
+		ta.air_base         = xml_bool_opt(opts, "airBase")
+		ta.kamikaze_zone    = xml_bool_opt(opts, "kamikazeZone")
+		ta.blockade_zone    = xml_bool_opt(opts, "blockadeZone")
+		ta.original_factory = xml_bool_opt(opts, "originalFactory")
+		t.territory_attachment = ta
+		// territory_attachment_get reads from named.attachments, not the
+		// direct field — populate both so all access paths see the TA.
+		if t.attachments == nil {
+			t.attachments = make(map[string]^game.I_Attachment)
+		}
+		t.attachments["territoryAttachment"] = cast(^game.I_Attachment)ta
+		applied += 1
+	}
+	_ = applied
+}
+
+@(private="file")
+xml_bool_opt :: proc(opts: json.Object, key: string) -> bool {
+	v, ok := opts[key]
+	if !ok { return false }
+	s, sok := v.(json.String)
+	if !sok { return false }
+	return s == "true"
+}
+
 deserialize_territory :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Territory {
 	t := new(game.Territory)
 	t.named.base.name = get_string(obj, "name")
@@ -570,6 +677,12 @@ deserialize_territory :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Te
 			}
 		}
 		t.territory_attachment = ta
+		// Also publish via the attachments map: territory_attachment_get
+		// reads from named_attachable.attachments, not the direct field.
+		if t.attachments == nil {
+			t.attachments = make(map[string]^game.I_Attachment)
+		}
+		t.attachments["territoryAttachment"] = cast(^game.I_Attachment)ta
 	}
 	return t
 }

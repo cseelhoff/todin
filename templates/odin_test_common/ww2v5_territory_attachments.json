@@ -1,0 +1,324 @@
+{
+  "Afghanistan": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Alaska": {
+    "production": "2"
+  },
+  "Algeria": {
+    "production": "1"
+  },
+  "Anglo-Egyptian Sudan": {
+    "production": "0"
+  },
+  "Angola": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Anhwei": {
+    "production": "1"
+  },
+  "Archangel": {
+    "production": "1"
+  },
+  "Baltic States": {
+    "production": "2"
+  },
+  "Belgian Congo": {
+    "production": "1"
+  },
+  "Belorussia": {
+    "production": "2"
+  },
+  "Borneo": {
+    "production": "4"
+  },
+  "Brazil": {
+    "production": "3"
+  },
+  "Bulgaria Romania": {
+    "production": "2"
+  },
+  "Burma": {
+    "production": "1"
+  },
+  "Buryatia S.S.R.": {
+    "production": "1"
+  },
+  "Caroline Islands": {
+    "production": "0"
+  },
+  "Caucasus": {
+    "production": "4"
+  },
+  "Central America": {
+    "production": "1"
+  },
+  "Central United States": {
+    "production": "6"
+  },
+  "Chile": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Colombia Equador": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "East Indies": {
+    "production": "4"
+  },
+  "East Mexico": {
+    "production": "0"
+  },
+  "Eastern Australia": {
+    "production": "1"
+  },
+  "Eastern Canada": {
+    "production": "3"
+  },
+  "Eastern United States": {
+    "capital": "Americans",
+    "production": "12",
+    "victoryCity": "1"
+  },
+  "Egypt": {
+    "production": "2"
+  },
+  "Eire": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Evenki National Okrug": {
+    "production": "1"
+  },
+  "Finland": {
+    "production": "1"
+  },
+  "Formosa": {
+    "production": "0"
+  },
+  "France": {
+    "production": "6",
+    "victoryCity": "1"
+  },
+  "French Equatorial Africa": {
+    "production": "1"
+  },
+  "French Indo-China Thailand": {
+    "production": "2"
+  },
+  "French Madagascar": {
+    "production": "1"
+  },
+  "French West Africa": {
+    "production": "1"
+  },
+  "Germany": {
+    "capital": "Germans",
+    "production": "10",
+    "victoryCity": "1"
+  },
+  "Gibraltar": {
+    "production": "0"
+  },
+  "Greenland": {
+    "production": "0"
+  },
+  "Hawaiian Islands": {
+    "production": "1",
+    "victoryCity": "1"
+  },
+  "Himalaya": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Iceland": {
+    "production": "0"
+  },
+  "India": {
+    "production": "3",
+    "victoryCity": "1"
+  },
+  "Italian East Africa": {
+    "production": "1"
+  },
+  "Italy": {
+    "production": "3",
+    "victoryCity": "1"
+  },
+  "Iwo Jima": {
+    "production": "0"
+  },
+  "Japan": {
+    "capital": "Japanese",
+    "production": "8",
+    "victoryCity": "1"
+  },
+  "Karelia S.S.R.": {
+    "production": "2",
+    "victoryCity": "1"
+  },
+  "Kazakh S.S.R.": {
+    "production": "2"
+  },
+  "Kiangsu": {
+    "production": "2",
+    "victoryCity": "1"
+  },
+  "Kwangtung": {
+    "production": "2"
+  },
+  "Libya": {
+    "production": "1"
+  },
+  "Malaya": {
+    "production": "1"
+  },
+  "Manchuria": {
+    "production": "3"
+  },
+  "Mexico": {
+    "production": "2"
+  },
+  "Midway": {
+    "production": "0"
+  },
+  "Mongolia": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Morocco": {
+    "production": "1"
+  },
+  "Mozambique": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "New Guinea": {
+    "production": "1"
+  },
+  "New Zealand": {
+    "production": "1"
+  },
+  "Northwestern Europe": {
+    "production": "2"
+  },
+  "Norway": {
+    "production": "2"
+  },
+  "Novosibirsk": {
+    "production": "1"
+  },
+  "Okinawa": {
+    "production": "0"
+  },
+  "Persia": {
+    "production": "1"
+  },
+  "Peru Argentina": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Philippine Islands": {
+    "production": "3",
+    "victoryCity": "1"
+  },
+  "Poland": {
+    "production": "2"
+  },
+  "Rhodesia": {
+    "production": "1"
+  },
+  "Russia": {
+    "capital": "Russians",
+    "production": "8",
+    "victoryCity": "1"
+  },
+  "Sahara": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Saudi Arabia": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Sinkiang": {
+    "production": "1"
+  },
+  "Solomon Islands": {
+    "production": "0"
+  },
+  "Southern Europe": {
+    "production": "2"
+  },
+  "Soviet Far East": {
+    "production": "1"
+  },
+  "Spain Portugal": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Sweden": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Switzerland": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Szechwan": {
+    "production": "1"
+  },
+  "Trans-Jordan": {
+    "production": "1"
+  },
+  "Turkey": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Ukraine S.S.R.": {
+    "production": "2"
+  },
+  "Union of South Africa": {
+    "production": "2"
+  },
+  "United Kingdom": {
+    "capital": "British",
+    "production": "8",
+    "victoryCity": "1"
+  },
+  "Venezuela": {
+    "isImpassable": "true",
+    "production": "0"
+  },
+  "Vologda": {
+    "production": "2"
+  },
+  "Wake Island": {
+    "production": "0"
+  },
+  "West Indies": {
+    "production": "1"
+  },
+  "West Russia": {
+    "production": "2"
+  },
+  "Western Australia": {
+    "production": "1"
+  },
+  "Western Canada": {
+    "production": "1"
+  },
+  "Western United States": {
+    "production": "10",
+    "victoryCity": "1"
+  },
+  "Yakut S.S.R.": {
+    "production": "1"
+  },
+  "Yunnan": {
+    "production": "1"
+  }
+}

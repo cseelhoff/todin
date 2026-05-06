@@ -55,6 +55,7 @@ ODIN_TEST_COMMON_FILES = (
     "json_loader.odin",
     "game_state_compare.odin",
     "snapshot_runner.odin",
+    "ww2v5_territory_attachments.json",
 )
 PRS_REL = (
     "game-app/game-core/src/main/java/"

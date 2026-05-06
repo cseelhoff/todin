@@ -334,7 +334,7 @@ abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
 	self.i_delegate.end = abstract_end_turn_delegate_v_end
 	_ = abstract_end_turn_delegate_v_load_state
 	_ = abstract_end_turn_delegate_v_save_state
-	_ = abstract_end_turn_delegate_v_start
+	self.i_delegate.start = abstract_end_turn_delegate_v_start
 	return self
 }
 

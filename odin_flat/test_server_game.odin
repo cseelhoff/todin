@@ -92,6 +92,12 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// snapshot JSON loader does not.
 	for _, gp in self.data.player_list.players {
 		gp.named_attachable.default_named.game_data_component.game_data = self.data
+		// Each Game_Player needs a per-player technology_frontier_list
+		// for tech_tracker_get_current_tech_advances; the snapshot JSON
+		// only carries the master frontier, not per-player ones.
+		if gp.technology_frontiers == nil {
+			gp.technology_frontiers = technology_frontier_list_new(self.data)
+		}
 	}
 	if gm := game_data_get_map(self.data); gm != nil {
 		for t in gm.territories {

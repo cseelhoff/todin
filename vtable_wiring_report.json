@@ -1,26 +1,16 @@
 {
-  "scanned_at": "2026-05-06T01:56:26.316279+00:00",
+  "scanned_at": "2026-05-06T02:07:25.717950+00:00",
   "files_scanned": 1208,
   "structs_total": 1439,
   "constructors_total": 663,
   "wirings_examined": 217,
   "by_status": {
-    "ok": 213,
-    "missing": 4,
+    "ok": 214,
+    "missing": 3,
     "missing_kind": 0
   },
   "samples": {
     "missing": [
-      {
-        "struct": "Abstract_End_Turn_Delegate",
-        "field": "start",
-        "java_method": "start",
-        "parent_struct": "I_Delegate",
-        "constructor": "abstract_end_turn_delegate_new",
-        "status": "missing",
-        "odin_file": "odin_flat/games__strategy__triplea__delegate__abstract_end_turn_delegate.odin",
-        "owner_struct_key": "struct:games.strategy.triplea.delegate.AbstractEndTurnDelegate"
-      },
       {
         "struct": "Abstract_Place_Delegate",
         "field": "end",
