@@ -14,6 +14,14 @@ Unit_Damage_Received_Change :: struct {
 //                                       Collection<String>)
 // The Lombok-generated all-args private constructor used by `invert()`.
 // Stores the three fields verbatim.
+unit_damage_received_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	unit_damage_received_change_perform(cast(^Unit_Damage_Received_Change)self, data)
+}
+
+unit_damage_received_change_v_invert :: proc(self: ^Change) -> ^Change {
+	return unit_damage_received_change_invert(cast(^Unit_Damage_Received_Change)self)
+}
+
 unit_damage_received_change_new_from_maps :: proc(
 	new_total_damage: map[string]i32,
 	old_total_damage: map[string]i32,
@@ -24,6 +32,8 @@ unit_damage_received_change_new_from_maps :: proc(
 	udrc.new_total_damage = new_total_damage
 	udrc.old_total_damage = old_total_damage
 	udrc.territories_to_notify = territories_to_notify
+	udrc.perform = unit_damage_received_change_v_perform
+	udrc.invert = unit_damage_received_change_v_invert
 	return udrc
 }
 
@@ -58,6 +68,8 @@ unit_damage_received_change_new_from_integer_map :: proc(
 	for territory in territories_to_notify {
 		append(&udrc.territories_to_notify, territory.named.base.name)
 	}
+	udrc.perform = unit_damage_received_change_v_perform
+	udrc.invert = unit_damage_received_change_v_invert
 	return udrc
 }
 

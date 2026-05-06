@@ -6,6 +6,10 @@ Add_Battle_Records_Change :: struct {
 	round: i32,
 }
 
+add_battle_records_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	add_battle_records_change_perform(cast(^Add_Battle_Records_Change)self, data)
+}
+
 add_battle_records_change_new :: proc(battle_records: ^Battle_Records, data: ^Game_State) -> ^Add_Battle_Records_Change {
 	c := new(Add_Battle_Records_Change)
 	c.kind = .Add_Battle_Records_Change
@@ -13,6 +17,7 @@ add_battle_records_change_new :: proc(battle_records: ^Battle_Records, data: ^Ga
 	// make a copy because this is only done once, and only externally from battle
 	// tracker, and the source will be cleared (battle tracker clears out the records each turn)
 	c.records_to_add = battle_records_new_copy(battle_records)
+	c.perform = add_battle_records_change_v_perform
 	return c
 }
 

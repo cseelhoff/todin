@@ -8,6 +8,14 @@ Remove_Unprotected_Units :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.steps.change.RemoveUnprotectedUnits
 
+remove_unprotected_units_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return remove_unprotected_units_get_all_step_details(cast(^Remove_Unprotected_Units)self)
+}
+
+remove_unprotected_units_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	remove_unprotected_units_execute(cast(^Remove_Unprotected_Units)self, stack, bridge)
+}
+
 remove_unprotected_units_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -15,6 +23,8 @@ remove_unprotected_units_new :: proc(
 	self := new(Remove_Unprotected_Units)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = remove_unprotected_units_v_get_all_step_details
+	self.battle_step.i_executable.execute = remove_unprotected_units_v_execute
 	return self
 }
 

@@ -26,6 +26,10 @@ change_attachment_change_get_attachment_name :: proc(self: ^Change_Attachment_Ch
 	return self.attachment_name
 }
 
+change_attachment_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	change_attachment_change_perform(cast(^Change_Attachment_Change)self, data)
+}
+
 // Java: ChangeAttachmentChange(Attachable, @Nullable String, Object, Object, String, boolean)
 // Canonical 6-arg constructor; the 3-arg and 4-arg overloads delegate here.
 change_attachment_change_new_canonical :: proc(
@@ -38,6 +42,7 @@ change_attachment_change_new_canonical :: proc(
 ) -> ^Change_Attachment_Change {
 	self := new(Change_Attachment_Change)
 	self.kind = .Change_Attachment_Change
+	self.perform = change_attachment_change_v_perform
 	// Optional.ofNullable(attachmentName).map(name -> name.replaceAll("ttatch", "ttach")).orElse(null)
 	if len(attachment_name) > 0 {
 		self.attachment_name = change_attachment_change_lambda_new_0(attachment_name)

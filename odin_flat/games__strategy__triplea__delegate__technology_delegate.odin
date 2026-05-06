@@ -19,7 +19,49 @@ Technology_Delegate :: struct {
 technology_delegate_new :: proc() -> ^Technology_Delegate {
 	self := new(Technology_Delegate)
 	self.need_to_initialize = true
+	self.delegate_currently_requires_user_input = technology_delegate_v_delegate_currently_requires_user_input
+	self.end = technology_delegate_v_end
+	self.get_remote_type = technology_delegate_v_get_remote_type
+	self.initialize = technology_delegate_v_initialize
+	self.load_state = technology_delegate_v_load_state
+	self.save_state = technology_delegate_v_save_state
+	self.start = technology_delegate_v_start
 	return self
+}
+
+@(private = "file")
+technology_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return technology_delegate_delegate_currently_requires_user_input(cast(^Technology_Delegate)self)
+}
+
+@(private = "file")
+technology_delegate_v_end :: proc(self: ^I_Delegate) {
+	technology_delegate_end(cast(^Technology_Delegate)self)
+}
+
+@(private = "file")
+technology_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return technology_delegate_get_remote_type(cast(^Technology_Delegate)self)
+}
+
+@(private = "file")
+technology_delegate_v_initialize :: proc(self: ^I_Delegate, name: string, display_name: string) {
+	technology_delegate_initialize(cast(^Technology_Delegate)self, name, display_name)
+}
+
+@(private = "file")
+technology_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	technology_delegate_load_state(cast(^Technology_Delegate)self, cast(^Technology_Extended_Delegate_State)state)
+}
+
+@(private = "file")
+technology_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(technology_delegate_save_state(cast(^Technology_Delegate)self))
+}
+
+@(private = "file")
+technology_delegate_v_start :: proc(self: ^I_Delegate) {
+	technology_delegate_start(cast(^Technology_Delegate)self)
 }
 
 // games.strategy.triplea.delegate.TechnologyDelegate#saveState()

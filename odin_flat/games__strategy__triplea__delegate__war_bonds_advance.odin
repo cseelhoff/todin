@@ -26,6 +26,19 @@ war_bonds_advance_get_property :: proc(self: ^War_Bonds_Advance) -> string {
 	return "warBonds"
 }
 
+war_bonds_advance_v_has_tech :: proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
+	return war_bonds_advance_has_tech(transmute(^War_Bonds_Advance)self, ta)
+}
+
+war_bonds_advance_new :: proc(data: ^Game_Data) -> ^War_Bonds_Advance {
+	self := new(War_Bonds_Advance)
+	base := tech_advance_new("War Bonds", data)
+	self.tech_advance = base^
+	free(base)
+	self.tech_advance.has_tech = war_bonds_advance_v_has_tech
+	return self
+}
+
 war_bonds_advance_has_tech :: proc(self: ^War_Bonds_Advance, ta: ^Tech_Attachment) -> bool {
 	return tech_attachment_get_war_bonds(ta)
 }

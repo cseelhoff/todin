@@ -6,10 +6,20 @@ Land_Paratroopers :: struct {
 	battle_actions: ^Battle_Actions,
 }
 
+land_paratroopers_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return land_paratroopers_get_all_step_details(cast(^Land_Paratroopers)self)
+}
+
+land_paratroopers_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	land_paratroopers_execute(cast(^Land_Paratroopers)self, stack, bridge)
+}
+
 land_paratroopers_new :: proc(battle_state: ^Battle_State, battle_actions: ^Battle_Actions) -> ^Land_Paratroopers {
 	self := new(Land_Paratroopers)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = land_paratroopers_v_get_all_step_details
+	self.execute = land_paratroopers_v_execute
 	return self
 }
 

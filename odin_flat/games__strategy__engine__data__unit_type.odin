@@ -104,6 +104,7 @@ unit_type_new :: proc(name: string, data: ^Game_Data) -> ^Unit_Type {
 	base := named_attachable_new(name, data)
 	self.named_attachable = base^
 	free(base)
+	self.named_attachable.default_named.named.kind = .Unit_Type
 	return self
 }
 

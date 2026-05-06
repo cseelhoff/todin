@@ -24,7 +24,17 @@ roll_dice_step_new :: proc(
 	self.firing_group = firing_group
 	self.fire_round_state = fire_round_state
 	self.roll_dice = roll_dice
+	self.battle_step.get_all_step_details = roll_dice_step_v_get_all_step_details
+	self.battle_step.i_executable.execute = roll_dice_step_v_execute
 	return self
+}
+
+roll_dice_step_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return roll_dice_step_get_all_step_details(cast(^Roll_Dice_Step)self)
+}
+
+roll_dice_step_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	roll_dice_step_execute(cast(^Roll_Dice_Step)self, stack, bridge)
 }
 
 roll_dice_step_get_battle_state :: proc(self: ^Roll_Dice_Step) -> ^Battle_State {

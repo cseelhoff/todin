@@ -12,7 +12,12 @@ default_named_new :: proc(name: string, data: ^Game_Data) -> ^Default_Named {
 	self := new(Default_Named)
 	self.named = Named{base = Default_Named_Base{name = name}}
 	self.game_data_component = make_Game_Data_Component(data)
+	self.named.get_name = default_named_v_get_name
 	return self
+}
+
+default_named_v_get_name :: proc(self: ^Named) -> string {
+	return default_named_get_name(cast(^Default_Named)self)
 }
 
 default_named_get_name :: proc(self: ^Default_Named) -> string {

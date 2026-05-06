@@ -31,7 +31,12 @@ object_property_change_new :: proc(
 	self.property = property
 	self.new_value = new_value
 	self.old_value = mutable_property_get_value(unit_get_property_or_throw(object, property))
+	self.perform = object_property_change_v_perform
 	return self
+}
+
+object_property_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	object_property_change_perform(cast(^Object_Property_Change)self, data)
 }
 
 // Java: protected void perform(GameState data) — applies new_value to the

@@ -57,7 +57,13 @@ game_player_new :: proc(
 	self.resources = resource_collection_new(game_data)
 	self.technology_frontiers = technology_frontier_list_new(game_data)
 	self.who_am_i = "null: no_one"
+	self.named_attachable.default_named.named.kind = .Game_Player
+	self.named_attachable.default_named.named.get_name = game_player_v_get_name
 	return self
+}
+
+game_player_v_get_name :: proc(self: ^Named) -> string {
+	return game_player_get_name(cast(^Game_Player)self)
 }
 
 // Java: @Nonnull @Override public GameData getData()

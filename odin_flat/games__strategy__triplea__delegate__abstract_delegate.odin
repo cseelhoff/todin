@@ -14,8 +14,43 @@ Abstract_Delegate :: struct {
 // games.strategy.triplea.delegate.AbstractDelegate#<init>()
 // Java's implicit no-arg constructor. All fields default to their zero
 // value (empty strings, nil pointers).
+abstract_delegate_v_initialize :: proc(self: ^I_Delegate, name: string, display_name: string) {
+	abstract_delegate_initialize(cast(^Abstract_Delegate)self, name, display_name)
+}
+
+abstract_delegate_v_get_name :: proc(self: ^I_Delegate) -> string {
+	return abstract_delegate_get_name(cast(^Abstract_Delegate)self)
+}
+
+abstract_delegate_v_get_display_name :: proc(self: ^I_Delegate) -> string {
+	return abstract_delegate_get_display_name(cast(^Abstract_Delegate)self)
+}
+
+abstract_delegate_v_end :: proc(self: ^I_Delegate) {
+	abstract_delegate_end(cast(^Abstract_Delegate)self)
+}
+
+abstract_delegate_v_start :: proc(self: ^I_Delegate) {
+	abstract_delegate_start(cast(^Abstract_Delegate)self)
+}
+
+abstract_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return abstract_delegate_save_state(cast(^Abstract_Delegate)self)
+}
+
+abstract_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	abstract_delegate_load_state(cast(^Abstract_Delegate)self, state)
+}
+
 abstract_delegate_new :: proc() -> ^Abstract_Delegate {
 	self := new(Abstract_Delegate)
+	self.i_delegate.initialize = abstract_delegate_v_initialize
+	self.i_delegate.get_name = abstract_delegate_v_get_name
+	self.i_delegate.get_display_name = abstract_delegate_v_get_display_name
+	self.i_delegate.end = abstract_delegate_v_end
+	self.i_delegate.start = abstract_delegate_v_start
+	self.i_delegate.save_state = abstract_delegate_v_save_state
+	self.i_delegate.load_state = abstract_delegate_v_load_state
 	return self
 }
 

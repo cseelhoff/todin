@@ -12,7 +12,17 @@ offensive_general_retreat_new :: proc(battle_state: ^Battle_State, battle_action
 	self := new(Offensive_General_Retreat)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = offensive_general_retreat_v_get_all_step_details
+	self.battle_step.i_executable.execute = offensive_general_retreat_v_execute
 	return self
+}
+
+offensive_general_retreat_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return offensive_general_retreat_get_all_step_details(cast(^Offensive_General_Retreat)self)
+}
+
+offensive_general_retreat_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	offensive_general_retreat_execute(cast(^Offensive_General_Retreat)self, stack, bridge)
 }
 
 offensive_general_retreat_get_order :: proc(self: ^Offensive_General_Retreat) -> Battle_Step_Order {

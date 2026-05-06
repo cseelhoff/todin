@@ -14,6 +14,14 @@ Bid_Purchase_Delegate :: struct {
 // `bid` and `spent` zero-init by default, and the embedded PurchaseDelegate
 // chain is initialized via its own no-arg constructor (needToInitialize=true,
 // pendingProductionRules=null).
+bid_purchase_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(bid_purchase_delegate_save_state(cast(^Bid_Purchase_Delegate)self))
+}
+
+bid_purchase_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	bid_purchase_delegate_load_state(cast(^Bid_Purchase_Delegate)self, state)
+}
+
 bid_purchase_delegate_new :: proc() -> ^Bid_Purchase_Delegate {
 	self := new(Bid_Purchase_Delegate)
 	self.need_to_initialize = true
@@ -21,6 +29,8 @@ bid_purchase_delegate_new :: proc() -> ^Bid_Purchase_Delegate {
 	self.bid = 0
 	self.spent = 0
 	self.has_bid = false
+	self.save_state = bid_purchase_delegate_v_save_state
+	self.load_state = bid_purchase_delegate_v_load_state
 	return self
 }
 

@@ -24,6 +24,7 @@ production_rule_new :: proc(name: string, data: ^Game_Data) -> ^Production_Rule 
 		get_name    = production_rule_rule_get_name,
 		get_results = production_rule_rule_get_results,
 	}
+	self.default_named.named.kind = .Production_Rule
 	return self
 }
 

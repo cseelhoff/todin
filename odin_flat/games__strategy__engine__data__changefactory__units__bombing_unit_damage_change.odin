@@ -37,9 +37,14 @@ bombing_unit_damage_change_lambda_perform_2 :: proc(data: ^Game_State, territory
 //   damage.entrySet().forEach(entry -> { ... lambda$new$0 ... });
 //   this.territoriesToNotify =
 //       territoriesToNotify.stream().map(Territory::getName).collect(toList());
+bombing_unit_damage_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	bombing_unit_damage_change_perform(cast(^Bombing_Unit_Damage_Change)self, data)
+}
+
 bombing_unit_damage_change_new :: proc(damage: ^Integer_Map_Unit, territories_to_notify: [dynamic]^Territory) -> ^Bombing_Unit_Damage_Change {
 	self := new(Bombing_Unit_Damage_Change)
 	self.kind = .Bombing_Unit_Damage_Change
+	self.perform = bombing_unit_damage_change_v_perform
 	self.new_damage = integer_map_new()
 	self.old_damage = integer_map_new()
 	for unit, value in damage.entries {

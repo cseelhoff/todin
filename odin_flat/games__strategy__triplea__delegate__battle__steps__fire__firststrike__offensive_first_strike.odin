@@ -179,6 +179,14 @@ offensive_first_strike_execute :: proc(
 //   this.battleActions = battleActions;
 //   this.state = calculateState();
 // (returnFire defaults to ReturnFire.ALL per the field initializer.)
+offensive_first_strike_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return offensive_first_strike_get_all_step_details(cast(^Offensive_First_Strike)self)
+}
+
+offensive_first_strike_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	offensive_first_strike_execute(cast(^Offensive_First_Strike)self, stack, bridge)
+}
+
 offensive_first_strike_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -188,5 +196,7 @@ offensive_first_strike_new :: proc(
 	self.battle_actions = battle_actions
 	self.return_fire = .ALL
 	self.state = offensive_first_strike_calculate_state(self)
+	self.battle_step.get_all_step_details = offensive_first_strike_v_get_all_step_details
+	self.battle_step.i_executable.execute = offensive_first_strike_v_execute
 	return self
 }

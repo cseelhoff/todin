@@ -11,10 +11,20 @@ Aa_Fire_And_Casualty_Step :: struct {
 	side:           Battle_State_Side,
 }
 
+aa_fire_and_casualty_step_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return aa_fire_and_casualty_step_get_all_step_details(cast(^Aa_Fire_And_Casualty_Step)self)
+}
+
+aa_fire_and_casualty_step_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	aa_fire_and_casualty_step_execute(cast(^Aa_Fire_And_Casualty_Step)self, stack, bridge)
+}
+
 aa_fire_and_casualty_step_new :: proc(battle_state: ^Battle_State, battle_actions: ^Battle_Actions) -> ^Aa_Fire_And_Casualty_Step {
 	self := new(Aa_Fire_And_Casualty_Step)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = aa_fire_and_casualty_step_v_get_all_step_details
+	self.battle_step.i_executable.execute = aa_fire_and_casualty_step_v_execute
 	return self
 }
 

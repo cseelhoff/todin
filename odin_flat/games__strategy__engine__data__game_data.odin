@@ -47,6 +47,56 @@ Game_Data :: struct {
 // Nested interface GameData.Unlocker (extends java.io.Closeable; no fields).
 Unlocker :: struct {}
 
+// Vtable shims: cast ^Game_State back to ^Game_Data and forward to the typed body.
+game_data_v_get_alliance_tracker :: proc(self: ^Game_State) -> ^Alliance_Tracker {
+	return game_data_get_alliance_tracker(cast(^Game_Data)self)
+}
+game_data_v_get_battle_records_list :: proc(self: ^Game_State) -> ^Battle_Records_List {
+	return game_data_get_battle_records_list(cast(^Game_Data)self)
+}
+game_data_v_get_map :: proc(self: ^Game_State) -> ^Game_Map {
+	return game_data_get_map(cast(^Game_Data)self)
+}
+game_data_v_get_player_list :: proc(self: ^Game_State) -> ^Player_List {
+	return game_data_get_player_list(cast(^Game_Data)self)
+}
+game_data_v_get_production_frontier_list :: proc(self: ^Game_State) -> ^Production_Frontier_List {
+	return game_data_get_production_frontier_list(cast(^Game_Data)self)
+}
+game_data_v_get_production_rule_list :: proc(self: ^Game_State) -> ^Production_Rule_List {
+	return game_data_get_production_rule_list(cast(^Game_Data)self)
+}
+game_data_v_get_properties :: proc(self: ^Game_State) -> ^Game_Properties {
+	return game_data_get_properties(cast(^Game_Data)self)
+}
+game_data_v_get_relationship_tracker :: proc(self: ^Game_State) -> ^Relationship_Tracker {
+	return game_data_get_relationship_tracker(cast(^Game_Data)self)
+}
+game_data_v_get_relationship_type_list :: proc(self: ^Game_State) -> ^Relationship_Type_List {
+	return game_data_get_relationship_type_list(cast(^Game_Data)self)
+}
+game_data_v_get_resource_list :: proc(self: ^Game_State) -> ^Resource_List {
+	return game_data_get_resource_list(cast(^Game_Data)self)
+}
+game_data_v_get_sequence :: proc(self: ^Game_State) -> ^Game_Sequence {
+	return game_data_get_sequence(cast(^Game_Data)self)
+}
+game_data_v_get_tech_tracker :: proc(self: ^Game_State) -> ^Tech_Tracker {
+	return game_data_get_tech_tracker(cast(^Game_Data)self)
+}
+game_data_v_get_technology_frontier :: proc(self: ^Game_State) -> ^Technology_Frontier {
+	return game_data_get_technology_frontier(cast(^Game_Data)self)
+}
+game_data_v_get_unit_holder :: proc(self: ^Game_State, name: string, type: string) -> ^Unit_Holder {
+	return game_data_get_unit_holder(cast(^Game_Data)self, name, type)
+}
+game_data_v_get_unit_type_list :: proc(self: ^Game_State) -> ^Unit_Type_List {
+	return game_data_get_unit_type_list(cast(^Game_Data)self)
+}
+game_data_v_get_units :: proc(self: ^Game_State) -> ^Units_List {
+	return game_data_get_units(cast(^Game_Data)self)
+}
+
 // games.strategy.engine.data.GameData#<init>()
 //
 // Java's implicit default constructor runs all in-line field initializers
@@ -113,6 +163,22 @@ game_data_new :: proc() -> ^Game_Data {
 	listeners := new(Game_Data_Event_Listeners)
 	listeners^ = make_Game_Data_Event_Listeners()
 	self.game_data_event_listeners = listeners
+	self.game_state.get_alliance_tracker         = game_data_v_get_alliance_tracker
+	self.game_state.get_battle_records_list      = game_data_v_get_battle_records_list
+	self.game_state.get_map                      = game_data_v_get_map
+	self.game_state.get_player_list              = game_data_v_get_player_list
+	self.game_state.get_production_frontier_list = game_data_v_get_production_frontier_list
+	self.game_state.get_production_rule_list     = game_data_v_get_production_rule_list
+	self.game_state.get_properties               = game_data_v_get_properties
+	self.game_state.get_relationship_tracker     = game_data_v_get_relationship_tracker
+	self.game_state.get_relationship_type_list   = game_data_v_get_relationship_type_list
+	self.game_state.get_resource_list            = game_data_v_get_resource_list
+	self.game_state.get_sequence                 = game_data_v_get_sequence
+	self.game_state.get_tech_tracker             = game_data_v_get_tech_tracker
+	self.game_state.get_technology_frontier      = game_data_v_get_technology_frontier
+	self.game_state.get_unit_holder              = game_data_v_get_unit_holder
+	self.game_state.get_unit_type_list           = game_data_v_get_unit_type_list
+	self.game_state.get_units                    = game_data_v_get_units
 	return self
 }
 

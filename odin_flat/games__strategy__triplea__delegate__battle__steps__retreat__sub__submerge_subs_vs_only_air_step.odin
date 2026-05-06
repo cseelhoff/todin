@@ -13,7 +13,17 @@ submerge_subs_vs_only_air_step_new :: proc(
 	self := new(Submerge_Subs_Vs_Only_Air_Step)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = submerge_subs_vs_only_air_step_v_get_all_step_details
+	self.battle_step.i_executable.execute = submerge_subs_vs_only_air_step_v_execute
 	return self
+}
+
+submerge_subs_vs_only_air_step_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return submerge_subs_vs_only_air_step_get_all_step_details(cast(^Submerge_Subs_Vs_Only_Air_Step)self)
+}
+
+submerge_subs_vs_only_air_step_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	submerge_subs_vs_only_air_step_execute(cast(^Submerge_Subs_Vs_Only_Air_Step)self, stack, bridge)
 }
 
 submerge_subs_vs_only_air_step_get_order :: proc(

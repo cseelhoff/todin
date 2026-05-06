@@ -27,7 +27,17 @@ mark_casualties_new :: proc(
 	self.firing_group = firing_group
 	self.fire_round_state = fire_round_state
 	self.return_fire = return_fire
+	self.battle_step.get_all_step_details = mark_casualties_v_get_all_step_details
+	self.battle_step.i_executable.execute = mark_casualties_v_execute
 	return self
+}
+
+mark_casualties_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return mark_casualties_get_all_step_details(cast(^Mark_Casualties)self)
+}
+
+mark_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	mark_casualties_execute(cast(^Mark_Casualties)self, stack, bridge)
 }
 
 // Java: private String getName()

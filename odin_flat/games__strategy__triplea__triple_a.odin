@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Triple_A :: struct {
 	using i_game_loader: I_Game_Loader,
 	game: ^I_Game,
@@ -8,9 +10,45 @@ Triple_A :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.TripleA
 
+triple_a_v_start_game :: proc(
+	self:          ^I_Game_Loader,
+	game:          ^I_Game,
+	players:       [dynamic]^Player,
+	launch_action: ^Launch_Action,
+	chat:          ^Chat,
+) {
+	triple_a_start_game(cast(^Triple_A)self, game, players, launch_action, chat)
+}
+
+triple_a_v_new_players :: proc(self: ^I_Game_Loader, players: map[string]string) -> [dynamic]^Player {
+	types := player_types_get_built_in_player_types()
+	resolved: map[string]^Player_Types_Type
+	for name, label in players {
+		pt: ^Player_Types_Type = nil
+		for t in types {
+			if t.label == label {
+				pt = t
+				break
+			}
+		}
+		if pt == nil {
+			panic(fmt.tprintf("triple_a_v_new_players: unknown player type label %q", label))
+		}
+		resolved[name] = pt
+	}
+	set := triple_a_new_players(cast(^Triple_A)self, resolved)
+	out: [dynamic]^Player
+	for p, _ in set {
+		append(&out, p)
+	}
+	return out
+}
+
 triple_a_new :: proc() -> ^Triple_A {
 	self := new(Triple_A)
 	self.game = nil
+	self.i_game_loader.start_game = triple_a_v_start_game
+	self.i_game_loader.new_players = triple_a_v_new_players
 	return self
 }
 

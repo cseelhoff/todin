@@ -144,6 +144,25 @@ battle_delegate_lambda_do_scrambling_5 :: proc(player: ^Game_Player) -> bool {
 // flag = true, and `rocketHelper`/`currentBattle` default to null. The
 // embedded BaseTripleADelegate has no overridden constructor so its
 // fields are zero-initialized here.
+battle_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return battle_delegate_delegate_currently_requires_user_input(cast(^Battle_Delegate)self)
+}
+battle_delegate_v_end :: proc(self: ^I_Delegate) {
+	battle_delegate_end(cast(^Battle_Delegate)self)
+}
+battle_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return battle_delegate_get_remote_type(cast(^Battle_Delegate)self)
+}
+battle_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	battle_delegate_load_state(cast(^Battle_Delegate)self, cast(^Battle_Extended_Delegate_State)state)
+}
+battle_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(battle_delegate_save_state(cast(^Battle_Delegate)self))
+}
+battle_delegate_v_start :: proc(self: ^I_Delegate) {
+	battle_delegate_start(cast(^Battle_Delegate)self)
+}
+
 battle_delegate_new :: proc() -> ^Battle_Delegate {
 	self := new(Battle_Delegate)
 	self.battle_tracker = battle_tracker_new()
@@ -157,6 +176,12 @@ battle_delegate_new :: proc() -> ^Battle_Delegate {
 	self.need_to_cleanup = true
 	self.need_to_create_rockets = true
 	self.need_to_fire_rockets = true
+	self.delegate_currently_requires_user_input = battle_delegate_v_delegate_currently_requires_user_input
+	self.end = battle_delegate_v_end
+	self.get_remote_type = battle_delegate_v_get_remote_type
+	self.load_state = battle_delegate_v_load_state
+	self.save_state = battle_delegate_v_save_state
+	self.start = battle_delegate_v_start
 	return self
 }
 

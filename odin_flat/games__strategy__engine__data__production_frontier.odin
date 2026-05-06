@@ -29,6 +29,7 @@ production_frontier_new_with_rules :: proc(
 	self := new(Production_Frontier)
 	self.default_named = base^
 	free(base)
+	self.default_named.named.kind = .Production_Frontier
 	self.rules = make([dynamic]^Production_Rule, 0, len(rules))
 	for r in rules {
 		append(&self.rules, r)

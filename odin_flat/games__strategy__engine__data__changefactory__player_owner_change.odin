@@ -16,6 +16,10 @@ Player_Owner_Change :: struct {
 // records the territory name and, for each unit in `units`, the unit's
 // current owner name (so the change can be inverted) and the new owner's
 // name. Mirrors the package-private Java constructor.
+player_owner_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	player_owner_change_perform(cast(^Player_Owner_Change)self, data)
+}
+
 player_owner_change_new :: proc(units: [dynamic]^Unit, new_owner: ^Game_Player, territory: ^Territory) -> ^Player_Owner_Change {
 	self := new(Player_Owner_Change)
 	self.kind = .Player_Owner_Change
@@ -26,6 +30,7 @@ player_owner_change_new :: proc(units: [dynamic]^Unit, new_owner: ^Game_Player, 
 		self.old_owner_names_by_unit_id[unit.id] = unit.owner.named.base.name
 		self.new_owner_names_by_unit_id[unit.id] = new_owner.named.base.name
 	}
+	self.perform = player_owner_change_v_perform
 	return self
 }
 

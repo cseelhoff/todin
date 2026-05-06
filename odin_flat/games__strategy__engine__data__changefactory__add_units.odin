@@ -101,6 +101,10 @@ add_units_lambda_build_units_with_owner_2 :: proc(
 // Java: AddUnits#<init>(String, String, Collection<Unit>, Map<UUID,String>)
 //   this.name = name; this.type = type;
 //   this.units = List.copyOf(units); this.unitOwnerMap = unitOwnerMap;
+add_units_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	add_units_perform(cast(^Add_Units)self, data)
+}
+
 add_units_new :: proc(
 	name: string,
 	type: string,
@@ -117,6 +121,7 @@ add_units_new :: proc(
 	}
 	au.units = copied
 	au.unit_owner_map = unit_owner_map
+	au.perform = add_units_v_perform
 	return au
 }
 

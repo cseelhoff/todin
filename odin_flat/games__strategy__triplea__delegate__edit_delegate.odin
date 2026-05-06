@@ -7,8 +7,13 @@ Edit_Delegate :: struct {
 // games.strategy.triplea.delegate.EditDelegate#<init>()
 // Implicit Java no-arg constructor; zero-initializes the embedded
 // BasePersistentDelegate state.
+edit_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return edit_delegate_get_remote_type(cast(^Edit_Delegate)self)
+}
+
 edit_delegate_new :: proc() -> ^Edit_Delegate {
 	self := new(Edit_Delegate)
+	self.base_persistent_delegate.abstract_delegate.i_delegate.get_remote_type = edit_delegate_v_get_remote_type
 	return self
 }
 

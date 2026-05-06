@@ -4,6 +4,14 @@ Check_Stalemate_Battle_End :: struct {
 	using check_general_battle_end: Check_General_Battle_End,
 }
 
+check_stalemate_battle_end_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return check_stalemate_battle_end_get_all_step_details(cast(^Check_Stalemate_Battle_End)self)
+}
+
+check_stalemate_battle_end_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	check_stalemate_battle_end_execute(cast(^Check_Stalemate_Battle_End)self, stack, bridge)
+}
+
 check_stalemate_battle_end_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -11,6 +19,8 @@ check_stalemate_battle_end_new :: proc(
 	self := new(Check_Stalemate_Battle_End)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = check_stalemate_battle_end_v_get_all_step_details
+	self.execute = check_stalemate_battle_end_v_execute
 	return self
 }
 

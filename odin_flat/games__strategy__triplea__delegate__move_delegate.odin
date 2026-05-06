@@ -80,6 +80,9 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 	}
 	self.start = move_delegate_v_start
 	self.end   = move_delegate_v_end
+	self.delegate_currently_requires_user_input = move_delegate_v_delegate_currently_requires_user_input
+	self.load_state = move_delegate_v_load_state
+	self.save_state = move_delegate_v_save_state
 	return self
 }
 
@@ -91,6 +94,21 @@ move_delegate_v_start :: proc(self: ^I_Delegate) {
 @(private = "file")
 move_delegate_v_end :: proc(self: ^I_Delegate) {
 	move_delegate_end(cast(^Move_Delegate)self)
+}
+
+@(private = "file")
+move_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return move_delegate_delegate_currently_requires_user_input(cast(^Move_Delegate)self)
+}
+
+@(private = "file")
+move_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	move_delegate_load_state(cast(^Move_Delegate)self, cast(^Move_Extended_Delegate_State)state)
+}
+
+@(private = "file")
+move_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(move_delegate_save_state(cast(^Move_Delegate)self))
 }
 
 // games.strategy.triplea.delegate.MoveDelegate#pusAlreadyLost(Territory)

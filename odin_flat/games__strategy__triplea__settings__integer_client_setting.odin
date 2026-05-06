@@ -20,10 +20,32 @@ integer_client_setting_encode_value :: proc(self: ^Integer_Client_Setting, value
 //       }
 // One-arg form delegates to the parent's no-default constructor; no
 // autoboxing is required because there is no default value to lift.
+integer_client_setting_v_encode_value :: proc(self: ^Client_Setting, value: rawptr) -> (string, bool) {
+	ics := cast(^Integer_Client_Setting)self
+	if value == nil {
+		return "", false
+	}
+	v := (cast(^i32)value)^
+	return integer_client_setting_encode_value(ics, v), true
+}
+
+integer_client_setting_v_decode_value :: proc(self: ^Client_Setting, encoded_value: string) -> (rawptr, bool, ^Client_Setting_Value_Encoding_Exception) {
+	ics := cast(^Integer_Client_Setting)self
+	v, present, err := integer_client_setting_decode_value(ics, encoded_value)
+	if err != nil || !present {
+		return nil, present, err
+	}
+	boxed := new(i32)
+	boxed^ = v
+	return rawptr(boxed), true, nil
+}
+
 integer_client_setting_new :: proc(name: string) -> ^Integer_Client_Setting {
 	parent := client_setting_new_no_default(i32, name)
 	self := new(Integer_Client_Setting)
 	self.client_setting = parent^
+	self.client_setting.encode_value = integer_client_setting_v_encode_value
+	self.client_setting.decode_value = integer_client_setting_v_decode_value
 	return self
 }
 

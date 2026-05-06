@@ -13,6 +13,14 @@ Clear_First_Strike_Casualties :: struct {
 //   this.battleActions = battleActions;
 //   this.offenseState = calculateOffenseState();
 //   this.defenseState = calculateDefenseState();
+clear_first_strike_casualties_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return clear_first_strike_casualties_get_all_step_details(cast(^Clear_First_Strike_Casualties)self)
+}
+
+clear_first_strike_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	clear_first_strike_casualties_execute(cast(^Clear_First_Strike_Casualties)self, stack, bridge)
+}
+
 clear_first_strike_casualties_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -22,6 +30,8 @@ clear_first_strike_casualties_new :: proc(
 	self.battle_actions = battle_actions
 	self.offense_state = clear_first_strike_casualties_calculate_offense_state(self)
 	self.defense_state = clear_first_strike_casualties_calculate_defense_state(self)
+	self.battle_step.get_all_step_details = clear_first_strike_casualties_v_get_all_step_details
+	self.battle_step.i_executable.execute = clear_first_strike_casualties_v_execute
 	return self
 }
 

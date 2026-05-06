@@ -9,6 +9,14 @@ Clear_Aa_Casualties :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.steps.change.ClearAaCasualties
 
+clear_aa_casualties_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return clear_aa_casualties_get_all_step_details(cast(^Clear_Aa_Casualties)self)
+}
+
+clear_aa_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	clear_aa_casualties_execute(cast(^Clear_Aa_Casualties)self, stack, bridge)
+}
+
 clear_aa_casualties_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -16,6 +24,8 @@ clear_aa_casualties_new :: proc(
 	self := new(Clear_Aa_Casualties)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = clear_aa_casualties_v_get_all_step_details
+	self.execute = clear_aa_casualties_v_execute
 	return self
 }
 

@@ -271,6 +271,43 @@ abstract_end_turn_delegate_load_state :: proc(
 	self.has_posted_turn_summary = state.has_posted_turn_summary
 }
 
+// I_Delegate vtable shims — adapt ^I_Delegate-typed proc-fields to the
+// Abstract_End_Turn_Delegate-typed body procs.
+abstract_end_turn_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return abstract_end_turn_delegate_delegate_currently_requires_user_input(cast(^Abstract_End_Turn_Delegate)self)
+}
+
+abstract_end_turn_delegate_v_end :: proc(self: ^I_Delegate) {
+	abstract_end_turn_delegate_end(cast(^Abstract_End_Turn_Delegate)self)
+}
+
+abstract_end_turn_delegate_v_get_display_name :: proc(self: ^I_Delegate) -> string {
+	return abstract_end_turn_delegate_get_display_name(cast(^Abstract_End_Turn_Delegate)self)
+}
+
+abstract_end_turn_delegate_v_get_name :: proc(self: ^I_Delegate) -> string {
+	return abstract_end_turn_delegate_get_name(cast(^Abstract_End_Turn_Delegate)self)
+}
+
+abstract_end_turn_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return abstract_end_turn_delegate_get_remote_type(cast(^Abstract_End_Turn_Delegate)self)
+}
+
+abstract_end_turn_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	abstract_end_turn_delegate_load_state(
+		cast(^Abstract_End_Turn_Delegate)self,
+		cast(^End_Turn_Extended_Delegate_State)state,
+	)
+}
+
+abstract_end_turn_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(abstract_end_turn_delegate_save_state(cast(^Abstract_End_Turn_Delegate)self))
+}
+
+abstract_end_turn_delegate_v_start :: proc(self: ^I_Delegate) {
+	abstract_end_turn_delegate_start(cast(^Abstract_End_Turn_Delegate)self)
+}
+
 // games.strategy.triplea.delegate.AbstractEndTurnDelegate#<init>()
 // Java has no explicit constructor; the implicit one applies the field
 // initializers `needToInitialize = true` and `hasPostedTurnSummary = false`.
@@ -278,6 +315,14 @@ abstract_end_turn_delegate_new :: proc() -> ^Abstract_End_Turn_Delegate {
 	self := new(Abstract_End_Turn_Delegate)
 	self.need_to_initialize = true
 	self.has_posted_turn_summary = false
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.delegate_currently_requires_user_input = abstract_end_turn_delegate_v_delegate_currently_requires_user_input
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.end = abstract_end_turn_delegate_v_end
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_display_name = abstract_end_turn_delegate_v_get_display_name
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_name = abstract_end_turn_delegate_v_get_name
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_remote_type = abstract_end_turn_delegate_v_get_remote_type
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.load_state = abstract_end_turn_delegate_v_load_state
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.save_state = abstract_end_turn_delegate_v_save_state
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.start = abstract_end_turn_delegate_v_start
 	return self
 }
 

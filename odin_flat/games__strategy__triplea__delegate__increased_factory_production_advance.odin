@@ -14,11 +14,16 @@ Increased_Factory_Production_Advance :: struct {
 // inlines this initialization for the predefined-technology lookup map; this
 // proc exists as the canonical translation of the Java constructor for direct
 // callers.
+increased_factory_production_advance_v_has_tech :: proc(self: ^Tech_Advance, ta: ^Tech_Attachment) -> bool {
+	return increased_factory_production_advance_has_tech(transmute(^Increased_Factory_Production_Advance)self, ta)
+}
+
 increased_factory_production_advance_new :: proc(data: ^Game_Data) -> ^Increased_Factory_Production_Advance {
 	self := new(Increased_Factory_Production_Advance)
 	base := tech_advance_new("Increased Factory Production", data)
 	self.tech_advance = base^
 	free(base)
+	self.tech_advance.has_tech = increased_factory_production_advance_v_has_tech
 	return self
 }
 

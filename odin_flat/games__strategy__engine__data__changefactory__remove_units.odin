@@ -45,7 +45,12 @@ remove_units_new :: proc(
 	}
 	ru.units = copied
 	ru.unit_owner_map = unit_owner_map
+	ru.perform = remove_units_v_perform
 	return ru
+}
+
+remove_units_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	remove_units_perform(cast(^Remove_Units)self, data)
 }
 
 // Java: RemoveUnits#perform(GameState)

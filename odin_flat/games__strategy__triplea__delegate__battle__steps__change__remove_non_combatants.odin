@@ -6,6 +6,14 @@ Remove_Non_Combatants :: struct {
 	battle_actions: ^Battle_Actions,
 }
 
+remove_non_combatants_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return remove_non_combatants_get_all_step_details(cast(^Remove_Non_Combatants)self)
+}
+
+remove_non_combatants_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	remove_non_combatants_execute(cast(^Remove_Non_Combatants)self, stack, bridge)
+}
+
 remove_non_combatants_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -13,6 +21,8 @@ remove_non_combatants_new :: proc(
 	self := new(Remove_Non_Combatants)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = remove_non_combatants_v_get_all_step_details
+	self.execute = remove_non_combatants_v_execute
 	return self
 }
 

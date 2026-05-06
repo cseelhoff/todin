@@ -39,11 +39,21 @@ composite_change_is_empty :: proc(self: ^Composite_Change) -> bool {
 	return true
 }
 
+composite_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	composite_change_perform(cast(^Composite_Change)self, data)
+}
+
+composite_change_v_invert :: proc(self: ^Change) -> ^Change {
+	return composite_change_invert(cast(^Composite_Change)self)
+}
+
 // Java: public CompositeChange()
 composite_change_new :: proc() -> ^Composite_Change {
 	self := new(Composite_Change)
 	self.change.kind = .Composite_Change
 	self.changes = make([dynamic]^Change)
+	self.perform = composite_change_v_perform
+	self.invert = composite_change_v_invert
 	return self
 }
 

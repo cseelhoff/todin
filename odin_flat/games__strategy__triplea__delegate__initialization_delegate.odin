@@ -17,6 +17,9 @@ initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 	self := new(Initialization_Delegate)
 	self.need_to_initialize = true
 	self.start = initialization_delegate_v_start
+	self.get_remote_type = initialization_delegate_v_get_remote_type
+	self.load_state = initialization_delegate_v_load_state
+	self.save_state = initialization_delegate_v_save_state
 	return self
 }
 
@@ -25,6 +28,24 @@ initialization_delegate_new :: proc() -> ^Initialization_Delegate {
 @(private = "file")
 initialization_delegate_v_start :: proc(self: ^I_Delegate) {
 	initialization_delegate_start(cast(^Initialization_Delegate)self)
+}
+
+@(private = "file")
+initialization_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return initialization_delegate_get_remote_type(cast(^Initialization_Delegate)self)
+}
+
+@(private = "file")
+initialization_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	initialization_delegate_load_state(
+		cast(^Initialization_Delegate)self,
+		cast(^Initialization_Extended_Delegate_State)state,
+	)
+}
+
+@(private = "file")
+initialization_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(initialization_delegate_save_state(cast(^Initialization_Delegate)self))
 }
 
 // games.strategy.triplea.delegate.InitializationDelegate#saveState()

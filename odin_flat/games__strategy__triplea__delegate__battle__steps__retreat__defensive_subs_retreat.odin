@@ -12,7 +12,17 @@ defensive_subs_retreat_new :: proc(battle_state: ^Battle_State, battle_actions: 
 	self := new(Defensive_Subs_Retreat)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = defensive_subs_retreat_v_get_all_step_details
+	self.battle_step.i_executable.execute = defensive_subs_retreat_v_execute
 	return self
+}
+
+defensive_subs_retreat_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return defensive_subs_retreat_get_all_step_details(cast(^Defensive_Subs_Retreat)self)
+}
+
+defensive_subs_retreat_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	defensive_subs_retreat_execute(cast(^Defensive_Subs_Retreat)self, stack, bridge)
 }
 
 // Java: DefensiveSubsRetreat#isEvaderNotPresent

@@ -25,7 +25,32 @@ Abstract_Move_Delegate_Move_Type :: enum {
 abstract_move_delegate_new :: proc() -> ^Abstract_Move_Delegate {
 	self := new(Abstract_Move_Delegate)
 	self.moves_to_undo = make([dynamic]^Undoable_Move)
+	self.i_delegate.end = abstract_move_delegate_v_end
+	self.i_delegate.get_remote_type = abstract_move_delegate_v_get_remote_type
+	self.i_delegate.load_state = abstract_move_delegate_v_load_state
+	self.i_delegate.save_state = abstract_move_delegate_v_save_state
+	self.i_delegate.start = abstract_move_delegate_v_start
 	return self
+}
+
+abstract_move_delegate_v_end :: proc(self: ^I_Delegate) {
+	abstract_move_delegate_end(cast(^Abstract_Move_Delegate)self)
+}
+
+abstract_move_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return abstract_move_delegate_get_remote_type(cast(^Abstract_Move_Delegate)self)
+}
+
+abstract_move_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	abstract_move_delegate_load_state(cast(^Abstract_Move_Delegate)self, cast(^Abstract_Move_Extended_Delegate_State)state)
+}
+
+abstract_move_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(abstract_move_delegate_save_state(cast(^Abstract_Move_Delegate)self))
+}
+
+abstract_move_delegate_v_start :: proc(self: ^I_Delegate) {
+	abstract_move_delegate_start(cast(^Abstract_Move_Delegate)self)
 }
 
 // games.strategy.triplea.delegate.AbstractMoveDelegate#pusAlreadyLost(Territory)

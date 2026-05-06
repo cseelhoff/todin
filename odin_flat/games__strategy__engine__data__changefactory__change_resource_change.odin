@@ -14,7 +14,12 @@ change_resource_change_new :: proc(player: ^Game_Player, resource: ^Resource, qu
 	self.player_name = player.named.base.name
 	self.resource_name = resource.named.base.name
 	self.quantity = quantity
+	self.perform = change_resource_change_v_perform
 	return self
+}
+
+change_resource_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	change_resource_change_perform(cast(^Change_Resource_Change)self, data)
 }
 
 // Java: ChangeResourceChange#perform(GameState data)

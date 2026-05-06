@@ -9,9 +9,30 @@ Retreater_General :: struct {
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.battle.steps.retreat.RetreaterGeneral
 
+retreater_general_v_get_retreat_units :: proc(self_raw: rawptr) -> [dynamic]^Unit {
+	return retreater_general_get_retreat_units(cast(^Retreater_General)self_raw)
+}
+
+retreater_general_v_get_possible_retreat_sites :: proc(self_raw: rawptr, retreat_units: [dynamic]^Unit) -> [dynamic]^Territory {
+	return retreater_general_get_possible_retreat_sites(cast(^Retreater_General)self_raw, retreat_units)
+}
+
+retreater_general_v_get_retreat_type :: proc(self_raw: rawptr) -> Must_Fight_Battle_Retreat_Type {
+	return retreater_general_get_retreat_type(cast(^Retreater_General)self_raw)
+}
+
+retreater_general_v_compute_changes :: proc(self_raw: rawptr, retreat_to: ^Territory) -> ^Retreater_Retreat_Changes {
+	return retreater_general_compute_changes(cast(^Retreater_General)self_raw, retreat_to)
+}
+
 retreater_general_new :: proc(battle_state: ^Battle_State) -> ^Retreater_General {
 	self := new(Retreater_General)
 	self.battle_state = battle_state
+	self.retreater.self_raw = self
+	self.retreater.get_retreat_units = retreater_general_v_get_retreat_units
+	self.retreater.get_possible_retreat_sites = retreater_general_v_get_possible_retreat_sites
+	self.retreater.get_retreat_type = retreater_general_v_get_retreat_type
+	self.retreater.compute_changes = retreater_general_v_compute_changes
 	return self
 }
 

@@ -6,10 +6,20 @@ Mark_No_Movement_Left :: struct {
 	battle_actions: ^Battle_Actions,
 }
 
+mark_no_movement_left_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return mark_no_movement_left_get_all_step_details(cast(^Mark_No_Movement_Left)self)
+}
+
+mark_no_movement_left_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	mark_no_movement_left_execute(cast(^Mark_No_Movement_Left)self, stack, bridge)
+}
+
 mark_no_movement_left_new :: proc(battle_state: ^Battle_State, battle_actions: ^Battle_Actions) -> ^Mark_No_Movement_Left {
 	self := new(Mark_No_Movement_Left)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = mark_no_movement_left_v_get_all_step_details
+	self.execute = mark_no_movement_left_v_execute
 	return self
 }
 

@@ -76,7 +76,37 @@ end_round_delegate_new :: proc() -> ^End_Round_Delegate {
 	self := new(End_Round_Delegate)
 	self.game_over = false
 	self.winners = make([dynamic]^Game_Player)
+	self.end = end_round_delegate_v_end
+	self.get_remote_type = end_round_delegate_v_get_remote_type
+	self.load_state = end_round_delegate_v_load_state
+	self.save_state = end_round_delegate_v_save_state
+	self.start = end_round_delegate_v_start
 	return self
+}
+
+@(private = "file")
+end_round_delegate_v_end :: proc(self: ^I_Delegate) {
+	end_round_delegate_end(cast(^End_Round_Delegate)self)
+}
+
+@(private = "file")
+end_round_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return end_round_delegate_get_remote_type(cast(^End_Round_Delegate)self)
+}
+
+@(private = "file")
+end_round_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	end_round_delegate_load_state(cast(^End_Round_Delegate)self, state)
+}
+
+@(private = "file")
+end_round_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(end_round_delegate_save_state(cast(^End_Round_Delegate)self))
+}
+
+@(private = "file")
+end_round_delegate_v_start :: proc(self: ^I_Delegate) {
+	end_round_delegate_start(cast(^End_Round_Delegate)self)
 }
 
 // games.strategy.triplea.delegate.EndRoundDelegate#saveState()

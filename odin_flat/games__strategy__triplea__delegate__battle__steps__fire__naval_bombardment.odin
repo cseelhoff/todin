@@ -6,6 +6,14 @@ Naval_Bombardment :: struct {
 	battle_actions: ^Battle_Actions,
 }
 
+naval_bombardment_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return naval_bombardment_get_all_step_details(cast(^Naval_Bombardment)self)
+}
+
+naval_bombardment_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	naval_bombardment_execute(cast(^Naval_Bombardment)self, stack, bridge)
+}
+
 naval_bombardment_new :: proc(
 	battle_state: ^Battle_State,
 	battle_actions: ^Battle_Actions,
@@ -13,6 +21,8 @@ naval_bombardment_new :: proc(
 	self := new(Naval_Bombardment)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.battle_step.get_all_step_details = naval_bombardment_v_get_all_step_details
+	self.battle_step.i_executable.execute = naval_bombardment_v_execute
 	return self
 }
 

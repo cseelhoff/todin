@@ -24,6 +24,7 @@ territory_new :: proc(name: string, water: bool, data: ^Game_Data) -> ^Territory
 	self.named_attachable = parent^
 	free(parent)
 	self.named_attachable.default_named.named.kind = .Territory
+	self.named_attachable.default_named.named.get_name = territory_v_get_name
 	self.water = water
 	self.owner = player_list_get_null_player(game_data_get_player_list(data))
 	self.unit_collection = unit_collection_new(cast(^Named_Unit_Holder)self, data)
@@ -32,6 +33,10 @@ territory_new :: proc(name: string, water: bool, data: ^Game_Data) -> ^Territory
 
 territory_to_string :: proc(self: ^Territory) -> string {
 	return default_named_get_name(&self.named_attachable.default_named)
+}
+
+territory_v_get_name :: proc(self: ^Named) -> string {
+	return territory_get_name(cast(^Territory)self)
 }
 
 // games.strategy.engine.data.Territory#isOwnedBy(GamePlayer)

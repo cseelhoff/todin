@@ -99,10 +99,35 @@ purchase_delegate_load_state :: proc(self: ^Purchase_Delegate, state: rawptr) {
 // Java's implicit no-arg constructor: needToInitialize defaults to `true`
 // (declared inline), pendingProductionRules to null, and the embedded
 // BaseTripleADelegate / AbstractDelegate fields are zero-initialized.
+purchase_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return purchase_delegate_delegate_currently_requires_user_input(cast(^Purchase_Delegate)self)
+}
+purchase_delegate_v_end :: proc(self: ^I_Delegate) {
+	purchase_delegate_end(cast(^Purchase_Delegate)self)
+}
+purchase_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return purchase_delegate_get_remote_type(cast(^Purchase_Delegate)self)
+}
+purchase_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	purchase_delegate_load_state(cast(^Purchase_Delegate)self, state)
+}
+purchase_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(purchase_delegate_save_state(cast(^Purchase_Delegate)self))
+}
+purchase_delegate_v_start :: proc(self: ^I_Delegate) {
+	purchase_delegate_start(cast(^Purchase_Delegate)self)
+}
+
 purchase_delegate_new :: proc() -> ^Purchase_Delegate {
 	self := new(Purchase_Delegate)
 	self.need_to_initialize = true
 	self.pending_production_rules = nil
+	self.delegate_currently_requires_user_input = purchase_delegate_v_delegate_currently_requires_user_input
+	self.end = purchase_delegate_v_end
+	self.get_remote_type = purchase_delegate_v_get_remote_type
+	self.load_state = purchase_delegate_v_load_state
+	self.save_state = purchase_delegate_v_save_state
+	self.start = purchase_delegate_v_start
 	return self
 }
 

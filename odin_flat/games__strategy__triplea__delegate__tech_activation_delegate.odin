@@ -12,9 +12,42 @@ Tech_Activation_Delegate :: struct {
 // Java's implicit no-arg constructor. The only declared field
 // `needToInitialize` has the Java initializer `= true`; embedded
 // Base_Triple_A_Delegate is zero-initialized.
+tech_activation_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return tech_activation_delegate_delegate_currently_requires_user_input(cast(^Tech_Activation_Delegate)self)
+}
+
+tech_activation_delegate_v_end :: proc(self: ^I_Delegate) {
+	tech_activation_delegate_end(cast(^Tech_Activation_Delegate)self)
+}
+
+tech_activation_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return tech_activation_delegate_get_remote_type(cast(^Tech_Activation_Delegate)self)
+}
+
+tech_activation_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	tech_activation_delegate_load_state(
+		cast(^Tech_Activation_Delegate)self,
+		cast(^Tech_Activation_Extended_Delegate_State)state,
+	)
+}
+
+tech_activation_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(tech_activation_delegate_save_state(cast(^Tech_Activation_Delegate)self))
+}
+
+tech_activation_delegate_v_start :: proc(self: ^I_Delegate) {
+	tech_activation_delegate_start(cast(^Tech_Activation_Delegate)self)
+}
+
 tech_activation_delegate_new :: proc() -> ^Tech_Activation_Delegate {
 	self := new(Tech_Activation_Delegate)
 	self.need_to_initialize = true
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.delegate_currently_requires_user_input = tech_activation_delegate_v_delegate_currently_requires_user_input
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.end = tech_activation_delegate_v_end
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.get_remote_type = tech_activation_delegate_v_get_remote_type
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.load_state = tech_activation_delegate_v_load_state
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.save_state = tech_activation_delegate_v_save_state
+	self.base_triple_a_delegate.abstract_delegate.i_delegate.start = tech_activation_delegate_v_start
 	return self
 }
 

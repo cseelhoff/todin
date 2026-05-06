@@ -390,10 +390,35 @@ abstract_place_delegate_undo_move :: proc(self: ^Abstract_Place_Delegate, move_i
 // games.strategy.triplea.delegate.AbstractPlaceDelegate#<init>()
 // Java's implicit no-arg constructor. Mirrors the field initializers
 // `produced = new HashMap<>()` and `placements = new ArrayList<>()`.
+abstract_place_delegate_v_delegate_currently_requires_user_input :: proc(self: ^I_Delegate) -> bool {
+	return abstract_place_delegate_delegate_currently_requires_user_input(cast(^Abstract_Place_Delegate)self)
+}
+
+abstract_place_delegate_v_end :: proc(self: ^I_Delegate) {
+	abstract_place_delegate_end(cast(^Abstract_Place_Delegate)self)
+}
+
+abstract_place_delegate_v_get_remote_type :: proc(self: ^I_Delegate) -> typeid {
+	return abstract_place_delegate_get_remote_type(cast(^Abstract_Place_Delegate)self)
+}
+
+abstract_place_delegate_v_load_state :: proc(self: ^I_Delegate, state: rawptr) {
+	abstract_place_delegate_load_state(cast(^Abstract_Place_Delegate)self, state)
+}
+
+abstract_place_delegate_v_save_state :: proc(self: ^I_Delegate) -> rawptr {
+	return rawptr(abstract_place_delegate_save_state(cast(^Abstract_Place_Delegate)self))
+}
+
 abstract_place_delegate_new :: proc() -> ^Abstract_Place_Delegate {
 	self := new(Abstract_Place_Delegate)
 	self.produced = make(map[^Territory][dynamic]^Unit)
 	self.placements = make([dynamic]^Undoable_Placement)
+	self.i_delegate.delegate_currently_requires_user_input = abstract_place_delegate_v_delegate_currently_requires_user_input
+	self.i_delegate.end = abstract_place_delegate_v_end
+	self.i_delegate.get_remote_type = abstract_place_delegate_v_get_remote_type
+	self.i_delegate.load_state = abstract_place_delegate_v_load_state
+	self.i_delegate.save_state = abstract_place_delegate_v_save_state
 	return self
 }
 

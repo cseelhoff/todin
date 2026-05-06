@@ -6,10 +6,20 @@ Clear_General_Casualties :: struct {
 	battle_actions: ^Battle_Actions,
 }
 
+clear_general_casualties_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return clear_general_casualties_get_all_step_details(cast(^Clear_General_Casualties)self)
+}
+
+clear_general_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack, bridge: ^I_Delegate_Bridge) {
+	clear_general_casualties_execute(cast(^Clear_General_Casualties)self, stack, bridge)
+}
+
 clear_general_casualties_new :: proc(battle_state: ^Battle_State, battle_actions: ^Battle_Actions) -> ^Clear_General_Casualties {
 	self := new(Clear_General_Casualties)
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
+	self.get_all_step_details = clear_general_casualties_v_get_all_step_details
+	self.execute = clear_general_casualties_v_execute
 	return self
 }
 

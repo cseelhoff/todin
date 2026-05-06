@@ -64,6 +64,10 @@ client_setting_map_folder_override :: proc() -> ^Path_Client_Setting {
 // The two-arg form (no default) delegates to this; the orchestrator only
 // asked for the three-arg constructor. `default_value` may be nil (Java
 // allowed @Nullable).
+client_setting_v_get_value :: proc(self: ^Game_Setting) -> (rawptr, bool) {
+        return client_setting_get_value(cast(^Client_Setting)self)
+}
+
 client_setting_new :: proc(type: typeid, name: string, default_value: rawptr) -> ^Client_Setting {
         // Java: Preconditions.checkNotNull(type); Preconditions.checkNotNull(name).
         // typeid is a value type, can't be nil. `name` non-nullness is structural
@@ -73,6 +77,7 @@ client_setting_new :: proc(type: typeid, name: string, default_value: rawptr) ->
         self.name = name
         self.default_value = default_value
         self.listeners = make([dynamic]proc(^Game_Setting))
+        self.game_setting.get_value = client_setting_v_get_value
         return self
 }
 

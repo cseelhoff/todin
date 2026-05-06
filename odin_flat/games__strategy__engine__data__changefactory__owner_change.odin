@@ -9,6 +9,10 @@ Owner_Change :: struct {
 	territory_name: string,
 }
 
+owner_change_v_perform :: proc(self: ^Change, data: ^Game_State) {
+	owner_change_perform(cast(^Owner_Change)self, data)
+}
+
 // Java: OwnerChange(Territory territory, @Nullable GamePlayer newOwner)
 owner_change_new :: proc(territory: ^Territory, new_owner: ^Game_Player) -> ^Owner_Change {
 	self := new(Owner_Change)
@@ -20,6 +24,7 @@ owner_change_new :: proc(territory: ^Territory, new_owner: ^Game_Player) -> ^Own
 		self.new_owner_name = default_named_get_name(&new_owner.named_attachable.default_named)
 	}
 	self.old_owner_name = default_named_get_name(&territory_get_owner(territory).named_attachable.default_named)
+	self.perform = owner_change_v_perform
 	return self
 }
 

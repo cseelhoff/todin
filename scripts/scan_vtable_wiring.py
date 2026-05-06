@@ -109,9 +109,11 @@ PROC_FIELD_RE = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s*:\s*proc\b")
 # `kind: Change_Kind` discriminator pattern.
 KIND_FIELD_RE = re.compile(r"^\s*kind\s*:\s*([A-Z][A-Za-z0-9_]*)\s*,?\s*$")
 
-PROC_HDR_RE   = re.compile(r"^([a-z_][a-z0-9_]*)\s*::\s*proc\b")
-NEW_RETURN_RE = re.compile(r"->\s*\^([A-Z][A-Za-z0-9_]*)")
-NEW_LOCAL_RE  = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s*:=\s*new\(([A-Z][A-Za-z0-9_]*)\)")
+PROC_HDR_RE   = re.compile(r"^([a-zA-Z_][A-Za-z0-9_]*)\s*::\s*proc\b")
+NEW_RETURN_RE = re.compile(r"->\s*\^?([A-Z][A-Za-z0-9_]*)")
+NEW_LOCAL_RE  = re.compile(r"^\s*([a-z_][a-z0-9_]*)\s*:=\s*(?:new\(|([A-Z][A-Za-z0-9_]*)\s*\{)")
+ENUM_HDR_RE   = re.compile(r"^([A-Z][A-Za-z0-9_]*)\s*::\s*enum\b")
+ENUM_VAR_RE   = re.compile(r"^\s*([A-Z][A-Za-z0-9_]*)\s*,?\s*$")
 
 # `self.start = ...`, `self.named_attachable.default_named.named.kind = ...`,
 # `c.kind = .Foo`, etc. We capture (local_var, trailing_field_name) where
@@ -166,11 +168,29 @@ def parse_odin_file(path: pathlib.Path) -> tuple[dict[str, Struct], dict[str, di
     src = path.read_text(errors="replace").splitlines()
     structs: dict[str, Struct] = {}
     constructors: dict[str, dict] = {}
+    enums: dict[str, set[str]] = {}
 
     i = 0
     n = len(src)
     while i < n:
         line = src[i]
+
+        # ---- enum definition ----
+        em = ENUM_HDR_RE.match(line)
+        if em and "{" in line:
+            ename = em.group(1)
+            variants: set[str] = set()
+            depth = line.count("{") - line.count("}")
+            i += 1
+            while i < n and depth > 0:
+                body = src[i]
+                depth += body.count("{") - body.count("}")
+                vm = ENUM_VAR_RE.match(body)
+                if vm:
+                    variants.add(vm.group(1))
+                i += 1
+            enums[ename] = variants
+            continue
 
         # ---- struct definition ----
         m = STRUCT_HDR_RE.match(line)
@@ -206,13 +226,16 @@ def parse_odin_file(path: pathlib.Path) -> tuple[dict[str, Struct], dict[str, di
                 j += 1
                 hdr.append(src[j])
             header_blob = "\n".join(hdr)
-            ret_m = NEW_RETURN_RE.search(header_blob)
+            ret_matches = NEW_RETURN_RE.findall(header_blob)
+            ret_m = ret_matches[-1] if ret_matches else None
 
-            if "_new" in proc_name and ret_m:
-                struct_type = ret_m.group(1)
-                # Walk the body looking for `local := new(<StructType>)` and
-                # then any `<local>.<field> = ...` assignments. We track the
-                # newest binding (most _new procs have one such local).
+            if ("_new" in proc_name or proc_name.startswith("make_")) and ret_m:
+                struct_type = ret_m
+                # Walk the body looking for `local := new(<StructType>)`
+                # OR `local := <StructType>{...}` (the value-constructor
+                # convention used by `make_*` helpers), then any
+                # `<local>.<field> = ...` assignments. We track the most
+                # recent matching binding (most _new procs have one).
                 local_var = None
                 assigned: set[str] = set()
                 depth = header_blob.count("{") - header_blob.count("}")
@@ -221,8 +244,21 @@ def parse_odin_file(path: pathlib.Path) -> tuple[dict[str, Struct], dict[str, di
                     body_line = src[k]
                     depth += body_line.count("{") - body_line.count("}")
                     nm = NEW_LOCAL_RE.match(body_line)
-                    if nm and nm.group(2) == struct_type:
-                        local_var = nm.group(1)
+                    if nm:
+                        # group(2) is set when matched the literal form
+                        # `<local> := <Type>{...}`; otherwise the regex
+                        # matched the `new(<Type>)` form and we need to
+                        # extract the type via a follow-up search.
+                        type_in_lit = nm.group(2)
+                        if type_in_lit:
+                            if type_in_lit == struct_type:
+                                local_var = nm.group(1)
+                        else:
+                            mm = re.search(
+                                r"new\(([A-Z][A-Za-z0-9_]*)\)", body_line,
+                            )
+                            if mm and mm.group(1) == struct_type:
+                                local_var = nm.group(1)
                     am = ASSIGN_RE.match(body_line)
                     if am and local_var and am.group(1) == local_var:
                         assigned.add(am.group(2))
@@ -231,6 +267,19 @@ def parse_odin_file(path: pathlib.Path) -> tuple[dict[str, Struct], dict[str, di
                     # short local name).
                     if am and am.group(1) == "self":
                         assigned.add(am.group(2))
+                    # Struct-literal wiring: `<field> = <val>,` inside a
+                    # `Type{...}` literal (no `<local>.` prefix). Used by
+                    # History_Node subclass constructors and others. We
+                    # accept any bare `<ident> = ...,` line at any depth
+                    # inside the proc body — false positives are
+                    # harmless because we only check membership for a
+                    # small set of known proc-fields/`kind`.
+                    lit = re.match(
+                        r"^\s*([a-z_][a-z0-9_]*)\s*=\s*[^=]",
+                        body_line,
+                    )
+                    if lit:
+                        assigned.add(lit.group(1))
                     k += 1
                 constructors[proc_name] = {
                     "returns": struct_type,
@@ -244,7 +293,7 @@ def parse_odin_file(path: pathlib.Path) -> tuple[dict[str, Struct], dict[str, di
 
         i += 1
 
-    return structs, constructors
+    return structs, constructors, enums
 
 
 # ---------------------------------------------------------------------------
@@ -326,20 +375,29 @@ def main() -> int:
     # ---- 1. Parse every odin_flat file ----
     all_structs: dict[str, Struct] = {}
     all_constructors: dict[str, dict] = {}
+    all_enums: dict[str, set[str]] = {}
+    all_procs: set[str] = set()
     files = sorted(ODIN_FLAT.glob("*.odin"))
     for f in files:
         try:
-            structs, ctors = parse_odin_file(f)
+            structs, ctors, enums = parse_odin_file(f)
         except Exception as exc:
             print(f"warn: parse failed for {f.name}: {exc}", file=sys.stderr)
             continue
-        # Earlier-file wins on duplicate struct names; warn anyway.
         for k, v in structs.items():
             if k in all_structs and all_structs[k].file != v.file:
-                pass  # silent: we don't expect dupes in the flat package
+                pass
             all_structs.setdefault(k, v)
         for k, v in ctors.items():
             all_constructors.setdefault(k, v)
+        for k, v in enums.items():
+            all_enums.setdefault(k, v)
+        # Collect every top-level proc name in this file. Cheap separate
+        # pass — we just need a global set for body-existence lookups.
+        for line in f.read_text(errors="replace").splitlines():
+            pm = PROC_HDR_RE.match(line)
+            if pm:
+                all_procs.add(pm.group(1))
 
     print(f"parsed {len(files)} files: "
           f"{len(all_structs)} structs, "
@@ -432,6 +490,14 @@ def main() -> int:
             if field_name not in snake_methods:
                 continue  # parent declares this proc-field but Java
                           # subclass doesn't override; legitimate skip
+            # Only treat as a real override if the subclass's body proc
+            # `<snake>_<field>` actually exists in odin_flat. Otherwise
+            # the Java method is inherited (Lombok/javac-synthetic), the
+            # parent's wiring already covers it, and no subclass wiring
+            # is needed.
+            body_proc = f"{snake}_{field_name}"
+            if body_proc not in all_procs:
+                continue
             wired = field_name in ctor_assigned
             status = "ok" if wired else "missing"
             key = (odin_type, field_name)
@@ -459,7 +525,15 @@ def main() -> int:
         kind_info = kind_by_struct.get(odin_type)
         if kind_info and ctors_for_type:
             enum_type, enum_decl = kind_info
-            if "kind" not in ctor_assigned:
+            variants = all_enums.get(enum_type, set())
+            # Only flag if this struct is actually a leaf variant of the
+            # discriminator enum. Intermediate base structs (Default_Named,
+            # Named_Attachable, Tech_Advance subclasses with no variant,
+            # etc.) are NOT switched on by name, so a missing assignment
+            # is benign — the zero-init `.<First>` is fine.
+            if odin_type in variants:
+                wired = "kind" in ctor_assigned
+                status = "ok" if wired else "missing_kind"
                 key = (odin_type, "kind")
                 if key not in seen_keys:
                     seen_keys.add(key)
@@ -469,7 +543,7 @@ def main() -> int:
                         "java_method": None,
                         "parent_struct": enum_decl,
                         "constructor": ctor_name,
-                        "status": "missing_kind",
+                        "status": status,
                         "odin_file": str(ctor_file.relative_to(ROOT)) if ctor_file else None,
                         "owner_struct_key": None,
                     })
@@ -533,8 +607,22 @@ def main() -> int:
             )
             for f in findings
         ])
+        # Drop stale rows that the current scan no longer recognizes
+        # (e.g. struct removed, or no longer matches a discriminator
+        # variant after a scanner-rule change). Without this, fixed or
+        # invalidated entries would forever read as missing*.
+        current_keys = {(f["struct"], f["field"]) for f in findings}
+        cur.execute("SELECT odin_struct_name, proc_field FROM vtable_wiring")
+        stale = [k for k in cur.fetchall() if tuple(k) not in current_keys]
+        if stale:
+            cur.executemany(
+                "DELETE FROM vtable_wiring "
+                "WHERE odin_struct_name = ? AND proc_field = ?",
+                stale,
+            )
         conn.commit()
-        print(f"committed {len(findings)} rows to vtable_wiring")
+        print(f"committed {len(findings)} rows to vtable_wiring "
+              f"(dropped {len(stale)} stale)")
     else:
         print("dry-run: pass --commit to write port.sqlite")
     conn.close()
