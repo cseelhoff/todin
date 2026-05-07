@@ -116,38 +116,89 @@ def _fetch_reds(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def _resolve_dep_key(conn: sqlite3.Connection, dep_key: str) -> str | None:
+    """Return a `methods.method_key` matching `dep_key` directly, or its
+    nearest ancestor that does have a methods row.
+
+    Java declares some methods on a superclass (e.g. `AbstractBattle#getBattleType()`)
+    while the dependency scanner records the call under the receiver's
+    static type at the call site (e.g. `MustFightBattle#getBattleType()`).
+    The methods table only has a row for the declarer, so a naive
+    `JOIN methods ON method_key = depends_on_key` silently drops the
+    dep. We walk the `extends` chain on the receiver class and try
+    `<ancestor>#<sig>` until a methods row hits.
+
+    Returns None if no resolution exists; the caller treats that as
+    "not a real method dep" and skips it.
+    """
+    cur = conn.cursor()
+    if cur.execute(
+        "SELECT 1 FROM methods WHERE method_key = ? LIMIT 1", (dep_key,)
+    ).fetchone():
+        return dep_key
+    # Parse "proc:<FQCN>#<sig>" — only `proc:` keys are method calls.
+    if not dep_key.startswith("proc:") or "#" not in dep_key:
+        return None
+    fqcn_sig = dep_key[len("proc:"):]
+    fqcn, sig = fqcn_sig.split("#", 1)
+    visited: set[str] = set()
+    stack = [f"struct:{fqcn}"]
+    while stack:
+        struct_key = stack.pop()
+        if struct_key in visited:
+            continue
+        visited.add(struct_key)
+        # Materialise the row list before issuing the inner check
+        # query — using a single shared cursor for both iter and check
+        # would reset the outer iterator on every inner execute().
+        parents = [
+            row[0]
+            for row in conn.execute(
+                "SELECT depends_on_key FROM dependencies "
+                "WHERE primary_key = ? AND edge_kind = 'extends'",
+                (struct_key,),
+            )
+        ]
+        for parent_struct in parents:
+            if not parent_struct.startswith("struct:"):
+                continue
+            parent_fqcn = parent_struct[len("struct:"):]
+            candidate = f"proc:{parent_fqcn}#{sig}"
+            if conn.execute(
+                "SELECT 1 FROM methods WHERE method_key = ? LIMIT 1", (candidate,)
+            ).fetchone():
+                return candidate
+            stack.append(parent_struct)
+    return None
+
+
 def _fetch_children(conn: sqlite3.Connection, parent_key: str) -> list[sqlite3.Row]:
     """Direct call-graph callees of `parent_key`, with current status.
 
-    Joins:
-      * `methods` so we have layer + odin/java paths for the dep
-        (and so we filter out class-level `extends`/`field`/`cp_ref`
-        rows whose `depends_on_key` is a struct, not a method).
-      * `test_status` LEFT JOIN so unrecorded callees default to
-        `yellow` (the implicit "untested / unknown" state).
+    For each raw `dependencies.depends_on_key` we first try to find a
+    direct `methods` row, then fall back to walking the receiver's
+    `extends` chain to locate the declaring superclass — this handles
+    the common case where Java declares a method on an abstract
+    parent (AbstractBattle#getBattleType) but the dep was scanned
+    against the receiver type (MustFightBattle#getBattleType).
+    Without this resolution the picker silently drops yellow deps and
+    falsely reports INVESTIGATE_PROC on the parent red.
+
+    `test_status` is keyed by the resolved (canonical) key — so a
+    single test_status('AbstractBattle#getBattleType()' -> green) will
+    correctly satisfy any descendant call site.
 
     Edges of the same parent->callee with multiple `edge_kind`s
     (e.g. both `virtual` and `override`) collapse to a single row;
-    the surfaced edge_kind is the alphabetically-first one for
-    determinism, with override-edges preferred when present so the
-    user sees the concrete impl.
+    edge_kinds is GROUP_CONCATed for visibility.
     """
-    rows = list(
-        conn.execute(
+    cur = conn.cursor()
+    raw = list(
+        cur.execute(
             f"""
-            SELECT  d.depends_on_key   AS key,
-                    GROUP_CONCAT(DISTINCT d.edge_kind) AS edge_kinds,
-                    m.method_layer     AS layer,
-                    m.java_file_path   AS java_path,
-                    m.java_lines       AS java_lines,
-                    m.odin_file_path   AS odin_path,
-                    COALESCE(ts.status, 'yellow') AS status,
-                    ts.note            AS note
+            SELECT  d.depends_on_key   AS dep_key,
+                    GROUP_CONCAT(DISTINCT d.edge_kind) AS edge_kinds
             FROM    dependencies d
-            JOIN    methods m
-                    ON m.method_key = d.depends_on_key
-            LEFT JOIN test_status ts
-                    ON ts.entity_key = d.depends_on_key
             WHERE   d.primary_key = ?
               AND   d.edge_kind IN ({",".join("?" * len(_CALL_EDGE_KINDS))})
             GROUP BY d.depends_on_key
@@ -155,6 +206,38 @@ def _fetch_children(conn: sqlite3.Connection, parent_key: str) -> list[sqlite3.R
             (parent_key, *_CALL_EDGE_KINDS),
         )
     )
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    for r in raw:
+        resolved = _resolve_dep_key(conn, r["dep_key"])
+        if resolved is None:
+            continue  # struct/cp_ref leak or unknown method — skip
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        meta = cur.execute(
+            "SELECT method_layer, java_file_path, java_lines, odin_file_path "
+            "FROM methods WHERE method_key = ?",
+            (resolved,),
+        ).fetchone()
+        ts = cur.execute(
+            "SELECT status, note FROM test_status WHERE entity_key = ?",
+            (resolved,),
+        ).fetchone()
+        rows.append(
+            {
+                "key": resolved,
+                "edge_kinds": r["edge_kinds"],
+                "layer": meta["method_layer"] if meta else None,
+                "java_path": meta["java_file_path"] if meta else None,
+                "java_lines": meta["java_lines"] if meta else None,
+                "odin_path": meta["odin_file_path"] if meta else None,
+                "status": (ts["status"] if ts else "yellow"),
+                "note": (ts["note"] if ts else None),
+            }
+        )
+
     # Sort: yellow first (we care most about untested deps),
     # then red, then green; within each, deepest layer first.
     order = {"yellow": 0, "red": 1, "green": 2}

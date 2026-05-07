@@ -455,8 +455,19 @@ Semantics — exactly three states:
   - **green**: the entity is covered by **at least one
     fixture-driven test that compares observable outputs against
     a golden value derived from the Java reference**, AND that
-    test currently passes, AND **every transitive call-graph
-    descendant is also green**.
+    test currently passes, AND **no transitive call-graph
+    descendant is red**.
+
+    Yellow descendants do NOT block marking a parent green. A
+    passing parent test is itself evidence that the children it
+    dispatched to behaved correctly along the exercised path —
+    re-testing every yellow descendant individually is wasteful
+    and unnecessary. Marking a parent green does NOT cascade-
+    promote its yellow children: each child remains yellow until
+    classified on its own, because that child may be wrong on a
+    DIFFERENT parent's path. Only RED descendants block (a known
+    bug below means a future fix will likely break the parent's
+    test).
 
     What counts as a fixture-driven golden test (any one of):
 
@@ -476,8 +487,10 @@ Semantics — exactly three states:
          or from a Java-side reference run.
       c. A vtable test asserting the proc is bound to the
          correct concrete impl, IF the proc is purely a dispatch
-         shim (zero behaviour of its own) AND every concrete
-         override is itself green by criterion (a) or (b).
+         shim (zero behaviour of its own) AND no concrete
+         override is currently red. Yellow overrides are fine —
+         a passing parent test is evidence the dispatched
+         override worked on the exercised path.
 
     **Crash-only / liveness-only assertions are FORBIDDEN as
     proof of green.** The following do NOT classify a proc green:
@@ -495,7 +508,8 @@ Semantics — exactly three states:
     transitively calls a red, that test is missing behaviour
     coverage (it exercises dispatch / a happy path that doesn't
     reach the broken callee) — the parent must stay yellow until
-    the red descendant is fixed.
+    the red descendant is fixed. Yellow descendants are fine —
+    do not let yellow children block a parent green.
 
   - **red**: the entity has a failing fixture-driven test, OR
     the trace-table drill-down has positively identified it as
