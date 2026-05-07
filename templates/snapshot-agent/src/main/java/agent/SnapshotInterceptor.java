@@ -103,7 +103,7 @@ public class SnapshotInterceptor {
                     } catch (Throwable ignored) {}
                 }
                 Object gameData = extractGameData(self);
-                saveBeforeSnapshot(tick, methodSignature, args, cachedGameDataClass, gameData);
+                saveBeforeSnapshot(tick, methodSignature, args, self, cachedGameDataClass, gameData);
                 snapshotsTaken.incrementAndGet();
             }
 
@@ -137,7 +137,8 @@ public class SnapshotInterceptor {
     }
 
     public static void saveBeforeSnapshot(long tick, String methodSignature,
-                                            Object[] args, Class<?> gameDataClass, Object gameData) {
+                                            Object[] args, Object self,
+                                            Class<?> gameDataClass, Object gameData) {
         try {
             Path dir = Path.of(outputDir, "tick-" + String.format("%010d", tick));
             Files.createDirectories(dir);
@@ -160,6 +161,13 @@ public class SnapshotInterceptor {
 
             // Save GameData as JSON
             saveGameDataJson(dir.resolve("before-gamedata.json"), gameData);
+
+            // Save the receiver (`self`) — it's part of the input for any
+            // non-static method, and for zero-arg methods like
+            // BattleSteps.get() it IS the entire input.
+            if (saveParams) {
+                saveValueJson(dir.resolve("before-self.json"), self);
+            }
 
             // Save each param as generic identity-tracked JSON. Replaces the
             // old Java-serialization (.bin) path which silently dropped any
@@ -216,29 +224,41 @@ public class SnapshotInterceptor {
      * Returns null if extraction fails.
      */
     public static Object extractGameData(Object instance) {
-        if (instance == null) return null;
-        // Try getData() directly (ServerGame, AbstractGame)
-        try {
-            Method m = instance.getClass().getMethod("getData");
-            return m.invoke(instance);
-        } catch (Exception ignored) {}
-        // Try getGameData()
-        try {
-            Method m = instance.getClass().getMethod("getGameData");
-            return m.invoke(instance);
-        } catch (Exception ignored) {}
-        // Try bridge.getData() (delegates have a bridge field set by setDelegateBridgeAndPlayer)
-        try {
-            java.lang.reflect.Field bridgeField = findFieldInHierarchy(instance.getClass(), "bridge");
-            if (bridgeField != null) {
-                bridgeField.setAccessible(true);
-                Object bridge = bridgeField.get(instance);
-                if (bridge != null) {
-                    Method m = bridge.getClass().getMethod("getData");
-                    return m.invoke(bridge);
-                }
+        return extractGameData(instance, new java.util.IdentityHashMap<>(), 0);
+    }
+
+    /** Depth-limited reflective walk: try getData()/getGameData() on `instance`,
+     *  then on each non-null reference field, then recurse one more level. */
+    private static Object extractGameData(Object instance,
+                                          java.util.IdentityHashMap<Object, Boolean> seen,
+                                          int depth) {
+        if (instance == null || depth > 2 || seen.put(instance, Boolean.TRUE) != null) return null;
+        // Try getData() / getGameData() directly
+        for (String name : new String[] { "getData", "getGameData" }) {
+            try {
+                Method m = instance.getClass().getMethod(name);
+                Object gd = m.invoke(instance);
+                if (gd != null && cachedGameDataClass != null
+                        && cachedGameDataClass.isInstance(gd)) return gd;
+            } catch (Exception ignored) {}
+        }
+        // Walk reference fields one level deep
+        Class<?> c = instance.getClass();
+        while (c != null && c != Object.class) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                if (f.getType().isPrimitive()) continue;
+                try {
+                    f.setAccessible(true);
+                    Object child = f.get(instance);
+                    if (child == null) continue;
+                    if (cachedGameDataClass != null && cachedGameDataClass.isInstance(child)) return child;
+                    Object found = extractGameData(child, seen, depth + 1);
+                    if (found != null) return found;
+                } catch (Exception ignored) {}
             }
-        } catch (Exception ignored) {}
+            c = c.getSuperclass();
+        }
         return null;
     }
 

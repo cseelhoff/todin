@@ -12,10 +12,10 @@ import com.fasterxml.jackson.databind.ObjectMapper.DefaultTyping;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.util.Set;
 
 /**
@@ -97,10 +97,14 @@ public class GenericValueSerializer {
             "games.strategy.triplea.delegate.battle.IBattle"
     );
 
-    /** Identity hint method names tried in order; first non-null wins. */
-    private static final String[] IDENTITY_HINT_METHODS = {
-            "getName", "getId", "getKey", "getDisplayName"
-    };
+    /**
+     * How deep the structured-identity walk recurses through pruned-type
+     * references. 2 = root expanded, one level of pruned references expanded
+     * (so e.g. MustFightBattle.battleSite → Territory.name is reachable),
+     * and pruned-type grandchildren collapse to {"@class":...}. Anything
+     * deeper would re-walk the same back-reference cycles.
+     */
+    private static final int IDENTITY_MAX_DEPTH = 2;
 
     private final ObjectMapper mapper;
 
@@ -143,11 +147,15 @@ public class GenericValueSerializer {
     abstract static class IdentityMixin {}
 
     /**
-     * Pruned-type emitter. Always emits a compact stub:
-     *   { "@class": "<fqcn>", "_name": "...", "_id": "..." }
-     * Probe order: getName, getId, getKey, getDisplayName. All are optional;
-     * absent ones are simply omitted. The Odin loader uses these hints to
-     * locate the matching object inside the loaded Game_Data graph.
+     * Pruned-type emitter. Walks the value's instance fields (including
+     * inherited) and emits a structural identity stub:
+     *   { "@class": "<fqcn>", "<field>": <value>, ... }
+     * where each emitted field is one of: scalar (String / number / boolean /
+     * char / enum.name() / UUID.toString()), nested pruned-type stub (recursive,
+     * depth-capped at {@link #IDENTITY_MAX_DEPTH}), Collection / Map of those,
+     * or Optional of those. Non-pruned object fields are silently skipped —
+     * we only want identity, not arbitrary state. The Odin loader uses these
+     * fields to locate the matching object inside the loaded Game_Data graph.
      */
     static final class IdentityHintSerializer<T> extends JsonSerializer<T> {
         private final Class<T> declaredType;
@@ -162,25 +170,132 @@ public class GenericValueSerializer {
         @Override
         public void serialize(T value, JsonGenerator gen, SerializerProvider provider)
                 throws IOException {
+            writeIdentityStub(value, gen, 0);
+        }
+
+        // When default-typing engages, Jackson invokes serializeWithType
+        // instead of serialize. We already write "@class" into the body, so
+        // there is no separate type-id wrapper to emit — just delegate.
+        @Override
+        public void serializeWithType(T value, JsonGenerator gen,
+                                      SerializerProvider provider,
+                                      TypeSerializer typeSer) throws IOException {
+            serialize(value, gen, provider);
+        }
+
+        private static void writeIdentityStub(Object value, JsonGenerator gen, int depth)
+                throws IOException {
             gen.writeStartObject();
             gen.writeStringField("@class", value.getClass().getName());
-            for (String probe : IDENTITY_HINT_METHODS) {
-                Object hint = invokeNoArg(value, probe);
-                if (hint != null) {
-                    String key = "_" + probe.substring(3, 4).toLowerCase() + probe.substring(4);
-                    gen.writeStringField(key, String.valueOf(hint));
+            if (depth >= IDENTITY_MAX_DEPTH) {
+                gen.writeEndObject();
+                return;
+            }
+            Class<?> c = value.getClass();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            while (c != null && c != Object.class) {
+                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                    int mods = f.getModifiers();
+                    if (java.lang.reflect.Modifier.isStatic(mods)) continue;
+                    if (f.isSynthetic()) continue;
+                    // Always-skip fields: back-references that produce noise
+                    // and add no identity value. `gameData` is the universal
+                    // root back-pointer on every domain object.
+                    if ("gameData".equals(f.getName())) continue;
+                    if (!seen.add(f.getName())) continue;
+                    try {
+                        f.setAccessible(true);
+                        Object fv = f.get(value);
+                        if (fv == null) continue;
+                        if (isEmptyContainer(fv)) continue;
+                        writeFieldValue(f.getName(), fv, gen, depth + 1);
+                    } catch (Exception ignored) {}
                 }
+                c = c.getSuperclass();
             }
             gen.writeEndObject();
         }
 
-        private static Object invokeNoArg(Object target, String name) {
-            try {
-                Method m = target.getClass().getMethod(name);
-                return m.invoke(target);
-            } catch (Exception e) {
-                return null;
+        private static boolean isEmptyContainer(Object v) {
+            if (v instanceof java.util.Collection<?> col) return col.isEmpty();
+            if (v instanceof java.util.Map<?, ?> map) return map.isEmpty();
+            if (v.getClass().isArray()) return java.lang.reflect.Array.getLength(v) == 0;
+            if (v instanceof java.util.Optional<?> opt) return opt.isEmpty();
+            return false;
+        }
+
+        private static void writeFieldValue(String name, Object fv, JsonGenerator gen, int depth)
+                throws IOException {
+            if (isScalar(fv)) {
+                gen.writeFieldName(name);
+                writeScalar(fv, gen);
+                return;
             }
+            String cls = fv.getClass().getName();
+            if (PRUNE_TYPES.contains(cls)) {
+                gen.writeFieldName(name);
+                writeIdentityStub(fv, gen, depth);
+                return;
+            }
+            if (fv instanceof java.util.Optional<?> opt) {
+                if (opt.isPresent()) writeFieldValue(name, opt.get(), gen, depth);
+                return;
+            }
+            if (fv instanceof java.util.Collection<?> col) {
+                gen.writeArrayFieldStart(name);
+                for (Object e : col) writeArrayElement(e, gen, depth);
+                gen.writeEndArray();
+                return;
+            }
+            if (fv instanceof java.util.Map<?, ?> map) {
+                gen.writeObjectFieldStart(name);
+                for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
+                    Object ek = entry.getKey();
+                    Object ev = entry.getValue();
+                    if (ev == null) continue;
+                    String key = ek == null ? "null" : String.valueOf(ek);
+                    writeFieldValue(key, ev, gen, depth);
+                }
+                gen.writeEndObject();
+                return;
+            }
+            // Non-pruned object types: silently skip. We only want identity,
+            // not arbitrary state.
+        }
+
+        private static void writeArrayElement(Object e, JsonGenerator gen, int depth)
+                throws IOException {
+            if (e == null) { gen.writeNull(); return; }
+            if (isScalar(e)) { writeScalar(e, gen); return; }
+            if (PRUNE_TYPES.contains(e.getClass().getName())) {
+                writeIdentityStub(e, gen, depth);
+                return;
+            }
+            // Skip non-pruned collection elements.
+        }
+
+        private static boolean isScalar(Object v) {
+            return v instanceof String || v instanceof Number || v instanceof Boolean
+                    || v instanceof Character || v instanceof Enum<?>
+                    || v instanceof java.util.UUID;
+        }
+
+        private static void writeScalar(Object v, JsonGenerator gen) throws IOException {
+            if (v instanceof String s)         gen.writeString(s);
+            else if (v instanceof Boolean b)   gen.writeBoolean(b);
+            else if (v instanceof Integer i)   gen.writeNumber(i);
+            else if (v instanceof Long l)      gen.writeNumber(l);
+            else if (v instanceof Double d)    gen.writeNumber(d);
+            else if (v instanceof Float f)     gen.writeNumber(f);
+            else if (v instanceof Short s)     gen.writeNumber(s);
+            else if (v instanceof Byte b)      gen.writeNumber(b);
+            else if (v instanceof java.math.BigDecimal bd) gen.writeNumber(bd);
+            else if (v instanceof java.math.BigInteger bi) gen.writeNumber(bi);
+            else if (v instanceof Number n)    gen.writeNumber(n.doubleValue());
+            else if (v instanceof Character c) gen.writeString(String.valueOf(c));
+            else if (v instanceof Enum<?> e)   gen.writeString(((Enum<?>) e).name());
+            else if (v instanceof java.util.UUID u) gen.writeString(u.toString());
+            else gen.writeNull();
         }
     }
 }

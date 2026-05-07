@@ -65,6 +65,8 @@ PRS_REL = (
 
 GRADLE_MARKER = "Added by triplea-port-bootstrap"
 AGENT_GRADLE_MARKER = "triplea-port-bootstrap: snapshot agent"
+JACKSON_DEP_MARKER = "triplea-port-bootstrap: needed by GenericValueSerializer"
+JACKSON_LIB_MARKER = "jackson-databind ="
 PRS_MARKER = "// triplea-port-bootstrap: fixedSeed"
 
 SNAPSHOT_AGENT_REL = "conversion/snapshot-agent"
@@ -202,6 +204,68 @@ def patch_gradle(triplea: Path) -> None:
         target.write_text(txt.rstrip() + "\n" + agent_block)
         print(f"  gradle: appended snapshot-agent JVM-args block")
 
+    # GenericValueSerializer.java needs jackson-databind on the test classpath.
+    # The catalog already references jackson-datatype-jsr310 (transitively
+    # pulls databind at runtime) but databind must be declared explicitly to
+    # be visible at TEST compile time.
+    txt = target.read_text()
+    needle = (
+        '    testImplementation(project(":lib:test-common"))'
+        if flavor == "kotlin DSL"
+        else "    testImplementation project(':lib:test-common')"
+    )
+    if JACKSON_DEP_MARKER in txt:
+        print(f"  gradle: jackson testImpl already present")
+    elif needle in txt:
+        if flavor == "kotlin DSL":
+            insert = (
+                f"{needle}\n"
+                f"    // {JACKSON_DEP_MARKER}\n"
+                f"    testImplementation(libs.jackson.databind)"
+            )
+        else:
+            insert = (
+                f"{needle}\n"
+                f"    // {JACKSON_DEP_MARKER}\n"
+                f"    testImplementation libs.jackson.databind"
+            )
+        target.write_text(txt.replace(needle, insert, 1))
+        print(f"  gradle: added jackson-databind testImplementation")
+    else:
+        print(f"  gradle: WARN: could not anchor jackson testImpl insertion in {target.name}")
+
+
+def patch_libs_versions(triplea: Path) -> None:
+    """Add `jackson-databind` to gradle/libs.versions.toml.
+
+    The catalog already declares the `jackson-datatype` version and the
+    jsr310 datatype library that uses it. We add the `jackson-databind`
+    library entry sharing the same version so smoke-testing's
+    GenericValueSerializer can compile against it.
+    """
+    cat = triplea / "gradle" / "libs.versions.toml"
+    if not cat.is_file():
+        sys.exit(f"  libs: missing {cat}")
+    txt = cat.read_text()
+    if JACKSON_LIB_MARKER in txt:
+        print(f"  libs: jackson-databind already present")
+        return
+    needle = (
+        'jackson-datatype-jsr310 = { module = '
+        '"com.fasterxml.jackson.datatype:jackson-datatype-jsr310", '
+        'version.ref = "jackson-datatype" }'
+    )
+    if needle not in txt:
+        print(f"  libs: WARN: could not anchor jackson-databind entry in libs.versions.toml")
+        return
+    insert = (
+        'jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", '
+        'version.ref = "jackson-datatype" }\n'
+        + needle
+    )
+    cat.write_text(txt.replace(needle, insert, 1))
+    print(f"  libs: added jackson-databind library entry")
+
 
 def patch_plain_random_source(triplea: Path) -> None:
     target = triplea / PRS_REL
@@ -337,6 +401,7 @@ def main() -> None:
     print(f"patching {triplea}...")
     inject_snapshot_harness(triplea)
     inject_test(triplea, args.rounds)
+    patch_libs_versions(triplea)
     patch_gradle(triplea)
     patch_plain_random_source(triplea)
     inject_odin_test_common(triplea)

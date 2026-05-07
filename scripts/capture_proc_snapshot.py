@@ -62,7 +62,9 @@ def derive_proc_dir_name(class_fqcn: str, method: str) -> str:
 
 
 def write_per_call_config(triplea: Path, class_fqcn: str, method: str,
-                           out_dir: Path) -> tuple[Path, Path]:
+                           out_dir: Path,
+                           max_bytes: int, max_minutes: float,
+                           max_snapshots: int) -> tuple[Path, Path]:
     """Materialise a snapshot.config + a narrowed methods file for this run.
 
     The agent installs Byte Buddy advice on EVERY method of EVERY class listed
@@ -109,6 +111,9 @@ def write_per_call_config(triplea: Path, class_fqcn: str, method: str,
         "snapshot.saveGameData=true\n"
         "snapshot.saveParams=true\n"
         "snapshot.saveReturn=true\n"
+        f"snapshot.maxBytes={max_bytes}\n"
+        f"snapshot.maxMillis={int(max_minutes * 60 * 1000)}\n"
+        f"snapshot.maxSnapshots={max_snapshots}\n"
     )
     return cfg, narrow_path
 
@@ -202,6 +207,7 @@ def post_process(scratch_dir: Path, dest_dir: Path,
             ("before-meta.txt",      "before-meta.txt"),
             ("after-meta.txt",       "after-meta.txt"),
             ("after-return.json",    "after-return.json"),
+            ("before-self.json",     "before-self.json"),
         ):
             src = td / src_name
             if src.is_file():
@@ -232,6 +238,8 @@ def main() -> None:
                     help="Cap on total bytes written by the agent (default: 10 MiB). Override for big methods.")
     ap.add_argument("--max-minutes", type=float, default=10.0,
                     help="Wall-clock cap in minutes (default: 10). Driver SIGKILLs gradle 60s past this.")
+    ap.add_argument("--max-snapshots", type=int, default=1000,
+                    help="Cap on captured tick-dirs (default: 1000). Bump for high-frequency procs.")
     ap.add_argument("--keep-raw", action="store_true",
                     help="Don't delete the scratch tick-* dump dir after post-processing.")
     args = ap.parse_args()
@@ -254,7 +262,10 @@ def main() -> None:
     scratch = Path(tempfile.mkdtemp(prefix="snap-", dir=triplea / "build"))
     print(f"[capture] scratch: {scratch}")
     try:
-        cfg, methods = write_per_call_config(triplea, args.class_fqcn, args.method, scratch)
+        cfg, methods = write_per_call_config(
+            triplea, args.class_fqcn, args.method, scratch,
+            args.max_bytes, args.max_minutes, args.max_snapshots,
+        )
         run_smoke_test(triplea, agent_jar, cfg, methods, scratch, args.rounds,
                        args.max_bytes, args.max_minutes)
         # Surface the agent's CAP_EXCEEDED notice if present.
