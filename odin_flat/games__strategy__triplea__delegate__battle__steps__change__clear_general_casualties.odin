@@ -19,8 +19,13 @@ clear_general_casualties_new :: proc(battle_state: ^Battle_State, battle_actions
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.get_all_step_details = clear_general_casualties_v_get_all_step_details
+	self.get_order = clear_general_casualties_v_get_order
 	self.execute = clear_general_casualties_v_execute
 	return self
+}
+
+clear_general_casualties_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return clear_general_casualties_get_order(cast(^Clear_General_Casualties)self)
 }
 
 clear_general_casualties_get_order :: proc(self: ^Clear_General_Casualties) -> Battle_Step_Order {

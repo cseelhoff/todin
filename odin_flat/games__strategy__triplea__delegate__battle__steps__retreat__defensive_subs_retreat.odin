@@ -13,8 +13,13 @@ defensive_subs_retreat_new :: proc(battle_state: ^Battle_State, battle_actions: 
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = defensive_subs_retreat_v_get_all_step_details
+	self.battle_step.get_order = defensive_subs_retreat_v_get_order
 	self.battle_step.i_executable.execute = defensive_subs_retreat_v_execute
 	return self
+}
+
+defensive_subs_retreat_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return defensive_subs_retreat_get_order(cast(^Defensive_Subs_Retreat)self)
 }
 
 defensive_subs_retreat_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {

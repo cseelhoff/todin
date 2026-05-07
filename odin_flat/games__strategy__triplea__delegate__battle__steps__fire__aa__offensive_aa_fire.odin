@@ -10,8 +10,13 @@ offensive_aa_fire_new :: proc(battle_state: ^Battle_State, battle_actions: ^Batt
 	self.battle_actions = battle_actions
 	self.side = .OFFENSE
 	self.battle_step.get_all_step_details = aa_fire_and_casualty_step_v_get_all_step_details
+	self.battle_step.get_order = offensive_aa_fire_v_get_order
 	self.battle_step.i_executable.execute = aa_fire_and_casualty_step_v_execute
 	return self
+}
+
+offensive_aa_fire_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return offensive_aa_fire_get_order(cast(^Offensive_Aa_Fire)self)
 }
 
 offensive_aa_fire_get_order :: proc(self: ^Offensive_Aa_Fire) -> Battle_Step_Order {

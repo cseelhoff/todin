@@ -854,6 +854,29 @@ it for every Phase C failure. Summary:
 5. The unique proc whose own dependencies all pass but whose
    own output diverges IS the bug site. Re-port it from `.java`,
    never invent code.
+
+   **5a. RESET-AND-REPORT when the Odin diverges structurally
+   from Java.** Before editing the bug-site proc, read the
+   Java method side-by-side with the Odin body. If the Odin is
+   not a one-statement-at-a-time translation — e.g. it inlines
+   what Java dispatches virtually, fans a stream pipeline into
+   N hand-rolled blocks, or otherwise rewrites the algorithm —
+   do NOT patch it. Run:
+
+   ```sh
+   sqlite3 port.sqlite "UPDATE methods SET is_implemented = 0 \
+     WHERE method_key = '<KEY>';"
+   ```
+
+   then delete the proc body (and any companion helpers that
+   exist solely to support the divergent shape) from the Odin
+   file, leaving struct decls, constructors, and unrelated
+   procs intact. The next Phase B iteration will re-port the
+   method faithfully from Java. This avoids fix-and-revert
+   loops where each patch (vtable wiring, headless guards,
+   workaround flags) papers over an architectural mismatch and
+   re-breaks elsewhere. See `llm-instructions.md` §"Layered
+   drill-down debugging" item 8a for the canonical procedure.
 6. **Never write Odin from scratch.** Open the original Java
    method at `java_file_path:java_lines`, read it in full, and
    translate one statement at a time, preserving control flow,

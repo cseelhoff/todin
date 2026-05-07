@@ -161,17 +161,12 @@ public class SnapshotInterceptor {
             // Save GameData as JSON
             saveGameDataJson(dir.resolve("before-gamedata.json"), gameData);
 
-            // Save params via Java serialization (best effort)
+            // Save each param as generic identity-tracked JSON. Replaces the
+            // old Java-serialization (.bin) path which silently dropped any
+            // non-Serializable arg.
             if (saveParams && args != null) {
                 for (int i = 0; i < args.length; i++) {
-                    if (args[i] instanceof Serializable s) {
-                        try (var oos = new ObjectOutputStream(
-                                Files.newOutputStream(dir.resolve("before-param-" + i + ".bin")))) {
-                            oos.writeObject(s);
-                        } catch (Exception e) {
-                            // Some params aren't serializable — skip
-                        }
-                    }
+                    saveValueJson(dir.resolve("before-param-" + i + ".json"), args[i]);
                 }
             }
         } catch (Exception e) {
@@ -204,14 +199,10 @@ public class SnapshotInterceptor {
             // Save GameData as JSON
             saveGameDataJson(dir.resolve("after-gamedata.json"), gameData);
 
-            // Save return value
-            if (saveReturn && returnValue instanceof Serializable s) {
-                try (var oos = new ObjectOutputStream(
-                        Files.newOutputStream(dir.resolve("after-return.bin")))) {
-                    oos.writeObject(s);
-                } catch (Exception e) {
-                    // skip
-                }
+            // Save return value as generic identity-tracked JSON (replaces
+            // .bin Java serialization).
+            if (saveReturn) {
+                saveValueJson(dir.resolve("after-return.json"), returnValue);
             }
         } catch (Exception e) {
             System.err.println("[SnapshotAgent] Error saving after snapshot at tick " + tick + ": " + e);
@@ -294,6 +285,35 @@ public class SnapshotInterceptor {
 
     private static volatile Object cachedSerializer = null;
     private static volatile Method cachedSerializeMethod = null;
+    private static volatile Object cachedGenericSerializer = null;
+    private static volatile Method cachedGenericSerializeMethod = null;
+
+    /**
+     * Generic JSON dump of any value (param or return) via reflective lookup
+     * of GenericValueSerializer (which lives in the test classpath alongside
+     * GameStateJsonSerializer). Failures collapse to a small error stub so the
+     * caller can still tell something was attempted.
+     */
+    public static void saveValueJson(Path file, Object value) {
+        try {
+            if (cachedGenericSerializer == null) {
+                Class<?> cls = Class.forName(
+                        "games.strategy.engine.data.GenericValueSerializer");
+                cachedGenericSerializer = cls.getConstructor().newInstance();
+                cachedGenericSerializeMethod = cls.getMethod("serialize", Object.class);
+            }
+            String json = (String) cachedGenericSerializeMethod.invoke(
+                    cachedGenericSerializer, value);
+            Files.writeString(file, json);
+            bytesWritten.addAndGet(json.length());
+        } catch (Throwable t) {
+            try {
+                String msg = String.valueOf(t.getCause() != null ? t.getCause() : t)
+                        .replace("\"", "'");
+                Files.writeString(file, "{\"@error\":\"" + msg + "\"}");
+            } catch (IOException ignored) {}
+        }
+    }
 
     public static String summarize(Object obj) {
         if (obj == null) return "null";

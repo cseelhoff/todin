@@ -197,6 +197,11 @@ offensive_first_strike_new :: proc(
 	self.return_fire = .ALL
 	self.state = offensive_first_strike_calculate_state(self)
 	self.battle_step.get_all_step_details = offensive_first_strike_v_get_all_step_details
+	self.battle_step.get_order = offensive_first_strike_v_get_order
 	self.battle_step.i_executable.execute = offensive_first_strike_v_execute
 	return self
+}
+
+offensive_first_strike_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return offensive_first_strike_get_order(cast(^Offensive_First_Strike)self)
 }

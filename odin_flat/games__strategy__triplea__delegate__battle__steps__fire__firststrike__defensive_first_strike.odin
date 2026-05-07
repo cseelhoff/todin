@@ -153,8 +153,13 @@ defensive_first_strike_new :: proc(
 	self.return_fire = .ALL
 	self.state = defensive_first_strike_calculate_state(self)
 	self.battle_step.get_all_step_details = defensive_first_strike_v_get_all_step_details
+	self.battle_step.get_order = defensive_first_strike_v_get_order
 	self.battle_step.i_executable.execute = defensive_first_strike_v_execute
 	return self
+}
+
+defensive_first_strike_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return defensive_first_strike_get_order(cast(^Defensive_First_Strike)self)
 }
 
 // Java: private List<BattleStep> getSteps()

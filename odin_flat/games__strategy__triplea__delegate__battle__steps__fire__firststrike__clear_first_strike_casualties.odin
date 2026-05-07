@@ -31,8 +31,13 @@ clear_first_strike_casualties_new :: proc(
 	self.offense_state = clear_first_strike_casualties_calculate_offense_state(self)
 	self.defense_state = clear_first_strike_casualties_calculate_defense_state(self)
 	self.battle_step.get_all_step_details = clear_first_strike_casualties_v_get_all_step_details
+	self.battle_step.get_order = clear_first_strike_casualties_v_get_order
 	self.battle_step.i_executable.execute = clear_first_strike_casualties_v_execute
 	return self
+}
+
+clear_first_strike_casualties_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return clear_first_strike_casualties_get_order(cast(^Clear_First_Strike_Casualties)self)
 }
 
 clear_first_strike_casualties_get_order :: proc(self: ^Clear_First_Strike_Casualties) -> Battle_Step_Order {

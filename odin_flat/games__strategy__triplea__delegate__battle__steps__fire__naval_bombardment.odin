@@ -22,8 +22,13 @@ naval_bombardment_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = naval_bombardment_v_get_all_step_details
+	self.battle_step.get_order = naval_bombardment_v_get_order
 	self.battle_step.i_executable.execute = naval_bombardment_v_execute
 	return self
+}
+
+naval_bombardment_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return naval_bombardment_get_order(cast(^Naval_Bombardment)self)
 }
 
 naval_bombardment_get_order :: proc(self: ^Naval_Bombardment) -> Battle_Step_Order {

@@ -896,17 +896,21 @@ build the real fixture-driven test or leave the proc yellow.
 
 7. **Termination cases:**
    - **Some dependency at layer 0 fails** → that's the bug.
-     Fix it by re-porting from the original `.java` source.
-     Re-test the dependency, then re-test its callers, walking
-     back up the chain. As each proc's targeted test flips
-     green, run `scripts/mark_test_status.py <KEY> green` so
-     the dashboard reflects the cleared layer.
+     Fix it by re-porting from the original `.java` source
+     (or, if the Odin has diverged structurally, apply
+     reset-and-report per item 8a below — set
+     `is_implemented = 0`, delete the body, let Phase B
+     re-port). Re-test the dependency, then re-test its
+     callers, walking back up the chain. As each proc's
+     targeted test flips green, run
+     `scripts/mark_test_status.py <KEY> green` so the
+     dashboard reflects the cleared layer.
    - **All dependencies pass but the original proc still
      fails** → the bug is in the original proc's own body
      (its translation logic, not anything it calls). Fix that
-     proc by re-porting from Java. Mark the proc red while
-     debugging; flip it to green only after its own targeted
-     test passes.
+     proc by re-porting from Java (or reset-and-report per 8a
+     when divergent). Mark the proc red while debugging; flip
+     it to green only after its own targeted test passes.
 
 8. **Always re-port from `.java`, never write Odin from scratch.**
    The Java sources at `java_file_path` are the single source of
@@ -919,6 +923,45 @@ build the real fixture-driven test or leave the proc yellow.
    step-by-step assignments into Odin one-liners. Idiomatic
    sugar is fine for trivial accessors; **everything else must
    visually mirror the Java**.
+
+   **8a. RESET-AND-REPORT when the existing Odin proc has
+   diverged structurally from Java.** Before editing a red /
+   investigate-target proc, do a side-by-side read of the Java
+   body and the current Odin body. Ask: *would a faithful
+   one-statement-at-a-time translation of the Java look
+   anything like the current Odin?* If the Odin diverges in
+   shape — e.g. it inlines what Java dispatches virtually, fans
+   a stream pipeline into 24 hand-rolled construction blocks,
+   replaces a `Stream.flatMap` with a different control-flow
+   skeleton, adds bypass casts, or otherwise rewrites the
+   algorithm — STOP. Do not attempt to patch the divergent
+   body. Instead:
+
+   ```sh
+   sqlite3 port.sqlite "UPDATE methods SET is_implemented = 0 \
+     WHERE method_key = '<KEY>';"
+   ```
+
+   then DELETE the proc body (and any companion types/helpers
+   that exist solely to support the divergent shape, e.g.
+   `Battle_Steps_Step_Entry`, `*_get_entry_less`) from the
+   Odin file, leaving the rest of the file (struct decl,
+   constructors, unrelated procs) intact. The next Phase B run
+   will pick up the unimplemented method and the subagent will
+   re-port it faithfully from the Java source.
+
+   This is the correct response to the symptom "fix-and-revert
+   loops" — applying piecemeal wiring patches, headless
+   guards, or workaround flags to make the divergent body
+   produce the right output. Those patches paper over an
+   architectural mismatch and inevitably re-break elsewhere.
+   Reset, delete, re-port. The orchestrator's Phase B
+   pipeline is built for exactly this case.
+
+   When in doubt: a faithful Java-to-Odin port should look
+   like a 1:1 line correspondence with the Java. If the Odin
+   has 10x the LOC of the Java, that is a strong signal it
+   needs reset-and-report rather than in-place patching.
 
 9. **Triage harness vs. proc bugs honestly.** If the JSON diff
    shows that a Java field present in the snapshot is `nil` /

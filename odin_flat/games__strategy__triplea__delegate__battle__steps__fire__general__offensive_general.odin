@@ -19,8 +19,13 @@ offensive_general_new :: proc(battle_state: ^Battle_State, battle_actions: ^Batt
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = offensive_general_v_get_all_step_details
+	self.battle_step.get_order = offensive_general_v_get_order
 	self.battle_step.i_executable.execute = offensive_general_v_execute
 	return self
+}
+
+offensive_general_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return offensive_general_get_order(cast(^Offensive_General)self)
 }
 
 offensive_general_get_order :: proc(self: ^Offensive_General) -> Battle_Step_Order {

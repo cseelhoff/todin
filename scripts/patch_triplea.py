@@ -49,6 +49,7 @@ SNAPSHOT_FILES = (
     "SnapshotHarness.java",
     "SnapshotProcessor.java",
     "GameStateJsonSerializer.java",
+    "GenericValueSerializer.java",
 )
 ODIN_TEST_COMMON_REL = "conversion/odin_tests/test_common"
 ODIN_TEST_COMMON_FILES = (

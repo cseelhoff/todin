@@ -9,6 +9,11 @@ Battle_Step :: struct {
 	// Concrete subtypes that override this assign their own thunk in
 	// their `_new` constructor.
 	get_all_step_details: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details,
+
+	// games.strategy.triplea.delegate.battle.steps.BattleStep#getOrder()
+	// No default in Java; every concrete subtype implements it. Each
+	// subtype's `_new` constructor wires its own `*_v_get_order` adapter.
+	get_order: proc(self: ^Battle_Step) -> Battle_Step_Order,
 }
 
 // Public dispatch proc for getAllStepDetails(). Falls back to an empty
@@ -19,6 +24,17 @@ battle_step_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle
 	}
 	out: [dynamic]^Battle_Step_Step_Details
 	return out
+}
+
+// Public dispatch proc for getOrder(). Mirrors Java's `BattleStep::getOrder`
+// virtual dispatch. Every concrete subtype must wire `get_order` in its
+// constructor; if a subtype is missing a wiring this will return the
+// zero value (AA_OFFENSIVE) — that is a porting bug, not a default.
+battle_step_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	if self.get_order != nil {
+		return self.get_order(self)
+	}
+	return Battle_Step_Order.AA_OFFENSIVE
 }
 
 // Java: static List<BattleStep> BattleStep.getAll(BattleState, BattleActions)
@@ -35,7 +51,7 @@ battle_step_get_all :: proc(battle_state: ^Battle_State, battle_actions: ^Battle
 	append(&out, &offensive_aa_fire_new(battle_state, battle_actions).battle_step)
 	append(&out, &defensive_aa_fire_new(battle_state, battle_actions).battle_step)
 	append(&out, &submerge_subs_vs_only_air_step_new(battle_state, battle_actions).battle_step)
-	append(&out, &suicide_remove_units_new(battle_state, battle_actions).battle_step)
+	append(&out, &remove_unprotected_units_new(battle_state, battle_actions).battle_step)
 	append(&out, &naval_bombardment_new(battle_state, battle_actions).battle_step)
 	append(&out, &clear_bombardment_casualties_new(battle_state, battle_actions).battle_step)
 	append(&out, &land_paratroopers_new(battle_state, battle_actions).battle_step)

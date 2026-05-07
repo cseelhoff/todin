@@ -25,8 +25,13 @@ clear_bombardment_casualties_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.get_all_step_details = clear_bombardment_casualties_v_get_all_step_details
+	self.get_order = clear_bombardment_casualties_v_get_order
 	self.execute = clear_bombardment_casualties_v_execute
 	return self
+}
+
+clear_bombardment_casualties_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return clear_bombardment_casualties_get_order(cast(^Clear_Bombardment_Casualties)self)
 }
 
 clear_bombardment_casualties_get_order :: proc(

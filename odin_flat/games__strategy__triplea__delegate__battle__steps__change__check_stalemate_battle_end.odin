@@ -20,8 +20,13 @@ check_stalemate_battle_end_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.get_all_step_details = check_stalemate_battle_end_v_get_all_step_details
+	self.get_order = check_stalemate_battle_end_v_get_order
 	self.execute = check_stalemate_battle_end_v_execute
 	return self
+}
+
+check_stalemate_battle_end_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return check_stalemate_battle_end_get_order(cast(^Check_Stalemate_Battle_End)self)
 }
 
 check_stalemate_battle_end_get_all_step_details :: proc(self: ^Check_Stalemate_Battle_End) -> [dynamic]^Battle_Step_Step_Details {

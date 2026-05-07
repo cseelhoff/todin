@@ -21,8 +21,13 @@ offensive_subs_retreat_new :: proc(battle_state: ^Battle_State, battle_actions: 
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = offensive_subs_retreat_v_get_all_step_details
+	self.battle_step.get_order = offensive_subs_retreat_v_get_order
 	self.battle_step.i_executable.execute = offensive_subs_retreat_v_execute
 	return self
+}
+
+offensive_subs_retreat_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return offensive_subs_retreat_get_order(cast(^Offensive_Subs_Retreat)self)
 }
 
 // Java: OffensiveSubsRetreat#isDestroyerPresent

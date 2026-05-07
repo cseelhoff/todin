@@ -19,8 +19,13 @@ land_paratroopers_new :: proc(battle_state: ^Battle_State, battle_actions: ^Batt
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.get_all_step_details = land_paratroopers_v_get_all_step_details
+	self.get_order = land_paratroopers_v_get_order
 	self.execute = land_paratroopers_v_execute
 	return self
+}
+
+land_paratroopers_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return land_paratroopers_get_order(cast(^Land_Paratroopers)self)
 }
 
 land_paratroopers_get_order :: proc(self: ^Land_Paratroopers) -> Battle_Step_Order {

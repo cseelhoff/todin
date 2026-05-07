@@ -24,8 +24,13 @@ remove_unprotected_units_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = remove_unprotected_units_v_get_all_step_details
+	self.battle_step.get_order = remove_unprotected_units_v_get_order
 	self.battle_step.i_executable.execute = remove_unprotected_units_v_execute
 	return self
+}
+
+remove_unprotected_units_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return remove_unprotected_units_get_order(cast(^Remove_Unprotected_Units)self)
 }
 
 remove_unprotected_units_get_order :: proc(self: ^Remove_Unprotected_Units) -> Battle_Step_Order {

@@ -17,8 +17,13 @@ remove_first_strike_suicide_new :: proc(battle_state: ^Battle_State, battle_acti
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.battle_step.get_all_step_details = remove_first_strike_suicide_v_get_all_step_details
+	self.battle_step.get_order = remove_first_strike_suicide_v_get_order
 	self.battle_step.i_executable.execute = remove_first_strike_suicide_v_execute
 	return self
+}
+
+remove_first_strike_suicide_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return remove_first_strike_suicide_get_order(cast(^Remove_First_Strike_Suicide)self)
 }
 
 remove_first_strike_suicide_get_all_step_details :: proc(self: ^Remove_First_Strike_Suicide) -> [dynamic]^Battle_Step_Step_Details {

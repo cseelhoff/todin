@@ -22,8 +22,13 @@ remove_non_combatants_new :: proc(
 	self.battle_state = battle_state
 	self.battle_actions = battle_actions
 	self.get_all_step_details = remove_non_combatants_v_get_all_step_details
+	self.get_order = remove_non_combatants_v_get_order
 	self.execute = remove_non_combatants_v_execute
 	return self
+}
+
+remove_non_combatants_v_get_order :: proc(self: ^Battle_Step) -> Battle_Step_Order {
+	return remove_non_combatants_get_order(cast(^Remove_Non_Combatants)self)
 }
 
 remove_non_combatants_get_all_step_details :: proc(

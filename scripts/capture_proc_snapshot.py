@@ -201,10 +201,14 @@ def post_process(scratch_dir: Path, dest_dir: Path,
             ("after-gamedata.json",  "after.json"),
             ("before-meta.txt",      "before-meta.txt"),
             ("after-meta.txt",       "after-meta.txt"),
+            ("after-return.json",    "after-return.json"),
         ):
             src = td / src_name
             if src.is_file():
                 shutil.copyfile(src, snap / dst_name)
+        # Copy every before-param-N.json the agent emitted (variable arity).
+        for param_src in sorted(td.glob("before-param-*.json")):
+            shutil.copyfile(param_src, snap / param_src.name)
         # Pull the `return: ...` line out of after-meta.txt for easy diffing.
         meta = parse_meta(td / "after-meta.txt")
         if "return" in meta:
