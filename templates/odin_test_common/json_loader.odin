@@ -621,6 +621,9 @@ deserialize_player :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Game_
 	p := new(game.Game_Player)
 	p.named.base.name = get_string(obj, "name")
 	p.named.kind = .Game_Player
+	// Set the Game_Data back-reference so getData()-driven paths
+	// (resource_list lookups, tech tracker, etc.) resolve.
+	p.named_attachable.default_named.game_data_component.game_data = gd
 	p.optional = get_bool(obj, "optional")
 	p.can_be_disabled = get_bool(obj, "canBeDisabled")
 	p.is_disabled = get_bool(obj, "isDisabled")
@@ -629,6 +632,7 @@ deserialize_player :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Game_
 	// Resources
 	if res_obj, ok := get_object(obj, "resources"); ok {
 		p.resources = new(game.Resource_Collection)
+		p.resources.game_data_component.game_data = gd
 		p.resources.resources = make(game.Integer_Map_Resource)
 		for res_name, val in res_obj {
 			amount := json_to_i32(val)

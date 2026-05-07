@@ -155,6 +155,22 @@ game_data_utils_translate_into_other_game_data :: proc(object: rawptr, translate
 // session needs to: (a) clone delegates so move_del.bridge mutation
 // doesn't leak; (b) re-link cloned sequence/steps' player_id; or
 // (c) wholesale CBOR + relink (Stage 2 full).
+// proc:games.strategy.engine.framework.GameDataUtils#cloneGameData
+//
+// SERIALIZATION-SHIM DIVERGENCE — see serialization-shim-divergence-plan.md.
+//
+// Returns nil. A working clone needs to deep-copy not just Game_Data and
+// Player_List/Resource_Collection but also units_list + every Unit (the
+// AI's combat-move simulation mutates Unit.already_moved on shared
+// pointers; cloning resources alone causes a snap 0014 regression of
+// `alreadyMoved 0 != N`). Cloning units cascades into Territory.units,
+// Game_Map, and owner relinks — too large for a shallow patch.
+//
+// Snap 0013 (`Russians.PUs 24 != 0`) requires a working clone to
+// progress; snap 0014 is independent. Layer 5 (sequence cursor leak)
+// and the move_del.bridge leak are pre-handled by save/restore defers
+// in abstract_pro_ai_purchase, so a future deep clone can plug in
+// without re-discovering those.
 game_data_utils_clone_game_data :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options) -> ^Game_Data {
 	bytes, present := game_data_utils_game_data_to_bytes(data, options)
 	if present {
