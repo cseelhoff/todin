@@ -265,6 +265,9 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 //   Mirrors Java's `final` override; subclasses provide purchase / tech /
 //   move / place via the abstract methods declared further down.
 abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
+	when #config(PROBE_PURCHASE_13, false) {
+		fmt.eprintf("[PROBE_PURCHASE_13] abstract_ai_start name=%q\n", name)
+	}
 	abstract_base_player_start(&self.abstract_base_player, name)
 	game_player := abstract_base_player_get_game_player(&self.abstract_base_player)
 	if game_step_is_bid_step_name(name) {

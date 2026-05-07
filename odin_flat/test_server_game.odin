@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Harness-only wrapper used by the snapshot runner
 // (`triplea/conversion/odin_tests/test_common/snapshot_runner.odin`).
 // Mirrors the small subset of ServerGame state that the harness reads
@@ -56,6 +58,9 @@ test_server_game_player_get_name_from_gp :: proc(self: ^Player) -> string {
 // stray dispatch can't crash mid-step.
 @(private = "file")
 test_server_game_player_start :: proc(self: ^Player, step_name: string) {
+	when #config(PROBE_PURCHASE_13, false) {
+		fmt.eprintf("[PROBE_PURCHASE_13] test_server_game_player_start step=%q\n", step_name)
+	}
 	ai := test_server_game_player_to_ai[self]
 	if ai == nil { return }
 	abstract_ai_start(cast(^Abstract_Ai)ai, step_name)

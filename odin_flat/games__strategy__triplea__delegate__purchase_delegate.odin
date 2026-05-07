@@ -196,6 +196,14 @@ purchase_delegate_can_we_purchase_or_repair :: proc(self: ^Purchase_Delegate) ->
 	player := self.player
 	wallet := game_player_get_resources(player)
 	pf := player.production_frontier
+	when #config(PROBE_PURCHASE_13, false) {
+		nrules := 0
+		if pf != nil {
+			nrules = len(production_frontier_get_rules(pf))
+		}
+		fmt.eprintf("[PROBE_PURCHASE_13] cwpor player=%q pf=%p nrules=%d wallet=%p\n",
+			player != nil ? player.named.base.name : "<nil>", pf, nrules, wallet)
+	}
 	if pf != nil {
 		rules := production_frontier_get_rules(pf)
 		for rule in rules {
@@ -302,13 +310,22 @@ purchase_delegate_remove_from_player :: proc(
 //   if (!canWePurchaseOrRepair()) return false;
 //   return TerritoryAttachment.doWeHaveEnoughCapitalsToProduce(player, getData().getMap());
 purchase_delegate_delegate_currently_requires_user_input :: proc(self: ^Purchase_Delegate) -> bool {
-	if !purchase_delegate_can_we_purchase_or_repair(self) {
+	can := purchase_delegate_can_we_purchase_or_repair(self)
+	when #config(PROBE_PURCHASE_13, false) {
+		fmt.eprintf("[PROBE_PURCHASE_13] purchase_delegate_drcrui can_pur=%v player=%q\n", can,
+			self.player != nil ? self.player.named.base.name : "<nil>")
+	}
+	if !can {
 		return false
 	}
-	return territory_attachment_do_we_have_enough_capitals_to_produce(
+	res := territory_attachment_do_we_have_enough_capitals_to_produce(
 		self.player,
 		game_data_get_map(abstract_delegate_get_data(&self.abstract_delegate)),
 	)
+	when #config(PROBE_PURCHASE_13, false) {
+		fmt.eprintf("[PROBE_PURCHASE_13] purchase_delegate_drcrui have_capitals=%v\n", res)
+	}
+	return res
 }
 
 // games.strategy.triplea.delegate.PurchaseDelegate#purchase(IntegerMap<ProductionRule>)

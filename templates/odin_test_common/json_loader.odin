@@ -290,6 +290,17 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 				case:
 					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_NEUTRAL
 				}
+				rta.can_move_land_units_over_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.can_move_air_units_over_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.alliances_can_chain_together = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.is_default_war_position = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.upkeep_cost = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.can_land_air_units_on_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.can_take_over_owned_territory = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.gives_back_original_territories = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.can_move_into_during_combat_move = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.can_move_through_canals = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+				rta.rockets_can_fly_over = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
 				rt.attachments = make(map[string]^game.I_Attachment)
 				rt.attachments["relationshipTypeAttachment"] = cast(^game.I_Attachment)rta
 				gd.relationship_type_list.relationship_types[strings.clone(name)] = rt
@@ -311,6 +322,17 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 		nr.attachments = make(map[string]^game.I_Attachment)
 		nrta := new(game.Relationship_Type_Attachment)
 		nrta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR
+		nrta.can_move_land_units_over_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.can_move_air_units_over_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.alliances_can_chain_together = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.is_default_war_position = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.upkeep_cost = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.can_land_air_units_on_owned_land = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.can_take_over_owned_territory = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.gives_back_original_territories = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.can_move_into_during_combat_move = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.can_move_through_canals = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
+		nrta.rockets_can_fly_over = game.RELATIONSHIP_TYPE_ATTACHMENT_PROPERTY_DEFAULT
 		nr.attachments["relationshipTypeAttachment"] = cast(^game.I_Attachment)nrta
 		gd.relationship_type_list.relationship_types[strings.clone("null_relation")] = nr
 	}
