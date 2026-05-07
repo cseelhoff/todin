@@ -539,11 +539,6 @@ abstract_pro_ai_purchase :: proc(
 	data:               ^Game_Data,
 	player:             ^Game_Player,
 ) {
-	when #config(PROBE_PURCHASE_13, false) {
-		fmt.eprintf("[PROBE_PURCHASE_13] abstract_pro_ai_purchase ENTER bid=%v pus=%d player=%q\n",
-			purchase_for_bid, pus_to_spend,
-			player != nil ? player.base.name : "<nil>")
-	}
 	start := time.tick_now()
 	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
 	// not flagged actually_called_in_ai_test, so the call is elided.

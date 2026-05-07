@@ -438,6 +438,33 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 		}
 	}
 
+	// Post-pass: bind each player's productionFrontier (and repairFrontier
+	// if present) by looking up the named frontier in the now-populated
+	// production_frontier_list. The Java game-XML parser does this at
+	// parse-time via PlayerList; the snapshot JSON serializes only the
+	// frontier name and we resolve it after both lists are built.
+	if pl_arr2, ok := get_array(root, "players"); ok {
+		for item in pl_arr2 {
+			p_obj, pok := item.(json.Object)
+			if !pok { continue }
+			pname := get_string(p_obj, "name")
+			gp, gp_found := gd.player_list.players[pname]
+			if !gp_found || gp == nil { continue }
+			if pf_name := get_string(p_obj, "productionFrontier"); pf_name != "" {
+				if pf := game.production_frontier_list_get_production_frontier(gd.production_frontier_list, pf_name); pf != nil {
+					gp.production_frontier = pf
+				}
+			}
+			if rf_name := get_string(p_obj, "repairFrontier"); rf_name != "" {
+				if gd.repair_frontier_list != nil {
+					if rf := game.repair_frontier_list_get_repair_frontier(gd.repair_frontier_list, rf_name); rf != nil {
+						gp.repair_frontier = rf
+					}
+				}
+			}
+		}
+	}
+
 	// Technology frontier (single object).
 	if tf_obj, ok := get_object(root, "technologyFrontier"); ok {
 		tf_name := get_string(tf_obj, "name")
