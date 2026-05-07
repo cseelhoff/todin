@@ -599,14 +599,37 @@ abstract_pro_ai_purchase :: proc(
 		bridge.get_data = abstract_pro_ai_pdb_get_data
 		bridge.get_game_player = abstract_pro_ai_pdb_get_game_player
 		bridge.add_change = abstract_pro_ai_pdb_add_change
-		abstract_delegate_set_delegate_bridge_and_player_no_websocket(
-			&move_del.abstract_delegate,
-			bridge,
-		)
+		// Java's setDelegateBridgeAndPlayer reads bridge.getGamePlayer(); the
+		// snapshot dispatcher i_delegate_bridge_get_game_player blindly casts
+		// to ^Default_Delegate_Bridge which is wrong for our AI bridge (proc-
+		// field-backed). Inline the assignment here using the AI's known
+		// player_copy to avoid the bad cast. Mirrors the Java effect:
+		// move_del.bridge = bridge; move_del.player = bridge.getGamePlayer().
+		// Shallow clone shares the delegates map; save/restore so the
+		// outer harness sees move_del unchanged after AI returns.
+		saved_move_bridge := move_del.abstract_delegate.bridge
+		saved_move_player := move_del.abstract_delegate.player
+		defer {
+			move_del.abstract_delegate.bridge = saved_move_bridge
+			move_del.abstract_delegate.player = saved_move_player
+		}
+		move_del.abstract_delegate.bridge = bridge
+		move_del.abstract_delegate.player = player_copy
 
 		// Simulate the next phases until place/end of turn is reached then use simulated data for
 		// purchase
 		sequence := game_data_get_sequence(data_copy)
+		// Shallow clone shares the sequence pointer with the original
+		// data; save/restore the cursor so the harness's outer end_step
+		// fires on the original (purchase) step, not whatever phase the
+		// AI sim ended on. See serialization-shim-divergence-plan.md
+		// (Layer 5).
+		saved_index := sequence.current_index
+		saved_round := sequence.round
+		defer {
+			sequence.current_index = saved_index
+			sequence.round = saved_round
+		}
 		next_step_index := game_sequence_get_step_index(sequence) + 1
 		game_steps := abstract_pro_ai_get_game_steps_for_player(
 			data_copy,

@@ -288,9 +288,15 @@ abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
 			game_player,
 		)
 	} else if game_step_is_purchase_step_name(name) {
-		purchase_delegate := cast(^I_Purchase_Delegate)player_bridge_get_remote_delegate(
+		// player_bridge_get_remote_delegate returns the raw ^Purchase_Delegate
+		// (the snapshot harness's inbound wrapper is the identity). Wrap it
+		// in the I_Purchase_Delegate vtable so AI dispatch via self.purchase
+		// hits the populated proc-fields (Purchase_Delegate's own first field
+		// is not the I_Purchase_Delegate vtable).
+		raw_pd := cast(^Purchase_Delegate)player_bridge_get_remote_delegate(
 			abstract_base_player_get_player_bridge(&self.abstract_base_player),
 		)
+		purchase_delegate := purchase_delegate_to_i_purchase_delegate(raw_pd)
 		pus := resource_list_get_resource_or_throw(
 			game_data_get_resource_list(
 				abstract_base_player_get_game_data(&self.abstract_base_player),
