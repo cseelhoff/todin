@@ -81,6 +81,11 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 	gd.game_name = get_string(root, "gameName")
 	gd.dice_sides = get_i32(root, "diceSides")
 
+	// Game_Data_State (owns Tech_Tracker). Java's GameData ctor allocates
+	// this; the snapshot JSON does not carry state, so allocate the empty
+	// shell here so callers like game_data_get_tech_tracker don't nil-deref.
+	gd.state = game.game_data_state_new(gd)
+
 	// Sequence
 	if seq_obj, ok := get_object(root, "sequence"); ok {
 		gd.sequence = deserialize_sequence(seq_obj)
@@ -285,7 +290,7 @@ deserialize_game_data :: proc(root: json.Object) -> ^game.Game_Data {
 				switch name {
 				case "default_war_relation", "war":
 					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_WAR
-				case "default_allied_relation", "allied":
+				case "default_allied_relation", "allied", "self_relation":
 					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_ALLIED
 				case:
 					rta.arche_type = game.RELATIONSHIP_TYPE_ATTACHMENT_ARCHETYPE_NEUTRAL
