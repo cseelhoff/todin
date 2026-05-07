@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:os"
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProMatches
 //
@@ -155,12 +158,17 @@ pro_matches_pred_territory_can_move_land_units_through :: proc(ctx_ptr: rawptr, 
 		ucb_p, ucb_c := matches_unit_can_blitz()
 		if ucb_p(ucb_c, ctx.u) && territory_effect_helper_unit_keeps_blitz(ctx.u, ctx.start_territory) {
 			at_p, at_c := matches_is_territory_allied(ctx.player)
-			ne_p, ne_c := matches_territory_has_no_enemy_units(ctx.player)
-			if at_p(at_c, t) && ne_p(ne_c, t) {
-				return true
+			at_r := at_p(at_c, t)
+			if at_r {
+				ne_p, ne_c := matches_territory_has_no_enemy_units(ctx.player)
+				ne_r := ne_p(ne_c, t)
+				if ne_r {
+					return true
+				}
 			}
 			tib_p, tib_c := pro_matches_territory_is_blitzable(ctx.player, ctx.u)
-			return tib_p(tib_c, t)
+			tib_r := tib_p(tib_c, t)
+			return tib_r
 		}
 	}
 	at_p, at_c := matches_is_territory_allied(ctx.player)
@@ -168,7 +176,8 @@ pro_matches_pred_territory_can_move_land_units_through :: proc(ctx_ptr: rawptr, 
 		return false
 	}
 	ne_p, ne_c := matches_territory_has_no_enemy_units(ctx.player)
-	return ne_p(ne_c, t)
+	r := ne_p(ne_c, t)
+	return r
 }
 
 pro_matches_territory_can_move_land_units_through :: proc(

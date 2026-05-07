@@ -681,7 +681,10 @@ clone_battle_delegate :: proc(ctx: ^Clone_Ctx, src: ^Battle_Delegate) -> ^Battle
 	dst^ = src^
 	clone_abstract_delegate_in_place(ctx, &dst.base_triple_a_delegate.abstract_delegate, &src.base_triple_a_delegate.abstract_delegate)
 	// battle_tracker, rocket_helper, current_battle: volatile — reset.
-	dst.battle_tracker = nil
+	// battle_tracker must be a fresh empty tracker (not nil) because
+	// matches_pred_territory_is_blitzable etc. dereference it without
+	// nil-check via abstract_move_delegate_get_battle_tracker.
+	dst.battle_tracker = battle_tracker_new()
 	dst.rocket_helper = nil
 	dst.current_battle = nil
 	return dst

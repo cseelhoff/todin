@@ -26,7 +26,37 @@ relationship_tracker_get_relationship_type :: proc(self: ^Relationship_Tracker, 
 //   }
 relationship_tracker_get_relationship :: proc(self: ^Relationship_Tracker, p1: ^Game_Player, p2: ^Game_Player) -> ^Relationship {
 	key := make_Relationship_Tracker_Related_Players(p1, p2)
-	return self.relationships[key]
+	if r, ok := self.relationships[key]; ok {
+		return r
+	}
+	// Name-token fallback. Java's GameObjectStreamFactory rewrites
+	// GamePlayer references through writeReplace/readResolve so cloned
+	// graphs share player identity by name with the original. Our deep
+	// clone allocates fresh GamePlayer objects, so direct pointer lookup
+	// fails when the AI mixes cloned and original players (purchase phase
+	// passes the original player against a cloned data graph). Resolve
+	// each side by name against the tracker's own player_list and retry
+	// once. See serialization-shim-divergence-plan.md.
+	gd := self.game_data_component.game_data
+	if gd == nil || gd.player_list == nil {
+		return nil
+	}
+	r1 := p1
+	r2 := p2
+	if p1 != nil {
+		if rp, ok := gd.player_list.players[p1.named_attachable.default_named.named.base.name]; ok {
+			r1 = rp
+		}
+	}
+	if p2 != nil {
+		if rp, ok := gd.player_list.players[p2.named_attachable.default_named.named.base.name]; ok {
+			r2 = rp
+		}
+	}
+	if r1 == p1 && r2 == p2 {
+		return nil
+	}
+	return self.relationships[make_Relationship_Tracker_Related_Players(r1, r2)]
 }
 
 // games.strategy.engine.data.RelationshipTracker#setRelationship(GamePlayer, GamePlayer, RelationshipType)

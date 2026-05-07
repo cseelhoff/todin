@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:os"
 import "core:slice"
 
 // Ported from games.strategy.triplea.ai.pro.ProCombatMoveAi (Phase A: type only).
