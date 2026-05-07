@@ -15,6 +15,10 @@ select_casualties_v_execute :: proc(self: ^I_Executable, stack: ^Execution_Stack
 	select_casualties_execute(cast(^Select_Casualties)self, stack, bridge)
 }
 
+select_casualties_v_get_all_step_details :: proc(self: ^Battle_Step) -> [dynamic]^Battle_Step_Step_Details {
+	return select_casualties_get_all_step_details(cast(^Select_Casualties)self)
+}
+
 select_casualties_new :: proc(
 	battle_state: ^Battle_State,
 	side: Battle_State_Side,
@@ -24,10 +28,11 @@ select_casualties_new :: proc(
 ) -> ^Select_Casualties {
 	self := new(Select_Casualties)
 	self.battle_state = battle_state
-	self.side = side
 	self.firing_group = firing_group
 	self.fire_round_state = fire_round_state
 	self.select_casualties = select_casualties
+	self.side = side
+	self.battle_step.get_all_step_details = select_casualties_v_get_all_step_details
 	self.battle_step.i_executable.execute = select_casualties_v_execute
 	return self
 }
@@ -69,11 +74,9 @@ select_casualties_get_name :: proc(self: ^Select_Casualties) -> string {
 
 // Java: SelectCasualties#getAllStepDetails
 //   return List.of(new StepDetails(getName(), this));
-// Note: Select_Casualties does not embed Battle_Step in this port; the step
-// pointer field is passed as nil (consumers identify the step via name).
 select_casualties_get_all_step_details :: proc(self: ^Select_Casualties) -> [dynamic]^Battle_Step_Step_Details {
 	out := make([dynamic]^Battle_Step_Step_Details)
-	append(&out, battle_step_step_details_new(select_casualties_get_name(self), nil))
+	append(&out, battle_step_step_details_new(select_casualties_get_name(self), &self.battle_step))
 	return out
 }
 
