@@ -120,13 +120,41 @@ game_data_utils_translate_into_other_game_data :: proc(object: rawptr, translate
 }
 
 // proc:games.strategy.engine.framework.GameDataUtils#cloneGameData
-// Java:
-//   final byte[] bytes = gameDataToBytes(data, options).orElse(null);
-//   if (bytes != null) { return createGameDataFromBytes(bytes); }
-//   return Optional.empty();
-// Optional<GameData> is represented as ^Game_Data (nil = empty),
-// matching createGameDataFromBytes above. gameDataToBytes returns
-// the (bytes, present) tuple form of Optional<byte[]>.
+//
+// SERIALIZATION-SHIM DIVERGENCE — see serialization-shim-divergence-plan.md
+//
+// Java's cloneGameData round-trips Game_Data through ObjectOutputStream /
+// ObjectInputStream (JVM-native reflective serialization). Odin has no
+// equivalent runtime. The byte-array path collapses to nil under the
+// opaque-IO regime; AbstractProAi.purchase early-returns and snap 0013
+// fails with Russians.PUs=24 (Java expects 0).
+//
+// Stage 1 result (2026-05-07): replacing the body with a shallow memcpy
+// (`clone^ = data^`) regressed snap 0013 from assertion-fail to SIGSEGV
+// — confirms the AI's simulation walk mutates through shared sub-
+// pointers. Stage 2-lite (clone player_list/Resource_Collection but
+// share everything else) was tried 2026-05-07; it surfaced multiple
+// downstream issues:
+//   1. cloned ^Game_Player breaks game_step_get_player_id pointer
+//      equality, so abstract_pro_ai_get_game_steps_for_player returns
+//      empty (verified via PROBE_AI_LOOP).
+//   2. Even with shallow share of player_list, the AI's call to
+//      abstract_delegate_set_delegate_bridge_and_player_no_websocket
+//      MUTATES the shared move_del.bridge / move_del.player fields
+//      (move_del comes from data.delegates which is shared); this
+//      perturbs snap 0014 from `alreadyMoved 0 != 2` to `0 != 3`.
+//   3. Discovered that I_Delegate_Bridge dispatchers blindly cast to
+//      ^Default_Delegate_Bridge — fixed by embedding
+//      `using i_delegate_bridge: I_Delegate_Bridge` as the first field
+//      of Default_Delegate_Bridge and adding proc-field-priority
+//      checks to dispatchers (this DOES land in the tree and is safe
+//      under the nil-return shim — it's pure infrastructure).
+//   4. Even reaching purchase, pro_purchase_utils_find_purchase_
+//      territories returns 0 for Russians — a separate logical bug.
+// Reverted to the nil-return shim to preserve 50/52 baseline. Next
+// session needs to: (a) clone delegates so move_del.bridge mutation
+// doesn't leak; (b) re-link cloned sequence/steps' player_id; or
+// (c) wholesale CBOR + relink (Stage 2 full).
 game_data_utils_clone_game_data :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options) -> ^Game_Data {
 	bytes, present := game_data_utils_game_data_to_bytes(data, options)
 	if present {
