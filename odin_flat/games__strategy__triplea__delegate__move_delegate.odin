@@ -87,6 +87,11 @@ move_delegate_new :: proc() -> ^Move_Delegate {
 	self.delegate_currently_requires_user_input = move_delegate_v_delegate_currently_requires_user_input
 	self.load_state = move_delegate_v_load_state
 	self.save_state = move_delegate_v_save_state
+	// AbstractMoveDelegate#getRemoteType returns Class<IMoveDelegate>;
+	// without this, ServerGame#addDelegateMessenger skips registering
+	// the move delegate (remote_type == nil bailout), and AI lookups
+	// fall through to a UIH proxy that's then mis-cast as ^Move_Delegate.
+	self.get_remote_type = abstract_move_delegate_v_get_remote_type
 	return self
 }
 

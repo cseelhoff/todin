@@ -622,7 +622,19 @@ pro_territory_manager_is_land_move_option :: proc(
 	game_map := game_data_get_map(game_player_get_data(player))
 	units_one := make([dynamic]^Unit, 0, 1)
 	append(&units_one, u)
-	rf := route_finder_new_with_units_player(game_map, can_move, can_move_ctx, units_one, player)
+	// Mirror Java GameMap.getRouteForUnit: wraps cond as Matches.territoryIs(end).or(cond)
+	// so the destination always passes the predicate even if cond would reject it.
+	or_ctx := new(Pro_Territory_Manager_Land_Move_Or_End_Ctx)
+	or_ctx.end = to
+	or_ctx.cond = can_move
+	or_ctx.cond_ctx = can_move_ctx
+	rf := route_finder_new_with_units_player(
+		game_map,
+		pro_territory_manager_pred_land_move_or_end,
+		rawptr(or_ctx),
+		units_one,
+		player,
+	)
 	optional_route := route_finder_find_route_by_cost_pair(rf, from, to)
 	if optional_route == nil {
 		return false
@@ -678,6 +690,21 @@ pro_territory_manager_is_land_move_option :: proc(
 		}
 	}
 	return true
+}
+
+// Mirror of Java GameMap#getRouteForUnit's `Matches.territoryIs(end).or(cond)` wrapper.
+Pro_Territory_Manager_Land_Move_Or_End_Ctx :: struct {
+	end:      ^Territory,
+	cond:     proc(rawptr, ^Territory) -> bool,
+	cond_ctx: rawptr,
+}
+
+pro_territory_manager_pred_land_move_or_end :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	c := cast(^Pro_Territory_Manager_Land_Move_Or_End_Ctx)ctx_ptr
+	if t == c.end {
+		return true
+	}
+	return c.cond(c.cond_ctx, t)
 }
 
 // File-scope holder for the comparator used to sort scramblers by
