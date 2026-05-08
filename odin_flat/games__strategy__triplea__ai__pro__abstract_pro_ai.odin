@@ -546,6 +546,44 @@ abstract_pro_ai_pdb_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_P
 abstract_pro_ai_pdb_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
 	pro_dummy_delegate_bridge_add_change(cast(^Pro_Dummy_Delegate_Bridge)self.concrete, change)
 }
+@(private="file")
+abstract_pro_ai_pdb_get_history_writer :: proc(self: ^I_Delegate_Bridge) -> ^I_Delegate_History_Writer {
+	w := pro_dummy_delegate_bridge_get_history_writer(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+	return cast(^I_Delegate_History_Writer)w
+}
+@(private="file")
+abstract_pro_ai_pdb_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel {
+	return pro_dummy_delegate_bridge_get_sound_channel_broadcaster(cast(^Pro_Dummy_Delegate_Bridge)self.concrete)
+}
+@(private="file")
+abstract_pro_ai_pdb_get_display_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^I_Display {
+	dd := cast(^Pro_Dummy_Delegate_Bridge)self.concrete
+	return cast(^I_Display)dd.display
+}
+@(private="file")
+abstract_pro_ai_pdb_get_remote_player :: proc(self: ^I_Delegate_Bridge, p: ^Game_Player) -> ^Player {
+	r := pro_dummy_delegate_bridge_get_remote_player(cast(^Pro_Dummy_Delegate_Bridge)self.concrete, p)
+	return cast(^Player)r
+}
+@(private="file")
+abstract_pro_ai_pdb_enter_delegate_execution :: proc(self: ^I_Delegate_Bridge) { /* no-op */ }
+@(private="file")
+abstract_pro_ai_pdb_get_resource_loader :: proc(self: ^I_Delegate_Bridge) -> ^Resource_Loader { return nil }
+@(private="file")
+abstract_pro_ai_pdb_send_message :: proc(self: ^I_Delegate_Bridge, msg: ^Web_Socket_Message) { /* no-op */ }
+@(private="file")
+abstract_pro_ai_pdb_stop_game_sequence :: proc(self: ^I_Delegate_Bridge, status: string, title: string) { /* no-op */ }
+@(private="file")
+abstract_pro_ai_pdb_get_random :: proc(
+	self: ^I_Delegate_Bridge,
+	max: i32, count: i32,
+	player: ^Game_Player,
+	dice_type: I_Random_Stats_Dice_Type,
+	annotation: string,
+) -> [dynamic]i32 {
+	dd := cast(^Pro_Dummy_Delegate_Bridge)self.concrete
+	return plain_random_source_get_random_array(&dd.random_source, max, count, annotation)
+}
 
 // Java: protected void purchase(boolean purchaseForBid, int pusToSpend,
 //                               IPurchaseDelegate purchaseDelegate,
@@ -618,6 +656,19 @@ abstract_pro_ai_purchase :: proc(
 		bridge.get_data = abstract_pro_ai_pdb_get_data
 		bridge.get_game_player = abstract_pro_ai_pdb_get_game_player
 		bridge.add_change = abstract_pro_ai_pdb_add_change
+		// Wire the rest of the I_Delegate_Bridge vtable so dispatchers
+		// don't fall through to the default cast-to-Default_Delegate_Bridge
+		// path, which reads garbage when our bridge.concrete is actually
+		// ^Pro_Dummy_Delegate_Bridge (different layout).
+		bridge.get_history_writer = abstract_pro_ai_pdb_get_history_writer
+		bridge.get_sound_channel_broadcaster = abstract_pro_ai_pdb_get_sound_channel_broadcaster
+		bridge.get_display_channel_broadcaster = abstract_pro_ai_pdb_get_display_channel_broadcaster
+		bridge.get_remote_player = abstract_pro_ai_pdb_get_remote_player
+		bridge.enter_delegate_execution = abstract_pro_ai_pdb_enter_delegate_execution
+		bridge.get_resource_loader = abstract_pro_ai_pdb_get_resource_loader
+		bridge.send_message = abstract_pro_ai_pdb_send_message
+		bridge.stop_game_sequence = abstract_pro_ai_pdb_stop_game_sequence
+		bridge.get_random = abstract_pro_ai_pdb_get_random
 		// Java's setDelegateBridgeAndPlayer reads bridge.getGamePlayer(); the
 		// snapshot dispatcher i_delegate_bridge_get_game_player blindly casts
 		// to ^Default_Delegate_Bridge which is wrong for our AI bridge (proc-
