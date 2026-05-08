@@ -311,9 +311,8 @@ pro_non_combat_move_ai_find_infra_units_that_can_move :: proc(
 			append(&to_remove, u)
 		}
 	}
-	unit_move_map_mut := unit_move_map
 	for u in to_remove {
-		delete_key(&unit_move_map_mut, u)
+		delete_key(unit_move_map, u)
 	}
 	return infra_unit_move_map
 }
@@ -358,13 +357,11 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 
 	sorted_unit_move_options := pro_sort_move_options_utils_sort_unit_move_options(
 		self.pro_data,
-		unit_move_map,
+		unit_move_map^,
 	)
 
 	land_p, land_c := matches_unit_is_land()
 	has_units_p, has_units_c := matches_territory_has_units_owned_by(self.player)
-
-	unit_move_map_mut := unit_move_map
 	for unit, ts in sorted_unit_move_options {
 		if !land_p(land_c, unit) {
 			continue
@@ -383,7 +380,7 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 			if t_idx >= 0 &&
 			   (unit_value <= production + 3 || has_units_p(has_units_c, t)) {
 				pro_territory_add_unit(move_map[t], unit)
-				delete_key(&unit_move_map_mut, unit)
+				delete_key(unit_move_map, unit)
 				ordered_remove(&territories_to_defend_with_one_unit, t_idx)
 				pro_logger_debug(
 					fmt.tprintf(
@@ -407,7 +404,7 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 pro_non_combat_move_ai_build_factory_move_map :: proc(
 	self: ^Pro_Non_Combat_Move_Ai,
 	move_map: map[^Territory]^Pro_Territory,
-	infra_unit_move_map: map[^Unit]map[^Territory]struct {},
+	infra_unit_move_map: ^map[^Unit]map[^Territory]struct {},
 ) -> map[^Territory]^Pro_Territory {
 	factory_move_map := make(map[^Territory]^Pro_Territory)
 
@@ -483,16 +480,14 @@ pro_non_combat_move_ai_build_factory_move_map :: proc(
 			)
 			pro_territory_add_unit(move_map[max_value_territory], u)
 			pro_territory_add_unit(
-				pro_data_get_pro_territory(self.pro_data, factory_move_map, max_value_territory),
+				pro_data_get_pro_territory(self.pro_data, &factory_move_map, max_value_territory),
 				u,
 			)
 			append(&to_remove, u)
 		}
 	}
-
-	infra_map_mut := infra_unit_move_map
 	for u in to_remove {
-		delete_key(&infra_map_mut, u)
+		delete_key(infra_unit_move_map, u)
 	}
 	return factory_move_map
 }
@@ -632,7 +627,7 @@ pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__15
 	can_move_through: proc(rawptr, ^Territory) -> bool,
 	can_move_through_ctx: rawptr,
 	unit: ^Unit,
-	move_map: map[^Territory]^Pro_Territory,
+	move_map: ^map[^Territory]^Pro_Territory,
 	validate_move: proc(rawptr, ^Route) -> bool,
 	validate_move_ctx: rawptr,
 	destination: ^^Territory,
@@ -686,7 +681,7 @@ Pro_Non_Combat_Move_Ai_Find_Destination_Visitor :: struct {
 	can_move_through:           proc(rawptr, ^Territory) -> bool,
 	can_move_through_ctx:       rawptr,
 	unit:                       ^Unit,
-	move_map:                   map[^Territory]^Pro_Territory,
+	move_map:                   ^map[^Territory]^Pro_Territory,
 	validate_move:              proc(rawptr, ^Route) -> bool,
 	validate_move_ctx:          rawptr,
 	destination:                ^^Territory,
@@ -796,7 +791,7 @@ pro_non_combat_move_ai_find_destination_or_safe_territory_on_the_way :: proc(
 		for t, _ in possible_moves {
 			if pro_non_combat_move_ai_lambda__find_destination_or_safe_territory_on_the_way__16(
 				self,
-				move_map,
+				move_map^,
 				t,
 			) {
 				destination = t
@@ -1038,7 +1033,7 @@ pro_non_combat_move_ai_pred_desired_dest :: proc(ctx_ptr: rawptr, t: ^Territory)
 pro_non_combat_move_ai_move_consumables_to_factories :: proc(
 	self: ^Pro_Non_Combat_Move_Ai,
 	is_combat_move: bool,
-	infra_unit_move_map: map[^Unit]map[^Territory]struct {},
+	infra_unit_move_map: ^map[^Unit]map[^Territory]struct {},
 	move_map: map[^Territory]^Pro_Territory,
 	validator: ^Move_Validator,
 ) {
@@ -1078,8 +1073,6 @@ pro_non_combat_move_ai_move_consumables_to_factories :: proc(
 	for u, _ in infra_unit_move_map {
 		append(&keys, u)
 	}
-	mutable_map := infra_unit_move_map
-
 	for u in keys {
 		// Skip non-consumable units and non-land units (for now).
 		if _, ok := consumables[unit_get_type(u)]; !ok {
@@ -1133,7 +1126,7 @@ pro_non_combat_move_ai_move_consumables_to_factories :: proc(
 			if ok && target_pt != nil {
 				pro_territory_add_unit(target_pt, u)
 			}
-			delete_key(&mutable_map, u)
+			delete_key(infra_unit_move_map, u)
 		}
 	}
 }
@@ -1242,10 +1235,9 @@ pro_non_combat_move_ai_find_units_that_cant_move :: proc(
 
 	// Add all units that only have 1 move option and can't be transported.
 	// Java uses Iterator.remove(); we collect first, mutate after.
-	unit_move_map_mut := unit_move_map
 	to_remove_single_option := make([dynamic]^Unit, 0)
 	defer delete(to_remove_single_option)
-	for u, territories in unit_move_map_mut {
+	for u, territories in unit_move_map {
 		if len(territories) != 1 {
 			continue
 		}
@@ -1262,7 +1254,7 @@ pro_non_combat_move_ai_find_units_that_cant_move :: proc(
 		}
 	}
 	for u in to_remove_single_option {
-		delete_key(&unit_move_map_mut, u)
+		delete_key(unit_move_map, u)
 	}
 
 	// Check if purchase units are known yet.
@@ -1444,7 +1436,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 						self.pro_data,
 						territories_can_load_from,
 						already_moved_units,
-						move_map,
+						move_map^,
 						current_unit_move_map,
 						pro_territory_get_value(pro_territory),
 					)
@@ -1556,7 +1548,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 						self.pro_data,
 						filtered,
 						already_moved_units,
-						move_map,
+						move_map^,
 						current_unit_move_map,
 						0.1,
 					)
@@ -1922,7 +1914,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 					unload_to_territory: ^Territory = nil
 					// findAny() filtering by canHold; fall back to getAny().
 					for tt in possible_unload_territories {
-						if pro_non_combat_move_ai_can_hold(self, move_map, tt) {
+						if pro_non_combat_move_ai_can_hold(self, move_map^, tt) {
 							unload_to_territory = tt
 							break
 						}
@@ -1970,7 +1962,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		amphib_routes := pro_move_utils_calculate_amphib_routes(
 			self.pro_data,
 			self.player,
-			move_map,
+			move_map^,
 			is_combat_move,
 		)
 		_ = amphib_routes
@@ -2305,7 +2297,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		pro_territory_put_all_amphib_attack_map(t, t.temp_amphib_attack_map)
 		for u in t.temp_units {
 			if sea_transport_p(sea_transport_c, u) {
-				delete_key(&transport_move_map, u)
+				delete_key(transport_move_map, u)
 				new_list := make([dynamic]^Pro_Transport, 0, len(transport_map_list_mut))
 				for tr in transport_map_list_mut {
 					if pro_transport_get_transport(tr) != u {
@@ -2315,11 +2307,11 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				delete(transport_map_list_mut)
 				transport_map_list_mut = new_list
 			} else {
-				delete_key(&unit_move_map, u)
+				delete_key(unit_move_map, u)
 			}
 		}
 		for u in t.temp_amphib_attack_map {
-			delete_key(&transport_move_map, u)
+			delete_key(transport_move_map, u)
 			new_list := make([dynamic]^Pro_Transport, 0, len(transport_map_list_mut))
 			for tr in transport_map_list_mut {
 				if pro_transport_get_transport(tr) != u {
@@ -2377,7 +2369,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 			transport_capacity_1: i32 = 0
 			transports_1 := pro_transport_utils_get_transports(
 				self.player,
-				move_map,
+				move_map^,
 				sea_neighbor_list,
 			)
 			for tr in transports_1 {
@@ -2405,7 +2397,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 			transport_capacity_2: i32 = 0
 			transports_2 := pro_transport_utils_get_transports(
 				self.player,
-				move_map,
+				move_map^,
 				nearby_sea_list,
 			)
 			for tr in transports_2 {
@@ -2462,7 +2454,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				self.pro_data,
 				u,
 				added_units,
-				move_map,
+				move_map^,
 			)
 			pro_territory_add_units(move_map[max_value_t], units_to_add)
 			for au in units_to_add {
@@ -2473,7 +2465,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		}
 	}
 	for au in added_units {
-		delete_key(&unit_move_map, au)
+		delete_key(unit_move_map, au)
 	}
 
 	// Move land units towards nearest factory adjacent to sea.
@@ -2532,7 +2524,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				self.pro_data,
 				u,
 				added_units,
-				move_map,
+				move_map^,
 			)
 			pro_territory_add_units(move_map[min_territory], units_to_add)
 			for au in units_to_add {
@@ -2544,7 +2536,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 	}
 	delete(my_factories_adjacent_to_sea)
 	for au in added_units {
-		delete_key(&unit_move_map, au)
+		delete_key(unit_move_map, au)
 	}
 
 	pro_logger_info("Move land units to safest territory")
@@ -2605,7 +2597,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				self.pro_data,
 				u,
 				added_units,
-				move_map,
+				move_map^,
 			)
 			pro_territory_add_units(move_map[min_territory], units_to_add)
 			for au in units_to_add {
@@ -2616,7 +2608,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		}
 	}
 	for au in added_units {
-		delete_key(&unit_move_map, au)
+		delete_key(unit_move_map, au)
 	}
 
 	pro_logger_info("Move air units")
@@ -2820,7 +2812,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		if max_t != nil {
 			pro_territory_add_unit(move_map[max_t], u)
 			pro_territory_set_battle_result(move_map[max_t], nil)
-			delete_key(&unit_move_map, u)
+			delete_key(unit_move_map, u)
 		}
 	}
 
@@ -2883,7 +2875,7 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		}
 		if min_territory != nil {
 			pro_territory_add_unit(move_map[min_territory], u)
-			delete_key(&unit_move_map, u)
+			delete_key(unit_move_map, u)
 		}
 	}
 
@@ -3163,7 +3155,7 @@ pro_non_combat_move_ai_prioritize_defend_options :: proc(
 		max_value: f64 = 0
 		max_territory: ^Territory = nil
 		for neighbor in neighbors {
-			if pro_non_combat_move_ai_can_hold(self, move_map, neighbor) &&
+			if pro_non_combat_move_ai_can_hold(self, move_map^, neighbor) &&
 			   territory_value_map[neighbor] > max_value {
 				max_territory = neighbor
 				max_value = territory_value_map[neighbor]
@@ -3322,7 +3314,7 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					self.pro_data,
 					unit,
 					added_units,
-					move_map,
+					move_map^,
 				)
 				pro_territory_add_temp_units(move_map[max_t], units_to_add)
 				for u in units_to_add {
@@ -3389,7 +3381,7 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					self.pro_data,
 					unit,
 					added_units,
-					move_map,
+					move_map^,
 				)
 				pro_territory_add_temp_units(to, units_to_add)
 				for u in units_to_add {
@@ -3927,7 +3919,7 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					   my_capital,
 					   enemy_distance,
 					   self.player,
-					   move_map,
+					   move_map^,
 				   ) {
 					are_successful = false
 					pro_logger_debug(
@@ -4001,7 +3993,7 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 		pro_territory_put_all_amphib_attack_map(t, t.temp_amphib_attack_map)
 		for u in t.temp_units {
 			if sea_transport_p(sea_transport_c, u) {
-				delete_key(&transport_move_map, u)
+				delete_key(transport_move_map, u)
 				new_list := make([dynamic]^Pro_Transport, 0, len(transport_map_list_mut))
 				for tr in transport_map_list_mut {
 					if pro_transport_get_transport(tr) != u {
@@ -4011,11 +4003,11 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 				delete(transport_map_list_mut)
 				transport_map_list_mut = new_list
 			} else {
-				delete_key(&unit_move_map, u)
+				delete_key(unit_move_map, u)
 			}
 		}
 		for u in t.temp_amphib_attack_map {
-			delete_key(&transport_move_map, u)
+			delete_key(transport_move_map, u)
 			new_list := make([dynamic]^Pro_Transport, 0, len(transport_map_list_mut))
 			for tr in transport_map_list_mut {
 				if pro_transport_get_transport(tr) != u {
@@ -4064,7 +4056,7 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 	self: ^Pro_Non_Combat_Move_Ai,
 	is_combat_move: bool,
 	initial_factory_move_map: map[^Territory]^Pro_Territory,
-	infra_unit_move_map: map[^Unit]map[^Territory]struct {},
+	infra_unit_move_map: ^map[^Unit]map[^Territory]struct {},
 ) -> map[^Territory]^Pro_Territory {
 	pro_logger_info("Determine where to move infra units")
 
@@ -4078,7 +4070,7 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 		pro_logger_debug("Creating factory move map")
 		factory_move_map = pro_non_combat_move_ai_build_factory_move_map(
 			self,
-			move_map,
+			move_map^,
 			infra_unit_move_map,
 		)
 	} else {
@@ -4106,8 +4098,6 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 	for u, _ in infra_unit_move_map {
 		append(&keys, u)
 	}
-	mutable_map := infra_unit_move_map
-
 	for u in keys {
 		current_territory := self.unit_territory_map[u]
 
@@ -4133,7 +4123,7 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 			is_combat_move,
 			empty_enemy,
 		)
-		for t, _ in mutable_map[u] {
+		for t, _ in infra_unit_move_map[u] {
 			pro_territory := move_map[t]
 			if pro_territory == nil || !pro_territory_is_can_hold(pro_territory) {
 				continue
@@ -4203,7 +4193,7 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 			if ok && target_pt != nil {
 				pro_territory_add_unit(target_pt, u)
 			}
-			delete_key(&mutable_map, u)
+			delete_key(infra_unit_move_map, u)
 		}
 	}
 
@@ -4211,7 +4201,7 @@ pro_non_combat_move_ai_move_infra_units :: proc(
 		self,
 		is_combat_move,
 		infra_unit_move_map,
-		move_map,
+		move_map^,
 		move_validator,
 	)
 	return factory_move_map
@@ -4374,7 +4364,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 				   my_capital,
 				   enemy_distance_to_my_capital,
 				   self.player,
-				   move_map,
+				   move_map^,
 			   ) {
 				defense_range = enemy_distance_to_my_capital - 1
 				self.territory_manager = territory_manager_copy
@@ -4394,7 +4384,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		self,
 		is_combat_move,
 		factory_move_map,
-		infra_unit_move_map,
+		&infra_unit_move_map,
 	)
 
 	// Log a warning if any units not assigned to a territory (skip infrastructure for now)
@@ -4420,7 +4410,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	pro_non_combat_move_ai_do_move(
 		self,
 		is_combat_move,
-		move_map,
+		move_map^,
 		move_del,
 		self.data,
 		self.player,

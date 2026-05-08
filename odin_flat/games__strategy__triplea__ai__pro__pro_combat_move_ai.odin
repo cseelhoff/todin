@@ -1218,8 +1218,7 @@ pro_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: proc
 				}
 			}
 			if min_unit != nil {
-				unit_move_map_mut := unit_move_map
-				delete_key(&unit_move_map_mut, min_unit)
+				delete_key(unit_move_map, min_unit)
 				append(&already_moved_units, min_unit)
 				pro_logger_debug(
 					fmt.tprintf(
@@ -1615,7 +1614,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				self.pro_data,
 				unit,
 				already_moved_units,
-				attack_map,
+				attack_map^,
 			)
 			pro_territory_add_units(attack_map[min_t], units_to_add)
 			for u2 in units_to_add {
@@ -1633,7 +1632,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		self.pro_data,
 		self.player,
 		sorted_unit_attack_options,
-		attack_map,
+		attack_map^,
 		self.calc,
 	)
 
@@ -1667,7 +1666,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				self.pro_data,
 				unit,
 				already_moved_units,
-				attack_map,
+				attack_map^,
 			)
 			pro_territory_add_units(attack_map[min_win_territory], units_to_add)
 			for u2 in units_to_add {
@@ -1685,7 +1684,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		self.pro_data,
 		self.player,
 		sorted_unit_attack_options,
-		attack_map,
+		attack_map^,
 		self.calc,
 	)
 
@@ -1811,7 +1810,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		self.pro_data,
 		self.player,
 		sorted_unit_attack_options,
-		attack_map,
+		attack_map^,
 		self.calc,
 	)
 
@@ -1908,7 +1907,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				self.pro_data,
 				unit,
 				already_moved_units,
-				attack_map,
+				attack_map^,
 			)
 			pro_territory_add_units(attack_map[min_win_territory], units_to_add)
 			for u2 in units_to_add {
@@ -1926,7 +1925,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		self.pro_data,
 		self.player,
 		sorted_unit_attack_options,
-		attack_map,
+		attack_map^,
 		self.calc,
 	)
 
@@ -2032,7 +2031,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 			// Find units that haven't attacked and can be transported
 			already_attacked_with_units_set := pro_transport_utils_get_moved_units(
 				already_moved_units,
-				attack_map,
+				attack_map^,
 			)
 			already_attacked_units_dyn: [dynamic]^Unit
 			for u, _ in already_attacked_with_units_set {
@@ -2626,7 +2625,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 		// Check to see if any territories can be bombed
 		pro_combat_move_ai_determine_territories_that_can_be_bombed(
 			self,
-			attack_map,
+			attack_map^,
 			sorted_unit_attack_options,
 			already_attacked_with_units,
 		)
@@ -2638,7 +2637,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				self.pro_data,
 				self.player,
 				sorted_unit_attack_options,
-				attack_map,
+				attack_map^,
 				self.calc,
 			)
 		added_units: [dynamic]^Unit
@@ -2711,7 +2710,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				self.pro_data,
 				self.player,
 				sorted_unit_attack_options,
-				attack_map,
+				attack_map^,
 				self.calc,
 			)
 
@@ -2747,7 +2746,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 					self.pro_data,
 					unit,
 					already_moved_units,
-					attack_map,
+					attack_map^,
 				)
 				pro_territory_add_units(attack_map[min_win_territory], units_to_add)
 				for u2 in units_to_add {
@@ -2766,7 +2765,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				self.pro_data,
 				self.player,
 				sorted_unit_attack_options,
-				attack_map,
+				attack_map^,
 				self.calc,
 			)
 
@@ -3394,7 +3393,7 @@ pro_combat_move_ai_do_combat_move :: proc(
 		self.player,
 		pro_my_move_options_get_territory_map(
 			pro_territory_manager_get_attack_options(self.territory_manager),
-		),
+		)^,
 		true,
 	)
 
@@ -3421,7 +3420,7 @@ pro_combat_move_ai_do_combat_move :: proc(
 		self,
 		pro_my_move_options_get_territory_map(
 			pro_territory_manager_get_attack_options(self.territory_manager),
-		),
+		)^,
 		move_del,
 		self.data,
 		self.player,
@@ -3447,6 +3446,6 @@ pro_combat_move_ai_do_combat_move :: proc(
 		pro_territory_manager_get_attack_options(self.territory_manager),
 	)
 	self.territory_manager = nil
-	return result
+	return result^
 }
 

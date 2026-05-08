@@ -343,9 +343,9 @@ pro_territory_manager_find_naval_move_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map: map[^Territory]^Pro_Territory,
-	unit_move_map: map[^Unit]map[^Territory]struct {},
-	transport_move_map: map[^Unit]map[^Territory]struct {},
+	move_map: ^map[^Territory]^Pro_Territory,
+	unit_move_map: ^map[^Unit]map[^Territory]struct {},
+	transport_move_map: ^map[^Unit]map[^Territory]struct {},
 	move_to_territory_match: proc(rawptr, ^Territory) -> bool,
 	move_to_territory_match_ctx: rawptr,
 	cleared_territories: [dynamic]^Territory,
@@ -376,9 +376,6 @@ pro_territory_manager_find_naval_move_options :: proc(
 	)
 	sea_p, sea_c := pro_matches_territory_can_move_sea_units(player, is_combat_move)
 	transport_p, transport_c := matches_unit_is_sea_transport()
-
-	unit_move_map := unit_move_map
-	transport_move_map := transport_move_map
 
 	for my_unit_territory in my_unit_territories {
 		// myUnitTerritory.getMatches(ProMatches.unitCanBeMovedAndIsOwnedSea(player, isCombatMove))
@@ -490,8 +487,8 @@ pro_territory_manager_find_bombard_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map: map[^Territory]^Pro_Territory,
-	bombard_map: map[^Unit]map[^Territory]struct {},
+	move_map: ^map[^Territory]^Pro_Territory,
+	bombard_map: ^map[^Unit]map[^Territory]struct {},
 	transport_map_list: [dynamic]^Pro_Transport,
 	is_checking_enemy_attacks: bool,
 ) {
@@ -520,8 +517,6 @@ pro_territory_manager_find_bombard_options :: proc(
 
 	owned_bombard_p, owned_bombard_c := pro_matches_unit_can_be_moved_and_is_owned_bombard(player)
 	sea_p, sea_c := pro_matches_territory_can_move_sea_units(player, true)
-
-	bombard_map := bombard_map
 
 	for my_unit_territory in my_unit_territories {
 		my_sea_units := territory_get_matches(my_unit_territory, owned_bombard_p, owned_bombard_c)
@@ -722,7 +717,7 @@ pro_territory_manager_find_scramble_options_strength_descending :: proc(a: ^Unit
 pro_territory_manager_find_scramble_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
-	move_map: map[^Territory]^Pro_Territory,
+	move_map: ^map[^Territory]^Pro_Territory,
 ) {
 	data := pro_data_get_data(pro_data)
 	if !properties_get_scramble_rules_in_effect(game_data_get_properties(data)) {
@@ -788,8 +783,8 @@ pro_territory_manager_find_air_move_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map: map[^Territory]^Pro_Territory,
-	unit_move_map: map[^Unit]map[^Territory]struct {},
+	move_map: ^map[^Territory]^Pro_Territory,
+	unit_move_map: ^map[^Unit]map[^Territory]struct {},
 	move_to_territory_match: proc(rawptr, ^Territory) -> bool,
 	move_to_territory_match_ctx: rawptr,
 	enemy_territories: [dynamic]^Territory,
@@ -804,17 +799,17 @@ pro_territory_manager_find_air_move_options :: proc(
 	// Find possible carrier landing territories.
 	possible_carrier_territories := make(map[^Territory]struct {})
 	if is_checking_enemy_attacks || !is_combat_move {
-		unit_move_map_2 := make(map[^Unit]map[^Territory]struct {})
-		empty_move_map := make(map[^Territory]^Pro_Territory)
-		empty_transport_move_map := make(map[^Unit]map[^Territory]struct {})
+		unit_move_map_2 := make(map[^Unit]map[^Territory]struct {}, 128)
+		empty_move_map := make(map[^Territory]^Pro_Territory, 128)
+		empty_transport_move_map := make(map[^Unit]map[^Territory]struct {}, 128)
 		water_p, water_c := matches_territory_is_water()
 		pro_territory_manager_find_naval_move_options(
 			pro_data,
 			player,
 			my_unit_territories,
-			empty_move_map,
-			unit_move_map_2,
-			empty_transport_move_map,
+			&empty_move_map,
+			&unit_move_map_2,
+			&empty_transport_move_map,
 			water_p,
 			water_c,
 			enemy_territories,
@@ -869,8 +864,6 @@ pro_territory_manager_find_air_move_options :: proc(
 		is_combat_move,
 	)
 	carrier_landable_p, carrier_landable_c := matches_unit_can_land_on_carrier()
-
-	unit_move_map := unit_move_map
 
 	for my_unit_territory in my_unit_territories {
 		my_air_units := territory_get_matches(my_unit_territory, unit_match_p, unit_match_c)
@@ -995,9 +988,9 @@ pro_territory_manager_find_land_move_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map: map[^Territory]^Pro_Territory,
-	unit_move_map: map[^Unit]map[^Territory]struct {},
-	land_routes_map: map[^Territory]map[^Territory]struct {},
+	move_map: ^map[^Territory]^Pro_Territory,
+	unit_move_map: ^map[^Unit]map[^Territory]struct {},
+	land_routes_map: ^map[^Territory]map[^Territory]struct {},
 	move_to_territory_match: proc(rawptr, ^Territory) -> bool,
 	move_to_territory_match_ctx: rawptr,
 	enemy_territories: [dynamic]^Territory,
@@ -1013,9 +1006,6 @@ pro_territory_manager_find_land_move_options :: proc(
 		player,
 		is_combat_move,
 	)
-
-	unit_move_map := unit_move_map
-	land_routes_map := land_routes_map
 
 	for my_unit_territory in my_unit_territories {
 		my_land_units := territory_get_matches(my_unit_territory, owned_land_p, owned_land_c)
@@ -1144,9 +1134,9 @@ pro_territory_manager_find_amphib_move_options :: proc(
 	pro_data: ^Pro_Data,
 	player: ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map: map[^Territory]^Pro_Territory,
+	move_map: ^map[^Territory]^Pro_Territory,
 	transport_map_list: ^[dynamic]^Pro_Transport,
-	land_routes_map: map[^Territory]map[^Territory]struct {},
+	land_routes_map: ^map[^Territory]map[^Territory]struct {},
 	move_amphib_to_territory_match: proc(rawptr, ^Territory) -> bool,
 	move_amphib_to_territory_match_ctx: rawptr,
 	is_combat_move: bool,
@@ -1427,10 +1417,10 @@ pro_territory_manager_find_attack_options :: proc(
 	pro_data:                  ^Pro_Data,
 	player:                    ^Game_Player,
 	my_unit_territories:       [dynamic]^Territory,
-	move_map:                  map[^Territory]^Pro_Territory,
-	unit_move_map:             map[^Unit]map[^Territory]struct {},
-	transport_move_map:        map[^Unit]map[^Territory]struct {},
-	bombard_map:               map[^Unit]map[^Territory]struct {},
+	move_map:                  ^map[^Territory]^Pro_Territory,
+	unit_move_map:             ^map[^Unit]map[^Territory]struct {},
+	transport_move_map:        ^map[^Unit]map[^Territory]struct {},
+	bombard_map:               ^map[^Unit]map[^Territory]struct {},
 	transport_map_list:        ^[dynamic]^Pro_Transport,
 	enemy_territories:         [dynamic]^Territory,
 	allied_territories:        [dynamic]^Territory,
@@ -1475,7 +1465,7 @@ pro_territory_manager_find_attack_options :: proc(
 		my_unit_territories,
 		move_map,
 		unit_move_map,
-		land_routes_map,
+		&land_routes_map,
 		land_p,
 		land_c,
 		enemy_territories,
@@ -1514,7 +1504,7 @@ pro_territory_manager_find_attack_options :: proc(
 		my_unit_territories,
 		move_map,
 		transport_map_list,
-		land_routes_map,
+		&land_routes_map,
 		amphib_p,
 		amphib_c,
 		true,
@@ -1545,9 +1535,9 @@ pro_territory_manager_find_defend_options :: proc(
 	pro_data:                  ^Pro_Data,
 	player:                    ^Game_Player,
 	my_unit_territories:       [dynamic]^Territory,
-	move_map:                  map[^Territory]^Pro_Territory,
-	unit_move_map:             map[^Unit]map[^Territory]struct {},
-	transport_move_map:        map[^Unit]map[^Territory]struct {},
+	move_map:                  ^map[^Territory]^Pro_Territory,
+	unit_move_map:             ^map[^Unit]map[^Territory]struct {},
+	transport_move_map:        ^map[^Unit]map[^Territory]struct {},
 	transport_map_list:        ^[dynamic]^Pro_Transport,
 	cleared_territories:       [dynamic]^Territory,
 	is_checking_enemy_attacks: bool,
@@ -1580,7 +1570,7 @@ pro_territory_manager_find_defend_options :: proc(
 		my_unit_territories,
 		move_map,
 		unit_move_map,
-		land_routes_map,
+		&land_routes_map,
 		land_p,
 		land_c,
 		empty_enemy,
@@ -1622,7 +1612,7 @@ pro_territory_manager_find_defend_options :: proc(
 		my_unit_territories,
 		move_map,
 		transport_map_list,
-		land_routes_map,
+		&land_routes_map,
 		amphib_p,
 		amphib_c,
 		false,
@@ -1644,10 +1634,10 @@ pro_territory_manager_find_potential_attack_options :: proc(
 	pro_data:            ^Pro_Data,
 	player:              ^Game_Player,
 	my_unit_territories: [dynamic]^Territory,
-	move_map:            map[^Territory]^Pro_Territory,
-	unit_move_map:       map[^Unit]map[^Territory]struct {},
-	transport_move_map:  map[^Unit]map[^Territory]struct {},
-	bombard_map:         map[^Unit]map[^Territory]struct {},
+	move_map:            ^map[^Territory]^Pro_Territory,
+	unit_move_map:       ^map[^Unit]map[^Territory]struct {},
+	transport_move_map:  ^map[^Unit]map[^Territory]struct {},
+	bombard_map:         ^map[^Unit]map[^Territory]struct {},
 	transport_map_list:  ^[dynamic]^Pro_Transport,
 ) {
 	land_routes_map := make(map[^Territory]map[^Territory]struct {})
@@ -1681,7 +1671,7 @@ pro_territory_manager_find_potential_attack_options :: proc(
 		my_unit_territories,
 		move_map,
 		unit_move_map,
-		land_routes_map,
+		&land_routes_map,
 		land_p,
 		land_c,
 		empty_enemy_land,
@@ -1716,7 +1706,7 @@ pro_territory_manager_find_potential_attack_options :: proc(
 		my_unit_territories,
 		move_map,
 		transport_map_list,
-		land_routes_map,
+		&land_routes_map,
 		amphib_p,
 		amphib_c,
 		true,
@@ -1815,10 +1805,10 @@ pro_territory_manager_find_allied_attack_options :: proc(
 				append(&allied_unit_territories, t)
 			}
 		}
-		attack_map := make(map[^Territory]^Pro_Territory)
-		unit_attack_map := make(map[^Unit]map[^Territory]struct {})
-		transport_attack_map := make(map[^Unit]map[^Territory]struct {})
-		bombard_map := make(map[^Unit]map[^Territory]struct {})
+		attack_map := make(map[^Territory]^Pro_Territory, 128)
+		unit_attack_map := make(map[^Unit]map[^Territory]struct {}, 128)
+		transport_attack_map := make(map[^Unit]map[^Territory]struct {}, 128)
+		bombard_map := make(map[^Unit]map[^Territory]struct {}, 128)
 		transport_map_list: [dynamic]^Pro_Transport
 		append(&allied_attack_maps, attack_map)
 		empty_enemy: [dynamic]^Territory
@@ -1828,10 +1818,10 @@ pro_territory_manager_find_allied_attack_options :: proc(
 			self.pro_data,
 			allied_player,
 			allied_unit_territories,
-			attack_map,
-			unit_attack_map,
-			transport_attack_map,
-			bombard_map,
+			&attack_map,
+			&unit_attack_map,
+			&transport_attack_map,
+			&bombard_map,
 			&transport_map_list,
 			empty_enemy,
 			empty_allied,
@@ -1887,10 +1877,10 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 				append(&enemy_unit_territories, t)
 			}
 		}
-		attack_map := make(map[^Territory]^Pro_Territory)
-		unit_attack_map := make(map[^Unit]map[^Territory]struct {})
-		transport_attack_map := make(map[^Unit]map[^Territory]struct {})
-		bombard_map := make(map[^Unit]map[^Territory]struct {})
+		attack_map := make(map[^Territory]^Pro_Territory, 128)
+		unit_attack_map := make(map[^Unit]map[^Territory]struct {}, 128)
+		transport_attack_map := make(map[^Unit]map[^Territory]struct {}, 128)
+		bombard_map := make(map[^Unit]map[^Territory]struct {}, 128)
 		transport_map_list: [dynamic]^Pro_Transport
 		append(&enemy_attack_maps, attack_map)
 		// Java passes new ArrayList<>(alliedTerritories) — copy.
@@ -1902,10 +1892,10 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 			pro_data,
 			enemy_player,
 			enemy_unit_territories,
-			attack_map,
-			unit_attack_map,
-			transport_attack_map,
-			bombard_map,
+			&attack_map,
+			&unit_attack_map,
+			&transport_attack_map,
+			&bombard_map,
 			&transport_map_list,
 			enemy_territories,
 			allied_list,
@@ -1974,9 +1964,9 @@ pro_territory_manager_find_enemy_defend_options :: proc(
 			pro_data,
 			enemy_player,
 			enemy_unit_territories,
-			move_map,
-			unit_move_map,
-			transport_move_map,
+			&move_map,
+			&unit_move_map,
+			&transport_move_map,
 			&transport_map_list,
 			cleared_territories,
 			true,
@@ -1999,9 +1989,9 @@ pro_territory_manager_find_enemy_defend_options :: proc(
 pro_territory_manager_remove_territories_that_cant_be_conquered :: proc(
 	self:                      ^Pro_Territory_Manager,
 	player:                    ^Game_Player,
-	attack_map:                map[^Territory]^Pro_Territory,
-	unit_attack_map:           map[^Unit]map[^Territory]struct {},
-	transport_attack_map:      map[^Unit]map[^Territory]struct {},
+	attack_map:                ^map[^Territory]^Pro_Territory,
+	unit_attack_map:           ^map[^Unit]map[^Territory]struct {},
+	transport_attack_map:      ^map[^Unit]map[^Territory]struct {},
 	allied_attack_options:     ^Pro_Other_Move_Options,
 	enemy_defend_options:      ^Pro_Other_Move_Options,
 	is_ignoring_relationships: bool,

@@ -20,28 +20,28 @@ pro_my_move_options_new :: proc() -> ^Pro_My_Move_Options {
 	return self
 }
 
-pro_my_move_options_get_territory_map :: proc(self: ^Pro_My_Move_Options) -> map[^Territory]^Pro_Territory {
-	return self.territory_map
+pro_my_move_options_get_territory_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Territory]^Pro_Territory {
+	return &self.territory_map
 }
 
-pro_my_move_options_get_unit_move_map :: proc(self: ^Pro_My_Move_Options) -> map[^Unit]map[^Territory]struct{} {
-	return self.unit_move_map
+pro_my_move_options_get_unit_move_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Unit]map[^Territory]struct{} {
+	return &self.unit_move_map
 }
 
-pro_my_move_options_get_transport_move_map :: proc(self: ^Pro_My_Move_Options) -> map[^Unit]map[^Territory]struct{} {
-	return self.transport_move_map
+pro_my_move_options_get_transport_move_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Unit]map[^Territory]struct{} {
+	return &self.transport_move_map
 }
 
-pro_my_move_options_get_bombard_map :: proc(self: ^Pro_My_Move_Options) -> map[^Unit]map[^Territory]struct{} {
-	return self.bombard_map
+pro_my_move_options_get_bombard_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Unit]map[^Territory]struct{} {
+	return &self.bombard_map
 }
 
 pro_my_move_options_get_transport_list :: proc(self: ^Pro_My_Move_Options) -> [dynamic]^Pro_Transport {
 	return self.transport_list
 }
 
-pro_my_move_options_get_bomber_move_map :: proc(self: ^Pro_My_Move_Options) -> map[^Unit]map[^Territory]struct{} {
-	return self.bomber_move_map
+pro_my_move_options_get_bomber_move_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Unit]map[^Territory]struct{} {
+	return &self.bomber_move_map
 }
 
 // games.strategy.triplea.ai.pro.data.ProMyMoveOptions#<init>(ProMyMoveOptions, ProData)

@@ -47,8 +47,7 @@ pro_data_get_my_unit_territories :: proc(self: ^Pro_Data) -> [dynamic]^Territory
 }
 
 
-pro_data_get_pro_territory :: proc(self: ^Pro_Data, move_map: map[^Territory]^Pro_Territory, t: ^Territory) -> ^Pro_Territory {
-	move_map := move_map
+pro_data_get_pro_territory :: proc(self: ^Pro_Data, move_map: ^map[^Territory]^Pro_Territory, t: ^Territory) -> ^Pro_Territory {
 	if existing, ok := move_map[t]; ok {
 		return existing
 	}

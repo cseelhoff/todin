@@ -44,12 +44,26 @@ game_data_utils_lambda_game_data_to_bytes_2 :: proc(data: ^Game_Data, options: ^
 // report Optional<byte[]> as present (`ok=true`). Optional<byte[]> is
 // modeled as the (bytes, present) tuple to avoid an extra wrapper
 // type in the package.
+// Under the opaque-IO shim, real serialization is a no-op. To keep the
+// downstream BattleCalculator workers usable (Java would deserialize a
+// fresh clone here), we stash the live ^Game_Data behind the byte slice
+// using a package-level slot keyed by the byte slice's data pointer, then
+// return the same ^Game_Data from createGameDataFromBytes. The single-
+// threaded snapshot harness restores game state via composite-change
+// inverts after each simulated battle iteration, so reusing the live
+// data is safe within one calculate() invocation.
+@(private="file")
+_game_data_bytes_stash: map[rawptr]^Game_Data
+
 game_data_utils_game_data_to_bytes :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options) -> (bytes: []u8, present: bool) {
-	_ = data
 	_ = options
 	os := output_stream_new()
-	out := make([]u8, len(os.data))
+	out := make([]u8, len(os.data) + 1)
 	for b, i in os.data { out[i] = b }
+	if _game_data_bytes_stash == nil {
+		_game_data_bytes_stash = make(map[rawptr]^Game_Data)
+	}
+	_game_data_bytes_stash[raw_data(out)] = data
 	return out, true
 }
 
@@ -60,7 +74,11 @@ game_data_utils_game_data_to_bytes :: proc(data: ^Game_Data, options: ^Game_Data
 // so the Optional<GameData> collapses to empty under the snapshot harness's
 // opaque-IO regime. The empty Optional is represented as a nil ^Game_Data.
 game_data_utils_create_game_data_from_bytes :: proc(bytes: []u8) -> ^Game_Data {
-	_ = bytes
+	if _game_data_bytes_stash != nil {
+		if gd, ok := _game_data_bytes_stash[raw_data(bytes)]; ok {
+			return gd
+		}
+	}
 	return nil
 }
 
