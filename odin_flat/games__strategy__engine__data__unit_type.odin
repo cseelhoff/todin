@@ -127,6 +127,15 @@ unit_type_create :: proc(
 	data := game_data_component_get_data(
 		&self.named_attachable.default_named.game_data_component,
 	)
+	// Snapshot json_loader does not set the game_data back-ref on
+	// Unit_Type (see serialization-shim-divergence-plan.md). Fall
+	// back to deriving data from the owner, which always carries a
+	// valid back-ref.
+	if data == nil && owner != nil {
+		data = game_data_component_get_data(
+			&owner.named_attachable.default_named.game_data_component,
+		)
+	}
 	u := unit_new(self, owner, data)
 	unit_set_hits(u, hits_taken)
 	unit_set_unit_damage(u, bombing_unit_damage)

@@ -4359,6 +4359,8 @@ pro_purchase_ai_purchase :: proc(
 	purchase_territories := pro_purchase_utils_find_purchase_territories(
 		self.pro_data, self.player,
 	)
+	for k, v in purchase_territories {
+	}
 	is_land_p, is_land_c := matches_territory_is_land()
 	place_territories := make(map[^Territory]struct {})
 	defer delete(place_territories)

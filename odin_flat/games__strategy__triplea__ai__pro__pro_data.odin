@@ -183,7 +183,20 @@ pro_data_hidden_initialize :: proc(
 ) {
 	self.pro_ai = pro_ai
 	self.data = data
-	self.player = player
+	// Name-token resolve player against this data's player_list. Java's
+	// GameDataUtils.cloneGameData round-trips through ObjectStream which
+	// rewrites GamePlayer references via writeReplace/readResolve so
+	// callers can pass the original `player` against a cloned `data`
+	// transparently. Our deep clone allocates fresh GamePlayer objects;
+	// resolve by name here so AI helpers find owner-matching territories.
+	resolved_player := player
+	if data != nil && data.player_list != nil && player != nil {
+		if rp, ok := data.player_list.players[player.named_attachable.default_named.named.base.name]; ok {
+			resolved_player = rp
+		}
+	}
+	self.player = resolved_player
+	player := resolved_player
 	self.is_simulation = is_simulation
 
 	if !properties_get_low_luck(game_data_get_properties(data)) {

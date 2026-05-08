@@ -17,6 +17,13 @@ Abstract_Ai :: struct {
 		data: ^Game_Data,
 		player: ^Game_Player,
 	),
+	move: proc(
+		self: ^Abstract_Ai,
+		non_combat: bool,
+		move_del: ^I_Move_Delegate,
+		data: ^Game_Data,
+		player: ^Game_Player,
+	),
 }
 
 // Java owners covered by this file:
@@ -419,7 +426,10 @@ abstract_ai_move :: proc(
 	data: ^Game_Data,
 	player: ^Game_Player,
 ) {
-	// abstract in Java; subclass override required
+	if self != nil && self.move != nil {
+		self.move(self, non_combat, move_del, data, player)
+	}
+	// else: abstract in Java; subclass override required
 }
 
 // games.strategy.triplea.ai.AbstractAi#place(boolean,IAbstractPlaceDelegate,GameState,GamePlayer)

@@ -909,7 +909,48 @@ unit_attachment_new :: proc(name: string, attachable: ^Attachable, game_data: ^G
 	self.default_attachment.game_data_component = make_Game_Data_Component(game_data)
 	default_attachment_set_name(&self.default_attachment, name)
 	default_attachment_set_attached_to(&self.default_attachment, attachable)
+	unit_attachment_apply_java_defaults(self)
 	return self
+}
+
+// Applies Java's non-zero/non-false field initializers from
+// games.strategy.triplea.attachments.UnitAttachment. The Odin struct
+// zero-initializes every field; this helper restores Java's spec
+// defaults so AI logic that branches on `== -1`, `>= 1`, etc. behaves
+// identically. Callers that build a Unit_Attachment outside of
+// `unit_attachment_new` (notably the snapshot json_loader) must invoke
+// this proc before assigning explicit fields. Fields not listed below
+// have a Java default of `0`, `false`, `null`, or empty collection,
+// which matches Odin's zero-value.
+unit_attachment_apply_java_defaults :: proc(self: ^Unit_Attachment) {
+	self.bombard                              = -1
+	self.unit_support_count                   = -1
+	self.attack_rolls                         = 1
+	self.defense_rolls                        = 1
+	self.transport_capacity                   = -1
+	self.transport_cost                       = -1
+	self.carrier_capacity                     = -1
+	self.carrier_cost                         = -1
+	self.attack_aa                            = 1
+	self.attack_aa_max_die_sides              = -1
+	self.offensive_attack_aa_max_die_sides    = -1
+	self.max_aa_attacks                       = -1
+	self.max_rounds_aa                        = 1
+	self.type_aa                              = "AA"
+	self.bombing_max_die_sides                = -1
+	self.can_produce_x_units                  = -1
+	self.hit_points                           = 1
+	self.max_damage                           = 2
+	self.max_operational_damage               = -1
+	self.construction_type                    = "none"
+	self.constructions_per_terr_per_type_per_turn = -1
+	self.max_constructions_per_type_per_terr  = -1
+	self.can_only_be_placed_in_territory_valued_at_x = -1
+	self.max_built_per_player                 = -1
+	self.max_scramble_distance                = -1
+	self.max_scramble_count                   = -1
+	self.max_intercept_count                  = -1
+	self.tuv                                  = -1
 }
 
 // Java: private TechTracker getTechTracker() { return getData().getTechTracker(); }

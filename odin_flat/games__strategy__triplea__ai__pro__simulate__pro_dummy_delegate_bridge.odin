@@ -1,5 +1,8 @@
 package game
 
+import "core:fmt"
+import "core:os"
+
 Pro_Dummy_Delegate_Bridge :: struct {
 	random_source: Plain_Random_Source,
 	display:       ^Headless_Display,

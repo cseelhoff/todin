@@ -53,7 +53,25 @@ abstract_pro_ai_new :: proc(
 	self.stored_political_actions = nil
 	self.stored_strafing_territories = make([dynamic]^Territory)
 	self.purchase = abstract_pro_ai_v_purchase
+	self.move = abstract_pro_ai_v_move
 	return self
+}
+
+@(private = "file")
+abstract_pro_ai_v_move :: proc(
+	self:       ^Abstract_Ai,
+	non_combat: bool,
+	move_del:   ^I_Move_Delegate,
+	data:       ^Game_Data,
+	player:     ^Game_Player,
+) {
+	abstract_pro_ai_move(
+		cast(^Abstract_Pro_Ai)self,
+		non_combat,
+		move_del,
+		data,
+		player,
+	)
 }
 
 @(private = "file")

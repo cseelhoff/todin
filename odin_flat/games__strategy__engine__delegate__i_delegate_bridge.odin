@@ -40,22 +40,39 @@ I_Delegate_Bridge :: struct {
 // bridges are introduced, this fallback must be revisited.
 
 i_delegate_bridge_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
+	if self.add_change != nil {
+		self.add_change(self, change)
+		return
+	}
 	default_delegate_bridge_add_change(cast(^Default_Delegate_Bridge)self, change)
 }
 
 i_delegate_bridge_enter_delegate_execution :: proc(self: ^I_Delegate_Bridge) {
+	if self.enter_delegate_execution != nil {
+		self.enter_delegate_execution(self)
+		return
+	}
 	default_delegate_bridge_enter_delegate_execution(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_history_writer :: proc(self: ^I_Delegate_Bridge) -> ^I_Delegate_History_Writer {
+	if self.get_history_writer != nil {
+		return self.get_history_writer(self)
+	}
 	return transmute(^I_Delegate_History_Writer)default_delegate_bridge_get_history_writer(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
+	if self.get_game_player != nil {
+		return self.get_game_player(self)
+	}
 	return default_delegate_bridge_get_game_player(cast(^Default_Delegate_Bridge)self)
 }
 
 i_delegate_bridge_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
+	if self.get_data != nil {
+		return self.get_data(self)
+	}
 	return default_delegate_bridge_get_data(cast(^Default_Delegate_Bridge)self)
 }
 

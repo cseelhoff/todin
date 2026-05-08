@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+import "core:os"
 import "core:strings"
 
 // Java owners covered by this file:
@@ -39,7 +41,7 @@ pro_purchase_validation_utils_find_purchase_options_for_territory :: proc(
 	is_bid: bool,
 ) -> [dynamic]^Pro_Purchase_Option {
 	result := make([dynamic]^Pro_Purchase_Option, 0, len(purchase_options))
-	for ppo in purchase_options {
+	for ppo, idx in purchase_options {
 		units := unit_type_create_temp(
 			pro_purchase_option_get_unit_type(ppo),
 			pro_purchase_option_get_quantity(ppo),
@@ -86,33 +88,33 @@ pro_purchase_validation_utils_remove_invalid_purchase_options :: proc(
 			units_to_place,
 			pro_purchase_option_create_temp_units(purchase_option),
 		)
-		should_remove :=
-			!pro_purchase_validation_utils_has_enough_resources_and_production(
+		r1 := !pro_purchase_validation_utils_has_enough_resources_and_production(
 				purchase_option,
 				resource_tracker,
 				remaining_unit_production,
 				remaining_constructions,
-			) ||
-			pro_purchase_validation_utils_has_reached_max_unit_built_per_player(
+			)
+		r2 := pro_purchase_validation_utils_has_reached_max_unit_built_per_player(
 				purchase_option,
 				player,
 				data,
 				units_to_place,
 				purchase_territories,
-			) ||
-			pro_purchase_validation_utils_has_reached_construction_limits(
+			)
+		r3 := pro_purchase_validation_utils_has_reached_construction_limits(
 				purchase_option,
 				data,
 				units_to_place,
 				purchase_territories,
 				territory,
-			) ||
-			!pro_purchase_validation_utils_units_to_consume_are_all_present(
+			)
+		r4 := !pro_purchase_validation_utils_units_to_consume_are_all_present(
 				pro_data,
 				player,
 				territory,
 				combined,
 			)
+		should_remove := r1 || r2 || r3 || r4
 		if should_remove {
 			ordered_remove(purchase_options, i)
 		}
@@ -557,10 +559,19 @@ pro_purchase_validation_utils_can_units_be_placed :: proc(
 	bridge.get_data = pro_purchase_validation_utils_pdb_get_data
 	bridge.get_game_player = pro_purchase_validation_utils_pdb_get_game_player
 	bridge.add_change = pro_purchase_validation_utils_pdb_add_change
-	abstract_delegate_set_delegate_bridge_and_player_no_websocket(
-		&place_delegate.abstract_delegate,
-		bridge,
-	)
+	// Bypass the dispatcher cast trap: i_delegate_bridge_get_game_player
+	// blindly casts to ^Default_Delegate_Bridge which is wrong for our
+	// proc-field-backed AI bridge. Inline the assignment using the
+	// known player. Save/restore so the place_delegate (shared from
+	// the original game graph) isn't permanently rewired.
+	saved_bridge := place_delegate.abstract_delegate.bridge
+	saved_player := place_delegate.abstract_delegate.player
+	defer {
+		place_delegate.abstract_delegate.bridge = saved_bridge
+		place_delegate.abstract_delegate.player = saved_player
+	}
+	place_delegate.abstract_delegate.bridge = bridge
+	place_delegate.abstract_delegate.player = player
 	error: Maybe(string)
 	if pro_purchase_validation_utils_is_placing_fighters_on_new_carriers(t, units) {
 		not_air_pred, not_air_ctx := matches_unit_is_not_air()

@@ -539,6 +539,7 @@ deserialize_sequence :: proc(obj: json.Object) -> ^game.Game_Sequence {
 deserialize_unit_type :: proc(obj: json.Object) -> ^game.Unit_Type {
 	ut := new(game.Unit_Type)
 	ut.named.base.name = get_string(obj, "name")
+	ut.named.kind = .Unit_Type
 	if ua_obj, ok := get_object(obj, "unitAttachment"); ok {
 		ut.unit_attachment = deserialize_unit_attachment(ua_obj)
 	}
@@ -547,6 +548,7 @@ deserialize_unit_type :: proc(obj: json.Object) -> ^game.Unit_Type {
 
 deserialize_unit_attachment :: proc(obj: json.Object) -> ^game.Unit_Attachment {
 	ua := new(game.Unit_Attachment)
+	game.unit_attachment_apply_java_defaults(ua)
 	ua.is_air = get_bool(obj, "isAir")
 	ua.is_sea = get_bool(obj, "isSea")
 	ua.movement = get_i32(obj, "movement")

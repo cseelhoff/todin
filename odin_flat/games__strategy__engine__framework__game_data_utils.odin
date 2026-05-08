@@ -172,19 +172,11 @@ game_data_utils_translate_into_other_game_data :: proc(object: rawptr, translate
 // in abstract_pro_ai_purchase, so a future deep clone can plug in
 // without re-discovering those.
 // game_data_deep_clone (game_data_clone.odin) is the substitute for
-// Java's serializer round-trip. It is gated behind -define:DEEP_CLONE=true
-// because, while the clone itself is correct, it activates AI logic
-// across many snapshots that have not yet been validated end-to-end —
-// the resulting downstream issues (predicate dereferences through
-// stale graph fragments, attachment-map sharing, missing relink for
-// pro_data internal caches) need to be drilled and fixed before the
-// shim can flip on by default.
-//
-// Iteration recipe for the next session:
-//   odin test ... -define:DEEP_CLONE=true
-//   probe inside `pro_matches_pred_territory_can_move_specific_land_unit`
-//   to find the next stale-pointer site.
-DEEP_CLONE :: #config(DEEP_CLONE, false)
+// Java's serializer round-trip. Enabled by default; the
+// `-define:DEEP_CLONE=false` escape hatch is kept so the nil-return
+// shim can be re-selected without a code change while drilling
+// regressions.
+DEEP_CLONE :: #config(DEEP_CLONE, true)
 
 game_data_utils_clone_game_data :: proc(data: ^Game_Data, options: ^Game_Data_Manager_Options) -> ^Game_Data {
 	bytes, present := game_data_utils_game_data_to_bytes(data, options)

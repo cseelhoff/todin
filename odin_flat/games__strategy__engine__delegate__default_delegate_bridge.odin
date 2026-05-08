@@ -1,6 +1,7 @@
 package game
 
 Default_Delegate_Bridge :: struct {
+	using i_delegate_bridge:    I_Delegate_Bridge,
 	game_data:                  ^Game_Data,
 	game:                       ^Server_Game,
 	history_writer:             ^I_Delegate_History_Writer,
@@ -8,6 +9,24 @@ Default_Delegate_Bridge :: struct {
 	delegate_execution_manager: ^Delegate_Execution_Manager,
 	client_network_bridge:      ^Client_Network_Bridge,
 	random_source:              ^I_Random_Source,
+}
+
+// Vtable shims: cast ^I_Delegate_Bridge back to ^Default_Delegate_Bridge
+// and forward to the typed body. Mirrors the game_data_v_* pattern.
+default_delegate_bridge_v_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
+	default_delegate_bridge_add_change(cast(^Default_Delegate_Bridge)self, change)
+}
+default_delegate_bridge_v_enter_delegate_execution :: proc(self: ^I_Delegate_Bridge) {
+	default_delegate_bridge_enter_delegate_execution(cast(^Default_Delegate_Bridge)self)
+}
+default_delegate_bridge_v_get_history_writer :: proc(self: ^I_Delegate_Bridge) -> ^I_Delegate_History_Writer {
+	return transmute(^I_Delegate_History_Writer)default_delegate_bridge_get_history_writer(cast(^Default_Delegate_Bridge)self)
+}
+default_delegate_bridge_v_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
+	return default_delegate_bridge_get_game_player(cast(^Default_Delegate_Bridge)self)
+}
+default_delegate_bridge_v_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
+	return default_delegate_bridge_get_data(cast(^Default_Delegate_Bridge)self)
 }
 
 make_Default_Delegate_Bridge :: proc(
@@ -27,6 +46,13 @@ make_Default_Delegate_Bridge :: proc(
 	self.delegate_execution_manager = delegate_execution_manager
 	self.client_network_bridge = client_network_bridge
 	self.random_source = random_source
+	// Wire vtable so cast(^I_Delegate_Bridge)bridge dispatches through
+	// proc-fields. Mirrors Java's `implements IDelegateBridge`.
+	self.i_delegate_bridge.add_change               = default_delegate_bridge_v_add_change
+	self.i_delegate_bridge.enter_delegate_execution = default_delegate_bridge_v_enter_delegate_execution
+	self.i_delegate_bridge.get_history_writer       = default_delegate_bridge_v_get_history_writer
+	self.i_delegate_bridge.get_game_player          = default_delegate_bridge_v_get_game_player
+	self.i_delegate_bridge.get_data                 = default_delegate_bridge_v_get_data
 	return self
 }
 

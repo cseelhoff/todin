@@ -1,6 +1,7 @@
 package game
 
 import "core:fmt"
+import "core:os"
 
 Move_Delegate :: struct {
 	using abstract_move_delegate: Abstract_Move_Delegate,
