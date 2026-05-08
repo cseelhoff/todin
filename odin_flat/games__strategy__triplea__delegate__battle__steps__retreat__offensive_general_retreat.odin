@@ -376,9 +376,7 @@ offensive_general_retreat_retreat_units :: proc(
 		retreater = offensive_general_retreat_get_amphibious_retreater(self)
 	} else if offensive_general_retreat_can_attacker_retreat(self) {
 		concrete := retreater_general_new(self.battle_state)
-		r := new(Retreater)
-		r.self_raw = concrete
-		retreater = r
+		retreater = &concrete.retreater
 	}
 
 	if retreater != nil {

@@ -111,6 +111,9 @@ i_delegate_bridge_get_costs_for_tuv :: proc(
 }
 
 i_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel {
+        if self.get_sound_channel_broadcaster != nil {
+                return self.get_sound_channel_broadcaster(self)
+        }
         return cast(^Headless_Sound_Channel)default_delegate_bridge_get_sound_channel_broadcaster(cast(^Default_Delegate_Bridge)self)
 }
 
@@ -121,6 +124,9 @@ i_delegate_bridge_get_sound_channel_broadcaster :: proc(self: ^I_Delegate_Bridge
 // game's display-channel broadcaster from the messengers; AI snapshot
 // dummies that have no display surface leave this field nil.
 i_delegate_bridge_get_display_channel_broadcaster :: proc(self: ^I_Delegate_Bridge) -> ^I_Display {
+        if self.get_display_channel_broadcaster != nil {
+                return self.get_display_channel_broadcaster(self)
+        }
         return default_delegate_bridge_get_display_channel_broadcaster(cast(^Default_Delegate_Bridge)self)
 }
 
@@ -153,6 +159,9 @@ i_delegate_bridge_get_random :: proc(
         dice_type:  I_Random_Stats_Dice_Type,
         annotation: string,
 ) -> [dynamic]i32 {
+        if self.get_random != nil {
+                return self.get_random(self, max, count, player, dice_type, annotation)
+        }
         return default_delegate_bridge_get_random(cast(^Default_Delegate_Bridge)self, max, count, player, dice_type, annotation)
 }
 

@@ -899,6 +899,9 @@ must_fight_battle_retreat_query :: proc(
 	submerge: bool,
 	text: string,
 ) -> ^Territory {
+	if self.headless {
+		return nil
+	}
 	optional_retreat_to := player_retreat_query(
 		remote_player,
 		battle_state_get_battle_id(battle_state),
