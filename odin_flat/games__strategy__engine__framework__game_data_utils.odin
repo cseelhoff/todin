@@ -76,7 +76,11 @@ game_data_utils_game_data_to_bytes :: proc(data: ^Game_Data, options: ^Game_Data
 game_data_utils_create_game_data_from_bytes :: proc(bytes: []u8) -> ^Game_Data {
 	if _game_data_bytes_stash != nil {
 		if gd, ok := _game_data_bytes_stash[raw_data(bytes)]; ok {
-			return gd
+			// Java: IoUtils.readFromMemory(bytes, GameDataManager::loadGameUncompressed)
+			// produces a deserialized clone. Mirror that with the
+			// in-memory deep clone so the BattleCalculator worker
+			// operates on isolated state — same observable contract.
+			return game_data_deep_clone(gd)
 		}
 	}
 	return nil

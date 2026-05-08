@@ -279,17 +279,15 @@ battle_calculator_calculate :: proc(
 		default_named_get_name(&location.default_named),
 	)
 
-	// Identity translation: mirror Java's local rebinding by copying the
-	// inputs. game_data_utils_translate_into_other_game_data is a no-op
-	// in the Odin shim, so the explicit rawptr round-trip would have no
-	// observable effect; preserving the copy keeps semantics aligned
-	// with the Java side, which always returns a fresh Collection.
-	attacking_units := make([dynamic]^Unit)
-	for u in attacking { append(&attacking_units, u) }
-	defending_units := make([dynamic]^Unit)
-	for u in defending { append(&defending_units, u) }
-	bombarding_units := make([dynamic]^Unit)
-	for u in bombarding { append(&bombarding_units, u) }
+	// Translate AI-supplied collections into this BattleCalculator's
+	// cloned Game_Data — mirrors Java's
+	// translateCollectionIntoOtherGameData(attacking, gameData) etc.
+	// (BattleCalculator.java lines 75-82). Java uses serialization;
+	// the Odin shim maps by UUID since the deep clone preserves unit
+	// IDs but not pointer identity.
+	attacking_units := translate_units_by_uuid(self.game_data, attacking)
+	defending_units := translate_units_by_uuid(self.game_data, defending)
+	bombarding_units := translate_units_by_uuid(self.game_data, bombarding)
 	territory_effects2 := make([dynamic]^Territory_Effect)
 	for te in territory_effects { append(&territory_effects2, te) }
 

@@ -165,6 +165,13 @@ pro_odds_calculator_call_battle_calc :: proc(
 	if run_count < 16 {
 		run_count = 16
 	}
+	when #config(FAST_AI, false) {
+		// Diagnostic-only: collapse Java's 16-100 simulations to 1 run
+		// per odds query. Keeps the AI's decision graph identical in
+		// shape (still calls calc, still returns AggregateResults), but
+		// each call does ~1/50th the work. Toggled via -define:FAST_AI=true.
+		run_count = 1
+	}
 	attacker := unit_get_owner(attacking_units[0])
 	defender := unit_get_owner(defending_units[0])
 	concrete_calc := cast(^Concurrent_Battle_Calculator)self.calc
