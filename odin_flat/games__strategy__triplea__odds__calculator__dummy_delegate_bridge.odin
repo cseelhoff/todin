@@ -1,6 +1,7 @@
 package game
 
 Dummy_Delegate_Bridge :: struct {
+	using i_delegate_bridge: I_Delegate_Bridge,
 	random_source:    ^Plain_Random_Source,
 	display:          ^Headless_Display,
 	sound_channel:    ^Headless_Sound_Channel,
@@ -12,6 +13,61 @@ Dummy_Delegate_Bridge :: struct {
 	game_data:        ^Game_Data,
 	battle:           ^Must_Fight_Battle,
 	tuv_calculator:   ^Tuv_Costs_Calculator,
+}
+
+// Vtable adapters: AI snapshot harness dispatches I_Delegate_Bridge proc-fields
+// directly. Without these, Dummy's leading bytes are read as garbage proc-pointers.
+@(private="file")
+dummy_v_get_history_writer :: proc(self: ^I_Delegate_Bridge) -> ^I_Delegate_History_Writer {
+	return transmute(^I_Delegate_History_Writer)(cast(^Dummy_Delegate_Bridge)self).writer
+}
+@(private="file")
+dummy_v_get_data :: proc(self: ^I_Delegate_Bridge) -> ^Game_Data {
+	return (cast(^Dummy_Delegate_Bridge)self).game_data
+}
+@(private="file")
+dummy_v_get_display :: proc(self: ^I_Delegate_Bridge) -> ^I_Display {
+	return transmute(^I_Display)(cast(^Dummy_Delegate_Bridge)self).display
+}
+@(private="file")
+dummy_v_get_sound :: proc(self: ^I_Delegate_Bridge) -> ^Headless_Sound_Channel {
+	return (cast(^Dummy_Delegate_Bridge)self).sound_channel
+}
+@(private="file")
+dummy_v_get_game_player :: proc(self: ^I_Delegate_Bridge) -> ^Game_Player {
+	return (cast(^Dummy_Delegate_Bridge)self).attacker
+}
+@(private="file")
+dummy_v_get_remote_player :: proc(self: ^I_Delegate_Bridge, player: ^Game_Player) -> ^Player {
+	dd := cast(^Dummy_Delegate_Bridge)self
+	dp := dummy_delegate_bridge_get_remote_player(dd, player)
+	return cast(^Player)dp
+}
+@(private="file")
+dummy_v_add_change :: proc(self: ^I_Delegate_Bridge, change: ^Change) {
+	dummy_delegate_bridge_add_change(cast(^Dummy_Delegate_Bridge)self, change)
+}
+@(private="file")
+dummy_v_enter_delegate_execution :: proc(self: ^I_Delegate_Bridge) {}
+@(private="file")
+dummy_v_get_resource_loader :: proc(self: ^I_Delegate_Bridge) -> ^Resource_Loader {
+	return nil
+}
+@(private="file")
+dummy_v_send_message :: proc(self: ^I_Delegate_Bridge, msg: ^Web_Socket_Message) {}
+@(private="file")
+dummy_v_stop_game_sequence :: proc(self: ^I_Delegate_Bridge, status: string, title: string) {}
+@(private="file")
+dummy_v_get_random :: proc(
+	self: ^I_Delegate_Bridge,
+	max: i32,
+	count: i32,
+	player: ^Game_Player,
+	dice_type: I_Random_Stats_Dice_Type,
+	annotation: string,
+) -> [dynamic]i32 {
+	dd := cast(^Dummy_Delegate_Bridge)self
+	return plain_random_source_get_random_array(dd.random_source, max, count, annotation)
 }
 
 // games.strategy.triplea.odds.calculator.DummyDelegateBridge#<init>(
@@ -58,6 +114,18 @@ dummy_delegate_bridge_new :: proc(
 	self.attacker = attacker
 	self.all_changes = all_changes
 	self.tuv_calculator = tuv_calculator
+	self.get_history_writer = dummy_v_get_history_writer
+	self.get_data = dummy_v_get_data
+	self.get_display_channel_broadcaster = dummy_v_get_display
+	self.get_sound_channel_broadcaster = dummy_v_get_sound
+	self.get_game_player = dummy_v_get_game_player
+	self.get_remote_player = dummy_v_get_remote_player
+	self.add_change = dummy_v_add_change
+	self.enter_delegate_execution = dummy_v_enter_delegate_execution
+	self.get_resource_loader = dummy_v_get_resource_loader
+	self.send_message = dummy_v_send_message
+	self.stop_game_sequence = dummy_v_stop_game_sequence
+	self.get_random = dummy_v_get_random
 	return self
 }
 
