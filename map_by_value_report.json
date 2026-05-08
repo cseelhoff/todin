@@ -1,0 +1,56 @@
+{
+  "summary": {
+    "files_scanned": 1219,
+    "procs_with_bare_map_params": 242,
+    "procs_with_mutated_value_maps": 3,
+    "total_mutation_hits": 3,
+    "shadow_pattern_count": 1
+  },
+  "hits": [
+    {
+      "file": "odin_flat/games__strategy__engine__data__move_description.odin",
+      "proc": "move_description_new",
+      "proc_line": 23,
+      "param": "units_to_sea_transports",
+      "param_type": "map[^Unit]^Unit",
+      "shadow_line": null,
+      "mutations": [
+        {
+          "line": 36,
+          "kind": "insert",
+          "snippet": "self.units_to_sea_transports[k] = v"
+        }
+      ]
+    },
+    {
+      "file": "odin_flat/games__strategy__engine__data__move_description.odin",
+      "proc": "move_description_new",
+      "proc_line": 23,
+      "param": "air_transports_dependents",
+      "param_type": "map[^Unit][dynamic]^Unit",
+      "shadow_line": null,
+      "mutations": [
+        {
+          "line": 40,
+          "kind": "insert",
+          "snippet": "self.air_transports_dependents[k] = move_description_lambda_new_0(k, v)"
+        }
+      ]
+    },
+    {
+      "file": "odin_flat/games__strategy__triplea__ai__pro__pro_purchase_ai.odin",
+      "proc": "pro_purchase_ai_purchase_factory",
+      "proc_line": 2876,
+      "param": "factory_purchase_territories",
+      "param_type": "map[^Territory]^Pro_Purchase_Territory",
+      "shadow_line": 2883,
+      "mutations": [
+        {
+          "line": 3168,
+          "kind": "insert",
+          "snippet": "factory_purchase_territories[max_territory] = factory_purchase_territory"
+        }
+      ]
+    }
+  ]
+}

@@ -518,6 +518,13 @@ Rules:
   Java exactly, do not "upgrade" string ids into pointers.
 - Collections: List<T>→[dynamic]^T, Map<K,V>→map[K]V,
   Set<T>→map[^T]struct{}.
+  **For STRUCT FIELDS only.** Method parameters that the Java
+  body mutates (`.put`, `.remove`, `.clear`, etc.) MUST use
+  `^map[K]V` — Odin maps are value-typed at the parameter
+  boundary (header copy); a bare `map[K]V` parameter combined
+  with `m[k] = v` is silent corruption (caller's `len` stays
+  stale, lookups short-circuit on `len==0`, duplicate keys
+  accumulate). See `llm-instructions.md` §"Map parameter-passing".
 - Single inheritance: `using parent: Parent` as the FIRST field.
 - Interface with no fields → `Type_Name :: struct {}`.
 - Java enum → Odin `enum`.
@@ -584,6 +591,22 @@ Rules:
 - Constructor new Foo(...) → `foo_new :: proc(...) -> ^Foo`.
 - `obj.method(args)` calls become `foo_method(obj, args)`.
 - Functional interface → Odin `proc` type literal.
+- **Mutated-Map parameters MUST be `^map[K]V`, called with `&map`.**
+  Java passes Map by reference; Odin passes `map[K]V` by value
+  (header copy) so a bare-map parameter with any insert/delete in
+  the body silently fails to update the caller AND corrupts later
+  lookups (Odin short-circuits on len==0, so duplicate keys
+  accumulate). Scan the Java body for `.put(`, `.putAll(`,
+  `.remove(`, `.clear(`, `.computeIfAbsent(`, `.merge(`,
+  `.replace(` on any Map-typed parameter — any hit means the Odin
+  parameter must be `^map[K]V` and call sites must pass
+  `&caller_map`. Inside the body `m[k] = v` works unchanged
+  (Odin auto-derefs). Bare `map[K]V` parameters are acceptable
+  ONLY for read-only access (lookups + iteration with no
+  mutation). Do NOT use the `m := m` shadow trick to silence the
+  compile error — promote the parameter to `^map[K]V` instead.
+  See `llm-instructions.md` §"Map parameter-passing" for the
+  full rationale and a worked counter-example.
 - No reflection. No stubs. No `panic("not impl")`. No `// TODO`. No
   logging-only stub. Each body must be REAL behavior, or that
   specific method_key must be reported `blocked`.

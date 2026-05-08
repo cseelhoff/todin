@@ -182,6 +182,27 @@ Rules for subagent dispatch:
    - Maps use Odin builtin `map[K]V`. The harness allocates these
      explicitly with `make(...)`; struct definitions must declare
      them as plain `map[K]V` fields.
+   - **Map parameter-passing — CRITICAL.** Java `Map<K,V>` is
+     reference-typed: a method receives the same map object the
+     caller holds, so `map.put(k, v)` mutations are visible to the
+     caller. Odin's `map[K]V` is **value-typed** at the parameter
+     boundary: passing a bare `map[K]V` argument copies the map's
+     header (len/cap/data-pointer) into a new local variable; the
+     callee's `m[k] = v` writes go to a backing store the caller's
+     header may never see, AND Odin's lookup short-circuits on
+     `len == 0` so even shared backing entries become invisible
+     once `len` falls out of sync. **Whenever a Java method
+     mutates a `Map` parameter, the Odin port MUST take the map
+     by pointer and call sites must pass `&map`:**
+     - Java: `void addEntry(Map<K,V> m, K k, V v) { m.put(k, v); }`
+     - Odin: `add_entry :: proc(m: ^map[K]V, k: K, v: V) { m[k] = v }`
+       at the call site: `add_entry(&my_map, k, v)`.
+     A bare `map[K]V` parameter is acceptable ONLY for read-only
+     access (lookup or iteration with no inserts/deletes/clears).
+     Do NOT use the `m := m` shadow trick to silence the
+     "cannot assign to value of map" compile error — that produces
+     the silent corruption described above. Promote the parameter
+     to `^map[K]V` instead.
 
 5. **No stubs. No "simplified". No "skipped".** Either fully port the
    entity or leave it untouched. The `is_implemented` flag must
@@ -222,6 +243,11 @@ For each struct:
      `BigDecimal → f64`.
    - Collections: `List<T> → [dynamic]^T`, `Map<K,V> → map[K]V`,
      `Set<T> → map[^T]struct{}`.
+     **Field declarations only — for METHOD PARAMETERS see the
+     map-by-value rule above and the Phase B map-mutation rule
+     below.** A Java `Map<K,V>` parameter that the method mutates
+     MUST become `^map[K]V` in the Odin port; passing the bare
+     `map[K]V` is silent corruption (see §"Map parameter-passing").
    - Java enums → Odin `enum`.
    - Inner classes (e.g. `AllianceTracker$SerializationProxy`) get
      their own top-level Odin struct in the same package.
@@ -269,6 +295,24 @@ For each method the subagent must:
    - Constructor `new Foo(...)` → `foo_new :: proc(...) -> ^Foo`.
    - `obj.method(args)` → `foo_method(obj, args)`.
    - Functional interfaces → Odin `proc` type literal.
+   - **Map parameters that the Java method mutates MUST be
+     declared `^map[K]V` and called with `&map`.** Java passes
+     `Map` by reference; Odin passes `map[K]V` by value (header
+     copy), so a bare-map parameter combined with `m[k] = v`
+     inside the body silently fails to update the caller AND
+     corrupts subsequent lookups (see §"Map parameter-passing"
+     in the Phase A rules). Identify mutation by scanning the
+     Java body for `.put(`, `.putAll(`, `.remove(`, `.clear(`,
+     `.computeIfAbsent(`, `.merge(`, or `.replace(` against the
+     parameter — any of those triggers the `^map[K]V` rule.
+     Inside the body use `m[k] = v` (Odin auto-derefs through the
+     pointer); at every call site pass `&caller_map` (or
+     `&self.field_map` for struct-owned maps). The same rule
+     applies to nested maps: a `Map<U, Map<T, struct{}>>` field
+     mutated by an inner-loop insert needs the OUTER map to be
+     `^map[U]map[T]struct{}` if outer-keys are added, AND the
+     inner map's insert path needs the same treatment if it
+     mutates a freshly-created inner map.
 4. **No reflection.** The Java side's reflection is read-only and
    not part of the port surface.
 5. Report per-method status back to the orchestrator (see Phase B
