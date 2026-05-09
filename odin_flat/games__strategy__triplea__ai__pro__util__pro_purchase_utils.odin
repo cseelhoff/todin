@@ -521,7 +521,7 @@ pro_purchase_utils_randomize_purchase_option :: proc(
 			),
 		)
 	}
-	random_number := rand.float64() * 100
+	random_number := java_math_random() * 100
 	pro_logger_trace(fmt.tprintf("Random number: %v", random_number))
 	for ppo, i in keys {
 		if random_number <= upper_bounds[i] {

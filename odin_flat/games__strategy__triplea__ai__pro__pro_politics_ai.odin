@@ -163,7 +163,7 @@ pro_politics_ai_political_actions :: proc(
 			round_factor := (round - 1) * 0.05 // 0, .05, .1, .15, etc
 			war_chance :=
 				round_factor + attack_percentage_map[action] * (1 + 10 * round_factor)
-			random := rand.float64()
+			random := java_math_random()
 			pro_logger_trace(
 				fmt.tprintf(
 					"%v, warChance=%f, random=%f",
@@ -188,7 +188,7 @@ pro_politics_ai_political_actions :: proc(
 			append(&options, action)
 		}
 		rand.shuffle(options[:])
-		random := rand.float64()
+		random := java_math_random()
 		war_chance := 0.01
 		pro_logger_debug(fmt.tprintf("warChance=%f, random=%f", war_chance, random))
 		if random <= war_chance {
@@ -200,7 +200,7 @@ pro_politics_ai_political_actions :: proc(
 	}
 
 	// Old code used for non-war actions
-	if rand.float64() < 0.5 {
+	if java_math_random() < 0.5 {
 		action_choices_other := ai_political_utils_get_political_actions_other(
 			player,
 			politics_delegate_get_tested_conditions(politics_delegate),
@@ -209,7 +209,7 @@ pro_politics_ai_political_actions :: proc(
 		if len(action_choices_other) > 0 {
 			rand.shuffle(action_choices_other[:])
 			i: i32 = 0
-			random := rand.float64()
+			random := java_math_random()
 			max_other_actions_per_turn: i32
 			if random < 0.3 {
 				max_other_actions_per_turn = 0

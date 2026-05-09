@@ -162,7 +162,7 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 	delete(players)
 	politics_delegate := game_data_get_politics_delegate(data)
 	// We want to test the conditions each time to make sure they are still valid
-	if rand.float64() < 0.5 {
+	if java_math_random() < 0.5 {
 		action_choices_towards_war := ai_political_utils_get_political_actions_towards_war(
 			game_player,
 			politics_delegate_get_tested_conditions(politics_delegate),
@@ -172,7 +172,7 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 			rand.shuffle(action_choices_towards_war[:])
 			i: i32 = 0
 			// should we use bridge's random source here?
-			random := rand.float64()
+			random := java_math_random()
 			max_war_actions_per_turn: i32
 			if random < 0.5 {
 				max_war_actions_per_turn = 0
@@ -197,7 +197,7 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 				}
 				delete(rels)
 				if f32(at_war_count) / num_players < 0.4 {
-					if rand.float64() < 0.9 {
+					if java_math_random() < 0.9 {
 						max_war_actions_per_turn = 0
 					} else {
 						max_war_actions_per_turn = 1
@@ -236,7 +236,7 @@ abstract_ai_political_actions :: proc(self: ^Abstract_Ai) {
 			rand.shuffle(action_choices_other[:])
 			i: i32 = 0
 			// should we use bridge's random source here?
-			random := rand.float64()
+			random := java_math_random()
 			max_other_actions_per_turn: i32
 			if random < 0.3 {
 				max_other_actions_per_turn = 0

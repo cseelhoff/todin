@@ -188,22 +188,22 @@ ai_political_utils_get_political_actions_other :: proc(
 			continue
 		}
 		if ai_political_utils_goes_towards_war(next_action, game_player, data) &&
-		   rand.float64() < 0.5 {
+		   java_math_random() < 0.5 {
 			continue
 		}
 		if ai_political_utils_away_from_ally(next_action, game_player, data) &&
-		   rand.float64() < 0.9 {
+		   java_math_random() < 0.9 {
 			continue
 		}
 		if ai_political_utils_is_free(next_action) {
 			append(&acceptable_actions, next_action)
 		} else if no_cost_count > 1 {
-			if rand.float64() < 0.9 &&
+			if java_math_random() < 0.9 &&
 			   ai_political_utils_is_acceptable_cost(next_action, game_player, data) {
 				append(&acceptable_actions, next_action)
 			}
 		} else {
-			if rand.float64() < 0.4 &&
+			if java_math_random() < 0.4 &&
 			   ai_political_utils_is_acceptable_cost(next_action, game_player, data) {
 				append(&acceptable_actions, next_action)
 			}

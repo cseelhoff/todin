@@ -103,6 +103,14 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// Re-seeded per snapshot so each starts identically.
 	rand.reset(42)
 
+	// Bit-exact seed for the Java Math.random() shim. The Pro AI's
+	// purchase weighted-pick + abstract_ai/political_ai paths used to
+	// call core:math/rand which produces a different sequence than
+	// java.util.Random(42). Seeding our java_math_random shim here
+	// makes Math.random() call sites match the Java oracle exactly
+	// (snap 0013 Russian armour vs. infantry mix).
+	java_math_random_set_seed(42)
+
 	stub_messenger := new(I_Messenger)
 	defer free(stub_messenger)
 	messengers := messengers_new(stub_messenger)
