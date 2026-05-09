@@ -1529,12 +1529,16 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	defer delete(added_set)
 
 	// Try to set at least one destroyer in each sea territory with subs
-	for unit, _ in sorted_unit_attack_options {
+	_units_keys_1 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+	defer delete(_units_keys_1)
+	for unit in _units_keys_1 {
 		is_destroyer_unit := unit_attachment_is_destroyer(unit_get_unit_attachment(unit))
 		if !is_destroyer_unit {
 			continue
 		}
-		for t, _ in sorted_unit_attack_options[unit] {
+		_ts_keys_1001 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		defer delete(_ts_keys_1001)
+		for t in _ts_keys_1001 {
 			patd := attack_map[t]
 			defending_units := pro_territory_get_max_enemy_defenders(patd, self.player)
 			sub_p, sub_c := matches_unit_has_sub_battle_abilities()
@@ -1566,7 +1570,9 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	}
 
 	// Set enough land and sea units in territories to have at least a chance of winning
-	for unit, _ in sorted_unit_attack_options {
+	_units_keys_2 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+	defer delete(_units_keys_2)
+	for unit in _units_keys_2 {
 		ua := unit_get_unit_attachment(unit)
 		is_air_unit := unit_attachment_is_air(ua)
 		land_p, land_c := matches_unit_is_land()
@@ -1582,7 +1588,9 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		// Track the smallest estimate (Java uses TreeMap.firstKey()).
 		min_estimate := 0.0
 		min_t: ^Territory = nil
-		for t, _ in sorted_unit_attack_options[unit] {
+		_ts_keys_1002 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		defer delete(_ts_keys_1002)
+		for t in _ts_keys_1002 {
 			pro_territory := attack_map[t]
 			if territory_is_water(t) && !pro_territory_is_can_hold(pro_territory) {
 				continue
@@ -1637,7 +1645,9 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	)
 
 	// Set non-air units in territories that can be held
-	for unit, _ in sorted_unit_attack_options {
+	_units_keys_3 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+	defer delete(_units_keys_3)
+	for unit in _units_keys_3 {
 		is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
 		_, in_added := added_set[unit]
 		if is_air_unit || in_added {
@@ -1645,7 +1655,9 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		for t, _ in sorted_unit_attack_options[unit] {
+		_ts_keys_1003 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		defer delete(_ts_keys_1003)
+		for t in _ts_keys_1003 {
 			patd := attack_map[t]
 			if !pro_territory_is_currently_wins(patd) && pro_territory_is_can_hold(patd) {
 				if pro_territory_get_battle_result(patd) == nil {
@@ -1694,14 +1706,18 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	live_allied_capitals := pro_utils_get_live_allied_capitals(&self.data.game_state, self.player)
 	defer delete(live_allied_capitals)
 	gm := game_data_get_map(self.data)
-	for unit, _ in sorted_unit_attack_options {
+	_units_keys_4 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+	defer delete(_units_keys_4)
+	for unit in _units_keys_4 {
 		is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
 		if !is_air_unit {
 			continue
 		}
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		for t, _ in sorted_unit_attack_options[unit] {
+		_ts_keys_1004 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		defer delete(_ts_keys_1004)
+		for t in _ts_keys_1004 {
 			patd := attack_map[t]
 			if pro_territory_is_currently_wins(patd) || pro_territory_is_can_hold(patd) {
 				continue
@@ -1815,14 +1831,18 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	)
 
 	// Set remaining units in any territory that needs it
-	for unit, _ in sorted_unit_attack_options {
+	_units_keys_5 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+	defer delete(_units_keys_5)
+	for unit in _units_keys_5 {
 		if _, in_added := added_set[unit]; in_added {
 			continue
 		}
 		is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		for t, _ in sorted_unit_attack_options[unit] {
+		_ts_keys_1005 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		defer delete(_ts_keys_1005)
+		for t in _ts_keys_1005 {
 			patd := attack_map[t]
 			if pro_territory_is_currently_wins(patd) {
 				continue
@@ -2646,14 +2666,18 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 		defer delete(added_set)
 
 		// Set air units in any territory with no AA
-		for unit, _ in sorted_unit_attack_options {
+		_units_keys_6 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+		defer delete(_units_keys_6)
+		for unit in _units_keys_6 {
 			is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
 			if !is_air_unit {
 				continue
 			}
 			min_win_territory: ^Territory = nil
 			min_win_percentage := max(f64)
-			for t, _ in sorted_unit_attack_options[unit] {
+			_ts_keys_1006 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			defer delete(_ts_keys_1006)
+			for t in _ts_keys_1006 {
 				patd := attack_map[t]
 
 				// Check landing safety
@@ -2715,12 +2739,16 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			)
 
 		// Find territory that we can try to hold that needs unit
-		for unit, _ in sorted_unit_attack_options {
+		_units_keys_7 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+		defer delete(_units_keys_7)
+		for unit in _units_keys_7 {
 			if _, in_added := added_set[unit]; in_added {
 				continue
 			}
 			min_win_territory: ^Territory = nil
-			for t, _ in sorted_unit_attack_options[unit] {
+			_ts_keys_1007 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			defer delete(_ts_keys_1007)
+			for t in _ts_keys_1007 {
 				patd := attack_map[t]
 				if pro_territory_is_can_hold(patd) {
 					if pro_territory_get_battle_result(patd) == nil {
@@ -2770,12 +2798,16 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			)
 
 		// Add sea units to any territory that significantly increases TUV gain
-		for unit, _ in sorted_unit_attack_options {
+		_units_keys_8 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+		defer delete(_units_keys_8)
+		for unit in _units_keys_8 {
 			is_sea_unit := unit_attachment_is_sea(unit_get_unit_attachment(unit))
 			if !is_sea_unit {
 				continue
 			}
-			for t, _ in sorted_unit_attack_options[unit] {
+			_ts_keys_1008 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			defer delete(_ts_keys_1008)
+			for t in _ts_keys_1008 {
 				patd := attack_map[t]
 				if pro_territory_get_battle_result(patd) == nil {
 					pro_territory_estimate_battle_result(patd, self.calc, self.player)

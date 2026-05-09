@@ -362,7 +362,10 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 
 	land_p, land_c := matches_unit_is_land()
 	has_units_p, has_units_c := matches_territory_has_units_owned_by(self.player)
-	for unit, ts in sorted_unit_move_options {
+	_units_keys_4 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_move_options)
+	defer delete(_units_keys_4)
+	for unit in _units_keys_4 {
+		ts := sorted_unit_move_options[unit]
 		if !land_p(land_c, unit) {
 			continue
 		}
@@ -3279,7 +3282,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 
 		// Set enough units in territories to have at least a chance of winning.
 		first_pass_keys := make([dynamic]^Unit, 0, len(sorted_unit_move_options))
-		for u in sorted_unit_move_options {
+		_units_keys_1 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_move_options)
+		defer delete(_units_keys_1)
+		for u in _units_keys_1 {
 			append(&first_pass_keys, u)
 		}
 		for unit in first_pass_keys {
@@ -3331,7 +3336,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 
 		// Set non-air units in territories.
 		non_air_pass_keys := make([dynamic]^Unit, 0, len(sorted_unit_move_options))
-		for u in sorted_unit_move_options {
+		_units_keys_2 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_move_options)
+		defer delete(_units_keys_2)
+		for u in _units_keys_2 {
 			append(&non_air_pass_keys, u)
 		}
 		for unit in non_air_pass_keys {
@@ -3399,7 +3406,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 
 		// Set air units in territories.
 		air_pass_keys := make([dynamic]^Unit, 0, len(sorted_unit_move_options))
-		for u in sorted_unit_move_options {
+		_units_keys_3 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_move_options)
+		defer delete(_units_keys_3)
+		for u in _units_keys_3 {
 			append(&air_pass_keys, u)
 		}
 		for unit in air_pass_keys {

@@ -56,6 +56,77 @@ pro_sort_move_options_utils_remove_winning_territories :: proc(
 	return result
 }
 
+// Returns the territory keys of a `map[^Territory]struct{}` (the
+// per-unit candidate set produced by sortUnit*Options) sorted by
+// territory name. Java's LinkedHashMap preserves insertion order from
+// the upstream populater, but Odin's builtin map randomizes iteration
+// per process, which would make AI move targeting non-deterministic
+// across runs. Sort-by-name yields a stable, portable order both this
+// port and the matching Java patch can agree on.
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_sort_move_options_utils_sorted_territory_keys :: proc(
+	territories: map[^Territory]struct {},
+) -> [dynamic]^Territory {
+	out: [dynamic]^Territory
+	for t, _ in territories {
+		append(&out, t)
+	}
+	slice.sort_by(out[:], proc(a, b: ^Territory) -> bool {
+		na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
+		nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
+		return strings.compare(na, nb) < 0
+	})
+	return out
+}
+
+// Returns the unit keys of `unit_attack_options` sorted by the same
+// (move_count, unit_value, type_name) keys used by
+// pro_sort_move_options_utils_sort_unit_move_options. Tiebreaks by
+// unit ID (Uuid) bytewise so collisions are deterministic across runs.
+//
+// Use at iteration sites that consume the result of
+// sort_unit_move_options / sort_unit_needed_options /
+// sort_unit_needed_options_then_attack — those return Odin maps
+// whose iteration order is randomized per process. Iterating this
+// slice instead preserves Java's LinkedHashMap-style sort order.
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_sort_move_options_utils_sorted_unit_keys_by_move_options :: proc(
+	pro_data:            ^Pro_Data,
+	unit_attack_options: map[^Unit]map[^Territory]struct {},
+) -> [dynamic]^Unit {
+	list: [dynamic]Pro_Sort_Move_Options_Entry
+	defer delete(list)
+	for u, ts in unit_attack_options {
+		ut := unit_get_type(u)
+		append(&list, Pro_Sort_Move_Options_Entry{
+			unit       = u,
+			move_count = len(ts),
+			unit_value = pro_data_get_unit_value(pro_data, ut),
+			type_name  = default_named_get_name(&ut.named_attachable.default_named),
+		})
+	}
+	slice.sort_by(list[:], proc(a, b: Pro_Sort_Move_Options_Entry) -> bool {
+		if a.move_count != b.move_count { return a.move_count < b.move_count }
+		if a.unit_value != b.unit_value { return a.unit_value < b.unit_value }
+		if a.type_name != b.type_name   { return a.type_name  < b.type_name  }
+		// Tiebreak on unit Uuid bytes so iteration is fully deterministic
+		// even when (move_count, unit_value, type_name) collide.
+		ai := a.unit != nil ? a.unit.id : Uuid{}
+		bi := b.unit != nil ? b.unit.id : Uuid{}
+		for i in 0..<16 {
+			if ai[i] != bi[i] { return ai[i] < bi[i] }
+		}
+		return false
+	})
+	out: [dynamic]^Unit
+	for e in list {
+		append(&out, e.unit)
+	}
+	return out
+}
+
 // Sort key bundle used by both `sortUnitMoveOptions` and
 // `sortUnitNeededOptions`. Java's lambda comparators capture `proData`; Odin
 // `proc` literals are non-capturing, so we precompute the comparison keys
