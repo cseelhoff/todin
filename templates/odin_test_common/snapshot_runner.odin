@@ -2,9 +2,20 @@ package test_common
 
 import "core:testing"
 import "core:log"
+import "core:strings"
 import game "../../odin_flat"
 
 FILTER_SNAP :: #config(FILTER_SNAP, "")
+
+filter_snap_value :: proc() -> string {
+	// Allow `-define:FILTER_SNAP="0013"` (shell-passed quotes preserved
+	// by Odin) and strip a surrounding pair of double-quotes if present.
+	s := FILTER_SNAP
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		s = s[1:len(s)-1]
+	}
+	return strings.trim_space(s)
+}
 
 // Generic snapshot test runner.
 // advance_step: if true, advances sequence.current_index after calling run_proc
@@ -75,12 +86,16 @@ run_snapshot_tests_server_game :: proc(
 		return
 	}
 	log.infof("Running %d snapshot tests from %s", len(ids), snapshot_dir)
+	filter := filter_snap_value()
+	if filter != "" {
+		log.infof("FILTER_SNAP active: only running %s", filter)
+	}
 
 	pass_count := 0
 	fail_count := 0
 
 	for id in ids {
-		if FILTER_SNAP != "" && id != FILTER_SNAP { continue }
+		if filter != "" && id != filter { continue }
 		log.infof("=== running snapshot %s ===", id)
 		before := load_game_state(snapshot_dir, id, "before.json")
 		if before == nil {

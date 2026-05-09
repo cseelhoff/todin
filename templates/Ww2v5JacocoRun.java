@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.util.Random;
 
 /**
  * triplea-port-bootstrap test driver.
@@ -64,6 +66,14 @@ public class Ww2v5JacocoRun {
     // Must be set BEFORE setUpGameWithAis so the game's PlainRandomSource picks
     // up the seed at construction.
     PlainRandomSource.fixedSeed = SNAPSHOT_SEED;
+    // Seed Math.random() too. The Pro AI uses Math.random() for weighted
+    // purchase picks, casualty selection, and political-action choice
+    // (see ProPurchaseUtils.randomizePurchaseOption + AbstractAi). Without
+    // this, snapshots are statistically unreproducible across JVM runs and
+    // the Odin port can never byte-match. Requires the
+    // --add-opens java.base/java.lang=ALL-UNNAMED JVM arg, set by
+    // smoke-testing/build.gradle.kts.
+    seedMathRandom(SNAPSHOT_SEED);
     try {
       ServerGame game =
           GameTestUtils.setUpGameWithAis("WW2v5_1942_2nd.xml");
@@ -87,6 +97,23 @@ public class Ww2v5JacocoRun {
     } finally {
       // Don't leak the seed into other tests in the same JVM.
       PlainRandomSource.fixedSeed = null;
+    }
+  }
+
+  /**
+   * Seeds the JVM-global {@code java.lang.Math$RandomNumberGeneratorHolder.randomNumberGenerator}
+   * to the given value. Throws {@link RuntimeException} if reflective access is denied
+   * (run with {@code --add-opens java.base/java.lang=ALL-UNNAMED}).
+   */
+  private static void seedMathRandom(long seed) {
+    try {
+      Class<?> holder = Class.forName("java.lang.Math$RandomNumberGeneratorHolder");
+      Field f = holder.getDeclaredField("randomNumberGenerator");
+      f.setAccessible(true);
+      ((Random) f.get(null)).setSeed(seed);
+    } catch (ReflectiveOperationException e) {
+      throw new RuntimeException(
+          "Cannot seed Math.random(); add `--add-opens java.base/java.lang=ALL-UNNAMED`", e);
     }
   }
 }

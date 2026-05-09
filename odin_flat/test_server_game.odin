@@ -1,5 +1,7 @@
 package game
 
+import "core:math/rand"
+
 // Harness-only wrapper used by the snapshot runner
 // (`triplea/conversion/odin_tests/test_common/snapshot_runner.odin`).
 // Mirrors the small subset of ServerGame state that the harness reads
@@ -89,6 +91,18 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		plain_random_source_fixed_seed = seed
 	}
 
+	// Pin core:math/rand global state (matches Java's
+	// java.lang.Math$RandomNumberGeneratorHolder.randomNumberGenerator
+	// reseeded to 42 in Ww2v5JacocoRun#runWithSnapshots). The Pro AI uses
+	// rand.float64() for weighted purchase picks
+	// (pro_purchase_utils_randomize_purchase_option) and politics actions
+	// (abstract_ai_political_actions, pro_politics_ai_*). Without this,
+	// snap results vary per-run based on heap layout / context init,
+	// since context.random_generator otherwise inherits whatever the
+	// Odin test framework seeded it with (per-test random uniquifier).
+	// Re-seeded per snapshot so each starts identically.
+	rand.reset(42)
+
 	stub_messenger := new(I_Messenger)
 	defer free(stub_messenger)
 	messengers := messengers_new(stub_messenger)
@@ -153,6 +167,33 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 				ut.unit_attachment.default_attachment.game_data_component.game_data = self.data
 			}
 		}
+
+		// Java's UnitAttachment.setArtillery / setArtillerySupportable
+		// auto-inject UnitSupportAttachment rules at XML parse time
+		// (see UnitAttachment.setArtillery in the .java source). The
+		// snapshot JSON only persists the legacy bool fields, not the
+		// derived UnitSupportAttachment, so AI purchase logic that
+		// keys off `is_attack_support` (artillery's offensive support
+		// flag) sees no support → infantry/artillery look equally
+		// efficient → AI never picks artillery (snap 0013 buys 8
+		// infantry instead of 4 infantry + 3 artillery).
+		// Replay the same two-pass logic the XML parser does:
+		//   1. addTarget for every type with artillerySupportable=true
+		//      (creates a TempFirst attachment if no rule exists yet).
+		//   2. addRule for every type with artillery=true (creates the
+		//      real rule and absorbs the TempFirst targets).
+		for _, ut in self.data.unit_type_list.unit_types {
+			if ut == nil || ut.unit_attachment == nil { continue }
+			if ut.unit_attachment.artillery_supportable {
+				unit_support_attachment_add_target(ut, self.data)
+			}
+		}
+		for _, ut in self.data.unit_type_list.unit_types {
+			if ut == nil || ut.unit_attachment == nil { continue }
+			if ut.unit_attachment.artillery {
+				unit_support_attachment_add_rule(ut, self.data, false)
+			}
+		}
 	}
 	if self.data.relationship_type_list != nil {
 		for _, rt in self.data.relationship_type_list.relationship_types {
@@ -190,6 +231,13 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// does &game_state.battle_records_list.battle_records — would deref nil.
 	if self.data.battle_records_list == nil {
 		self.data.battle_records_list = battle_records_list_new(self.data)
+	}
+	// JSON loader doesn't materialize game_data.state (Java GameData ctor
+	// builds it via game_data_state_new → tech_tracker_new). The AI
+	// purchase path calls game_data_get_tech_tracker → state.tech_tracker
+	// → SIGSEGV on nil state. Provision both lazily here.
+	if self.data.state == nil {
+		self.data.state = game_data_state_new(self.data)
 	}
 	sg.vault = vault_new(messengers.channel_messenger)
 	sg.game_players = make(map[^Game_Player]^Player)

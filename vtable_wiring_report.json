@@ -1,16 +1,27 @@
 {
-  "scanned_at": "2026-05-06T12:54:59.339336+00:00",
+  "scanned_at": "2026-05-07T01:42:25.127302+00:00",
   "files_scanned": 1218,
   "structs_total": 1439,
   "constructors_total": 663,
-  "wirings_examined": 214,
+  "wirings_examined": 240,
   "by_status": {
-    "ok": 214,
-    "missing": 0,
+    "ok": 239,
+    "missing": 1,
     "missing_kind": 0
   },
   "samples": {
-    "missing": [],
+    "missing": [
+      {
+        "struct": "Select_Casualties",
+        "field": "get_all_step_details",
+        "java_method": "getAllStepDetails",
+        "parent_struct": "Battle_Step",
+        "constructor": "select_casualties_new",
+        "status": "missing",
+        "odin_file": "odin_flat/games__strategy__triplea__delegate__battle__steps__fire__select_casualties.odin",
+        "owner_struct_key": "struct:games.strategy.triplea.delegate.battle.steps.fire.SelectCasualties"
+      }
+    ],
     "missing_kind": []
   }
 }

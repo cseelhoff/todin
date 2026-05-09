@@ -62,12 +62,18 @@ PRS_REL = (
     "game-app/game-core/src/main/java/"
     "games/strategy/engine/random/PlainRandomSource.java"
 )
+PPU_REL = (
+    "game-app/game-core/src/main/java/"
+    "games/strategy/triplea/ai/pro/util/ProPurchaseUtils.java"
+)
 
 GRADLE_MARKER = "Added by triplea-port-bootstrap"
 AGENT_GRADLE_MARKER = "triplea-port-bootstrap: snapshot agent"
+ADD_OPENS_GRADLE_MARKER = "triplea-port-bootstrap: add-opens for Math.random reseed"
 JACKSON_DEP_MARKER = "triplea-port-bootstrap: needed by GenericValueSerializer"
 JACKSON_LIB_MARKER = "jackson-databind ="
 PRS_MARKER = "// triplea-port-bootstrap: fixedSeed"
+PPU_MARKER = "// triplea-port-bootstrap: stable iteration"
 
 SNAPSHOT_AGENT_REL = "conversion/snapshot-agent"
 
@@ -176,6 +182,27 @@ tasks.withType<Test>().configureEach {
 }
 """
 
+# triplea-port-bootstrap: add-opens for Math.random reseed
+# Ww2v5JacocoRun#runWithSnapshots reseeds
+# java.lang.Math$RandomNumberGeneratorHolder#randomNumberGenerator via
+# reflection so AI decisions (Math.random() in ProPurchaseUtils,
+# AbstractAi politics/casualties, WeakAi purchase) are deterministic
+# across snapshot runs. Without --add-opens, the reflection raises
+# InaccessibleObjectException on JDK 17+.
+ADD_OPENS_GRADLE_BLOCK_GROOVY = """
+// triplea-port-bootstrap: add-opens for Math.random reseed
+tasks.withType(Test).configureEach {
+    jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+}
+"""
+
+ADD_OPENS_GRADLE_BLOCK_KTS = """
+// triplea-port-bootstrap: add-opens for Math.random reseed
+tasks.withType<Test>().configureEach {
+    jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+}
+"""
+
 
 def patch_gradle(triplea: Path) -> None:
     smoke = triplea / "game-app" / "smoke-testing"
@@ -203,6 +230,19 @@ def patch_gradle(triplea: Path) -> None:
     else:
         target.write_text(txt.rstrip() + "\n" + agent_block)
         print(f"  gradle: appended snapshot-agent JVM-args block")
+
+    # Append the --add-opens block so Ww2v5JacocoRun can reflectively
+    # reseed Math.random().
+    add_opens_block = (
+        ADD_OPENS_GRADLE_BLOCK_KTS if flavor == "kotlin DSL"
+        else ADD_OPENS_GRADLE_BLOCK_GROOVY
+    )
+    txt = target.read_text()
+    if ADD_OPENS_GRADLE_MARKER in txt:
+        print(f"  gradle: add-opens block already present")
+    else:
+        target.write_text(txt.rstrip() + "\n" + add_opens_block)
+        print(f"  gradle: appended --add-opens block (Math.random reseed)")
 
     # GenericValueSerializer.java needs jackson-databind on the test classpath.
     # The catalog already references jackson-datatype-jsr310 (transitively
@@ -310,6 +350,51 @@ def patch_plain_random_source(triplea: Path) -> None:
     print(f"  rng: patched {target.name}")
 
 
+def patch_pro_purchase_utils(triplea: Path) -> None:
+    """Make ProPurchaseUtils.randomizePurchaseOption iterate options in
+    a deterministic order (sorted by production-rule name) so the
+    snapshot characterization run is reproducible across JVM versions
+    and matches the Odin port's sorted iteration. Without this, Java's
+    HashMap iteration depends on identity hashCode (allocation address),
+    which changes per-JVM-run."""
+    target = triplea / PPU_REL
+    if not target.is_file():
+        sys.exit(f"  ppu: missing {target}")
+    txt = target.read_text()
+    if PPU_MARKER in txt:
+        print(f"  ppu: already patched ({target.name})")
+        return
+
+    # Anchor on the upstream block we want to replace; if it has drifted
+    # we'd rather fail loudly than silently miss the patch.
+    old_block = (
+        "    final Map<ProPurchaseOption, Double> purchasePercentages = new LinkedHashMap<>();\n"
+        "    double upperBound = 0.0;\n"
+        "    for (final ProPurchaseOption ppo : purchaseEfficiencies.keySet()) {\n"
+    )
+    if old_block not in txt:
+        sys.exit(
+            "  ppu: upstream ProPurchaseUtils.randomizePurchaseOption "
+            "has drifted; patch needs an update"
+        )
+    new_block = (
+        "    final Map<ProPurchaseOption, Double> purchasePercentages = new LinkedHashMap<>();\n"
+        "    double upperBound = 0.0;\n"
+        "    " + PPU_MARKER + ": sort options by production-rule name so the\n"
+        "    // snapshot run is reproducible (HashMap iteration order otherwise\n"
+        "    // depends on identity hashCode). Matches Odin port's\n"
+        "    // pro_purchase_utils_randomize_purchase_option sort key.\n"
+        "    final java.util.List<ProPurchaseOption> sortedOptions =\n"
+        "        new java.util.ArrayList<>(purchaseEfficiencies.keySet());\n"
+        "    sortedOptions.sort(java.util.Comparator.comparing(\n"
+        "        ppo -> ppo.getProductionRule().getName()));\n"
+        "    for (final ProPurchaseOption ppo : sortedOptions) {\n"
+    )
+    txt = txt.replace(old_block, new_block, 1)
+    target.write_text(txt)
+    print(f"  ppu: patched {target.name} (sorted randomizePurchaseOption iteration)")
+
+
 def inject_test(triplea: Path, rounds: int) -> None:
     src = TEMPLATES / "Ww2v5JacocoRun.java"
     dst = triplea / INJECT_TEST_REL
@@ -404,6 +489,7 @@ def main() -> None:
     patch_libs_versions(triplea)
     patch_gradle(triplea)
     patch_plain_random_source(triplea)
+    patch_pro_purchase_utils(triplea)
     inject_odin_test_common(triplea)
     inject_snapshot_agent(triplea)
     print("done")

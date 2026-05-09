@@ -3,6 +3,8 @@ package game
 import "core:fmt"
 import "core:math/rand"
 import "core:os"
+import "core:slice"
+import "core:strings"
 
 Pro_Purchase_Utils :: struct {}
 
@@ -462,11 +464,18 @@ pro_purchase_utils_get_unit_production :: proc(
 //     final Map<ProPurchaseOption, Double> purchaseEfficiencies, final String type)
 //
 // Optional<ProPurchaseOption> collapses to ^Pro_Purchase_Option (nil = empty).
-// Java's `Math.random()` maps to `rand.float64()`. The Java code uses a
-// LinkedHashMap to preserve insertion order across the two iterations;
-// Odin's builtin `map` is unordered, but a single map iteration order
-// is stable for a given call, so we snapshot keys in a slice during the
-// upper-bound pass and reuse that slice for the selection pass.
+// Java's `Math.random()` maps to `rand.float64()`.
+//
+// FIDELITY NOTE: Java passes a `HashMap` whose iteration order depends
+// on JVM-internal hash codes. Odin's builtin `map` is randomized per
+// run, which makes purchase decisions non-deterministic across snapshot
+// runs (proven empirically: snap 0013 flipped between PASS and FAIL on
+// repeat runs even after seeding rand.float64() to 42). Both sides need
+// a stable iteration order to be reproducible. We sort entries by
+// production-rule name, and the matching Java patch
+// (templates/Ww2v5JacocoRun.java seedMathRandom + the parallel
+// patch_proPurchaseUtils edit, see scripts/patch_triplea.py) does the
+// same so the snapshot oracle and the Odin port agree.
 pro_purchase_utils_randomize_purchase_option :: proc(
 	purchase_efficiencies: map[^Pro_Purchase_Option]f64,
 	type_name: string,
@@ -479,15 +488,28 @@ pro_purchase_utils_randomize_purchase_option :: proc(
 	if total_efficiency == 0 {
 		return nil
 	}
+	// Sort the entries by production-rule name (the same key Java will
+	// sort by once patched). This makes the upper-bound assignment and
+	// the selection scan deterministic across runs.
 	keys: [dynamic]^Pro_Purchase_Option
 	defer delete(keys)
+	for ppo, _ in purchase_efficiencies {
+		append(&keys, ppo)
+	}
+	slice.sort_by(keys[:], proc(a, b: ^Pro_Purchase_Option) -> bool {
+		return strings.compare(
+			pro_purchase_utils_randomize_key(a),
+			pro_purchase_utils_randomize_key(b),
+		) < 0
+	})
+
 	upper_bounds: [dynamic]f64
 	defer delete(upper_bounds)
 	upper_bound: f64 = 0.0
-	for ppo, eff in purchase_efficiencies {
+	for ppo in keys {
+		eff := purchase_efficiencies[ppo]
 		chance := eff / total_efficiency * 100
 		upper_bound += chance
-		append(&keys, ppo)
 		append(&upper_bounds, upper_bound)
 		ut := pro_purchase_option_get_unit_type(ppo)
 		pro_logger_trace(
@@ -507,6 +529,25 @@ pro_purchase_utils_randomize_purchase_option :: proc(
 		}
 	}
 	return keys[len(keys) - 1]
+}
+
+// Stable sort key for randomize_purchase_option: production-rule name.
+// Falls back to unit-type name then 0 if both are missing (defensive;
+// shouldn't happen with well-formed data).
+@(private = "file")
+pro_purchase_utils_randomize_key :: proc(ppo: ^Pro_Purchase_Option) -> string {
+	rule := pro_purchase_option_get_production_rule(ppo)
+	if rule != nil {
+		name := default_named_get_name(&rule.default_named)
+		if len(name) > 0 {
+			return name
+		}
+	}
+	ut := pro_purchase_option_get_unit_type(ppo)
+	if ut != nil {
+		return default_named_get_name(&ut.named_attachable.default_named)
+	}
+	return ""
 }
 
 // Java: public static List<Unit> findMaxPurchaseDefenders(
