@@ -649,6 +649,12 @@ deserialize_unit_attachment :: proc(obj: json.Object) -> ^game.Unit_Attachment {
 	ua.is_suicide_on_hit = get_bool(obj, "isSuicideOnHit")
 	ua.choose_best_roll = get_bool(obj, "chooseBestRoll")
 	ua.can_evade = get_bool(obj, "canEvade")
+	// Tier-A surfaced (golden_testing_plan.md Phase 4): isSub is the
+	// legacy "this unit acts as a submarine" flag; getCanEvade() and
+	// other getters fall back to it (`canEvade || isSub`). Without
+	// loading it, submarines silently disagree with Java on canEvade,
+	// canBeMovedThroughByEnemies, canMoveThroughEnemies, etc.
+	ua.is_sub = get_bool(obj, "isSub")
 	ua.is_first_strike = get_bool(obj, "isFirstStrike")
 	ua.can_move_through_enemies = get_bool(obj, "canMoveThroughEnemies")
 	ua.can_be_moved_through_by_enemies = get_bool(obj, "canBeMovedThroughByEnemies")

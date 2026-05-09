@@ -140,9 +140,12 @@ def main() -> int:
         if len(candidates) > 1:
             arity = _arity_from_args(src_path)
             if arity is not None:
+                # Instance methods have args.length+1 (the recorder
+                # prepends `this` so Odin replay can use it as `self`).
+                # Static methods match exactly.
                 narrowed = [
                     mk for mk in candidates
-                    if _arity_from_method_key(mk) == arity
+                    if _arity_from_method_key(mk) in (arity, arity - 1)
                 ]
                 if narrowed:
                     candidates = narrowed

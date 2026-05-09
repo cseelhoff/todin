@@ -613,3 +613,63 @@ python3 scripts/golden_dashboard.py --once
 - The general workflow is now mature: capture more leaf classes
   with simple-arg methods, fix what fails, watch the snap suite
   recover as fixes propagate.
+
+### 2026-05-09 (fifth session): Phase 4 first iteration
+
+- **Whitelist + capture**: added `UnitAttachment` (124 captured
+  methods incl. overrides) and `GameMap` (16 methods, mostly opaque
+  return → 0 generated). Capture run took 12 m 33 s for 5 classes
+  (12 269 fixtures total).
+- **Agent extended**: `@Advice.This` now captured and prepended to
+  args for instance methods (so Odin replay can pass `self`).
+  Reflective `getAttachedTo().getName()` chain captured as
+  `attached_to` for any `DefaultAttachment` — enables symbolic
+  resolution of `_kind=UnitAttachment` refs back to a unit type's
+  `unit_attachment` field.
+- **Codegen extended**:
+    - new resolver: `_kind=UnitAttachment` →
+      `gd.unit_type_list.unit_types[attached_to].unit_attachment`.
+    - generated filename now matches generated proc name (digit-aware
+      snake), no more `w_w2_v2`-style mismatches.
+    - **arity mismatch is now a skip, not a fail.** Java overloads
+      that share a method name (`getAttack()` and `getAttack(GamePlayer)`)
+      land in the same fixture directory; we generate against the
+      arity of the first sample, and other-arity fixtures get skipped
+      cleanly. Previously they incremented `fail` without calling
+      `expectf`, hiding the count-vs-test-status divergence.
+- **Second real Odin port bug found by Tier-A**:
+  `deserialize_unit_attachment` did **not** load `isSub`. Java's
+  `getCanEvade()` returns `canEvade || isSub`; for submarines (and
+  every isSub-true unit type) Odin returned false where Java returns
+  true. Surfaced by `unit_attachment_get_can_evade` /
+  `_can_be_moved_through_by_enemies` / `_can_move_through_enemies`
+  on submarine fixtures. Fixed in
+  [templates/odin_test_common/json_loader.odin](templates/odin_test_common/json_loader.odin)
+  by adding `ua.is_sub = get_bool(obj, "isSub")`.
+- **Net result**: 154 generated tests across 3 packages (4 + 95 +
+  55), **5 997 of 6 249 fixtures pass / 0 fail / 252 skipped /
+  ~5.8 s wall**. 153 Tier-A green test_status entries
+  (was 99 before this iteration; 4 at start of session).
+  30 716 golden_fixtures rows (was 10 237).
+- **Snap-suite second-order effect**: snap 0015 (formerly PASS) and
+  0067 (formerly FAIL with `wasInCombat: false != true`) **flipped
+  direction** after the isSub fix — both now fail with
+  `wasInCombat: true != false`. They were previously passing /
+  failing-in-known-direction by *coincidence* (two off-setting
+  bugs). At the Tier-A level UnitAttachment is fully green (0 fail),
+  so this confirms the downstream divergence is in combat
+  resolution, not attachment lookup. Exactly the kind of bisection
+  Tier-A is for.
+
+### Outstanding follow-ups for next iteration
+
+- The 0015 / 0067 `wasInCombat` divergence is in
+  combat resolution, downstream of UnitAttachment. Capture
+  `MustFightBattle` or `BattleTracker` to localize.
+- ProMatches still has 65 captured methods returning
+  `Predicate<Unit>` with no Tier-A support. Tier-B "evaluate
+  predicate against sample units" is the next codegen extension.
+- Consider tightening codegen so it skips emit when the target
+  Odin proc doesn't exist (avoids the
+  `unit_attachment_get_attack_rolls / _defense_rolls` manual
+  cleanup we did this round).

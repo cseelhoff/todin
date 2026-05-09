@@ -35,7 +35,7 @@ _FIXTURES_BASE = os.path.join(_ROOT, "triplea", "conversion", "odin_tests", "fix
 _OUT_BASE = os.path.join(_ROOT, "triplea", "conversion", "odin_tests")
 
 # Arg kinds we know how to resolve from a snap's before.json.
-RESOLVABLE_REF_KINDS = {"Territory", "Unit", "GamePlayer", "UnitType"}
+RESOLVABLE_REF_KINDS = {"Territory", "Unit", "GamePlayer", "UnitType", "UnitAttachment"}
 # Primitive JSON shapes that always replay.
 PRIMITIVE_TYPES = {bool, int, float, str}
 
@@ -156,6 +156,19 @@ def render_arg_resolve(idx: int, kind: tuple) -> tuple[str, str, bool]:
         return ("", "gd.properties", False)
     if tag == "opaque" and kind[1] == "GameData":
         return ("", "gd", False)
+    # UnitAttachment refs come with `attached_to=<unit_type_name>`,
+    # captured via DefaultAttachment.getAttachedTo().getName().
+    if tag == "ref" and kind[1] == "UnitAttachment":
+        return (
+            f"\t\tua_obj_{idx} := args_arr[{idx}].(json.Object) or_else nil\n"
+            f"\t\tif ua_obj_{idx} == nil {{ skipped += 1; continue }}\n"
+            f"\t\tut_name_{idx} := ua_obj_{idx}[\"attached_to\"].(json.String) or_else \"\"\n"
+            f"\t\tut_{idx}, ut_ok_{idx} := gd.unit_type_list.unit_types[ut_name_{idx}]\n"
+            f"\t\tif !ut_ok_{idx} || ut_{idx} == nil || ut_{idx}.unit_attachment == nil {{ skipped += 1; continue }}\n"
+            f"\t\tua_{idx} := ut_{idx}.unit_attachment\n",
+            f"ua_{idx}",
+            True,
+        )
     return ("", "", False)  # unresolvable
 
 
@@ -262,7 +275,7 @@ import tc "../test_common"
 \t\t\tsnap_cache[snap_id] = gd
 \t\t}}
 \t\targs_arr := obj["args"].(json.Array) or_else nil
-\t\tif args_arr == nil || len(args_arr) != {len(arg_kinds)} {{ fail += 1; continue }}
+\t\tif args_arr == nil || len(args_arr) != {len(arg_kinds)} {{ skipped += 1; continue }}
 {arg_resolve_block}{expected_decl}
 \t\tgot := game.{proc_name}({call_args})
 \t\tif {compare} {{
