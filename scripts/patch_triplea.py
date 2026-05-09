@@ -30,6 +30,7 @@ Usage:
 
 import argparse
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -70,6 +71,18 @@ BL_REL = (
     "game-app/game-core/src/main/java/"
     "games/strategy/triplea/delegate/data/BattleListing.java"
 )
+PMMO_REL = (
+    "game-app/game-core/src/main/java/"
+    "games/strategy/triplea/ai/pro/data/ProMyMoveOptions.java"
+)
+PRODATA_REL = (
+    "game-app/game-core/src/main/java/"
+    "games/strategy/triplea/ai/pro/ProData.java"
+)
+PROTRANSPORT_REL = (
+    "game-app/game-core/src/main/java/"
+    "games/strategy/triplea/ai/pro/data/ProTransport.java"
+)
 
 GRADLE_MARKER = "Added by triplea-port-bootstrap"
 AGENT_GRADLE_MARKER = "triplea-port-bootstrap: snapshot agent"
@@ -79,6 +92,8 @@ JACKSON_LIB_MARKER = "jackson-databind ="
 PRS_MARKER = "// triplea-port-bootstrap: fixedSeed"
 PPU_MARKER = "// triplea-port-bootstrap: stable iteration"
 BL_MARKER = "// triplea-port-bootstrap: sort battles"
+LHM_MARKER = "// triplea-port-bootstrap: LinkedHashMap for stable iter"
+LHMG_MARKER = "// triplea-port-bootstrap: global LHM rewrite"
 
 SNAPSHOT_AGENT_REL = "conversion/snapshot-agent"
 
@@ -481,6 +496,221 @@ def patch_battle_listing(triplea: Path) -> None:
     print(f"  bl: patched {target.name} (sorted BattleListing buckets)")
 
 
+def patch_pro_ai_linkedhashmap(triplea: Path) -> None:
+    """Convert HashMap/HashSet field declarations in Pro AI data classes
+    to LinkedHashMap/LinkedHashSet so iteration preserves insertion
+    order. Java's HashMap iteration depends on identity hashCode (object
+    allocation address), which differs per JVM run — making the AI's
+    decisions non-deterministic across runs even with PlainRandomSource
+    and Math.random() both seeded. Empirical evidence: two consecutive
+    Java game runs with seed 42 produced different game lengths
+    (8 vs 13 rounds) and different unit counts at game-end.
+
+    Mirrors the Odin-side fix where pro_combat_move_ai uses
+    pro_sort_move_options_utils_sorted_unit_keys_by_move_options to
+    iterate `map[^Unit]X` in deterministic order. The Java source needs
+    the same treatment at the data-structure level so HashMap-backed
+    iteration becomes insertion-ordered.
+
+    This patch targets the highest-leverage fields:
+      - ProMyMoveOptions.{territoryMap, unitMoveMap, transportMoveMap,
+        bombardMap, bomberMoveMap}: all iterated by ProCombatMoveAi /
+        ProNonCombatMoveAi to drive AI move decisions.
+      - ProTransport.{transportMap, seaTransportMap}: iterated to
+        choose amphibious targets.
+      - ProData.{unitTerritoryMap, unitsToBeConsumed}: keyed by Unit;
+        unitTerritoryMap is iterated when computing AI strategic value
+        and unit reachability.
+
+    Idempotent via LHM_MARKER. Fails loudly if upstream shape drifts.
+    """
+    targets_specs = [
+        # (rel_path, [(old_decl, new_decl), ...])
+        (PMMO_REL, [
+            ("private final Map<Territory, ProTerritory> territoryMap = new HashMap<>();",
+             "private final Map<Territory, ProTerritory> territoryMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Map<Unit, Set<Territory>> unitMoveMap = new HashMap<>();",
+             "private final Map<Unit, Set<Territory>> unitMoveMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Map<Unit, Set<Territory>> transportMoveMap = new HashMap<>();",
+             "private final Map<Unit, Set<Territory>> transportMoveMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Map<Unit, Set<Territory>> bombardMap = new HashMap<>();",
+             "private final Map<Unit, Set<Territory>> bombardMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Map<Unit, Set<Territory>> bomberMoveMap = new HashMap<>();",
+             "private final Map<Unit, Set<Territory>> bomberMoveMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+        ]),
+        (PROTRANSPORT_REL, [
+            ("private final Map<Territory, Set<Territory>> transportMap = new HashMap<>();",
+             "private final Map<Territory, Set<Territory>> transportMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Map<Territory, Set<Territory>> seaTransportMap = new HashMap<>();",
+             "private final Map<Territory, Set<Territory>> seaTransportMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+        ]),
+        (PRODATA_REL, [
+            ("private Map<Unit, Territory> unitTerritoryMap = new HashMap<>();",
+             "private Map<Unit, Territory> unitTerritoryMap = new java.util.LinkedHashMap<>();  " + LHM_MARKER),
+            ("private final Set<Unit> unitsToBeConsumed = new HashSet<>();",
+             "private final Set<Unit> unitsToBeConsumed = new java.util.LinkedHashSet<>();  " + LHM_MARKER),
+        ]),
+    ]
+
+    total_patched = 0
+    for rel, replacements in targets_specs:
+        target = triplea / rel
+        if not target.is_file():
+            sys.exit(f"  lhm: missing {target}")
+        txt = target.read_text()
+        if LHM_MARKER in txt:
+            print(f"  lhm: already patched ({target.name})")
+            continue
+        n = 0
+        for old, new in replacements:
+            if old not in txt:
+                sys.exit(
+                    f"  lhm: upstream {target.name} has drifted; could not "
+                    f"find: {old!r}"
+                )
+            txt = txt.replace(old, new, 1)
+            n += 1
+        target.write_text(txt)
+        total_patched += n
+        print(f"  lhm: patched {target.name} ({n} field decls)")
+    if total_patched > 0:
+        print(f"  lhm: total {total_patched} HashMap/HashSet fields converted")
+
+
+# Directories swept by patch_global_hashmap_to_linkedhashmap. Each entry is
+# a path relative to the upstream `triplea/` checkout. We deliberately
+# scope to AI + delegate + attachments (the layers that drive snapshot
+# state); the rest of game-core (UI, networking, parsers) is skipped to
+# avoid behavioural surprises in non-snapshot code paths.
+LHMG_SWEEP_DIRS = (
+    "game-app/game-core/src/main/java/games/strategy/triplea/ai/pro",
+    "game-app/game-core/src/main/java/games/strategy/triplea/delegate",
+    "game-app/game-core/src/main/java/games/strategy/triplea/attachments",
+)
+
+# `new HashMap<>()` and `new HashSet<>()` (with optional whitespace and
+# explicit type arguments) → LinkedHash equivalents. The diamond-arg case
+# is the dominant idiom in upstream TripleA; explicit `<K,V>` is rare so
+# we only match the diamond.
+_HASH_MAP_RE = re.compile(r"\bnew HashMap<>\(\)")
+_HASH_SET_RE = re.compile(r"\bnew HashSet<>\(\)")
+# Constructor-with-arg variants: `new HashMap<>(otherMap)` etc. We
+# preserve the constructor argument verbatim and just rewrite the type.
+_HASH_MAP_ARG_RE = re.compile(r"\bnew HashMap<>\(([^()]*)\)")
+_HASH_SET_ARG_RE = re.compile(r"\bnew HashSet<>\(([^()]*)\)")
+
+
+def patch_global_hashmap_to_linkedhashmap(triplea: Path) -> None:
+    """Mass-convert `new HashMap<>()` → `new LinkedHashMap<>()` (same for
+    HashSet) across Pro AI / delegate / attachments source files. Adds
+    LinkedHashMap / LinkedHashSet imports as needed.
+
+    Rationale: even after patch_pro_ai_linkedhashmap converted 9 field
+    declarations, full-game determinism probe still showed run-to-run
+    divergence (Run A ended at round 29 vs Run B at round 16). The
+    remaining non-determinism comes from local-variable HashMap/HashSet
+    in BattleDelegate, MoveDelegate, MustFightBattle, TransportTracker,
+    and similar places that get iterated and propagate AI decisions.
+
+    LinkedHashMap is a strict superset of HashMap (preserves insertion
+    order; ~5% memory overhead, negligible runtime). The conversion is
+    safe-by-construction: any code that depended on HashMap's UNDEFINED
+    iteration order was already broken (just non-deterministically).
+
+    Marker line `LHMG_MARKER` is appended at the end of any file we
+    rewrote; subsequent runs skip files with the marker present.
+    """
+    total_files = 0
+    total_subs = 0
+    for rel in LHMG_SWEEP_DIRS:
+        root = triplea / rel
+        if not root.is_dir():
+            print(f"  lhmg: skip (missing dir) {rel}")
+            continue
+        for jf in sorted(root.rglob("*.java")):
+            txt = jf.read_text()
+            if LHMG_MARKER in txt:
+                continue
+            new_txt = txt
+            n_subs = 0
+
+            def _sub_diamond_map(m):
+                nonlocal n_subs
+                n_subs += 1
+                return "new LinkedHashMap<>()"
+
+            def _sub_diamond_set(m):
+                nonlocal n_subs
+                n_subs += 1
+                return "new LinkedHashSet<>()"
+
+            def _sub_arg_map(m):
+                nonlocal n_subs
+                n_subs += 1
+                return f"new LinkedHashMap<>({m.group(1)})"
+
+            def _sub_arg_set(m):
+                nonlocal n_subs
+                n_subs += 1
+                return f"new LinkedHashSet<>({m.group(1)})"
+
+            new_txt = _HASH_MAP_ARG_RE.sub(_sub_arg_map, new_txt)
+            new_txt = _HASH_MAP_RE.sub(_sub_diamond_map, new_txt)
+            new_txt = _HASH_SET_ARG_RE.sub(_sub_arg_set, new_txt)
+            new_txt = _HASH_SET_RE.sub(_sub_diamond_set, new_txt)
+
+            if n_subs == 0:
+                continue
+
+            # Add imports if missing. The upstream files already import
+            # HashMap/HashSet so we just need to add the LinkedHash variants.
+            if "import java.util.LinkedHashMap;" not in new_txt and "LinkedHashMap" in new_txt:
+                new_txt = _add_import(new_txt, "java.util.LinkedHashMap")
+            if "import java.util.LinkedHashSet;" not in new_txt and "LinkedHashSet" in new_txt:
+                new_txt = _add_import(new_txt, "java.util.LinkedHashSet")
+
+            # Add a trailing-line marker comment so re-runs skip this file.
+            new_txt = new_txt.rstrip() + "\n" + LHMG_MARKER + "\n"
+
+            jf.write_text(new_txt)
+            total_files += 1
+            total_subs += n_subs
+    print(f"  lhmg: rewrote {total_subs} HashMap/HashSet allocations across "
+          f"{total_files} files in {len(LHMG_SWEEP_DIRS)} dirs")
+
+
+def _add_import(java_src: str, fq_class: str) -> str:
+    """Insert `import <fq_class>;` after the last existing import line.
+    Falls back to inserting after the package declaration if no imports
+    exist yet (rare for upstream TripleA files)."""
+    lines = java_src.split("\n")
+    last_import_idx = -1
+    package_idx = -1
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if s.startswith("package "):
+            package_idx = i
+        elif s.startswith("import "):
+            last_import_idx = i
+    if last_import_idx >= 0:
+        # Insert in alphabetical order if possible; simplest: just append
+        # to the import group then let formatter reorder. Many files have
+        # blank lines between imports and code; we find the actual end of
+        # the import block.
+        insert_at = last_import_idx + 1
+    elif package_idx >= 0:
+        # No imports yet: insert blank-line + import after package.
+        insert_at = package_idx + 1
+        if insert_at < len(lines) and lines[insert_at].strip() != "":
+            lines.insert(insert_at, "")
+            insert_at += 1
+    else:
+        insert_at = 0
+    lines.insert(insert_at, f"import {fq_class};")
+    return "\n".join(lines)
+
+
+
 def inject_test(triplea: Path, rounds: int) -> None:
     src = TEMPLATES / "Ww2v5JacocoRun.java"
     dst = triplea / INJECT_TEST_REL
@@ -577,6 +807,8 @@ def main() -> None:
     patch_plain_random_source(triplea)
     patch_pro_purchase_utils(triplea)
     patch_battle_listing(triplea)
+    patch_pro_ai_linkedhashmap(triplea)
+    patch_global_hashmap_to_linkedhashmap(triplea)
     inject_odin_test_common(triplea)
     inject_snapshot_agent(triplea)
     print("done")

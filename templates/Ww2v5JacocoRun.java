@@ -1,6 +1,7 @@
 package org.triplea.portbootstrap;
 
 import games.strategy.engine.data.GameTestUtils;
+import games.strategy.engine.data.GameStateJsonSerializer;
 import games.strategy.engine.data.SnapshotHarness;
 import games.strategy.engine.framework.ServerGame;
 import games.strategy.engine.random.PlainRandomSource;
@@ -9,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Random;
 
 /**
@@ -96,6 +99,51 @@ public class Ww2v5JacocoRun {
       }
     } finally {
       // Don't leak the seed into other tests in the same JVM.
+      PlainRandomSource.fixedSeed = null;
+    }
+  }
+
+  /**
+   * Determinism probe: run a full WW2v5 game (capped at -Dgame.rounds, default 100)
+   * with seeded RNG, then write the final GameData JSON to -Dgame.outFile (default
+   * /tmp/ww2v5-final.json). Run this twice and diff the two output files; if Java
+   * is fully deterministic the diff should be empty.
+   *
+   * <p>Invocation:
+   * <pre>
+   *   ./gradlew :game-app:smoke-testing:test \
+   *     --tests 'org.triplea.portbootstrap.Ww2v5JacocoRun.runFullGameDeterminismProbe' \
+   *     --rerun -Dgame.rounds=100 -Dgame.outFile=/tmp/ww2v5-A.json
+   * </pre>
+   */
+  @Test
+  void runFullGameDeterminismProbe() {
+    PlainRandomSource.fixedSeed = SNAPSHOT_SEED;
+    seedMathRandom(SNAPSHOT_SEED);
+    try {
+      ServerGame game =
+          GameTestUtils.setUpGameWithAis("WW2v5_1942_2nd.xml");
+      game.setStopGameOnDelegateExecutionStop(true);
+
+      int maxRounds = Integer.getInteger("game.rounds", 100);
+      while (!game.isGameOver()) {
+        if (game.getData().getSequence().getRound() > maxRounds) {
+          break;
+        }
+        game.runNextStep();
+      }
+
+      String outFile = System.getProperty("game.outFile", "/tmp/ww2v5-final.json");
+      String json = new GameStateJsonSerializer().serialize(game.getData());
+      try {
+        Files.writeString(Path.of(outFile), json);
+      } catch (IOException e) {
+        throw new RuntimeException("Failed to write " + outFile, e);
+      }
+      System.err.println("[Ww2v5JacocoRun] Final state written to " + outFile
+          + " (round=" + game.getData().getSequence().getRound()
+          + ", isGameOver=" + game.isGameOver() + ")");
+    } finally {
       PlainRandomSource.fixedSeed = null;
     }
   }
