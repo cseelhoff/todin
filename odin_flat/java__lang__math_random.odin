@@ -50,6 +50,15 @@ java_math_random_set_seed :: proc(seed: i64) {
 	java_math_random_seeded = true
 }
 
+// Snapshot harness helper: load the RAW 48-bit LCG state captured from
+// Java's reflective dump (SnapshotHarness.dumpMathRandomSeed). Java's
+// `java.util.Random.seed` is the post-XOR-mask state, so we install it
+// directly without re-applying the setSeed XOR/mask.
+java_math_random_set_seed_raw :: proc(raw_state: i64) {
+	java_math_random_seed = u64(transmute(u64)raw_state) & JR_MASK
+	java_math_random_seeded = true
+}
+
 // Mirrors `java.util.Random#next(int bits)` exactly. Returns the high
 // `bits` of the next 48-bit LCG state.
 @(private = "file")

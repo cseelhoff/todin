@@ -23,7 +23,7 @@ RUN_SNAP="${REPO_ROOT}/run_snap.sh"
 SUMMARY="/tmp/run-all-snaps-summary.txt"
 
 START="${1:-1}"
-END="${2:-52}"
+END="${2:-104}"
 
 if [[ ! -x "${RUN_SNAP}" ]]; then
     echo "ERROR: ${RUN_SNAP} not found or not executable" >&2

@@ -44,6 +44,21 @@ mersenne_twister_new_seeded :: proc(seed: i64) -> ^Mersenne_Twister {
         return r
 }
 
+// Snapshot harness helper: replace the MT state with raw bytes captured
+// from Java (SnapshotHarness.dumpMersenneTwisterState). The blob layout
+// is `mti(u32 LE) || mt[0..624](u32 LE each)` (2500 bytes). Asserts on
+// length mismatch so a corrupt meta file fails loud.
+mersenne_twister_load_state :: proc(self: ^Mersenne_Twister, bytes: []u8) {
+        assert(len(bytes) == 4 + 4 * MT_N, "mersenne_twister_load_state: bad blob size")
+        read_u32_le :: proc(b: []u8, off: int) -> u32 {
+                return u32(b[off]) | u32(b[off + 1]) << 8 | u32(b[off + 2]) << 16 | u32(b[off + 3]) << 24
+        }
+        self.mti = i32(read_u32_le(bytes, 0))
+        for i: i32 = 0; i < MT_N; i += 1 {
+                self.mt[i] = read_u32_le(bytes, 4 + 4 * int(i))
+        }
+}
+
 // Apache: setSeed(long) → setSeed(new int[] { (int)(seed >>> 32), (int)(seed & 0xffffffffL) })
 mersenne_twister_set_seed_long :: proc(self: ^Mersenne_Twister, seed: i64) {
         useed := transmute(u64)seed

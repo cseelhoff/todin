@@ -122,6 +122,21 @@ run_snapshot_tests_server_game :: proc(
 		server_game.need_to_initialize = true
 		server_game.first_run = false
 
+		// Pull captured RNG state from before-meta.txt so the harness
+		// seeds PlainRandomSource MT and java_math_random LCG to match
+		// Java's ACCUMULATED state at this step (Java's snapshot run
+		// builds RNG state across all prior steps; reseeding fresh-42
+		// per snap diverges by step ~13 onwards).
+		rng := load_snapshot_rng_state(snapshot_dir, id, "before-meta.txt")
+		if rng.mt_bytes != nil {
+			server_game.mt_state = rng.mt_bytes
+			server_game.mt_state_present = true
+		}
+		if rng.math_seed_present {
+			server_game.math_random_seed = rng.math_seed
+			server_game.math_random_present = true
+		}
+
 		run_proc(server_game)
 
 		diff := compare_game_states(before, after_expected)

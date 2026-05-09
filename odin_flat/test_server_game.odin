@@ -16,6 +16,21 @@ Test_Server_Game :: struct {
 	delegate_autosaves_enabled: bool,
 	need_to_initialize:         bool,
 	first_run:                  bool,
+	// RNG state captured from Java's snapshot run (before-meta.txt fields
+	// `mt_state` and `math_random_seed`). When set, the harness seeds its
+	// PlainRandomSource MersenneTwister and java_math_random LCG to these
+	// values instead of unconditionally reseeding to 42 — required for
+	// step-N dice/Math.random calls to match Java byte-for-byte (Java's
+	// snapshot run accumulates RNG state across steps 1..N-1).
+	//
+	// mt_state layout (matches SnapshotHarness.dumpMersenneTwisterState):
+	//   bytes 0..3    = mti (u32 LE)
+	//   bytes 4..2499 = mt[0..624] (u32 LE each)
+	// Total length = 2500 bytes when present, 0 (nil) otherwise.
+	mt_state:           []u8,
+	mt_state_present:   bool,
+	math_random_seed:   i64,
+	math_random_present: bool,
 }
 
 @(private = "file")
@@ -110,6 +125,13 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// makes Math.random() call sites match the Java oracle exactly
 	// (snap 0013 Russian armour vs. infantry mix).
 	java_math_random_set_seed(42)
+	// If the snapshot meta carried Java's accumulated math_random_seed
+	// (from `math_random_seed: <hex>` in before-meta.txt), use that
+	// instead of the bare 42 reseed. The harness loader fills
+	// math_random_present when it parses the meta.
+	if self.math_random_present {
+		java_math_random_set_seed_raw(self.math_random_seed)
+	}
 
 	stub_messenger := new(I_Messenger)
 	defer free(stub_messenger)
@@ -289,7 +311,11 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	sg.player_manager^ = pm
 
 	// ServerGame-specific init
-	sg.random_source = cast(^I_Random_Source)plain_random_source_new()
+	prs := plain_random_source_new()
+	if self.mt_state_present && len(self.mt_state) == 4 + 4 * 624 {
+		mersenne_twister_load_state(prs.random, self.mt_state)
+	}
+	sg.random_source = cast(^I_Random_Source)prs
 	sg.delegate_random_source = nil
 	dem := new(Delegate_Execution_Manager)
 	dem^ = make_Delegate_Execution_Manager()
