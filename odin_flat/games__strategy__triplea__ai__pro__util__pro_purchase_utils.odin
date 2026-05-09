@@ -550,6 +550,52 @@ pro_purchase_utils_randomize_key :: proc(ppo: ^Pro_Purchase_Option) -> string {
 	return ""
 }
 
+// Returns the values of `purchase_territories` sorted by territory name.
+// Mirrors Java's `purchaseTerritories.values()` HashMap iteration which
+// is deterministic per-JVM-run (depends on identity hashCode of Territory
+// keys); Odin's builtin `map` randomizes iteration order per process,
+// which causes Pro_Purchase_Ai to make different decisions on every run.
+// All Pro_Purchase_Ai sites that iterate `purchase_territories.values()`
+// for AI-decision purposes should use this helper.
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_purchase_utils_sorted_purchase_territories :: proc(
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> [dynamic]^Pro_Purchase_Territory {
+	out: [dynamic]^Pro_Purchase_Territory
+	for _, ppt in purchase_territories {
+		append(&out, ppt)
+	}
+	slice.sort_by(out[:], proc(a, b: ^Pro_Purchase_Territory) -> bool {
+		ta := pro_purchase_territory_get_territory(a)
+		tb := pro_purchase_territory_get_territory(b)
+		na := ta != nil ? default_named_get_name(&ta.named_attachable.default_named) : ""
+		nb := tb != nil ? default_named_get_name(&tb.named_attachable.default_named) : ""
+		return strings.compare(na, nb) < 0
+	})
+	return out
+}
+
+// Returns the keys of `purchase_territories` sorted by territory name.
+// Use when the iteration consumes the territory directly (e.g.
+// `for t, _ in purchase_territories`).
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_purchase_utils_sorted_purchase_territory_keys :: proc(
+	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+) -> [dynamic]^Territory {
+	out: [dynamic]^Territory
+	for t, _ in purchase_territories {
+		append(&out, t)
+	}
+	slice.sort_by(out[:], proc(a, b: ^Territory) -> bool {
+		na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
+		nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
+		return strings.compare(na, nb) < 0
+	})
+	return out
+}
+
 // Java: public static List<Unit> findMaxPurchaseDefenders(
 //     final ProData proData, final GamePlayer player, final Territory t,
 //     final List<ProPurchaseOption> landPurchaseOptions)

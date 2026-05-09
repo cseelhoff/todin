@@ -94,7 +94,20 @@ abstract_ai_battle :: proc(self: ^Abstract_Ai, battle_delegate: ^I_Battle_Delega
 		if battle_listing_is_empty(listing) {
 			return
 		}
-		for bt, territories in battle_listing_get_battles_map(listing) {
+		// Java's BattleListing.battlesMap is `EnumMap<BattleType, ...>`
+		// (BattleListing.java:31), which iterates in enum-declaration order
+		// (NORMAL, AIR_BATTLE, AIR_RAID, BOMBING_RAID). Odin's builtin map
+		// randomizes iteration, so iterate in enum order explicitly to make
+		// the AI's battle-resolution sequence reproducible across runs.
+		// Within each type, the territory order matches the order
+		// HashSet<IBattle> yielded them on the Java side (also seed-stable
+		// once Math.random/PlainRandomSource are pinned).
+		battles_map := battle_listing_get_battles_map(listing)
+		for bt in I_Battle_Battle_Type {
+			territories, ok := battles_map[bt]
+			if !ok {
+				continue
+			}
 			for current in territories {
 				error := battle_delegate_fight_battle(
 					bd,

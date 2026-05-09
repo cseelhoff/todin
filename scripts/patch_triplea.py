@@ -66,6 +66,10 @@ PPU_REL = (
     "game-app/game-core/src/main/java/"
     "games/strategy/triplea/ai/pro/util/ProPurchaseUtils.java"
 )
+BL_REL = (
+    "game-app/game-core/src/main/java/"
+    "games/strategy/triplea/delegate/data/BattleListing.java"
+)
 
 GRADLE_MARKER = "Added by triplea-port-bootstrap"
 AGENT_GRADLE_MARKER = "triplea-port-bootstrap: snapshot agent"
@@ -74,6 +78,7 @@ JACKSON_DEP_MARKER = "triplea-port-bootstrap: needed by GenericValueSerializer"
 JACKSON_LIB_MARKER = "jackson-databind ="
 PRS_MARKER = "// triplea-port-bootstrap: fixedSeed"
 PPU_MARKER = "// triplea-port-bootstrap: stable iteration"
+BL_MARKER = "// triplea-port-bootstrap: sort battles"
 
 SNAPSHOT_AGENT_REL = "conversion/snapshot-agent"
 
@@ -193,6 +198,13 @@ ADD_OPENS_GRADLE_BLOCK_GROOVY = """
 // triplea-port-bootstrap: add-opens for Math.random reseed
 tasks.withType(Test).configureEach {
     jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+    // Propagate snapshot-tuning system properties from gradle to the
+    // forked test JVM (see equivalent block in the kotlin DSL variant).
+    ['snapshot.outDir', 'snapshot.rounds', 'snapshot.rangeStart', 'snapshot.rangeEnd'].each { key ->
+        if (System.getProperty(key) != null) {
+            systemProperty key, System.getProperty(key)
+        }
+    }
 }
 """
 
@@ -200,6 +212,15 @@ ADD_OPENS_GRADLE_BLOCK_KTS = """
 // triplea-port-bootstrap: add-opens for Math.random reseed
 tasks.withType<Test>().configureEach {
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+    // Propagate snapshot tuning system properties from the gradle invocation
+    // into the test JVM, so e.g. `./gradlew :smoke-testing:test
+    // -Dsnapshot.outDir=/tmp -Dsnapshot.rounds=1` actually reaches
+    // Ww2v5JacocoRun#runWithSnapshots. Without this, gradle's daemon JVM
+    // sees them but the forked test JVM does not.
+    listOf("snapshot.outDir", "snapshot.rounds", "snapshot.rangeStart", "snapshot.rangeEnd")
+        .forEach { key ->
+            System.getProperty(key)?.let { systemProperty(key, it) }
+        }
 }
 """
 
@@ -395,6 +416,71 @@ def patch_pro_purchase_utils(triplea: Path) -> None:
     print(f"  ppu: patched {target.name} (sorted randomizePurchaseOption iteration)")
 
 
+def patch_battle_listing(triplea: Path) -> None:
+    """Patch BattleListing constructor to sort each per-BattleType bucket
+    of territories by name. Java uses HashSet<Territory> whose iteration
+    depends on identity hashCode (allocation address) — non-portable
+    across JVMs and across Odin's `map`. Sorting yields a stable order
+    both sides agree on. Mirrors the Odin port's `battle_listing_new`
+    sort (see odin_flat/games__strategy__triplea__delegate__data__battle_listing.odin)."""
+    target = triplea / BL_REL
+    if not target.is_file():
+        sys.exit(f"  bl: missing {target}")
+    txt = target.read_text()
+    if BL_MARKER in txt:
+        print(f"  bl: already patched ({target.name})")
+        return
+
+    # Anchor on the upstream BattleListing constructor body. The replacement
+    # turns the Set<IBattle> into a list sorted by territory name, then
+    # builds the EnumMap<BattleType, ArrayList<Territory>> from that list
+    # so iteration order is reproducible.
+    old_block = (
+        "  public BattleListing(final Set<IBattle> battles) {\n"
+        "    this.battlesMap = new EnumMap<>(BattleType.class);\n"
+        "    battles.stream()\n"
+        "        .filter(b -> !b.isEmpty())\n"
+        "        .forEach(\n"
+        "            b -> {\n"
+        "              Collection<Territory> territories = battlesMap.get(b.getBattleType());\n"
+        "              if (territories == null) {\n"
+        "                territories = new HashSet<>();\n"
+        "              }\n"
+        "              territories.add(b.getTerritory());\n"
+        "              battlesMap.put(b.getBattleType(), territories);\n"
+        "            });\n"
+        "  }\n"
+    )
+    if old_block not in txt:
+        sys.exit(
+            "  bl: upstream BattleListing constructor has drifted; "
+            "patch needs an update"
+        )
+    new_block = (
+        "  public BattleListing(final Set<IBattle> battles) {\n"
+        "    this.battlesMap = new EnumMap<>(BattleType.class);\n"
+        "    " + BL_MARKER + ": sort each per-BattleType territory bucket by\n"
+        "    // territory name so iteration is stable. Mirrors the Odin port's\n"
+        "    // battle_listing_new sort. Without this, ProAi.battle iteration\n"
+        "    // order depends on HashSet<IBattle> hashCode order (allocation\n"
+        "    // address) which is not reproducible across JVMs / Odin runs.\n"
+        "    final java.util.List<IBattle> sortedBattles =\n"
+        "        battles.stream()\n"
+        "            .filter(b -> !b.isEmpty())\n"
+        "            .sorted(java.util.Comparator.comparing(b -> b.getTerritory().getName()))\n"
+        "            .collect(java.util.stream.Collectors.toList());\n"
+        "    for (final IBattle b : sortedBattles) {\n"
+        "      battlesMap\n"
+        "          .computeIfAbsent(b.getBattleType(), k -> new java.util.ArrayList<>())\n"
+        "          .add(b.getTerritory());\n"
+        "    }\n"
+        "  }\n"
+    )
+    txt = txt.replace(old_block, new_block, 1)
+    target.write_text(txt)
+    print(f"  bl: patched {target.name} (sorted BattleListing buckets)")
+
+
 def inject_test(triplea: Path, rounds: int) -> None:
     src = TEMPLATES / "Ww2v5JacocoRun.java"
     dst = triplea / INJECT_TEST_REL
@@ -490,6 +576,7 @@ def main() -> None:
     patch_gradle(triplea)
     patch_plain_random_source(triplea)
     patch_pro_purchase_utils(triplea)
+    patch_battle_listing(triplea)
     inject_odin_test_common(triplea)
     inject_snapshot_agent(triplea)
     print("done")

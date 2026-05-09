@@ -795,6 +795,13 @@ deserialize_territory :: proc(obj: json.Object, gd: ^game.Game_Data) -> ^game.Te
 	// Territory attachment
 	if ta_obj, ok := get_object(obj, "territoryAttachment"); ok {
 		ta := new(game.Territory_Attachment)
+		// Java's DefaultAttachment ctor sets gameData; the snapshot JSON
+		// doesn't carry it but downstream code paths
+		// (territory_attachment_get_capture_ownership_changes ->
+		// game_data_get_player_list) crash on a nil GameData. Set it
+		// here on construction; mirrors apply_xml_territory_attachments
+		// for the sidecar path.
+		ta.default_attachment.game_data_component.game_data = gd
 		ta.production       = get_i32(ta_obj, "production")
 		ta.unit_production  = get_i32(ta_obj, "unitProduction")
 		ta.capital          = get_string(ta_obj, "capital")

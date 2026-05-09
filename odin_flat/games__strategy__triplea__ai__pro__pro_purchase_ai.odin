@@ -71,7 +71,9 @@ pro_purchase_ai_set_cant_hold_place_territory :: proc(
 	place_territory: ^Pro_Place_Territory,
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
 ) {
-	for _, t in purchase_territories {
+	_sorted_pt_1 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_1)
+	for t in _sorted_pt_1 {
 		for ppt in t.can_place_territories {
 			if pro_place_territory_equals(place_territory, ppt) {
 				pro_place_territory_set_can_hold(ppt, false)
@@ -87,7 +89,9 @@ pro_purchase_ai_get_purchase_territories :: proc(
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
 ) -> [dynamic]^Pro_Purchase_Territory {
 	territories: [dynamic]^Pro_Purchase_Territory
-	for _, t in purchase_territories {
+	_sorted_pt_2 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_2)
+	for t in _sorted_pt_2 {
 		for candidate in t.can_place_territories {
 			if candidate == place_territory {
 				append(&territories, t)
@@ -209,7 +213,9 @@ pro_purchase_ai_find_defenders_in_place_territories :: proc(
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
 ) {
 	pro_logger_info("Find defenders in possible place territories")
-	for _, ppt in purchase_territories {
+	_sorted_pt_3 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_3)
+	for ppt in _sorted_pt_3 {
 		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
 			t := pro_place_territory_get_territory(place_territory)
 			allied_p, allied_c := matches_is_unit_allied(self.player)
@@ -397,7 +403,9 @@ pro_purchase_ai_populate_production_rule_map :: proc(
 	purchase_map := integer_map_new()
 	for ppo in all_options {
 		num_units: i32 = 0
-		for _, t in purchase_territories {
+		_sorted_pt_4 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+		defer delete(_sorted_pt_4)
+		for t in _sorted_pt_4 {
 			for ppt in pro_purchase_territory_get_can_place_territories(t) {
 				for u in pro_place_territory_get_place_units(ppt) {
 					if unit_get_type(u) != pro_purchase_option_get_unit_type(ppo) {
@@ -451,7 +459,9 @@ pro_purchase_ai_should_save_up_for_a_fleet :: proc(
 
 	purchase_keys: [dynamic]^Territory
 	defer delete(purchase_keys)
-	for t, _ in purchase_territories {
+	_sorted_pt_5 := pro_purchase_utils_sorted_purchase_territory_keys(purchase_territories)
+	defer delete(_sorted_pt_5)
+	for t in _sorted_pt_5 {
 		append(&purchase_keys, t)
 	}
 
@@ -481,7 +491,9 @@ pro_purchase_ai_should_save_up_for_a_fleet :: proc(
 	place_sea_seen: map[^Territory]struct {}
 	defer delete(place_sea_seen)
 	max_sea_units_that_can_be_placed: i32 = 0
-	for _, purchase_territory in purchase_territories {
+	_sorted_pt_6 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_6)
+	for purchase_territory in _sorted_pt_6 {
 		can_produce_sea_units := false
 		for place_territory in pro_purchase_territory_get_can_place_territories(purchase_territory) {
 			pt := pro_place_territory_get_territory(place_territory)
@@ -865,7 +877,9 @@ pro_purchase_ai_upgrade_units_with_remaining_pus :: proc(
 	// Gather every safe (non-water, can-hold) place territory.
 	prioritized_land_territories: [dynamic]^Pro_Place_Territory
 	defer delete(prioritized_land_territories)
-	for _, ppt in purchase_territories {
+	_sorted_pt_7 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_7)
+	for ppt in _sorted_pt_7 {
 		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
 			t := pro_place_territory_get_territory(place_territory)
 			if !territory_is_water(t) && pro_place_territory_is_can_hold(place_territory) {
@@ -1118,7 +1132,9 @@ pro_purchase_ai_prioritize_territories_to_defend :: proc(
 	need_to_defend_seen: map[^Pro_Place_Territory]struct {}
 	defer delete(need_to_defend_seen)
 
-	for _, ppt in purchase_territories {
+	_sorted_pt_8 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_8)
+	for ppt in _sorted_pt_8 {
 		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
 			t := pro_place_territory_get_territory(place_territory)
 			max_terr := pro_other_move_options_get_max(enemy_attack_options, t)
@@ -1351,7 +1367,9 @@ pro_purchase_ai_purchase_units_with_remaining_production :: proc(
 	defer delete(prioritized_land_territories)
 	prioritized_cant_hold_land_territories: [dynamic]^Pro_Place_Territory
 	defer delete(prioritized_cant_hold_land_territories)
-	for _, ppt in purchase_territories {
+	_sorted_pt_9 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_9)
+	for ppt in _sorted_pt_9 {
 		for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
 			t := pro_place_territory_get_territory(place_territory)
 			pt_for_t, has_pt := purchase_territories[t]
@@ -1786,7 +1804,9 @@ pro_purchase_ai_prioritize_land_territories :: proc(
 	pro_logger_info("Prioritize land territories to place")
 
 	prioritized_land_territories: [dynamic]^Pro_Place_Territory
-	for _, ppt in purchase_territories {
+	_sorted_pt_10 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_10)
+	for ppt in _sorted_pt_10 {
 		for place_territory in ppt.can_place_territories {
 			t := pro_place_territory_get_territory(place_territory)
 			if territory_is_water(t) {
@@ -1871,7 +1891,9 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 
 	sea_place_territories := make(map[^Pro_Place_Territory]struct{})
 	defer delete(sea_place_territories)
-	for _, ppt in purchase_territories {
+	_sorted_pt_11 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_11)
+	for ppt in _sorted_pt_11 {
 		for place_territory in ppt.can_place_territories {
 			t := pro_place_territory_get_territory(place_territory)
 			if territory_is_water(t) &&
@@ -2003,7 +2025,9 @@ pro_purchase_ai_add_units_to_place_territory :: proc(
 	units_to_place:       ^[dynamic]^Unit,
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
 ) {
-	for _, purchase_territory in purchase_territories {
+	_sorted_pt_12 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_12)
+	for purchase_territory in _sorted_pt_12 {
 		for ppt in purchase_territory.can_place_territories {
 			if !pro_place_territory_equals(place_territory, ppt) {
 				continue
@@ -2092,7 +2116,9 @@ pro_purchase_ai_place :: proc(
 	// empty, but the iteration handles that naturally.
 	for pass in 0 ..< 2 {
 		want_water := pass == 1
-		for _, t in purchase_territories {
+		_sorted_pt_13 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+		defer delete(_sorted_pt_13)
+		for t in _sorted_pt_13 {
 			for ppt in pro_purchase_territory_get_can_place_territories(t) {
 				ppt_terr := pro_place_territory_get_territory(ppt)
 				if territory_is_water(ppt_terr) != want_water {
@@ -2901,7 +2927,9 @@ pro_purchase_ai_purchase_factory :: proc(
 	// Only try to purchase a factory if all production was used in
 	// prioritized land territories.
 	for place_territory in prioritized_land_territories {
-		for t, _ in purchase_territories {
+		_sorted_pt_14 := pro_purchase_utils_sorted_purchase_territory_keys(purchase_territories)
+		defer delete(_sorted_pt_14)
+		for t in _sorted_pt_14 {
 			if pro_place_territory_get_territory(place_territory) == t &&
 			   pro_purchase_territory_get_remaining_unit_production(
 				   purchase_territories[t],
@@ -4178,7 +4206,9 @@ pro_purchase_ai_bid :: proc(
 		// Determine max enemy attack units and current allied defenders
 		empty_cleared: [dynamic]^Territory
 		territories_to_check_list: [dynamic]^Territory
-		for k in purchase_territories {
+		_sorted_pt_101 := pro_purchase_utils_sorted_purchase_territory_keys(purchase_territories)
+		defer delete(_sorted_pt_101)
+		for k in _sorted_pt_101 {
 			append(&territories_to_check_list, k)
 		}
 		pro_territory_manager_populate_enemy_attack_options(
@@ -4208,7 +4238,9 @@ pro_purchase_ai_bid :: proc(
 		// Find strategic value for each territory
 		pro_logger_info("Find strategic value for place territories")
 		territories_to_check := make(map[^Territory]struct {})
-		for _, t in purchase_territories {
+		_sorted_pt_15 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+		defer delete(_sorted_pt_15)
+		for t in _sorted_pt_15 {
 			for ppt in pro_purchase_territory_get_can_place_territories(t) {
 				territories_to_check[pro_place_territory_get_territory(ppt)] = struct {}{}
 			}
@@ -4224,7 +4256,9 @@ pro_purchase_ai_bid :: proc(
 		)
 		delete(empty_cant_hold)
 		delete(empty_to_attack)
-		for _, t in purchase_territories {
+		_sorted_pt_16 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+		defer delete(_sorted_pt_16)
+		for t in _sorted_pt_16 {
 			for ppt in pro_purchase_territory_get_can_place_territories(t) {
 				val := territory_value_map[pro_place_territory_get_territory(ppt)]
 				pro_place_territory_set_strategic_value(ppt, val)
@@ -4291,7 +4325,9 @@ pro_purchase_ai_bid :: proc(
 
 		// Check if no remaining PUs or no unit built this iteration
 		num_units: i32 = 0
-		for _, t in purchase_territories {
+		_sorted_pt_17 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+		defer delete(_sorted_pt_17)
+		for t in _sorted_pt_17 {
 			cpt := pro_purchase_territory_get_can_place_territories(t)
 			if len(cpt) > 0 {
 				num_units += i32(len(pro_place_territory_get_place_units(cpt[0])))
@@ -4359,8 +4395,6 @@ pro_purchase_ai_purchase :: proc(
 	purchase_territories := pro_purchase_utils_find_purchase_territories(
 		self.pro_data, self.player,
 	)
-	for k, v in purchase_territories {
-	}
 	is_land_p, is_land_c := matches_territory_is_land()
 	place_territories := make(map[^Territory]struct {})
 	defer delete(place_territories)
@@ -4373,7 +4407,9 @@ pro_purchase_ai_purchase :: proc(
 			}
 		}
 	}
-	for _, t in purchase_territories {
+	_sorted_pt_19 := pro_purchase_utils_sorted_purchase_territories(purchase_territories)
+	defer delete(_sorted_pt_19)
+	for t in _sorted_pt_19 {
 		for ppt in pro_purchase_territory_get_can_place_territories(t) {
 			place_territories[pro_place_territory_get_territory(ppt)] = struct {}{}
 		}
@@ -4412,7 +4448,9 @@ pro_purchase_ai_purchase :: proc(
 	// Find strategic value for each territory
 	pro_logger_info("Find strategic value for place territories")
 	territories_to_check := make(map[^Territory]struct {})
-	for t in purchase_territories {
+	_sorted_pt_102 := pro_purchase_utils_sorted_purchase_territory_keys(purchase_territories)
+	defer delete(_sorted_pt_102)
+	for t in _sorted_pt_102 {
 		ppt_owner := purchase_territories[t]
 		for ppt in pro_purchase_territory_get_can_place_territories(ppt_owner) {
 			territories_to_check[pro_place_territory_get_territory(ppt)] = struct {}{}
@@ -4430,7 +4468,9 @@ pro_purchase_ai_purchase :: proc(
 	delete(empty_cant_hold)
 	delete(empty_to_attack)
 	delete(territories_to_check)
-	for t in purchase_territories {
+	_sorted_pt_103 := pro_purchase_utils_sorted_purchase_territory_keys(purchase_territories)
+	defer delete(_sorted_pt_103)
+	for t in _sorted_pt_103 {
 		ppt_owner := purchase_territories[t]
 		for ppt in pro_purchase_territory_get_can_place_territories(ppt_owner) {
 			val := territory_value_map[pro_place_territory_get_territory(ppt)]

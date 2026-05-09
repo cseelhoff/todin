@@ -1,6 +1,7 @@
 package test_common
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 import game "../../odin_flat"
 
@@ -59,8 +60,40 @@ compare_game_states :: proc(actual: ^game.Game_Data, expected: ^game.Game_Data) 
 	// agrees.
 	if actual.units_list != nil && expected.units_list != nil {
 		if len(actual.units_list.units) != len(expected.units_list.units) {
-			return fmt.tprintf("units: count %d != %d",
-				len(actual.units_list.units), len(expected.units_list.units))
+			// Tally per-shape differences so the diff message points at
+			// which unit types drift, not just the global count. Mirrors
+			// the leftover-shape branch below but works even when the
+			// total counts disagree (i.e. AI bought / killed wrong number).
+			act_tally := make(map[string]int)
+			defer delete(act_tally)
+			exp_tally := make(map[string]int)
+			defer delete(exp_tally)
+			for _, u in actual.units_list.units {
+				act_tally[unit_shape_signature(u)] += 1
+			}
+			for _, u in expected.units_list.units {
+				exp_tally[unit_shape_signature(u)] += 1
+			}
+			diffs: [dynamic]string
+			defer delete(diffs)
+			for sig, ec in exp_tally {
+				ac := act_tally[sig]
+				if ac != ec {
+					append(&diffs, fmt.tprintf("[%s]: %d!=%d", sig, ac, ec))
+				}
+			}
+			for sig, ac in act_tally {
+				if _, ok := exp_tally[sig]; !ok && ac > 0 {
+					append(&diffs, fmt.tprintf("[%s]: %d!=0", sig, ac))
+				}
+			}
+			// Sort so the diff message is byte-identical across runs;
+			// the underlying maps iterate in randomized order in Odin.
+			slice.sort(diffs[:])
+			return fmt.tprintf("units: count %d != %d (diffs: %s)",
+				len(actual.units_list.units),
+				len(expected.units_list.units),
+				strings.join(diffs[:], "; "))
 		}
 		act_leftover := make(map[string]int)
 		defer delete(act_leftover)
@@ -81,16 +114,26 @@ compare_game_states :: proc(actual: ^game.Game_Data, expected: ^game.Game_Data) 
 				act_leftover[unit_shape_signature(act_unit)] += 1
 			}
 		}
+		// Aggregate ALL leftover-shape diffs so we see the full picture
+		// (e.g. "Odin bought 6 inf + 1 armour; Java bought 4 inf + 3 art")
+		// instead of just the first mismatch.
+		all_diffs: [dynamic]string
+		defer delete(all_diffs)
 		for sig, exp_count in exp_leftover {
 			act_count := act_leftover[sig]
 			if act_count != exp_count {
-				return fmt.tprintf("units(shape='%s'): count %d != %d", sig, act_count, exp_count)
+				append(&all_diffs, fmt.tprintf("[%s]: %d!=%d", sig, act_count, exp_count))
 			}
 		}
 		for sig, act_count in act_leftover {
 			if _, seen := exp_leftover[sig]; !seen && act_count > 0 {
-				return fmt.tprintf("units(shape='%s'): count %d != 0 (unexpected)", sig, act_count)
+				append(&all_diffs, fmt.tprintf("[%s]: %d!=0 (unexpected)", sig, act_count))
 			}
+		}
+		if len(all_diffs) > 0 {
+			slice.sort(all_diffs[:])
+			return fmt.tprintf("units(leftover-shape diffs): %s",
+				strings.join(all_diffs[:], "; "))
 		}
 	}
 

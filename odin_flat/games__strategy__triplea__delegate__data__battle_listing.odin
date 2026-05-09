@@ -1,10 +1,23 @@
 package game
 
+import "core:slice"
+import "core:strings"
+
 Battle_Listing :: struct {
 	battles_map: map[I_Battle_Battle_Type][dynamic]^Territory,
 }
 
 // games.strategy.triplea.delegate.data.BattleListing#<init>(java.util.Set)
+//
+// Java's input is `Set<IBattle>` (a HashSet, see BattleTracker.pendingBattles)
+// whose iteration order depends on JVM-internal identity hashCodes — stable
+// per-JVM but not portable. Odin's `map[^I_Battle]struct{}` randomizes per
+// process. To make the AI's battle-resolution sequence reproducible across
+// runs (so snapshot tests don't flake), we sort each per-BattleType territory
+// bucket by territory name after construction. This is the same shape of fix
+// applied to ProPurchaseUtils.randomizePurchaseOption (see scripts/patch_triplea.py
+// `patch_pro_purchase_utils`). The matching Java patch sorts BattleListing's
+// territories the same way; both sides agree on order.
 battle_listing_new :: proc(battles: map[^I_Battle]struct {}) -> ^Battle_Listing {
 	self := new(Battle_Listing)
 	self.battles_map = make(map[I_Battle_Battle_Type][dynamic]^Territory)
@@ -29,6 +42,19 @@ battle_listing_new :: proc(battles: map[^I_Battle]struct {}) -> ^Battle_Listing 
 		if !already {
 			append(&territories, terr)
 		}
+		self.battles_map[bt] = territories
+	}
+	// Stable per-bucket sort by territory name for cross-run reproducibility.
+	for bt in I_Battle_Battle_Type {
+		territories, ok := self.battles_map[bt]
+		if !ok {
+			continue
+		}
+		slice.sort_by(territories[:], proc(a, b: ^Territory) -> bool {
+			na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
+			nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
+			return strings.compare(na, nb) < 0
+		})
 		self.battles_map[bt] = territories
 	}
 	return self
