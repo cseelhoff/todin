@@ -57,7 +57,7 @@ casualty_details_lambda_ensure_units_are_killed_first_1 :: proc(
 	}
 	sorted_units := make([dynamic]^Unit, 0, len(src))
 	for u in src do append(&sorted_units, u)
-	slice.sort_by(sorted_units[:], c.should_be_killed_first)
+	slice.stable_sort_by(sorted_units[:], c.should_be_killed_first)
 	limit := entry_value_size
 	if limit > len(sorted_units) do limit = len(sorted_units)
 	out := make([dynamic]^Unit, 0, limit)
@@ -296,7 +296,9 @@ casualty_details_redistribute_hits :: proc(
 	targets_hit_with_correct_order: ^[dynamic]^Unit,
 ) {
 	// targets.sort(shouldTakeHitsFirst);
-	slice.sort_by(targets[:], should_take_hits_first)
+	// Java's Collections.sort is stable; preserve relative order of
+	// equal elements so casualty redistribution is reproducible.
+	slice.stable_sort_by(targets[:], should_take_hits_first)
 
 	// targetsWithHitsBeforeRedistribution.stream()
 	//   .collect(Collectors.groupingBy(e -> e, Collectors.counting()))

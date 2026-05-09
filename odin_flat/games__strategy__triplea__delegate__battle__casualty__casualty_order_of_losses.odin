@@ -127,7 +127,13 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 		false,
 	)
 	casualty_order_of_losses_sort_impl_cmp_ = cmp1
-	slice.sort_by(sorted_units_list[:], casualty_order_of_losses_sort_impl_reversed_less_)
+	// Java uses Collections.sort which is STABLE; equal elements keep
+	// insertion order. UnitBattleComparator.compare returns 0 for two
+	// units of the same type/owner/wasAmphibious — without a stable
+	// sort the relative order of equal units flips per run, which
+	// causes casualty selection to pick different specific units (snap
+	// 0015 wasInCombat flake on Russian infantry). Use stable_sort_by.
+	slice.stable_sort_by(sorted_units_list[:], casualty_order_of_losses_sort_impl_reversed_less_)
 
 	// Sort units starting with the strongest so that support gets added to them first.
 	unit_comparator_without_primary_power := unit_battle_comparator_new(

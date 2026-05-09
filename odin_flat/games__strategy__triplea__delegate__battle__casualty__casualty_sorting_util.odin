@@ -87,6 +87,10 @@ casualty_sorting_util_sort_pre_battle :: proc(units: ^[dynamic]^Unit) {
 		movement_cmp     = cmp,
 		movement_cmp_ctx = cmp_ctx,
 	}
-	slice.sort_by(units[:], casualty_sorting_util_sort_pre_battle_less)
+	// Java uses Collections.sort (stable). The movement comparator ties
+	// for units of the same type+owner+movement, and unstable sort would
+	// flip their relative order per run, propagating into casualty-selection
+	// flake (snap 0015). Use stable_sort_by to mirror Java semantics.
+	slice.stable_sort_by(units[:], casualty_sorting_util_sort_pre_battle_less)
 }
 

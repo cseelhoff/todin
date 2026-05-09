@@ -394,7 +394,19 @@ must_fight_battle_filter_units :: proc(
 	sides: ..Battle_State_Side,
 ) -> [dynamic]^Unit {
 	result: [dynamic]^Unit
-	for status, _ in battle_state_unit_battle_filter_get_filter(filter) {
+	// Java's UnitBattleFilter.filter is `EnumSet<UnitBattleStatus>` which
+	// iterates in enum-declaration order (ALIVE, CASUALTY,
+	// REMOVED_CASUALTY). Odin's builtin map randomizes iteration per
+	// process, which makes the resulting `result` slice order
+	// non-deterministic — and that slice is what casualty selection
+	// later picks targets from. Iterate the enum explicitly to mirror
+	// Java's EnumSet semantics. (See snap 0015 fidelity / flake notes
+	// in /memories/repo/rng-determinism-2026-05.md.)
+	filter_set := battle_state_unit_battle_filter_get_filter(filter)
+	for status in Battle_State_Unit_Battle_Status {
+		if _, ok := filter_set[status]; !ok {
+			continue
+		}
 		bucket := must_fight_battle_get_units_by_status(self, status, ..sides)
 		for u in bucket {
 			append(&result, u)

@@ -82,11 +82,13 @@ battle_delegate_get_fighting_word :: proc(battle: ^I_Battle) -> string {
 
 // games.strategy.triplea.delegate.battle.BattleDelegate#sortUnitsToBombard(List)
 // Java: units.sort(UnitComparator.getDecreasingBombardComparator());
+// Java's List.sort is stable (TimSort); use stable_sort_by so units with
+// equal bombard values keep their input order across runs.
 battle_delegate_sort_units_to_bombard :: proc(units: ^[dynamic]^Unit) {
 	if len(units) == 0 {
 		return
 	}
-	slice.sort_by(units[:], proc(a, b: ^Unit) -> bool {
+	slice.stable_sort_by(units[:], proc(a, b: ^Unit) -> bool {
 		return unit_comparator_decreasing_bombard_compare(a, b) < 0
 	})
 }

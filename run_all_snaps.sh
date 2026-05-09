@@ -30,7 +30,11 @@ if [[ ! -x "${RUN_SNAP}" ]]; then
     exit 1
 fi
 
-: > "${SUMMARY}"
+# Truncate summary only on a "fresh full run" (start at 1). Subset
+# invocations append so multi-batch runs (5 at a time) accumulate.
+if [[ "${START}" == "1" || "${START}" == "0001" ]]; then
+    : > "${SUMMARY}"
+fi
 total=$((END - START + 1))
 pass=0
 fail=0
