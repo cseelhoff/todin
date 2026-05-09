@@ -445,3 +445,171 @@ rewrite history)
 - 2026-05-09 (earlier same day): MT + Math.random state replay landed
   in the existing snap harness; snap 0023 fixed; baseline became
   39+/104. Tier D foundation work that this plan inherits.
+- 2026-05-09 (later, this session): **Phase 0 + Phase 1 landed; Phase 2 scaffolding landed.**
+  - Phase 0: [scripts/migrate_golden_schema.py](scripts/migrate_golden_schema.py)
+    idempotent. `golden_fixtures` table + `methods.capture_state` +
+    `test_status.test_tier` columns added (backup at
+    `port.sqlite.bak.golden-schema.1778340388`).
+  - Phase 1a: standalone `triplea/conversion/proc-recorder-agent/`
+    Gradle subproject (mirrors snapshot-agent layout). Premain at
+    `agent.ProcRecorderAgent`; advice at `ProcRecorderInterceptor`.
+    Wired into `triplea/game-app/smoke-testing/build.gradle.kts` via
+    `-PprocRecorderAgent=<jar>`. SnapshotHarness now stamps
+    `currentSnap` reflectively per step (no hard dep).
+  - Phase 1b: [scripts/bb_agent_whitelist.py](scripts/bb_agent_whitelist.py)
+    (list/add/remove/suggest, queries port.sqlite for top-leverage
+    candidates; flips `methods.capture_state='queued'`). And
+    [scripts/import_fixtures.py](scripts/import_fixtures.py) (walks
+    capture dir, dedup-by-sha256 file copy into
+    `triplea/conversion/odin_tests/fixtures/`, populates
+    `golden_fixtures` rows; resolves overloads by arity).
+  - Phase 1c: capture run on `ProBattleUtils` produced **694
+    fixtures across 8 methods** (per-method cap of 200 hit on the
+    hot ones — `estimatePower`, `estimateStrength`,
+    `estimateStrengthDifference`). All 8 methods promoted to
+    `capture_state='captured'` in the DB.
+  - Phase 2 (partial): replay scaffold at
+    `triplea/conversion/odin_tests/golden_pro_battle_utils/test_estimate_power.odin`
+    + helper at
+    `triplea/conversion/odin_tests/test_common/golden_helpers.odin`
+    (`load_game_state_for_golden` / `backfill_game_data_for_golden`).
+    Test compiles, runs in ~100 ms, parses 200 estimatePower
+    fixtures, resolves 100 % of (Territory, Unit) refs against the
+    snap's `before.json`. **Known follow-up**: the proc invocation
+    itself segfaults on a backfill gap (some nil field reached by
+    `PowerStrengthAndRolls.build` that
+    `backfill_game_data_for_golden` doesn't yet cover). The fixture
+    body is currently `skipped += 1; continue` so the test passes
+    green; once the missing backfill is identified, lift the skip
+    and we get pass/fail counts immediately.
+  - Bug fixes during Phase 1: (a) `IllegalAccessError` because Byte
+    Buddy inlines advice into the target class — every static field
+    the inlined code reads must be `public` (made `bytesWritten`/
+    `firstError` public via re-exports). (b) Origin-string parsing
+    used the first space, but Java methods can have multiple
+    modifiers; switched to anchoring off `(`.
+
+### Outstanding under this plan
+
+- **Phase 2 finish**: extend `backfill_game_data_for_golden` to
+  cover whatever `PowerStrengthAndRolls.build` deref chain hits a
+  nil. Most likely candidate: `gd.properties` not initialized, or
+  `unit_attachment.support_attachments` map. Drop the skip stub,
+  expect non-zero pass count immediately. (Run the existing
+  `Server_Game.run_next_step` test under gdb on snap 0013 to find
+  the exact field — that path already works, so diff what it
+  populates vs the helper.)
+- **Phase 2 generator**: once the helper segfault is fixed, write
+  `scripts/gen_replay_tests.py` so the remaining 7 methods get
+  generated tests instead of hand-written ones. Promote
+  `capture_state='generated'` and create Tier-A `test_status` rows.
+- **Phase 3+**: as planned, expand the whitelist (Matches,
+  ProMatches, BattleTracker, MustFightBattle, ProTerritory ...)
+  one class per iteration.
+
+### Acceptance status
+
+| Phase 1 gate | Status |
+|---|---|
+| `SELECT COUNT(*) FROM golden_fixtures` ≥ 50 | ✅ 694 |
+| `odin test golden_pro_battle_utils` green | ✅ 4 tests, 517/638 pass, 928 ms |
+| `golden_dashboard.py --once` showing 1 class captured | ✅ 8 impl, 5 captured, 3 generated, 4 green |
+| `validate_test_status.py` no new violations | ✅ invariant holds |
+
+### 2026-05-09 (third session): Phase 2 finished + Phase 1 gate fully closed
+
+- **Backfill segfault fixed.** Root cause: `gp.technology_frontiers` was nil
+  for every Game_Player loaded from snap JSON; `tech_tracker_get_attack_rolls_bonus`
+  derefed it during `PowerStrengthAndRolls.build`. Added the
+  `technology_frontier_list_new` + `unit_collection_new` backfills that
+  `test_server_game.odin` already had to
+  `tc.backfill_game_data_for_golden`. estimatePower replay now runs
+  **161/200 pass / 0 fail / 39 skipped** (skipped = units removed mid-turn),
+  176 ms wall.
+- **`scripts/gen_replay_tests.py` written.** Inspects fixture shape per
+  method, emits Odin replay tests for any method whose args reduce to
+  `{Territory-by-name, Collection<Unit>-by-id, GamePlayer-by-name, prim}`.
+  Falls back to `capture_state='captured'` for opaque-arg methods (ProData,
+  ProOddsCalculator, Map). 4 Tier-A tests now exist for ProBattleUtils:
+    - hand-written: `estimatePower`         161/200 pass
+    - generated:    `checkForOverwhelmingWin`  32/38 pass
+    - generated:    `estimateStrength`         164/200 pass
+    - generated:    `estimateStrengthDifference` 162/200 pass
+    - aggregate: 517/638 (81%) pass, 0 fail in 928 ms.
+- **`scripts/record_replay_results.py` written.** Parses
+  `[golden <proc>] pass=N fail=M skipped=K total=T` lines from
+  `odin test` stdout, promotes/demotes `test_status` per the doctrine
+  (any fail → red; all pass → green; new tier='A'), updates
+  `golden_fixtures.last_replay_status` aggregates. Just promoted the 4
+  ProBattleUtils methods to **green Tier-A** rows in test_status.
+- **`scripts/golden_dashboard.py` written.** `--once` for text report,
+  `--port N` for HTTP. Phase 1 acceptance gate fully closed.
+- **`tc.resolve_units` exported** from `golden_helpers.odin` so generated
+  tests can share the unit-by-id resolver.
+- **gen-output convention**: filenames end with `_gen.odin`; if a
+  hand-written `*.odin` for the same method already exists, generation
+  skips it (so the POC test stays the canonical one).
+
+### End-to-end workflow now turnkey
+
+```
+python3 scripts/bb_agent_whitelist.py add <FQCN>
+cd triplea && ./gradlew :game-app:smoke-testing:test --tests '*runWithSnapshots' \
+    -PprocRecorderAgent=$PWD/conversion/proc-recorder-agent/build/libs/proc-recorder-agent.jar \
+    -DprocRecorder.outDir=$PWD/game-app/smoke-testing/build/golden_fixtures \
+    --rerun-tasks
+python3 scripts/process_snapshots.py --input triplea/game-app/smoke-testing/build/snapshots \
+    --output triplea/conversion/odin_tests
+python3 scripts/import_fixtures.py
+python3 scripts/gen_replay_tests.py
+cd triplea && odin test conversion/odin_tests/golden_<class> \
+    -collection:flat=../odin_flat \
+    -collection:test_common=conversion/odin_tests/test_common \
+    -define:ODIN_TEST_THREADS=1 2>&1 | tee /tmp/golden.log
+cd .. && python3 scripts/record_replay_results.py --from-file /tmp/golden.log
+python3 scripts/golden_dashboard.py --once
+```
+
+### Outstanding work (Phase 3+)
+
+- **Phase 3**: extend whitelist with classes referenced by red snaps,
+  use Tier-A failures as smallest reproducers for the 13 remaining
+  red snaps.
+
+### 2026-05-09 (fourth session): Phase 3 first iteration
+
+- **Re-baselined snap suite**: 81/104 pass (22 red).
+- **Captured 2 more classes**: `ProMatches` (65 methods → all
+  predicate factories returning `Predicate<Unit>`, not value-comparable
+  → 0 generated; need a Tier-B "evaluate-the-predicate" capture
+  strategy) and `Properties` (95 generated tests).
+- **Codegen extended**: special-case `_kind=GameProperties` →
+  `gd.properties` and `_kind=GameData` → `gd`. Snake-case fix for
+  `WW2V2`-style methods. Int compare handles `json.Float` whole-number
+  fallback (`#partial switch v in obj["return"]`).
+- **First real Odin port bug found by Tier-A**:
+  `json_to_property_value` was returning `f64` for every JSON number
+  (Odin's parser emits all numerics as Float). Downstream
+  `game_properties_get_int_with_default(...).(i32)` silently returned
+  the default. Surfaced by `properties_get_neutral_charge` returning
+  0 vs Java's 9999999. Fixed in
+  [templates/odin_test_common/json_loader.odin](templates/odin_test_common/json_loader.odin)
+  by coercing whole-number floats to i32.
+- **Result after fix**: Properties 95 tests / **4843 of 4848
+  pass** (99.9 %), 0 fail, 5 skipped (no fixture content), 4.7 s wall.
+- **`scripts/record_replay_results.py`** now uses the same snake
+  rule as the codegen so `WW2V2`-style proc tokens resolve.
+- **DB state**: 99 Tier-A green test_status entries (was 4); 10 237
+  golden_fixtures rows (was 694).
+- **Snap suite verified**: snap 0002 still passes (regression
+  check); snap 0013 still fails on AI purchase logic — bug is in
+  ProPurchaseAi, not ProBattleUtils/Properties (both green Tier-A).
+
+### Phase 3 next iteration target
+
+- Capture `ProPurchaseAi` (31 methods, opaque-arg-heavy → likely
+  Tier B/C escalation candidates) OR a smaller intermediate like
+  `ProUtils` / `ProTransportUtils` to reach more snap-driving procs.
+- The general workflow is now mature: capture more leaf classes
+  with simple-arg methods, fix what fails, watch the snap suite
+  recover as fixes propagate.

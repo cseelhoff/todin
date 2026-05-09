@@ -62,9 +62,26 @@ public class SnapshotHarness {
         String stepDirName = String.format("step-%04d-round-%03d-%s", stepCounter, round, stepName);
         Path dir = outputDir.resolve("server_game_run_next_step").resolve(stepDirName);
 
+        // Tag every fixture written by the proc-recorder agent (if attached)
+        // with the current snap id, so import_fixtures.py can correlate
+        // golden fixtures back to the snap that produced them. Reflective
+        // call avoids a hard build dependency on the agent jar.
+        setRecorderSnap(String.format("%04d", stepCounter));
+
         saveSnapshot("step-before", dir, stepName, delegateName, playerName, round);
         stepRunner.run();
         saveSnapshot("step-after", dir, stepName, delegateName, playerName, round);
+    }
+
+    private static void setRecorderSnap(String snapId) {
+        try {
+            Class<?> agent = Class.forName("agent.ProcRecorderAgent");
+            agent.getMethod("setCurrentSnap", String.class).invoke(null, snapId);
+        } catch (ClassNotFoundException ignored) {
+            // Agent not attached — fine, fixtures just have empty snap.
+        } catch (Throwable t) {
+            // Don't break the snap run for an instrumentation hook.
+        }
     }
 
     private void saveSnapshot(String label, Path dir, String stepName, String delegateName,

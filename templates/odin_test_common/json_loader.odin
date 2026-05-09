@@ -1028,6 +1028,18 @@ json_to_property_value :: proc(val: json.Value) -> game.Property_Value {
 	case json.Integer:
 		return i32(v)
 	case json.Float:
+		// Odin's JSON parser emits ALL numeric literals (even 100, 0,
+		// 9999999) as Float by default. Java's GameProperties stores
+		// integer-valued constants as `Integer`; downstream getters
+		// (e.g. game_properties_get_int_with_default → value.(i32))
+		// fail the type assertion when we hand them an f64, silently
+		// returning the default. Coerce whole-number floats to i32 to
+		// match Java's runtime type. Surfaced by Tier-A golden test
+		// `properties_get_neutral_charge` returning 0 vs Java's 9999999
+		// (golden_testing_plan.md, Phase 3 first real bug).
+		if v == f64(i32(v)) {
+			return i32(v)
+		}
 		return f64(v)
 	case json.String:
 		return strings.clone(v)
