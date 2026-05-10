@@ -4,6 +4,9 @@ import "core:fmt"
 import "core:math"
 import "core:os"
 import "core:slice"
+import "core:strings"
+
+PLAN_PROBE :: #config(PLAN, false)
 
 // Ported from games.strategy.triplea.ai.pro.ProCombatMoveAi (Phase A: type only).
 
@@ -2619,7 +2622,18 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 	unit_attack_map := pro_my_move_options_get_unit_move_map(attack_options)
 
 	// Assign units to territories by prioritization
+	_dua_iter := 0
 	for {
+		when PLAN_PROBE {
+			_pn_d := default_named_get_name(&self.player.named_attachable.default_named)
+			fmt.printf("DUA_ITER player=%s iter=%d count=%d\n", _pn_d, _dua_iter, len(prioritized_territories^))
+			for patd in prioritized_territories^ {
+				t := pro_territory_get_territory(patd)
+				fmt.printf("DUA_PT player=%s iter=%d t=%s value=%.4f\n", _pn_d, _dua_iter,
+					default_named_get_name(&t.named_attachable.default_named), pro_territory_get_value(patd))
+			}
+		}
+		_dua_iter += 1
 		sorted_unit_attack_options := pro_combat_move_ai_try_to_attack_territories(
 			self,
 			prioritized_territories^,
@@ -2856,6 +2870,46 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				used_set[u] = {}
 			}
 		}
+		when PLAN_PROBE {
+			_pn_a := default_named_get_name(&self.player.named_attachable.default_named)
+			for patd in prioritized_territories^ {
+				t := pro_territory_get_territory(patd)
+				type_count := make(map[string]int)
+				defer delete(type_count)
+				for u in pro_territory_get_units(patd) {
+					if u == nil { continue }
+					ut_name := "?"
+					if u.type != nil { ut_name = default_named_get_name(&u.type.named_attachable.default_named) }
+					type_count[ut_name] = type_count[ut_name] + 1
+				}
+				keys := make([dynamic]string)
+				defer delete(keys)
+				for k, _ in type_count { append(&keys, k) }
+				slice.sort(keys[:])
+				tb := strings.builder_make()
+				defer strings.builder_destroy(&tb)
+				f := true
+				for k in keys {
+					if !f { strings.write_string(&tb, ",") }
+					f = false
+					fmt.sbprintf(&tb, "%s:%d", k, type_count[k])
+				}
+				if pro_territory_get_battle_result(patd) == nil {
+					pro_territory_estimate_battle_result(patd, self.calc, self.player)
+				}
+				_br := pro_territory_get_battle_result(patd)
+				fmt.printf("DUA_PRE_REMOVE player=%s iter=%d t=%s units=%d types=[%s] win%%=%.4f tuvSwing=%.4f hasLandRem=%v rounds=%.4f\n",
+					_pn_a, _dua_iter - 1,
+					default_named_get_name(&t.named_attachable.default_named),
+					len(pro_territory_get_units(patd)),
+					strings.to_string(tb),
+					pro_battle_result_get_win_percentage(_br),
+					pro_battle_result_get_tuv_swing(_br),
+					pro_battle_result_is_has_land_unit_remaining(_br),
+					pro_battle_result_get_battle_rounds(_br),
+				)
+			}
+		}
 		territory_to_remove: ^Pro_Territory = nil
 		for patd in prioritized_territories^ {
 			t := pro_territory_get_territory(patd)
@@ -3072,6 +3126,12 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 		// Determine whether all attacks are successful or try to hold fewer territories
 		if territory_to_remove == nil {
 			break
+		}
+		when PLAN_PROBE {
+			_pn_r := default_named_get_name(&self.player.named_attachable.default_named)
+			_tr_t := pro_territory_get_territory(territory_to_remove)
+			fmt.printf("DUA_REMOVE player=%s iter=%d t=%s value=%.4f\n", _pn_r, _dua_iter - 1,
+				default_named_get_name(&_tr_t.named_attachable.default_named), pro_territory_get_value(territory_to_remove))
 		}
 		for j := 0; j < len(prioritized_territories^); j += 1 {
 			if prioritized_territories^[j] == territory_to_remove {
@@ -3361,10 +3421,40 @@ pro_combat_move_ai_do_combat_move :: proc(
 		cleared_territories,
 	)
 	pro_combat_move_ai_prioritize_attack_options(self, self.player, &attack_options)
+	when PLAN_PROBE {
+		_player_name_a := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_PRIORITIZE player=%s count=%d\n", _player_name_a, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO1 player=%s t=%s value=%.4f\n", _player_name_a,
+				default_named_get_name(&t.named_attachable.default_named),
+				pro_territory_get_value(patd))
+		}
+	}
 	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+	when PLAN_PROBE {
+		_player_name_b := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_REMOVE_NW player=%s count=%d\n", _player_name_b, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO2 player=%s t=%s value=%.4f\n", _player_name_b,
+				default_named_get_name(&t.named_attachable.default_named),
+				pro_territory_get_value(patd))
+		}
+	}
 
 	// Determine which territories to attack
 	pro_combat_move_ai_determine_territories_to_attack(self, &attack_options)
+	when PLAN_PROBE {
+		_player_name_c := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_DETERMINE player=%s count=%d\n", _player_name_c, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO3 player=%s t=%s value=%.4f\n", _player_name_c,
+				default_named_get_name(&t.named_attachable.default_named),
+				pro_territory_get_value(patd))
+		}
+	}
 
 	// Determine which territories can be held and remove any that aren't worth attacking
 	clear(&cleared_territories)
@@ -3406,6 +3496,14 @@ pro_combat_move_ai_do_combat_move :: proc(
 		cleared_territories,
 	)
 	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+	when PLAN_PROBE {
+		_pn4 := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_REMOVE_NW2 player=%s count=%d\n", _pn4, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO4 player=%s t=%s value=%.4f\n", _pn4, default_named_get_name(&t.named_attachable.default_named), pro_territory_get_value(patd))
+		}
+	}
 
 	// Determine how many units to attack each territory with
 	already_moved_units :=
@@ -3418,6 +3516,14 @@ pro_combat_move_ai_do_combat_move :: proc(
 		&attack_options,
 		already_moved_units,
 	)
+	when PLAN_PROBE {
+		_pn5 := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_DETERMINE_UNITS player=%s count=%d\n", _pn5, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO5 player=%s t=%s value=%.4f units=%d\n", _pn5, default_named_get_name(&t.named_attachable.default_named), pro_territory_get_value(patd), len(pro_territory_get_units(patd)))
+		}
+	}
 
 	// Get all transport final territories (side-effects bookkeeping)
 	_ = pro_move_utils_calculate_amphib_routes(
@@ -3431,6 +3537,14 @@ pro_combat_move_ai_do_combat_move :: proc(
 
 	// Determine max enemy counter-attack units and remove territories where transports are exposed
 	pro_combat_move_ai_remove_territories_where_transports_are_exposed(self)
+	when PLAN_PROBE {
+		_pn6 := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_AFTER_REMOVE_TRANS player=%s count=%d\n", _pn6, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO6 player=%s t=%s value=%.4f units=%d\n", _pn6, default_named_get_name(&t.named_attachable.default_named), pro_territory_get_value(patd), len(pro_territory_get_units(patd)))
+		}
+	}
 
 	// Determine if capital can be held if I still own it
 	my_capital := pro_data_get_my_capital(self.pro_data)
@@ -3446,6 +3560,47 @@ pro_combat_move_ai_do_combat_move :: proc(
 
 	// Check if any subs in contested territory that's not being attacked
 	pro_combat_move_ai_check_contested_sea_territories(self)
+
+	// Diagnostic: dump the AI's final attack plan before commit. Enabled
+	// with -define:PLAN=true. Mirror in Java's ProCombatMoveAi.
+	when PLAN_PROBE {
+		attack_map_for_plan := pro_my_move_options_get_territory_map(
+			pro_territory_manager_get_attack_options(self.territory_manager),
+		)
+		player_name := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PLAN player=%s count=%d\n", player_name, len(attack_options))
+		for patd in attack_options {
+			t := pro_territory_get_territory(patd)
+			tname := default_named_get_name(&t.named_attachable.default_named)
+			value := pro_territory_get_value(patd)
+			units := pro_territory_get_units(patd)
+			type_count := make(map[string]int)
+			defer delete(type_count)
+			for u in units {
+				if u == nil { continue }
+				ut_name := "?"
+				if u.type != nil {
+					ut_name = default_named_get_name(&u.type.named_attachable.default_named)
+				}
+				type_count[ut_name] = type_count[ut_name] + 1
+			}
+			keys := make([dynamic]string)
+			defer delete(keys)
+			for k, _ in type_count { append(&keys, k) }
+			slice.sort(keys[:])
+			tb := strings.builder_make()
+			defer strings.builder_destroy(&tb)
+			f := true
+			for k in keys {
+				if !f { strings.write_string(&tb, ",") }
+				f = false
+				fmt.sbprintf(&tb, "%s:%d", k, type_count[k])
+			}
+			fmt.printf("PLAN_T player=%s t=%s value=%.4f units=%d types=[%s]\n",
+				player_name, tname, value, len(units), strings.to_string(tb))
+		}
+		_ = attack_map_for_plan
+	}
 
 	// Calculate attack routes and perform moves
 	pro_combat_move_ai_do_move(

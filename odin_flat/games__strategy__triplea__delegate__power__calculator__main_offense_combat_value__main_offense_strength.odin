@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Main_Offense_Combat_Value_Main_Offense_Strength :: struct {
 	game_dice_sides:      int,
 	territory_effects:    [dynamic]^Territory_Effect,
@@ -61,7 +63,14 @@ main_offense_combat_value_main_offense_strength_get_strength :: proc(
 			false,
 		),
 	)
-	sv = strength_value_add(sv, available_supports_give_support_to_unit(self.support_from_friends, unit))
-	sv = strength_value_add(sv, available_supports_give_support_to_unit(self.support_from_enemies, unit))
+	support_f := available_supports_give_support_to_unit(self.support_from_friends, unit)
+	sv = strength_value_add(sv, support_f)
+	support_e := available_supports_give_support_to_unit(self.support_from_enemies, unit)
+	sv = strength_value_add(sv, support_e)
+	when #config(SUP_PROBE, false) {
+		utn := "?"
+		if unit.type != nil { utn = unit.type.named_attachable.default_named.name }
+		fmt.printf("MOS_GET_STR unit_type=%s base=%d sup_f=%d sup_e=%d final=%d\n", utn, strength, support_f, support_e, strength_value_get_value(sv))
+	}
 	return sv
 }

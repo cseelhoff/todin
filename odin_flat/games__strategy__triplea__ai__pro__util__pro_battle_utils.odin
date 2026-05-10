@@ -2,6 +2,7 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:slice"
 
 Pro_Battle_Utils :: struct {}
 
@@ -97,6 +98,36 @@ pro_battle_utils_estimate_power :: proc(
 	)
 	psar := power_strength_and_rolls_build(units_that_can_fight, cv)
 	my_power := power_strength_and_rolls_calculate_total_power(psar)
+	when #config(PLAN, false) {
+		_tn := default_named_get_name(&t.named_attachable.default_named)
+		if _tn == "West Russia" || _tn == "Baltic States" {
+			fmt.printf("ESTPOW t=%s side=%v u=%d sup=%d power=%d\n", _tn, side, len(units_that_can_fight), len(support_attachments), my_power)
+			// Stable per-unit breakdown grouped by type.
+			type_counts := make(map[string]int); defer delete(type_counts)
+			type_power := make(map[string]i32); defer delete(type_power)
+			type_str := make(map[string]i32); defer delete(type_str)
+			for u in units_that_can_fight {
+				utn := "?"
+				if u.type != nil { utn = u.type.named_attachable.default_named.name }
+				v := psar.total_strength_and_total_rolls_by_unit[u]
+				type_counts[utn] = type_counts[utn] + 1
+				type_power[utn] = type_power[utn] + v.power
+				if v.strength_and_rolls != nil {
+					type_str[utn] = type_str[utn] + v.strength_and_rolls.strength
+				}
+			}
+			keys := make([dynamic]string); defer delete(keys)
+			for k, _ in type_counts { append(&keys, k) }
+			slice.sort(keys[:])
+			for k in keys {
+				fmt.printf("ESTPOW_T t=%s side=%v type=%s n=%d str=%d power=%d\n", _tn, side, k, type_counts[k], type_str[k], type_power[k])
+			}
+			// Probe specific [5 inf + 1 art] case.
+			if type_counts["infantry"] == 5 && type_counts["artillery"] == 1 && len(units_that_can_fight) == 6 {
+				fmt.printf("ESTPOW_DEBUG t=%s 5INF1ART side=%v atkStrSum=%d\n", _tn, side, type_str["infantry"])
+			}
+		}
+	}
 	return (f64(my_power) * 6.0) / f64(game_data_get_dice_sides(data))
 }
 
@@ -297,6 +328,12 @@ pro_battle_utils_estimate_strength_difference :: proc(
 
 	attacker_strength := pro_battle_utils_estimate_strength(t, attacking_units, defending_units, true)
 	defender_strength := pro_battle_utils_estimate_strength(t, defending_units, attacking_units, false)
+	when #config(PLAN, false) {
+		_tn := default_named_get_name(&t.named_attachable.default_named)
+		if _tn == "West Russia" || _tn == "Baltic States" {
+			fmt.printf("ESTSTR t=%s a=%d d=%d atkStr=%.6f defStr=%.6f\n", _tn, len(attacking_units), len(defending_units), attacker_strength, defender_strength)
+		}
+	}
 	return ((attacker_strength - defender_strength) / math.pow(defender_strength, 0.85)) * 50.0 + 50.0
 }
 

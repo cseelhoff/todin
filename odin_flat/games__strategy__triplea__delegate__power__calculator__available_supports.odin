@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Tracks the available support that a collection of units can give to other units.
 // Once a support is used, it will no longer be available for other units to use.
 Available_Supports :: struct {
@@ -140,6 +142,11 @@ available_supports_get_support :: proc(support_calculator: ^Support_Calculator) 
 //   unitsGivingSupport, and returns the total bonus given.
 available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit: ^Unit) -> i32 {
 	amount_of_support_given: i32 = 0
+	when #config(SUP_PROBE, false) {
+		_utn := "?"
+		if unit.type != nil { _utn = unit.type.named_attachable.default_named.name }
+		fmt.printf("SUP_GIVE unit_type=%s rules_buckets=%d support_units_size=%d\n", _utn, len(self.support_rules), len(self.support_units))
+	}
 	for _, rules_by_bonus_type in self.support_rules {
 		if len(rules_by_bonus_type) == 0 {
 			continue
@@ -151,9 +158,19 @@ available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit:
 		for rule in rules_by_bonus_type {
 			unit_types := unit_support_attachment_get_unit_type(rule)
 			if _, has := unit_types[unit_get_type(unit)]; !has {
+				when #config(SUP_PROBE, false) {
+					_utn := "?"
+					if unit.type != nil { _utn = unit.type.named_attachable.default_named.name }
+					fmt.printf("SUP_SKIP unit_type=%s rule_unit_types_size=%d\n", _utn, len(unit_types))
+				}
 				continue
 			}
 			num_support_available_to_apply := available_supports_get_support_available(self, rule)
+			when #config(SUP_PROBE, false) {
+				_utn := "?"
+				if unit.type != nil { _utn = unit.type.named_attachable.default_named.name }
+				fmt.printf("SUP_APPLY unit_type=%s num=%d\n", _utn, num_support_available_to_apply)
+			}
 			for i: i32 = 0; i < num_support_available_to_apply; i += 1 {
 				supporter := available_supports_get_next_available_supporter(self, rule)
 				bonus := unit_support_attachment_get_bonus(rule)
@@ -170,6 +187,11 @@ available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit:
 				break
 			}
 		}
+	}
+	when #config(SUP_PROBE, false) {
+		_utn2 := "?"
+		if unit.type != nil { _utn2 = unit.type.named_attachable.default_named.name }
+		fmt.printf("SUP_RESULT unit_type=%s amount=%d\n", _utn2, amount_of_support_given)
 	}
 	return amount_of_support_given
 }

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.delegate.power.calculator.SupportCalculator
 
@@ -68,20 +70,51 @@ support_calculator_new :: proc(
 	self.support_units = make(map[^Unit_Support_Attachment]^Integer_Map_Unit)
 
 	if len(units_giving_the_support) == 0 {
+		when #config(SUP_PROBE, false) {
+			fmt.printf("SUP_NEW empty side=%v allies=%v\n", side, allies)
+		}
 		return self
+	}
+	when #config(SUP_PROBE, false) {
+		_inf_count := 0
+		_art_count := 0
+		for u in units_giving_the_support {
+			if u.type == nil { continue }
+			if u.type.named_attachable.default_named.name == "infantry" { _inf_count += 1 }
+			if u.type.named_attachable.default_named.name == "artillery" { _art_count += 1 }
+		}
+		fmt.printf("SUP_NEW units=%d inf=%d art=%d side=%v allies=%v rules=%d\n", len(units_giving_the_support), _inf_count, _art_count, side, allies, len(rules))
 	}
 
 	for rule in rules {
 		types := unit_support_attachment_get_unit_type(rule)
+		_attached := cast(^Unit_Type)rule.attached_to
+		_aname := "?"
+		when #config(SUP_PROBE, false) {
+			if _attached != nil { _aname = _attached.named_attachable.default_named.name }
+		}
 		if len(unit_support_attachment_get_players(rule)) == 0 || types == nil || len(types) == 0 {
+			when #config(SUP_PROBE, false) {
+				if _aname == "artillery" {
+					_tlen := -1
+					if types != nil { _tlen = len(types) }
+					fmt.printf("SUP_SKIP1 attached=%s players=%d types=%d\n", _aname, len(unit_support_attachment_get_players(rule)), _tlen)
+				}
+			}
 			continue
 		}
 		if !((side == .DEFENSE && unit_support_attachment_get_defence(rule)) ||
 			(side == .OFFENSE && unit_support_attachment_get_offence(rule))) {
+			when #config(SUP_PROBE, false) {
+				if _aname == "artillery" { fmt.printf("SUP_SKIP2_side attached=%s side=%v def=%v off=%v\n", _aname, side, unit_support_attachment_get_defence(rule), unit_support_attachment_get_offence(rule)) }
+			}
 			continue
 		}
 		if !((allies && unit_support_attachment_get_allied(rule)) ||
 			(!allies && unit_support_attachment_get_enemy(rule))) {
+			when #config(SUP_PROBE, false) {
+				if _aname == "artillery" { fmt.printf("SUP_SKIP3_allies attached=%s allies=%v r_allied=%v r_enemy=%v\n", _aname, allies, unit_support_attachment_get_allied(rule), unit_support_attachment_get_enemy(rule)) }
+			}
 			continue
 		}
 
@@ -124,6 +157,11 @@ support_calculator_new :: proc(
 			}
 		}
 		if len(units_for_rule.entries) > 0 {
+			when #config(SUP_PROBE, false) {
+				attached_name := "?"
+				if attached_ut != nil { attached_name = attached_ut.named_attachable.default_named.name }
+				fmt.printf("SUP_RULE_ADD attached=%s side=%v allies=%v supporters=%d\n", attached_name, side, allies, len(units_for_rule.entries))
+			}
 			self.support_units[rule] = units_for_rule
 			bt := unit_support_attachment_get_bonus_type(rule)
 			list, ok := self.support_rules[bt]
@@ -132,6 +170,36 @@ support_calculator_new :: proc(
 			}
 			append(&list, rule)
 			self.support_rules[bt] = list
+		} else {
+			when #config(SUP_PROBE, false) {
+				attached_name := "?"
+				if attached_ut != nil { attached_name = attached_ut.named_attachable.default_named.name }
+				if attached_name == "artillery" {
+					_units_count_match := 0
+					for u in units_giving_the_support {
+						if is_of_type_p(is_of_type_c, u) { _units_count_match += 1 }
+					}
+					_owned_match := 0
+					for u in units_giving_the_support {
+						if is_of_type_p(is_of_type_c, u) && owned_p(owned_c, u) { _owned_match += 1 }
+					}
+					_players := unit_support_attachment_get_players(rule)
+					_first_owner := "?"
+					for u in units_giving_the_support {
+						if is_of_type_p(is_of_type_c, u) && u.owner != nil {
+							_first_owner = u.owner.named_attachable.default_named.name
+							break
+						}
+					}
+					_players_str := ""
+					for p in _players {
+						if p == nil { continue }
+						_players_str = _players_str
+						_players_str = fmt.aprintf("%s,%s", _players_str, p.named_attachable.default_named.name)
+					}
+					fmt.printf("SUP_RULE_EMPTY attached=%s side=%v allies=%v type_match=%d owned_match=%d first_owner=%s players=[%s]\n", attached_name, side, allies, _units_count_match, _owned_match, _first_owner, _players_str)
+				}
+			}
 		}
 	}
 	return self

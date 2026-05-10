@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Odds_Calculator :: struct {
 	calc:    ^I_Battle_Calculator,
 	stopped: bool,
@@ -536,6 +538,28 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 		attacking_units,
 		defending_units,
 	)
+	when #config(PLAN, false) {
+		_tn := default_named_get_name(&t.named_attachable.default_named)
+		if _tn == "West Russia" || _tn == "Baltic States" {
+			fmt.printf("ESTBR t=%s attackers=%d defenders=%d strDiff=%.4f\n", _tn, len(attacking_units), len(defending_units), strength_difference)
+			for u in attacking_units {
+				if u == nil { continue }
+				ut := "?"
+				if u.type != nil { ut = default_named_get_name(&u.type.named_attachable.default_named) }
+				on := "?"
+				if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+				fmt.printf("ESTBR_A t=%s owner=%s type=%s\n", _tn, on, ut)
+			}
+			for u in defending_units {
+				if u == nil { continue }
+				ut := "?"
+				if u.type != nil { ut = default_named_get_name(&u.type.named_attachable.default_named) }
+				on := "?"
+				if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+				fmt.printf("ESTBR_D t=%s owner=%s type=%s\n", _tn, on, ut)
+			}
+		}
+	}
 	if strength_difference < 45 {
 		return pro_battle_result_new(
 			0,

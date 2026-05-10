@@ -232,7 +232,8 @@ tasks.withType<Test>().configureEach {
     // -Dsnapshot.outDir=/tmp -Dsnapshot.rounds=1` actually reaches
     // Ww2v5JacocoRun#runWithSnapshots. Without this, gradle's daemon JVM
     // sees them but the forked test JVM does not.
-    listOf("snapshot.outDir", "snapshot.rounds", "snapshot.rangeStart", "snapshot.rangeEnd")
+    listOf("snapshot.outDir", "snapshot.rounds", "snapshot.rangeStart", "snapshot.rangeEnd",
+           "game.rounds", "game.outFile", "digest", "digest.detail.r", "digest.detail.i")
         .forEach { key ->
             System.getProperty(key)?.let { systemProperty(key, it) }
         }

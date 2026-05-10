@@ -426,6 +426,7 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		}
 	}
 
+	when DIGEST { test_full_game_digest_emit(self.data) }
 	server_game_run_next_step(sg)
 
 	// If max_rounds > 0, this is the end-to-end "full game" test mode:
@@ -449,6 +450,7 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 					step_name = step.name
 				}
 			}
+			when DIGEST { test_full_game_digest_emit(self.data) }
 			t0 := time.now()
 			server_game_run_next_step(sg)
 			dt := time.since(t0)

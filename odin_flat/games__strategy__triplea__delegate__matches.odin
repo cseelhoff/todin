@@ -3386,8 +3386,21 @@ Matches_Ctx_unit_is_owned_by_any_of :: struct {
 matches_pred_unit_is_owned_by_any_of :: proc(ctx_ptr: rawptr, unit: ^Unit) -> bool {
 	c := cast(^Matches_Ctx_unit_is_owned_by_any_of)ctx_ptr
 	owner := unit_get_owner(unit)
+	if owner == nil {
+		for p in c.players {
+			if p == nil { return true }
+		}
+		return false
+	}
+	owner_name := owner.named_attachable.default_named.name
 	for p in c.players {
 		if p == owner {
+			return true
+		}
+		// Java's DefaultNamed.equals() compares by name, not identity.
+		// Game-state copies (e.g. odds-calculator simulations) can produce
+		// distinct GamePlayer instances with the same name; treat them equal.
+		if p != nil && p.named_attachable.default_named.name == owner_name {
 			return true
 		}
 	}

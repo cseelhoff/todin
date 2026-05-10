@@ -1,6 +1,7 @@
 package game
 
 import "core:slice"
+import "core:fmt"
 
 // Port of games.strategy.triplea.delegate.power.calculator.PowerStrengthAndRolls.
 // Computes total power, strength, and roll for a collection of units.
@@ -165,6 +166,11 @@ power_strength_and_rolls_add_units :: proc(
 		data := unit_power_strength_and_rolls_unit_power_strength_and_rolls_builder_build(b)
 		self.total_strength_and_total_rolls_by_unit[unit] = data^
 		append(&self.sorted_strength_and_rolls, data^)
+		when #config(PSAR_PROBE, false) {
+			ut_name := "?"
+			if unit.type != nil { ut_name = unit.type.named_attachable.default_named.name }
+			fmt.printf("PSAR_U type=%s str=%d rolls=%d power=%d\n", ut_name, data.strength_and_rolls.strength, data.strength_and_rolls.rolls, data.power)
+		}
 	}
 
 	for supporter, supported_units in strength_calculator_get_support_given(strength_calculator) {
