@@ -22,8 +22,21 @@ original_owner_tracker_lambda_get_original_owner_or_throw_0 :: proc(territory: ^
 //   return ChangeFactory.unitPropertyChange(unit, player, Constants.ORIGINAL_OWNER);
 // }
 // Constants.ORIGINAL_OWNER is the literal "originalOwner" (Constants.java:215).
+//
+// Boxing convention: the unit "originalOwner" property setter (in
+// games__strategy__engine__data__unit.odin, case "originalOwner")
+// expects `v` to be ^^Game_Player and dereferences once. Callers
+// elsewhere (e.g. air_battle.odin lines 185-194) follow this by
+// `new(^Game_Player); boxed^ = player; rawptr(boxed)`. Earlier
+// versions of this proc passed `rawptr(player)` directly, causing
+// the setter to write the player struct's first 8 bytes (the
+// name.data pointer) into `original_owner` — which then crashed
+// `clone_tech_attachment` during AI copyData with a garbage
+// `tech_attachment=0x1e`-style pointer.
 original_owner_tracker_add_original_owner_change_unit :: proc(unit: ^Unit, player: ^Game_Player) -> ^Change {
-	return change_factory_unit_property_change(unit, rawptr(player), "originalOwner")
+	boxed := new(^Game_Player)
+	boxed^ = player
+	return change_factory_unit_property_change(unit, rawptr(boxed), "originalOwner")
 }
 
 // Java: public static Change addOriginalOwnerChange(final Territory t, final GamePlayer player) {

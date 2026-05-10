@@ -33,6 +33,32 @@ _ROOT = os.path.dirname(_HERE)
 _DB = os.path.join(_ROOT, "port.sqlite")
 _FIXTURES_BASE = os.path.join(_ROOT, "triplea", "conversion", "odin_tests", "fixtures")
 _OUT_BASE = os.path.join(_ROOT, "triplea", "conversion", "odin_tests")
+_ODIN_FLAT = os.path.join(_ROOT, "odin_flat")
+
+# Cached lazily; built from `odin_flat/*.odin` top-level proc declarations.
+# Used to skip emitting a test whose target proc doesn't exist (e.g.
+# UnitAttachment#getAttackRolls — Odin port collapsed it into the
+# `_with_player` overload, so the bare-name proc isn't declared).
+_PROC_REGISTRY: set[str] | None = None
+
+
+def odin_proc_registry() -> set[str]:
+    global _PROC_REGISTRY
+    if _PROC_REGISTRY is not None:
+        return _PROC_REGISTRY
+    pat = re.compile(r"^([a-z][a-z0-9_]+)\s*::\s*proc\b", re.MULTILINE)
+    out: set[str] = set()
+    for fname in os.listdir(_ODIN_FLAT):
+        if not fname.endswith(".odin"):
+            continue
+        try:
+            with open(os.path.join(_ODIN_FLAT, fname), "r") as f:
+                for m in pat.finditer(f.read()):
+                    out.add(m.group(1))
+        except Exception:
+            continue
+    _PROC_REGISTRY = out
+    return out
 
 # Arg kinds we know how to resolve from a snap's before.json.
 RESOLVABLE_REF_KINDS = {"Territory", "Unit", "GamePlayer", "UnitType", "UnitAttachment"}
@@ -330,6 +356,18 @@ def main() -> int:
             if not os.path.isdir(fdir):
                 continue
             arg_kinds, ret_kind = detect_method_shape(fdir)
+            # Skip if the target Odin proc was never ported (e.g. Java
+            # overload collapsed into the `_with_player` form).
+            registry = odin_proc_registry()
+            proc_name = odin_proc_name(short_class, method)
+            if proc_name not in registry:
+                n_skipped += 1
+                con.execute(
+                    "UPDATE methods SET capture_state='captured' WHERE method_key=?",
+                    (mk,),
+                )
+                print(f"  skip (no Odin proc): {short_class}#{method}  -> game.{proc_name}")
+                continue
             src = gen_for_method(fqcn, method, arg_kinds, ret_kind)
             if src is None:
                 n_skipped += 1

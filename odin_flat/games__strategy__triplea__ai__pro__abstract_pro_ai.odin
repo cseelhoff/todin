@@ -161,7 +161,12 @@ abstract_pro_ai_copy_data :: proc(self: ^Abstract_Pro_Ai, data: ^Game_Data) -> ^
 			true,
 		),
 	)
+	t0 := time.now()
 	data_copy := game_data_utils_clone_game_data(data, options)
+	dt := time.since(t0)
+	if dt > 100 * time.Millisecond {
+		fmt.printf("[copy_data] clone took %v\n", dt)
+	}
 	if data_copy != nil {
 		// prepareData is abstract; dispatch to the concrete ProAi override.
 		pro_ai_prepare_data(cast(^Pro_Ai)self, data_copy)

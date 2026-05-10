@@ -1,6 +1,8 @@
 package game
 
 import "core:math/rand"
+import "core:fmt"
+import "core:time"
 
 // Harness-only wrapper used by the snapshot runner
 // (`triplea/conversion/odin_tests/test_common/snapshot_runner.odin`).
@@ -31,6 +33,13 @@ Test_Server_Game :: struct {
 	mt_state_present:   bool,
 	math_random_seed:   i64,
 	math_random_present: bool,
+
+	// End-to-end "full game" mode. When max_rounds > 0 the harness runs
+	// runNextStep in a loop until isGameOver or sequence.round > max_rounds
+	// (mirrors Ww2v5JacocoRun.runFullGameDeterminismProbe). Defaults to 0
+	// so existing snap tests still execute exactly one step.
+	max_rounds:     int,
+	steps_executed: int,
 }
 
 @(private = "file")
@@ -418,6 +427,44 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	}
 
 	server_game_run_next_step(sg)
+
+	// If max_rounds > 0, this is the end-to-end "full game" test mode:
+	// keep running next steps until either the game ends or the round
+	// counter passes max_rounds. Mirrors Java's
+	// Ww2v5JacocoRun.runFullGameDeterminismProbe loop:
+	//   while (!game.isGameOver()) {
+	//     if (game.getData().getSequence().getRound() > maxRounds) break;
+	//     game.runNextStep();
+	//   }
+	if self.max_rounds > 0 {
+		step_count: int = 1  // we already ran one above
+		for !sg.is_game_over {
+			seq := game_data_get_sequence(self.data)
+			if seq != nil && int(seq.round) > self.max_rounds {
+				break
+			}
+			step_name := ""
+			if seq != nil && int(seq.current_index) < len(seq.steps) {
+				if step := seq.steps[seq.current_index]; step != nil {
+					step_name = step.name
+				}
+			}
+			t0 := time.now()
+			server_game_run_next_step(sg)
+			dt := time.since(t0)
+			if dt > 1 * time.Second {
+				fmt.printf("[step %d] round=%d %s took %v\n",
+					step_count, seq.round if seq != nil else -1,
+					step_name, dt)
+			}
+			step_count += 1
+			// Guard against infinite loops if a delegate fails to advance.
+			if step_count > 100000 {
+				break
+			}
+		}
+		self.steps_executed = step_count
+	}
 
 	// Reflect any state changes back so the harness's diff sees them.
 	self.game_over = sg.is_game_over

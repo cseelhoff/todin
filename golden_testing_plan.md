@@ -673,3 +673,119 @@ python3 scripts/golden_dashboard.py --once
   Odin proc doesn't exist (avoids the
   `unit_attachment_get_attack_rolls / _defense_rolls` manual
   cleanup we did this round).
+
+### 2026-05-09 (sixth session): capture-cost reality check + lessons
+
+The replay cycle is unchanged: **5.8 s for 152 tests, 5451 of 6272
+fixtures pass, 0 fail.** That part of the framework is solid.
+
+Capture, however, has structural limits we now understand:
+
+1. **Stateful instance methods aren't Tier-A.** `BattleTracker`,
+   `AbstractBattle`, `MustFightBattle` capture `_kind=BattleTracker`
+   (etc.) as opaque receivers with no name/id we can resolve. The
+   instance state (Conquered, Blitzed, Fought lists) IS the proc's
+   input, and we can't reconstruct it from a snap's `before.json`.
+   These need **Tier B** (subgraph capture: serialize the receiver's
+   reachable state as a tiny mini-snap per fixture). Verified by
+   inspection of fixtures: every BT/AB/MFB fixture has the receiver
+   as opaque `_class+_toString`. Codegen correctly skips them with
+   `(unresolvable)` markers.
+
+2. **Hot-path classes have intrinsic capture cost.** BT's
+   `wasConquered` fires millions of times per game. Even with
+   intercept-side fast-skip (added to ProcRecorderInterceptor —
+   `perMethodSaturated` map check before `record()`), the saturation
+   maps fill slowly because each call has distinct args (different
+   territories, different snap states). Capture wall time for BT
+   alone exceeded 11 minutes before being killed.
+
+3. **Gradle test stdout buffers per-test.** Our `runWithSnapshots`
+   is one `@Test` running all 104 steps, so the agent's PROGRESS
+   lines are held in gradle's per-test buffer until the test
+   completes. The progress thread DOES run, but its output is
+   invisible until end of run. **Workaround**: agent should write
+   progress to a stable file path that the wrapper tails. Not yet
+   implemented; deferred.
+
+4. **Java UUID non-determinism**: after a partial re-capture, the
+   snap suite's units have new UUIDs but the older fixtures
+   reference old UUIDs. ProBattleUtils replay went from 4843/4848
+   pass → 0/4848 pass (all skipped, no fails) because units in the
+   fixtures don't exist in the new snap dirs. **Capture must always
+   refresh snaps + fixtures together; partial recaptures break the
+   snap_id ↔ unit_id linkage.** This is a hard rule, not a polish
+   item. The current `process_snapshots.py` step in the wrapper
+   refreshes snaps; the issue is when capture fails mid-run and
+   we keep stale fixtures alongside fresh snaps.
+
+5. **Per-class capture timeline is not constant.** The plan's
+   ≤2× wall-time budget (§6 #7) holds for *small leaf* classes
+   (ProBattleUtils 49 s, AbstractBattle 1m 57s) but breaks for
+   *hot-path* classes. The honest cost model:
+
+   | Class kind | Capture time |
+   |---|---|
+   | Pure leaf, scalar args (Properties, ProBattleUtils) | <2 min |
+   | Stateful but reachable (UnitAttachment via attached_to) | <2 min |
+   | Hot-path utility (BattleTracker, Matches) | 10+ min, often hangs |
+   | Lambda-only / functional (ProMatches predicate factories) | irrelevant — not Tier-A |
+
+### Lessons committed to repo memory
+
+- **Never re-capture stateful classes via Tier A.** Mark them in
+  `methods.capture_state='captured'` (we already do for opaque-arg
+  methods) and escalate to Tier B as a separate workstream.
+- **Always refresh snap dirs and fixtures atomically.** Wrapper
+  must either capture+process_snapshots together or refuse to
+  proceed.
+- **Capture cost is data, track it.** The new `captures` table
+  in port.sqlite records elapsed_ms / intercepts_total per run,
+  so we can see which classes are capture-hostile up front.
+
+### Tooling additions in this session (kept for future use)
+
+- `triplea/conversion/proc-recorder-agent/`: agent now
+  - accepts `class=FQCN[+FQCN...]` to capture only specific classes
+  - prints `[ProcRecorderAgent] PROGRESS t=Ns intercepts=N writes=N`
+    every 5 s (visible after gradle test completes; not yet
+    surfaced live)
+  - prints `[ProcRecorderAgent] SUMMARY elapsed_ms=N ...` on
+    shutdown via Runtime hook
+  - has `perMethodSaturated` fast-skip in the inlined advice so
+    saturated methods short-circuit before paying args + SHA cost
+  - captures `@Advice.This` for instance methods (prepended to args)
+  - reflectively follows `getAttachedTo().getName()` for any
+    DefaultAttachment so attachments resolve via container name
+- `scripts/capture_class.py`: per-class capture wrapper that
+  - records start/end/elapsed/fixtures/intercepts in the new
+    `captures` table
+  - tee's gradle output to `/tmp/capture_<unix>.log`
+  - is additive: only deletes the target classes' subdirs, not the
+    whole `golden_fixtures/` tree
+  - parses agent SUMMARY post-hoc rather than streaming
+    (subprocess.Popen+tee was hanging on gradle daemon)
+- `port.sqlite captures` table (new in this session): one row per
+  capture run with fqcn, elapsed_ms, fixtures_written,
+  intercepts_total, status.
+
+### Recommendation going forward
+
+For **fast iteration**:
+- The 152 existing Tier-A tests run in ~6 s and catch real bugs
+  (json_to_property_value, isSub). **Use them.** Don't re-capture.
+- Iterate on Odin code freely; existing fixtures stay valid until
+  the next deliberate Java re-baseline.
+
+For **Phase 4 rollout**:
+- Continue with **simple-arg classes only** (next candidates from
+  `bb_agent_whitelist.py suggest`: ProTerritory, ProUtils,
+  ProTransportUtils, MoveValidator). Each should capture in <2 min.
+- Defer combat classes to **Phase B (Tier-B subgraph)** as a
+  separate effort; they need an entirely different capture strategy.
+
+For **diagnosing snap 0015/0067 wasInCombat**:
+- Tier A can't reach this layer. Either (a) bisect by adding more
+  log statements to the existing snap test, or (b) implement the
+  Tier-B subgraph capture for AbstractBattle / MustFightBattle
+  before chasing it.

@@ -36,6 +36,17 @@ headless_display_v_notify_dice :: proc(self: ^I_Display, dice_roll: ^Dice_Roll, 
 	headless_display_notify_dice(cast(^Headless_Display)self, dice_roll, step_name)
 }
 
+// Java HeadlessDisplay.notifyRetreat(UUID, Collection<Unit>) — no-op.
+// Required by EvaderRetreat.notifyRetreat in headless / Pro AI odds-calc paths.
+headless_display_v_notify_retreat_units :: proc(self: ^I_Display, battle_id: Uuid, retreating: [dynamic]^Unit) {
+	headless_display_notify_retreat_uuid(cast(^Headless_Display)self, battle_id, retreating)
+}
+
+// Java HeadlessDisplay.notifyRetreat(String, String, String, GamePlayer) — no-op.
+headless_display_v_notify_retreat :: proc(self: ^I_Display, short_message: string, message: string, step: string, retreating_player: ^Game_Player) {
+	headless_display_notify_retreat_string(cast(^Headless_Display)self, short_message, message, step, retreating_player)
+}
+
 headless_display_new :: proc() -> ^Headless_Display {
 	self := new(Headless_Display)
 	self.i_display.battle_end = headless_display_v_battle_end
@@ -46,6 +57,8 @@ headless_display_new :: proc() -> ^Headless_Display {
 	self.i_display.goto_battle_step = headless_display_v_goto_battle_step
 	self.i_display.list_battle_steps = headless_display_v_list_battle_steps
 	self.i_display.notify_dice = headless_display_v_notify_dice
+	self.i_display.notify_retreat_units = headless_display_v_notify_retreat_units
+	self.i_display.notify_retreat = headless_display_v_notify_retreat
 	return self
 }
 
