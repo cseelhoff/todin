@@ -166,6 +166,21 @@ game_player_is_null :: proc(self: ^Game_Player) -> bool {
 	return default_named_get_name(&self.named_attachable.default_named) == "Neutral"
 }
 
+// Mirrors Java's `DefaultNamed.equals()` (which `GamePlayer` inherits via
+// Lombok `@EqualsAndHashCode`): two GamePlayers are equal when they have
+// the same name. Using pointer identity is unsafe because game-state
+// copies (e.g. odds-calculator simulations) can produce distinct
+// `^Game_Player` instances that still represent the same logical player.
+game_player_equals :: proc(a: ^Game_Player, b: ^Game_Player) -> bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.named_attachable.default_named.name == b.named_attachable.default_named.name
+}
+
 // Java: @Override public void notifyChanged() {}
 game_player_notify_changed :: proc(self: ^Game_Player) {
 }

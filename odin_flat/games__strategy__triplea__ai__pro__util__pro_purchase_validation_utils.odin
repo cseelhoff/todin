@@ -206,7 +206,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 		// Predicate: unit.getType() == type && unit.getOwner() == player.
 		currently_built: i32 = 0
 		for u in units_to_place {
-			if unit_get_type(u) == type && unit_get_owner(u) == player {
+			if unit_get_type(u) == type && unit_is_owned_by(u, player) {
 				currently_built += 1
 			}
 		}
@@ -216,7 +216,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 			// unit_collection_count_matches (whose pred is a bare
 			// proc(^Unit) -> bool with no closure).
 			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
-				if unit_get_type(u) == type && unit_get_owner(u) == player {
+				if unit_get_type(u) == type && unit_is_owned_by(u, player) {
 					currently_built += 1
 				}
 			}
@@ -224,7 +224,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 		for _, t in purchase_territories {
 			for place_territory in pro_purchase_territory_get_can_place_territories(t) {
 				for u in pro_place_territory_get_place_units(place_territory) {
-					if unit_get_type(u) == type && unit_get_owner(u) == player {
+					if unit_get_type(u) == type && unit_is_owned_by(u, player) {
 						currently_built += 1
 					}
 				}

@@ -76,7 +76,7 @@ unit_has_moved :: proc(self: ^Unit) -> bool {
 }
 
 unit_is_owned_by :: proc(self: ^Unit, player: ^Game_Player) -> bool {
-	return self.owner == player
+	return game_player_equals(self.owner, player)
 }
 
 unit_has_movement_left :: proc(self: ^Unit) -> bool {

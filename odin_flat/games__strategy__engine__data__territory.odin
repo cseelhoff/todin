@@ -42,8 +42,9 @@ territory_v_get_name :: proc(self: ^Named) -> string {
 // games.strategy.engine.data.Territory#isOwnedBy(GamePlayer)
 territory_is_owned_by :: proc(self: ^Territory, player: ^Game_Player) -> bool {
 	// Java: return getOwner().equals(player);
-	// GamePlayer does not override equals, so this is reference identity.
-	return self.owner == player
+	// GamePlayer inherits DefaultNamed.equals (via Lombok @EqualsAndHashCode),
+	// which compares by name — not pointer identity.
+	return game_player_equals(self.owner, player)
 }
 
 // Mirrors Java's `Territory.compareTo`, which delegates to

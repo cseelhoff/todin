@@ -52,7 +52,7 @@ matches_lambda_territory_is_originally_owned_by_222 :: proc(
 	player: ^Game_Player,
 	game_player: ^Game_Player,
 ) -> bool {
-	return game_player == player
+	return game_player_equals(game_player, player)
 }
 
 // lambda$territoryIsOriginallyOwnedBy$223(GamePlayer)
@@ -2471,7 +2471,7 @@ matches_pred_unit_destroyed_when_captured_by :: proc(ctx_ptr: rawptr, u: ^Unit) 
 		if tuple == nil {
 			continue
 		}
-		if tuple.first == "BY" && tuple.second == c.player_by {
+		if tuple.first == "BY" && game_player_equals(tuple.second, c.player_by) {
 			return true
 		}
 	}
@@ -2495,7 +2495,7 @@ matches_pred_unit_destroyed_when_captured_from :: proc(_: rawptr, u: ^Unit) -> b
 		if tuple == nil {
 			continue
 		}
-		if tuple.first == "FROM" && tuple.second == owner {
+		if tuple.first == "FROM" && game_player_equals(tuple.second, owner) {
 			return true
 		}
 	}
@@ -3386,21 +3386,8 @@ Matches_Ctx_unit_is_owned_by_any_of :: struct {
 matches_pred_unit_is_owned_by_any_of :: proc(ctx_ptr: rawptr, unit: ^Unit) -> bool {
 	c := cast(^Matches_Ctx_unit_is_owned_by_any_of)ctx_ptr
 	owner := unit_get_owner(unit)
-	if owner == nil {
-		for p in c.players {
-			if p == nil { return true }
-		}
-		return false
-	}
-	owner_name := owner.named_attachable.default_named.name
 	for p in c.players {
-		if p == owner {
-			return true
-		}
-		// Java's DefaultNamed.equals() compares by name, not identity.
-		// Game-state copies (e.g. odds-calculator simulations) can produce
-		// distinct GamePlayer instances with the same name; treat them equal.
-		if p != nil && p.named_attachable.default_named.name == owner_name {
+		if game_player_equals(p, owner) {
 			return true
 		}
 	}
@@ -4110,7 +4097,7 @@ matches_lambda_is_territory_owned_by_any_of_135 :: proc(
 ) -> bool {
 	owner := t.owner
 	for p in players {
-		if p == owner {
+		if game_player_equals(p, owner) {
 			return true
 		}
 	}
@@ -4482,7 +4469,7 @@ matches_lambda_unit_is_owned_by_any_of_130 :: proc(
 ) -> bool {
 	owner := unit_get_owner(unit)
 	for p in players {
-		if p == owner {
+		if game_player_equals(p, owner) {
 			return true
 		}
 	}
@@ -4576,7 +4563,7 @@ matches_lambda_unit_support_attachment_can_be_used_by_player_47 :: proc(
 	usa: ^Unit_Support_Attachment,
 ) -> bool {
 	for p in unit_support_attachment_get_players(usa) {
-		if p == player {
+		if game_player_equals(p, player) {
 			return true
 		}
 	}
@@ -5130,7 +5117,7 @@ matches_pred_allied_unit_of_any_of_these_players :: proc(ctx_ptr: rawptr, unit: 
 	c := cast(^Matches_Ctx_allied_unit_of_any_of_these_players)ctx_ptr
 	owner := unit_get_owner(unit)
 	for p in c.players {
-		if p == owner {
+		if game_player_equals(p, owner) {
 			return true
 		}
 	}
@@ -6095,7 +6082,7 @@ matches_lambda_unit_can_be_captured_on_entering_this_territory_32 :: proc(
 	uc_list := unit_attachment_get_can_be_captured_on_entering_by(ua)
 	unit_can_be_captured_by_player := false
 	for p in uc_list {
-		if p == player {
+		if game_player_equals(p, player) {
 			unit_can_be_captured_by_player = true
 			break
 		}
@@ -6107,7 +6094,7 @@ matches_lambda_unit_can_be_captured_on_entering_this_territory_32 :: proc(
 	tc_list := territory_attachment_get_capture_unit_on_entering_by(ta)
 	terr_can_have := false
 	for p in tc_list {
-		if p == player {
+		if game_player_equals(p, player) {
 			terr_can_have = true
 			break
 		}
@@ -6119,7 +6106,7 @@ matches_lambda_unit_can_be_captured_on_entering_this_territory_32 :: proc(
 	pc_list := player_attachment_get_capture_unit_on_entering_by(pa)
 	owner_lets := false
 	for p in pc_list {
-		if p == player {
+		if game_player_equals(p, player) {
 			owner_lets = true
 			break
 		}
@@ -6210,7 +6197,7 @@ matches_pred_territory_can_collect_income_from :: proc(
 	if territory_is_water(t) &&
 	   !(original_owner == nil ||
 			   game_player_is_null(original_owner) ||
-			   original_owner == c.player) {
+			   game_player_equals(original_owner, c.player)) {
 		return false
 	}
 	if territory_attachment_get_convoy_route(ta) {
@@ -6446,7 +6433,7 @@ matches_lambda_territory_can_collect_income_from_104 :: proc(
 	if territory_is_water(t) &&
 	   !(original_owner == nil ||
 			   game_player_is_null(original_owner) ||
-			   original_owner == player) {
+			   game_player_equals(original_owner, player)) {
 		return false
 	}
 	if territory_attachment_get_convoy_route(ta) {
