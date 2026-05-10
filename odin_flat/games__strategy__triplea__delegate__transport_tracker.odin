@@ -539,6 +539,7 @@ transport_tracker_get_available_capacity :: proc(unit: ^Unit) -> i32 {
 // and LOADED_AFTER_COMBAT on the transport when it was previously in combat.
 transport_tracker_load_transport_change :: proc(transport: ^Unit, unit: ^Unit) -> ^Change {
 	transport_tracker_assert_transport(transport)
+	narrate_load(transport, unit)
 	change := composite_change_new()
 	composite_change_add(
 		change,
@@ -648,6 +649,7 @@ transport_tracker_unload_transport_change :: proc(
 	territory: ^Territory,
 	dependent_battle: bool,
 ) -> ^Change {
+	narrate_unload(unit, territory)
 	change := composite_change_new()
 	transport := unit_get_transported_by(unit)
 	if transport == nil {

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 // Java owner: games.strategy.triplea.ai.pro.ProData
 
 Pro_Data :: struct {
@@ -219,6 +221,23 @@ pro_data_hidden_initialize :: proc(
 		}
 	}
 	self.my_unit_territories = my_unit_territories
+
+	when NCM_TRACE {
+		pname := default_named_get_name(&player.named_attachable.default_named)
+		if pname == "Russians" {
+			fmt.printf("MY_UT player=Russians count=%d\n", len(my_unit_territories))
+			for t in my_unit_territories {
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				// count air units
+				air_p, air_c := matches_unit_is_air()
+				n_air := 0
+				units := territory_get_units(t)
+				for u in units { if air_p(air_c, u) && unit_get_owner(u) == player { n_air += 1 } }
+				delete(units)
+				fmt.printf("MY_UT t=%s n_air_owned=%d\n", tn, n_air)
+			}
+		}
+	}
 
 	self.unit_territory_map = pro_data_new_unit_territory_map(&data.game_state)
 

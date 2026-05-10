@@ -559,40 +559,48 @@ pro_purchase_utils_randomize_key :: proc(ppo: ^Pro_Purchase_Option) -> string {
 // for AI-decision purposes should use this helper.
 //
 // Caller must `defer delete(<returned slice>)`.
+// IMPORTANT — iteration order: Java's `purchase_territories` is a
+// `LinkedHashMap` populated by iterating the master territory list
+// returned from `data.getMap().getTerritories()` (or
+// `getTerritoriesOwnedBy`, which is also stable). Iteration of the map
+// therefore visits territories in master-game-data order. Mirror that
+// here by walking `game_map_get_territories(...)` and filtering to
+// the keys present in the map. (Earlier versions sorted alphabetically;
+// that produced byte-divergent placement decisions vs. Java starting at
+// the russianPlace step.)
+//
+// Caller must `defer delete(<returned slice>)`.
 pro_purchase_utils_sorted_purchase_territories :: proc(
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	data: ^Game_Data,
 ) -> [dynamic]^Pro_Purchase_Territory {
 	out: [dynamic]^Pro_Purchase_Territory
-	for _, ppt in purchase_territories {
-		append(&out, ppt)
+	all_terrs := game_map_get_territories(game_data_get_map(data))
+	defer delete(all_terrs)
+	for t in all_terrs {
+		if ppt, ok := purchase_territories[t]; ok {
+			append(&out, ppt)
+		}
 	}
-	slice.sort_by(out[:], proc(a, b: ^Pro_Purchase_Territory) -> bool {
-		ta := pro_purchase_territory_get_territory(a)
-		tb := pro_purchase_territory_get_territory(b)
-		na := ta != nil ? default_named_get_name(&ta.named_attachable.default_named) : ""
-		nb := tb != nil ? default_named_get_name(&tb.named_attachable.default_named) : ""
-		return strings.compare(na, nb) < 0
-	})
 	return out
 }
 
-// Returns the keys of `purchase_territories` sorted by territory name.
-// Use when the iteration consumes the territory directly (e.g.
-// `for t, _ in purchase_territories`).
+// Returns the keys of `purchase_territories` in master-game-data order
+// (mirroring Java's LinkedHashMap insertion order — see comment above).
 //
 // Caller must `defer delete(<returned slice>)`.
 pro_purchase_utils_sorted_purchase_territory_keys :: proc(
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	data: ^Game_Data,
 ) -> [dynamic]^Territory {
 	out: [dynamic]^Territory
-	for t, _ in purchase_territories {
-		append(&out, t)
+	all_terrs := game_map_get_territories(game_data_get_map(data))
+	defer delete(all_terrs)
+	for t in all_terrs {
+		if _, ok := purchase_territories[t]; ok {
+			append(&out, t)
+		}
 	}
-	slice.sort_by(out[:], proc(a, b: ^Territory) -> bool {
-		na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
-		nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
-		return strings.compare(na, nb) < 0
-	})
 	return out
 }
 

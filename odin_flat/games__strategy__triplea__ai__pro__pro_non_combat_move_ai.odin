@@ -1253,6 +1253,7 @@ pro_non_combat_move_ai_find_units_that_cant_move :: proc(
 		pro_territory_add_cant_move_units(pro_territory, cant_move_units)
 		delete(cant_move_units)
 	}
+	pro_ncm_trace_emit("02A_after_allied_defender", move_map)
 
 	// Add all units that only have 1 move option and can't be transported.
 	// Java uses Iterator.remove(); we collect first, mutate after.
@@ -1277,14 +1278,41 @@ pro_non_combat_move_ai_find_units_that_cant_move :: proc(
 	for u in to_remove_single_option {
 		delete_key(unit_move_map, u)
 	}
+	pro_ncm_trace_emit("02B_after_single_option", move_map)
 
 	// Check if purchase units are known yet.
+	when NCM_TRACE {
+		pname5 := default_named_get_name(&self.player.named_attachable.default_named)
+		if pname5 == "Russians" {
+			fmt.printf("PHC pname=Russians has_pt=%v pt_size=%d\n",
+				has_purchase_territories, len(purchase_territories))
+		}
+	}
 	if has_purchase_territories {
+		// Build name->pointer index of move_map so we can look up by name,
+		// matching Java's DefaultNamed.equals semantics. Territory pointers
+		// in purchase_territories may come from a different GameData copy
+		// than move_map.
+		mm_by_name := make(map[string]^Pro_Territory)
+		defer delete(mm_by_name)
+		for kt, kpt in move_map {
+			if kt == nil { continue }
+			mm_by_name[default_named_get_name(&kt.named_attachable.default_named)] = kpt
+		}
 		// Add all units that will be purchased.
 		for _, ppt in purchase_territories {
 			for place_territory in pro_purchase_territory_get_can_place_territories(ppt) {
 				t := pro_place_territory_get_territory(place_territory)
-				if pro_territory_at, ok := move_map[t]; ok && pro_territory_at != nil {
+				tn_lookup := default_named_get_name(&t.named_attachable.default_named)
+				when NCM_TRACE {
+					pname6 := default_named_get_name(&self.player.named_attachable.default_named)
+					if pname6 == "Russians" {
+						pu := pro_place_territory_get_place_units(place_territory)
+						_, in_mm := mm_by_name[tn_lookup]
+						fmt.printf("PHC place t=%s n_units=%d in_move_map=%v\n", tn_lookup, len(pu), in_mm)
+					}
+				}
+				if pro_territory_at, ok := mm_by_name[tn_lookup]; ok && pro_territory_at != nil {
 					pro_territory_add_cant_move_units(
 						pro_territory_at,
 						pro_place_territory_get_place_units(place_territory),
@@ -3296,8 +3324,14 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 		territories_to_try_to_defend := prioritized_territories^[:num_to_defend]
 
 		// Loop through all units and determine defend options.
+		// Iterate via the insertion-order slice so per-unit defend
+		// candidate sets are computed in Java's LinkedHashMap order;
+		// downstream stable sort preserves this for tie-breaking.
 		unit_defend_options := make(map[^Unit]map[^Territory]struct {})
-		for unit, _ in unit_move_map {
+		_defend_opts_order := pro_my_move_options_get_unit_move_map_order(
+			pro_territory_manager_get_defend_options(self.territory_manager),
+		)
+		for unit in _defend_opts_order {
 			can_defend_territories := make(map[^Territory]struct {})
 			for attack_territory_data in territories_to_try_to_defend {
 				attk_t := pro_territory_get_territory(attack_territory_data)
@@ -3536,7 +3570,10 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 			game_data_get_properties(self.data),
 		) {
 			transport_defend_options := make(map[^Unit]map[^Territory]struct {})
-			for unit, _ in transport_move_map {
+			_t_order := pro_my_move_options_get_transport_move_map_order(
+				pro_territory_manager_get_defend_options(self.territory_manager),
+			)
+			for unit in _t_order {
 				can_defend_territories := make(map[^Territory]struct {})
 				for attack_territory_data in territories_to_try_to_defend {
 					attk_t := pro_territory_get_territory(attack_territory_data)
@@ -4287,6 +4324,8 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	cleared_for_defense := make([dynamic]^Territory, 0)
 	pro_territory_manager_populate_defense_options(self.territory_manager, cleared_for_defense)
 	delete(cleared_for_defense)
+	pro_ncm_trace_emit("01_after_populateDefenseOptions",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 
 	// On maps that have a single move phase this can be true.
 	is_combat_move := game_step_properties_helper_is_combat_move(self.data)
@@ -4299,10 +4338,14 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		pro_purchase_option_map_get_land_options(pro_data_get_purchase_options(self.pro_data)),
 	)
 	infra_unit_move_map := pro_non_combat_move_ai_find_infra_units_that_can_move(self)
+	pro_ncm_trace_emit("02_after_findUnitsThatCantMove",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 
 	// Try to have one land unit in each territory bordering an enemy territory
 	moved_one_defender_to_territories :=
 		pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy(self)
+	pro_ncm_trace_emit("03_after_moveOneDefender",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 
 	// Determine max enemy attack units and if territories can be held
 	pro_territory_manager_populate_enemy_attack_options(
@@ -4311,6 +4354,8 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		pro_territory_manager_get_defend_territories(self.territory_manager),
 	)
 	pro_non_combat_move_ai_determine_if_move_territories_can_be_held(self)
+	pro_ncm_trace_emit("04_after_determineCanHold",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 
 	// Prioritize territories to defend
 	factory_move_map := initial_factory_move_map
@@ -4319,6 +4364,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		self,
 		factory_move_map,
 	)
+	pro_ncm_trace_emit_list("05_after_prioritize", &prioritized_territories)
 
 	// Determine which territories to defend and how many units each one needs
 	my_capital := pro_data_get_my_capital(self.pro_data)
@@ -4335,6 +4381,8 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 			&prioritized_territories,
 			enemy_distance_to_my_capital,
 		)
+		pro_ncm_trace_emit("06_after_moveUnitsToDefend",
+			pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 	}
 
 	// Copy data in case capital defense needs increased
@@ -4399,6 +4447,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 			}
 
 			pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
+			pro_ncm_trace_emit("07_after_moveUnitsToBest", move_map)
 
 			// Check if capital has local land superiority
 			pro_logger_info(
@@ -4437,6 +4486,8 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		factory_move_map,
 		&infra_unit_move_map,
 	)
+	pro_ncm_trace_emit("08_after_moveInfra",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 
 	// Log a warning if any units not assigned to a territory (skip infrastructure for now)
 	infra_p, infra_c := matches_unit_is_infrastructure()

@@ -440,6 +440,7 @@ purchase_delegate_purchase :: proc(
 		transcript_text,
 		rawptr(&total_units),
 	)
+	narrate_purchase(player_name, transcript_text)
 	// commit changes
 	i_delegate_bridge_add_change(self.bridge, cast(^Change)changes)
 	return ""

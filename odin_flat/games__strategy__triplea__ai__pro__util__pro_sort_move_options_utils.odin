@@ -164,23 +164,10 @@ pro_sort_move_options_utils_sorted_unit_keys_by_move_options :: proc(
 			move_count         = len(ts),
 			unit_value         = pro_data_get_unit_value(pro_data, ut),
 			type_name          = default_named_get_name(&ut.named_attachable.default_named),
-			home_territory_name = home_name,
+			home_territory_name = home_name, already_moved = unit_get_already_moved(u),
 		})
 	}
-	slice.sort_by(list[:], proc(a, b: Pro_Sort_Move_Options_Entry) -> bool {
-		if a.move_count != b.move_count { return a.move_count < b.move_count }
-		if a.unit_value != b.unit_value { return a.unit_value < b.unit_value }
-		if a.type_name != b.type_name   { return a.type_name  < b.type_name  }
-		if a.home_territory_name != b.home_territory_name {
-			return a.home_territory_name < b.home_territory_name
-		}
-		ai := a.unit != nil ? a.unit.id : Uuid{}
-		bi := b.unit != nil ? b.unit.id : Uuid{}
-		for i in 0..<16 {
-			if ai[i] != bi[i] { return ai[i] < bi[i] }
-		}
-		return false
-	})
+	slice.stable_sort_by(list[:], pro_sort_move_options_entry_less)
 	out: [dynamic]^Unit
 	for e in list {
 		append(&out, e.unit)
@@ -199,10 +186,14 @@ Pro_Sort_Move_Options_Entry :: struct {
 	move_count:          int,
 	unit_value:          i32,
 	type_name:           string,
-	// Home-territory name used as the stable-sort tiebreaker before
-	// unit-Uuid. See sorted_unit_keys_by_move_options comment for the
-	// Java LinkedHashMap rationale.
+	// Tiebreakers (matched on Java side via
+	// `ProDeterminism.UNIT_TIEBREAK_ORDER` — see ProDeterminism.java).
+	// Home-territory name first, then `alreadyMoved`. UUID is
+	// deliberately NOT used; if all five keys still tie, stable sort
+	// preserves input-collection order (which the caller is
+	// responsible for keeping deterministic across runtimes).
 	home_territory_name: string,
+	already_moved:       f64,
 }
 
 @(private = "file")
@@ -216,17 +207,10 @@ pro_sort_move_options_entry_less :: proc(a, b: Pro_Sort_Move_Options_Entry) -> b
 	if a.type_name != b.type_name {
 		return a.type_name < b.type_name
 	}
-	// Java LinkedHashMap insertion-order tiebreak, approximated by
-	// alphabetical home-territory name. See sort helpers' comments.
 	if a.home_territory_name != b.home_territory_name {
 		return a.home_territory_name < b.home_territory_name
 	}
-	ai := a.unit != nil ? a.unit.id : Uuid{}
-	bi := b.unit != nil ? b.unit.id : Uuid{}
-	for i in 0..<16 {
-		if ai[i] != bi[i] { return ai[i] < bi[i] }
-	}
-	return false
+	return a.already_moved < b.already_moved
 }
 
 // Java: public static Map<Unit, Set<Territory>> sortUnitMoveOptions(
@@ -250,11 +234,11 @@ pro_sort_move_options_utils_sort_unit_move_options :: proc(
 				move_count          = len(ts),
 				unit_value          = pro_data_get_unit_value(pro_data, ut),
 				type_name           = default_named_get_name(&ut.named_attachable.default_named),
-				home_territory_name = home_name,
+				home_territory_name = home_name, already_moved = unit_get_already_moved(u),
 			},
 		)
 	}
-	slice.sort_by(list[:], pro_sort_move_options_entry_less)
+	slice.stable_sort_by(list[:], pro_sort_move_options_entry_less)
 	sorted: map[^Unit]map[^Territory]struct {}
 	for e in list {
 		sorted[e.unit] = e.territories
@@ -296,11 +280,11 @@ pro_sort_move_options_utils_sort_unit_needed_options :: proc(
 				move_count          = len(filtered),
 				unit_value          = pro_data_get_unit_value(pro_data, ut),
 				type_name           = default_named_get_name(&ut.named_attachable.default_named),
-				home_territory_name = home_name,
+				home_territory_name = home_name, already_moved = unit_get_already_moved(u),
 			},
 		)
 	}
-	slice.sort_by(list[:], pro_sort_move_options_entry_less)
+	slice.stable_sort_by(list[:], pro_sort_move_options_entry_less)
 	sorted: map[^Unit]map[^Territory]struct {}
 	for e in list {
 		sorted[e.unit] = e.territories
@@ -330,6 +314,7 @@ Pro_Sort_Move_Options_Then_Attack_Entry :: struct {
 	type_name:           string,
 	total_distance:      i32,
 	home_territory_name: string,
+	already_moved:       f64,
 }
 
 @(private = "file")
@@ -351,16 +336,10 @@ pro_sort_move_options_then_attack_entry_less :: proc(
 	if a.total_distance != b.total_distance {
 		return a.total_distance < b.total_distance
 	}
-	// LinkedHashMap insertion-order tiebreak (alphabetical-by-home).
 	if a.home_territory_name != b.home_territory_name {
 		return a.home_territory_name < b.home_territory_name
 	}
-	ai := a.unit != nil ? a.unit.id : Uuid{}
-	bi := b.unit != nil ? b.unit.id : Uuid{}
-	for i in 0..<16 {
-		if ai[i] != bi[i] { return ai[i] < bi[i] }
-	}
-	return false
+	return a.already_moved < b.already_moved
 }
 
 // Java: public static Map<Unit, Set<Territory>> sortUnitNeededOptionsThenAttack(
@@ -401,7 +380,7 @@ pro_sort_move_options_utils_sort_unit_needed_options_then_attack :: proc(
 			territories         = ts,
 			move_count          = len(filtered),
 			type_name           = default_named_get_name(&ut.named_attachable.default_named),
-			home_territory_name = home_name,
+			home_territory_name = home_name, already_moved = unit_get_already_moved(u),
 		}
 		if entry.move_count > 0 {
 			entry.attack_efficiency = pro_sort_move_options_utils_calculate_attack_efficiency(
@@ -428,7 +407,7 @@ pro_sort_move_options_utils_sort_unit_needed_options_then_attack :: proc(
 		}
 		append(&list, entry)
 	}
-	slice.sort_by(list[:], pro_sort_move_options_then_attack_entry_less)
+	slice.stable_sort_by(list[:], pro_sort_move_options_then_attack_entry_less)
 	sorted: map[^Unit]map[^Territory]struct {}
 	for e in list {
 		sorted[e.unit] = e.territories

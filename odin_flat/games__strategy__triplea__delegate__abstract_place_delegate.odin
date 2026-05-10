@@ -2677,6 +2677,11 @@ abstract_place_delegate_place_units :: proc(
 	if len(units) == 0 {
 		return nil
 	}
+	narrate_place(
+		self.player != nil ? self.player.base.name : "<nil>",
+		at != nil ? at.base.name : "<nil>",
+		units,
+	)
 	error := abstract_place_delegate_is_valid_placement(self, units, at, self.player)
 	if _, has := error.?; has {
 		return error

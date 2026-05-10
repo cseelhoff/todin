@@ -1,5 +1,9 @@
 package game
 
+import "core:fmt"
+
+OTHER_MM_TRACE :: #config(OTHER_MM_TRACE, false)
+
 Pro_Other_Move_Options :: struct {
 	max_move_map: map[^Territory]^Pro_Territory,
 	move_maps:    map[^Territory][dynamic]^Pro_Territory,
@@ -24,7 +28,21 @@ pro_other_move_options_new_with_moves :: proc(
 }
 
 pro_other_move_options_get_max :: proc(self: ^Pro_Other_Move_Options, t: ^Territory) -> ^Pro_Territory {
-	return self.max_move_map[t]
+	r := self.max_move_map[t]
+	when OTHER_MM_TRACE {
+		if r == nil && t != nil {
+			tn := default_named_get_name(&t.named_attachable.default_named)
+			for kt, kv in self.max_move_map {
+				if kt == nil { continue }
+				if default_named_get_name(&kt.named_attachable.default_named) == tn {
+					fmt.printf("OTHER_MM_FALLBACK t=%s direct=nil name_hit=non-nil ptr_in=%p ptr_have=%p\n", tn, t, kt)
+					_ = kv
+					break
+				}
+			}
+		}
+	}
+	return r
 }
 
 pro_other_move_options_get_all :: proc(self: ^Pro_Other_Move_Options, t: ^Territory) -> [dynamic]^Pro_Territory {

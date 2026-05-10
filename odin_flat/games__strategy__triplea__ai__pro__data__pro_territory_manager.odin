@@ -894,6 +894,14 @@ pro_territory_manager_find_air_move_options :: proc(
 
 	for my_unit_territory in my_unit_territories {
 		my_air_units := territory_get_matches(my_unit_territory, unit_match_p, unit_match_c)
+		when NCM_TRACE {
+			if len(my_air_units) > 0 {
+				fmt.printf("AIR_DBG terr=%s n_air=%d player=%s\n",
+					default_named_get_name(&my_unit_territory.named_attachable.default_named),
+					len(my_air_units),
+					default_named_get_name(&player.named_attachable.default_named))
+			}
+		}
 
 		for my_air_unit in my_air_units {
 			range := pro_territory_manager_get_unit_range(
@@ -902,6 +910,17 @@ pro_territory_manager_find_air_move_options :: proc(
 				player,
 				is_checking_enemy_attacks,
 			)
+			when NCM_TRACE {
+				pname4 := default_named_get_name(&player.named_attachable.default_named)
+				if pname4 == "Russians" && !is_combat_move {
+					ml := unit_get_movement_left(my_air_unit)
+					ua := unit_get_unit_attachment(my_air_unit)
+					mvmax := unit_attachment_get_movement(ua, player)
+					tn4 := default_named_get_name(&my_unit_territory.named_attachable.default_named)
+					fmt.printf("AIR_UNIT terr=%s ml=%v max=%v range=%v is_check_enemy=%v\n",
+						tn4, ml, mvmax, range, is_checking_enemy_attacks)
+				}
+			}
 
 			possible_move_territories := game_map_get_neighbors_by_movement_cost(
 				game_map,
@@ -916,6 +935,25 @@ pro_territory_manager_find_air_move_options :: proc(
 			for t in possible_move_territories {
 				if move_to_territory_match(move_to_territory_match_ctx, t) {
 					potential_territories[t] = {}
+				}
+			}
+			when NCM_TRACE {
+				fmt.printf("AIR_DBG unit_at=%s range=%v possible=%d potential=%d\n",
+					default_named_get_name(&my_unit_territory.named_attachable.default_named),
+					range, len(possible_move_territories), len(potential_territories))
+				pname := default_named_get_name(&player.named_attachable.default_named)
+				if pname == "Russians" && !is_combat_move {
+					for t in potential_territories {
+						fmt.printf("AIR_PT t=%s\n",
+							default_named_get_name(&t.named_attachable.default_named))
+					}
+					for t in possible_move_territories {
+						tn := default_named_get_name(&t.named_attachable.default_named)
+						if tn == "India" || tn == "Trans-Jordan" || tn == "Persia" {
+							pass := move_to_territory_match(move_to_territory_match_ctx, t)
+							fmt.printf("AIR_CHK t=%s in_possible=true match_pred=%v\n", tn, pass)
+						}
+					}
 				}
 			}
 			if !is_combat_move && carrier_landable_p(carrier_landable_c, my_air_unit) {
@@ -942,11 +980,25 @@ pro_territory_manager_find_air_move_options :: proc(
 					my_unit_territory,
 					potential_territory,
 				)
+				when NCM_TRACE {
+					pname := default_named_get_name(&player.named_attachable.default_named)
+					tn := default_named_get_name(&potential_territory.named_attachable.default_named)
+					if pname == "Russians" && !is_combat_move && (tn == "India" || tn == "Trans-Jordan" || tn == "Persia") {
+						fmt.printf("AIR_RT t=%s route_nil=%v\n", tn, optional_route == nil)
+					}
+				}
 				if optional_route == nil {
 					continue
 				}
 				my_route_length := route_get_movement_cost(optional_route, my_air_unit)
 				remaining_moves := range - my_route_length
+				when NCM_TRACE {
+					pname2 := default_named_get_name(&player.named_attachable.default_named)
+					tn2 := default_named_get_name(&potential_territory.named_attachable.default_named)
+					if pname2 == "Russians" && !is_combat_move && (tn2 == "India" || tn2 == "Trans-Jordan" || tn2 == "Persia") {
+						fmt.printf("AIR_RT t=%s len=%v remaining=%v\n", tn2, my_route_length, remaining_moves)
+					}
+				}
 				if remaining_moves < 0 {
 					continue
 				}
@@ -986,6 +1038,13 @@ pro_territory_manager_find_air_move_options :: proc(
 				}
 
 				pt := pro_data_get_pro_territory(pro_data, move_map, potential_territory)
+				when NCM_TRACE {
+					pname3 := default_named_get_name(&player.named_attachable.default_named)
+					tn3 := default_named_get_name(&potential_territory.named_attachable.default_named)
+					if pname3 == "Russians" && !is_combat_move {
+						fmt.printf("AIR_ADD t=%s map_size=%d\n", tn3, len(move_map^))
+					}
+				}
 				pro_territory_add_max_unit(pt, my_air_unit)
 
 				inner, ok := unit_move_map[my_air_unit]
@@ -1588,6 +1647,7 @@ pro_territory_manager_find_defend_options :: proc(
 		false,
 		is_checking_enemy_attacks,
 	)
+	pro_ncm_trace_emit_raw("01a_after_naval", move_map)
 
 	land_p, land_c := matches_is_territory_allied(player)
 	empty_enemy: [dynamic]^Territory
@@ -1606,6 +1666,7 @@ pro_territory_manager_find_defend_options :: proc(
 		is_checking_enemy_attacks,
 		false,
 	)
+	pro_ncm_trace_emit_raw("01b_after_land", move_map)
 
 	empty_enemy_air: [dynamic]^Territory
 	empty_allied_air: [dynamic]^Territory
@@ -1631,6 +1692,7 @@ pro_territory_manager_find_defend_options :: proc(
 		is_checking_enemy_attacks,
 		false,
 	)
+	pro_ncm_trace_emit_raw("01c_after_air", move_map)
 
 	amphib_p, amphib_c := matches_is_territory_allied(player)
 	pro_territory_manager_find_amphib_move_options(
@@ -1646,6 +1708,7 @@ pro_territory_manager_find_defend_options :: proc(
 		is_checking_enemy_attacks,
 		false,
 	)
+	pro_ncm_trace_emit_raw("01d_after_amphib", move_map)
 }
 
 // games.strategy.triplea.ai.pro.data.ProTerritoryManager#findPotentialAttackOptions(

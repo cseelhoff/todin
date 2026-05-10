@@ -2,6 +2,7 @@ package game
 
 import "core:math/rand"
 import "core:fmt"
+import "core:strings"
 import "core:time"
 
 // Harness-only wrapper used by the snapshot runner
@@ -487,15 +488,50 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 				break
 			}
 			step_name := ""
-			if seq != nil && int(seq.current_index) < len(seq.steps) {
-				if step := seq.steps[seq.current_index]; step != nil {
-					step_name = step.name
+			player_name := "-"
+			r_now: i32 = -1
+			i_now: i32 = -1
+			if seq != nil {
+				r_now = seq.round
+				i_now = seq.current_index
+				if int(seq.current_index) < len(seq.steps) {
+					if step := seq.steps[seq.current_index]; step != nil {
+						step_name = step.name
+						if step.player != nil {
+							player_name = default_named_get_name(&step.player.named_attachable.default_named)
+						}
+					}
 				}
 			}
 			when DIGEST { test_full_game_digest_emit(self.data) }
+			before_snap: Step_Snapshot
+			when STEP_REPORT {
+				before_snap = test_step_report_snapshot(self.data)
+			}
+			own_snap: Owner_Snapshot
+			own_active := false
+			when NARRATE {
+				is_combat_step := strings.has_suffix(step_name, "Combat") ||
+					strings.has_suffix(step_name, "CombatMove") ||
+					strings.has_suffix(step_name, "Battle")
+				if is_combat_step {
+					own_snap = narrate_ownership_snapshot(self.data)
+					own_active = true
+				}
+			}
 			t0 := time.now()
 			server_game_run_next_step(sg)
 			dt := time.since(t0)
+			when STEP_REPORT {
+				test_step_report_emit(self.data, &before_snap, r_now, i_now, step_name, player_name)
+				test_step_report_destroy(&before_snap)
+			}
+			when NARRATE {
+				if own_active {
+					narrate_ownership_delta(self.data, &own_snap, step_name)
+					narrate_ownership_destroy(&own_snap)
+				}
+			}
 			if dt > 1 * time.Second {
 				fmt.printf("[step %d] round=%d %s took %v\n",
 					step_count, seq.round if seq != nil else -1,

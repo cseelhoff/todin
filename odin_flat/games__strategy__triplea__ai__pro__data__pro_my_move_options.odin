@@ -95,6 +95,27 @@ pro_my_move_options_get_territory_map :: proc(self: ^Pro_My_Move_Options) -> ^ma
 	return &self.territory_map
 }
 
+// Iterate `territory_map` in master-game-data order. Java's
+// `LinkedHashMap<Territory, ProTerritory>` is populated by walking
+// `data.getMap().getTerritories()` (the master list) and inserting
+// hits, so iteration order = master-list order. Odin's plain `map`
+// hashes pointer values and is non-deterministic across runs; this
+// helper recovers Java's order. Caller must `defer delete(<result>)`.
+pro_my_move_options_sorted_territory_keys :: proc(
+	self: ^Pro_My_Move_Options,
+	data: ^Game_Data,
+) -> [dynamic]^Territory {
+	out: [dynamic]^Territory
+	all_terrs := game_map_get_territories(game_data_get_map(data))
+	defer delete(all_terrs)
+	for t in all_terrs {
+		if _, ok := self.territory_map[t]; ok {
+			append(&out, t)
+		}
+	}
+	return out
+}
+
 pro_my_move_options_get_unit_move_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Unit]map[^Territory]struct{} {
 	return &self.unit_move_map
 }
