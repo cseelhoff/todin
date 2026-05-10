@@ -100,6 +100,15 @@ i_delegate_bridge_get_remote_player :: proc(
         return default_delegate_bridge_get_remote_player(cast(^Default_Delegate_Bridge)self, p)
 }
 
+// Narrow variant for retreat-query dispatch. See
+// default_delegate_bridge_get_remote_player_for_retreat for rationale.
+i_delegate_bridge_get_remote_player_for_retreat :: proc(
+        self: ^I_Delegate_Bridge,
+        player: ^Game_Player,
+) -> ^Player {
+        return default_delegate_bridge_get_remote_player_for_retreat(cast(^Default_Delegate_Bridge)self, player)
+}
+
 // games.strategy.engine.delegate.IDelegateBridge#getCostsForTuv(games.strategy.engine.data.GamePlayer)
 // Java default: return new TuvCostsCalculator().getCostsForTuv(player);
 i_delegate_bridge_get_costs_for_tuv :: proc(

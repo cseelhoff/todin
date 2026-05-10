@@ -3,6 +3,20 @@ package game
 import "core:fmt"
 import "core:math"
 import "core:slice"
+import "core:strings"
+
+@(private = "file")
+pro_non_combat_move_ai_territory_load_index :: proc(t: ^Territory) -> int {
+	if t == nil { return max(int) }
+	gd := game_data_component_get_data(&t.named_attachable.default_named.game_data_component)
+	if gd == nil { return max(int) }
+	gm := game_data_get_map(gd)
+	if gm == nil { return max(int) }
+	for tt, i in gm.territories {
+		if tt == t { return i }
+	}
+	return max(int)
+}
 
 Pro_Non_Combat_Move_Ai :: struct {
 	calc:               ^Pro_Odds_Calculator,
@@ -339,7 +353,10 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 		enemies,
 	)
 
-	for t, pt in move_map {
+	game_map_for_order := game_data_get_map(self.data)
+	for t in game_map_for_order.territories {
+		pt, in_map := move_map[t]
+		if !in_map { continue }
 		if territory_is_water(t) {
 			continue
 		}
@@ -369,7 +386,8 @@ pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy :: 
 		if !land_p(land_c, unit) {
 			continue
 		}
-		for t in ts {
+		for t in game_map_for_order.territories {
+			if _, in_ts := ts[t]; !in_ts { continue }
 			unit_value := pro_data_get_unit_value(self.pro_data, unit_get_type(unit))
 			production := territory_attachment_static_get_production(t)
 
@@ -2997,13 +3015,31 @@ pro_non_combat_move_ai_prioritize_defend_options :: proc(
 
 	// Sort attack territories by value descending.
 	prioritized_territories := make([dynamic]^Pro_Territory, 0, len(move_map))
-	for _, pt in move_map {
-		append(&prioritized_territories, pt)
+	gm_for_prio := game_data_get_map(self.data)
+	territory_load_idx := make(map[^Territory]int)
+	defer delete(territory_load_idx)
+	for t, i in gm_for_prio.territories {
+		territory_load_idx[t] = i
+		if pt, ok := move_map[t]; ok {
+			append(&prioritized_territories, pt)
+		}
 	}
 	slice.sort_by(
 		prioritized_territories[:],
 		proc(a, b: ^Pro_Territory) -> bool {
-			return pro_territory_get_value(a) > pro_territory_get_value(b)
+			va := pro_territory_get_value(a)
+			vb := pro_territory_get_value(b)
+			if va != vb { return va > vb }
+			// Java tiebreak: stable on insertion order of the moveMap
+			// LinkedHashMap, which is data.map.territories load order.
+			ta := pro_territory_get_territory(a)
+			tb := pro_territory_get_territory(b)
+			ai := pro_non_combat_move_ai_territory_load_index(ta)
+			bi := pro_non_combat_move_ai_territory_load_index(tb)
+			if ai != bi { return ai < bi }
+			na := ta != nil ? default_named_get_name(&ta.named_attachable.default_named) : ""
+			nb := tb != nil ? default_named_get_name(&tb.named_attachable.default_named) : ""
+			return strings.compare(na, nb) < 0
 		},
 	)
 
@@ -3299,7 +3335,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 			max_estimate: f64 = 0
 			max_t: ^Territory = nil
 			any_estimate := false
-			for t in sorted_unit_move_options[unit] {
+			_t_keys_ncm_1 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_move_options[unit], prioritized_territories^)
+			defer delete(_t_keys_ncm_1)
+			for t in _t_keys_ncm_1 {
 				pro_territory := move_map[t]
 				eligible := pro_territory_get_eligible_defenders(pro_territory, self.player)
 				estimate := pro_battle_utils_estimate_strength_difference(
@@ -3350,7 +3388,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 			}
 			max_win_territory: ^Territory = nil
 			max_win_percentage: f64 = -1
-			for t in sorted_unit_move_options[unit] {
+			_t_keys_ncm_2 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_move_options[unit], prioritized_territories^)
+			defer delete(_t_keys_ncm_2)
+			for t in _t_keys_ncm_2 {
 				pro_territory := move_map[t]
 				if pro_territory_get_battle_result(pro_territory) == nil {
 					eligible := pro_territory_get_eligible_defenders(pro_territory, self.player)
@@ -3414,7 +3454,9 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 		for unit in air_pass_keys {
 			max_win_territory: ^Territory = nil
 			max_win_percentage: f64 = -1
-			for t in sorted_unit_move_options[unit] {
+			_t_keys_ncm_3 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_move_options[unit], prioritized_territories^)
+			defer delete(_t_keys_ncm_3)
+			for t in _t_keys_ncm_3 {
 				pro_territory := move_map[t]
 				if territory_is_water(t) && air_p(air_c, unit) {
 					all_def_for_carrier := pro_territory_get_all_defenders_for_carrier_calcs(

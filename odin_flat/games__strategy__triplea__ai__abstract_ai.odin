@@ -24,6 +24,13 @@ Abstract_Ai :: struct {
 		data: ^Game_Data,
 		player: ^Game_Player,
 	),
+	place: proc(
+		self: ^Abstract_Ai,
+		place_for_bid: bool,
+		place_delegate: ^I_Abstract_Place_Delegate,
+		data: ^Game_Data,
+		player: ^Game_Player,
+	),
 }
 
 // Java owners covered by this file:
@@ -370,9 +377,15 @@ abstract_ai_start :: proc(self: ^Abstract_Ai, name: string) {
 	} else if game_step_is_politics_step_name(name) {
 		abstract_ai_political_actions(self)
 	} else if game_step_is_place_step_name(name) {
-		place_del := cast(^I_Abstract_Place_Delegate)player_bridge_get_remote_delegate(
+		// player_bridge_get_remote_delegate returns the raw delegate
+		// (Place_Delegate / Bid_Place_Delegate / No_Air_Check_Place_Delegate);
+		// all embed Abstract_Place_Delegate at offset 0 so the cast is safe.
+		// We then wrap it in the I_Abstract_Place_Delegate vtable so the
+		// AI's dispatch hits the populated proc-fields.
+		raw_pld := cast(^Abstract_Place_Delegate)player_bridge_get_remote_delegate(
 			abstract_base_player_get_player_bridge(&self.abstract_base_player),
 		)
+		place_del := abstract_place_delegate_to_i_abstract_place_delegate(raw_pld)
 		abstract_ai_place(
 			self,
 			game_step_is_bid_step_name(name),
@@ -460,6 +473,9 @@ abstract_ai_place :: proc(
 	data: ^Game_Data,
 	player: ^Game_Player,
 ) {
-	// abstract in Java; subclass override required
+	if self != nil && self.place != nil {
+		self.place(self, place_for_bid, place_delegate, data, player)
+	}
+	// else: abstract in Java; subclass override required
 }
 

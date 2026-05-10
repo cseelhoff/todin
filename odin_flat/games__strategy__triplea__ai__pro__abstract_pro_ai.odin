@@ -54,7 +54,25 @@ abstract_pro_ai_new :: proc(
 	self.stored_strafing_territories = make([dynamic]^Territory)
 	self.purchase = abstract_pro_ai_v_purchase
 	self.move = abstract_pro_ai_v_move
+	self.place = abstract_pro_ai_v_place
 	return self
+}
+
+@(private = "file")
+abstract_pro_ai_v_place :: proc(
+	self:           ^Abstract_Ai,
+	place_for_bid:  bool,
+	place_delegate: ^I_Abstract_Place_Delegate,
+	data:           ^Game_Data,
+	player:         ^Game_Player,
+) {
+	abstract_pro_ai_place(
+		cast(^Abstract_Pro_Ai)self,
+		place_for_bid,
+		place_delegate,
+		data,
+		player,
+	)
 }
 
 @(private = "file")

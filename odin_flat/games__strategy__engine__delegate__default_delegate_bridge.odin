@@ -225,6 +225,53 @@ default_delegate_bridge_get_remote_player :: proc(self: ^Default_Delegate_Bridge
 	return singleton
 }
 
+// Specialized lookup for retreat-query dispatch. Java routes
+// `bridge.getRemotePlayer(retreatingPlayer)` through messengers to the
+// AbstractProAi.retreatQuery override; the singleton above no-ops every
+// dispatch which silently disables AI retreats (observed at WW2v5 r=1
+// i=14 russianBattle West Russia: Java retreats fighter, Odin doesn't).
+//
+// We can't widen `get_remote_player` to look up the AI Player stub on
+// `self.game.game_players` for ALL callers because many call sites
+// (casualty selection, etc.) rely on the no-op singleton's nil fields
+// to take default branches; switching them all to the AI stub crashes
+// (russianPurchase segfault during odds-calc sims). Instead expose a
+// narrow helper that the retreat path uses explicitly.
+// Test-harness-registered remote-Player lookup keyed by Game_Player.
+// In production, the bridge resolves remote players via messengers; in
+// the snapshot harness there is no messenger, so test_server_game
+// registers per-Game_Player AI Player stubs into this map and the
+// retreat-query helper consults it. We use a global rather than
+// reaching into `self.game.game_players` because some bridges seen at
+// runtime (e.g. the temporary bridge built inside odds-calc sims for
+// AI purchase) point at a different Server_Game whose game_players is
+// uninitialized — accessing it segfaults.
+default_delegate_bridge_remote_player_registry: map[^Game_Player]^Player
+
+default_delegate_bridge_register_remote_player :: proc(
+	game_player: ^Game_Player,
+	player: ^Player,
+) {
+	if game_player == nil { return }
+	default_delegate_bridge_remote_player_registry[game_player] = player
+}
+
+default_delegate_bridge_clear_remote_player_registry :: proc() {
+	clear(&default_delegate_bridge_remote_player_registry)
+}
+
+default_delegate_bridge_get_remote_player_for_retreat :: proc(
+	self: ^Default_Delegate_Bridge,
+	game_player: ^Game_Player,
+) -> ^Player {
+	if game_player != nil {
+		if p, ok := default_delegate_bridge_remote_player_registry[game_player]; ok && p != nil {
+			return p
+		}
+	}
+	return default_delegate_bridge_get_remote_player(self, game_player)
+}
+
 // games.strategy.engine.delegate.DefaultDelegateBridge#getSoundChannelBroadcaster()
 // Java: implementor = game.getMessengers().getChannelBroadcaster(AbstractGame.getSoundChannel());
 //       return (ISound) getOutbound(implementor);

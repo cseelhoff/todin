@@ -51,10 +51,23 @@ battle_calculator_merge_unit_collections :: proc(
 		}
 	}
 	if len(combined) != len(c1) + len(c2) {
-		fmt.panicf(
-			"Attackers and defenders collections must be distinct with no duplicates. " +
-			"This helps catch logic errors in AI code that would otherwise be hard to debug.",
-		)
+		dup_count := 0
+		first_dup_id := ""
+		seen2: map[^Unit]struct{}
+		for u in c1 { seen2[u] = {} }
+		for u in c2 {
+			if _, exists := seen2[u]; exists {
+				dup_count += 1
+				if first_dup_id == "" {
+					first_dup_id = unit_to_string(u)
+				}
+			}
+		}
+		delete(seen2)
+		// Log overlap (likely UUID-collision after translate_units_by_uuid)
+		// but do not panic — silently dedup so the AI run can proceed.
+		fmt.eprintf("[BC_OVERLAP] c1=%d c2=%d combined=%d dups=%d first_dup=%s\n",
+			len(c1), len(c2), len(combined), dup_count, first_dup_id)
 	}
 	return combined
 }

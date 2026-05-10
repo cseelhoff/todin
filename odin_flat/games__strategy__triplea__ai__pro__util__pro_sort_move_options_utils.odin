@@ -80,10 +80,6 @@ pro_sort_move_options_utils_sorted_territory_keys :: proc(
 	return out
 }
 
-// Returns the territory keys of `territories` ordered by their
-// position in `prioritized_territories`. In Java, the per-unit
-// candidate set in `try_to_attack_territories` is a `LinkedHashSet`
-// populated by iterating `prioritizedTerritories` and inserting any
 // territory that the unit can attack — so iteration order of that
 // set IS the prioritization order. The Odin port loses that order
 // because the candidate set is `map[^Territory]struct{}`. This
@@ -175,10 +171,6 @@ pro_sort_move_options_utils_sorted_unit_keys_by_move_options :: proc(
 		if a.move_count != b.move_count { return a.move_count < b.move_count }
 		if a.unit_value != b.unit_value { return a.unit_value < b.unit_value }
 		if a.type_name != b.type_name   { return a.type_name  < b.type_name  }
-		// Java tiebreak: stable on insertion order of the upstream
-		// LinkedHashMap, which empirically follows home-territory
-		// alphabetical order. Final Uuid tiebreak makes the sort fully
-		// deterministic when two units share a home territory.
 		if a.home_territory_name != b.home_territory_name {
 			return a.home_territory_name < b.home_territory_name
 		}

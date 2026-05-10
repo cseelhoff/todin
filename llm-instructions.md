@@ -312,6 +312,50 @@ Rules for subagent dispatch:
      iteration order at the call site, not rely on
      `for k, v in map`.
 
+     **Reusable shim — `Linked_Map(K, V)` / `Linked_Set(K)`.**
+     A faithful Odin mirror of `java.util.LinkedHashMap` and
+     `java.util.LinkedHashSet` lives in
+     `odin_flat/java__util__linked_hash_map.odin`. It is the
+     preferred way to handle option (1) above instead of hand-rolling
+     a parallel `[dynamic]K` next to every `map[K]V`.
+
+     Why the shim is necessary: Odin has no built-in insertion-ordered
+     map. Java does — `LinkedHashMap` is a `HashMap` plus an internal
+     doubly-linked list threaded through entries in insertion order;
+     iteration walks that list. Odin's plain `map[K]V` iterates in
+     hash-bucket order, and when the key type is a pointer (the
+     common case here, e.g. `^Territory`) the hash is over the
+     pointer value — which is non-deterministic across processes
+     because the allocator hands out different addresses each run.
+
+     Shape:
+     ```odin
+     Linked_Map :: struct($K, $V: typeid) {
+         keys:    [dynamic]K,    // insertion order
+         entries: map[K]V,       // O(1) lookup
+     }
+     ```
+     Use `linked_map_put` / `linked_map_get` / `linked_map_contains_key`
+     / `linked_map_size` / `linked_map_put_all`. Iterate via
+     `for k in lm.keys { v := lm.entries[k]; ... }` — NEVER
+     `for k, v in lm.entries`.
+
+     Subtle Java semantic the shim preserves: `LinkedHashMap.put`
+     on an EXISTING key keeps the original insertion slot (it does
+     NOT move the key to the end). Only first-time inserts append
+     to `keys`. `Linked_Set` is the same idea backed by
+     `Linked_Map(K, struct{})`. We do NOT implement the
+     `accessOrder=true` LRU variant — TripleA does not use it.
+
+     Future ports: any Java type declared `LinkedHashMap` or
+     `LinkedHashSet` should become `Linked_Map` / `Linked_Set` in
+     Odin. Plain `HashMap`/`HashSet` over pointer keys (`Territory`,
+     `Unit`, etc.) ALSO needs this treatment when the AI iterates
+     it, because Odin's pointer-hash is non-deterministic across
+     runs even though Java's `HashMap` over `Object.hashCode()`
+     (typically a stable string-derived value) is internally
+     consistent.
+
 5. **No stubs. No "simplified". No "skipped".** Either fully port the
    entity or leave it untouched. The `is_implemented` flag must
    reflect reality.

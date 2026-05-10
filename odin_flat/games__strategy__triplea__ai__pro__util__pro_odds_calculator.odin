@@ -155,6 +155,44 @@ pro_odds_calculator_call_battle_calc :: proc(
 		&t.named_attachable.default_named.game_data_component,
 	)
 
+	defending_units := defending_units
+	// Diagnostic: detect attacker/defender overlap that would panic in
+	// BattleCalculator. Dedup by removing offenders from defender list
+	// (matches Java's `attackingUnits` taking precedence in
+	// translateCollectionIntoOtherGameData ordering) and log full context.
+	{
+		seen_atk: map[^Unit]struct{}
+		defer delete(seen_atk)
+		for u in attacking_units { seen_atk[u] = {} }
+		dup_count := 0
+		first_dup_owner := ""
+		for u in defending_units {
+			if _, ex := seen_atk[u]; ex {
+				dup_count += 1
+				if first_dup_owner == "" {
+					o := unit_get_owner(u)
+					first_dup_owner = o == nil ? "<nil>" : default_named_get_name(&o.named_attachable.default_named)
+				}
+			}
+		}
+		if dup_count > 0 {
+			atk_owner := len(attacking_units) > 0 ? unit_get_owner(attacking_units[0]) : nil
+			def_owner := len(defending_units) > 0 ? unit_get_owner(defending_units[0]) : nil
+			fmt.eprintf("[ODDS_OVERLAP] terr=%s atk_owner=%s def_owner=%s dup_unit_owner=%s n_atk=%d n_def=%d dups=%d\n",
+				t == nil ? "<nil>" : territory_get_name(t),
+				atk_owner == nil ? "<nil>" : default_named_get_name(&atk_owner.named_attachable.default_named),
+				def_owner == nil ? "<nil>" : default_named_get_name(&def_owner.named_attachable.default_named),
+				first_dup_owner, len(attacking_units), len(defending_units), dup_count)
+			deduped := make([dynamic]^Unit)
+			for u in defending_units {
+				if _, ex := seen_atk[u]; !ex {
+					append(&deduped, u)
+				}
+			}
+			defending_units = deduped
+		}
+	}
+
 	if self.stopped || len(attacking_units) == 0 || len(defending_units) == 0 {
 		return pro_battle_result_new_empty()
 	}

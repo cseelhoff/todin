@@ -1098,7 +1098,7 @@ must_fight_battle_query_retreat_territory :: proc(
 	return must_fight_battle_retreat_query(
 		self,
 		battle_state,
-		abstract_battle_get_remote_for_player(retreating_player, bridge),
+		i_delegate_bridge_get_remote_player_for_retreat(bridge, retreating_player),
 		available_territories,
 		false,
 		text,
@@ -1121,7 +1121,7 @@ must_fight_battle_query_submerge_territory :: proc(
 	return must_fight_battle_retreat_query(
 		self,
 		battle_state,
-		abstract_battle_get_remote_for_player(retreating_player, bridge),
+		i_delegate_bridge_get_remote_player_for_retreat(bridge, retreating_player),
 		available_territories,
 		true,
 		text,

@@ -40,6 +40,11 @@ Test_Server_Game :: struct {
 	// so existing snap tests still execute exactly one step.
 	max_rounds:     int,
 	steps_executed: int,
+
+	// When non-empty, the full-game loop breaks immediately after a step
+	// whose name equals this value completes. Used by oracle comparisons
+	// scoped to a particular player's turn (e.g. "russianEndTurn").
+	stop_after_step: string,
 }
 
 @(private = "file")
@@ -135,6 +140,7 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// (snapshot_runner invokes this proc once per snapshot).
 	clear(&test_server_game_player_to_gp)
 	clear(&test_server_game_player_to_ai)
+	default_delegate_bridge_clear_remote_player_registry()
 
 	// Pin RNG seed for snapshot determinism (Java:
 	// PlainRandomSource.fixedSeed = 42L).
@@ -340,6 +346,12 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		// available — we rely on a parallel map below.
 		sg.game_players[gp] = ai
 		test_server_game_player_to_gp[ai] = gp
+		// Register for retreat-query dispatch from inside MustFightBattle.
+		// See comments on default_delegate_bridge_remote_player_registry
+		// for why we use a global registry rather than the bridge's
+		// `game.game_players` (sim-internal bridges have a different,
+		// uninitialized Server_Game pointer).
+		default_delegate_bridge_register_remote_player(gp, ai)
 	}
 
 	pm_map: map[string]^I_Node
@@ -490,6 +502,9 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 					step_name, dt)
 			}
 			step_count += 1
+			if self.stop_after_step != "" && step_name == self.stop_after_step {
+				break
+			}
 			// Guard against infinite loops if a delegate fails to advance.
 			if step_count > 100000 {
 				break
