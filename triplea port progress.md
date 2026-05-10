@@ -2,6 +2,53 @@
 
 Workspace: /home/caleb/todin
 
+## 2026-05-10 — WW2v5 r=1 i=14 russianBattle determinism drill-down
+
+Multi-session drill into the first divergence in `Ww2v5JacocoRun.runFullGameDeterminismProbe`
+between Java and the Odin port (digest emits per-step, BEFORE each step runs).
+Initial divergence at i=14 step=russianBattle (uc_h differs → russianCombatMove
+placed units differently). Root causes uncovered (in order):
+
+1. **Pointer equality vs `equals()` on `^Game_Player`** — Java's `GamePlayer` inherits
+   `DefaultNamed.equals()` (Lombok `@EqualsAndHashCode`) which compares by NAME.
+   Odin used `==` on pointers. Game-state copies (odds-calculator simulations)
+   produce distinct `^Game_Player` instances representing the same player; pointer
+   comparison incorrectly treated them as different. **Fix:** added
+   `game_player_equals` helper in `games__strategy__engine__data__game_player.odin`;
+   replaced pointer equality in 15+ call sites including the foundational
+   `unit_is_owned_by` and `territory_is_owned_by`. → russianCombatMove (i=13)
+   became byte-identical to Java.
+
+2. **Java `LinkedHashMap` insertion order vs Odin `map[K]V` random iteration** —
+   `pro_sort_move_options_utils.odin` sort helpers used Uuid-byte tiebreak when
+   units had identical `(move_count, unit_value, type_name)` keys. Java's stable
+   sort over `LinkedHashMap` preserves insertion order, which (empirically) follows
+   alphabetical iteration of the unit's HOME territory. **Fix:** added
+   `home_territory_name` field to `Pro_Sort_Move_Options_Entry` and
+   `Pro_Sort_Move_Options_Then_Attack_Entry`; tiebreak chain is now
+   `(move_count, unit_value, type_name, home_territory_name, uuid)`. → AI's
+   per-unit ASSIGN trace now matches Java byte-for-byte for the first ~30 lines.
+
+3. **Java `HashSet<Territory>` iteration order vs Odin alphabetical sort** —
+   remaining minor divergence in `try_to_attack_territories` loops 2 and 4.
+   Odin sorts territories alphabetically via
+   `pro_sort_move_options_utils_sorted_territory_keys`; Java iterates a
+   `HashSet<Territory>` in hash-bucket order. For tied estimates/win%, the two
+   ordering schemes pick different territories. Documented in
+   `llm-instructions.md` as a known limitation; deeper fix would require
+   emulating Java's `String.hashCode()` + `HashMap` bucket layout.
+
+Also added `BATTLE` probes to `must_fight_battle_end_battle_who_won` (gated by
+`#config(BATTLE_PROBE,false)` / `Boolean.getBoolean("plan")`, filtered by
+`!headless` to skip odds-calculator simulations) for future battle-resolution
+drill-downs.
+
+**Documentation update:** `llm-instructions.md` now contains two new CRITICAL
+sections in the Phase B rules:
+- "Java reference equality vs `equals()` — CRITICAL" (the GamePlayer pattern)
+- "Java `LinkedHashMap` / collection iteration order — CRITICAL" (the AI
+  determinism pattern, with the three-strategy workaround menu)
+
 ## Phase C — snapshot validation
 - Baseline: **50/52 PASS** (was ~46/52 entering session)
 - Failing snaps: **0013** (Russians.PUs 24 != 0), **0014** (unit.alreadyMoved 0 != 3)

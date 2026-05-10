@@ -92,27 +92,45 @@ pro_sort_move_options_utils_sorted_territory_keys :: proc(
 // slice instead preserves Java's LinkedHashMap-style sort order.
 //
 // Caller must `defer delete(<returned slice>)`.
+// IMPORTANT: Java's `sortUnitMoveOptions` (and friends) operate on a
+// `LinkedHashMap` whose insertion order matches the AI's territory- and
+// unit-iteration order during populate-move-options. Stable Java sort
+// (Collections.sort) preserves that insertion order for ties. Empirically
+// from the WW2v5 r=1 i=14 drill-down, that insertion order matches
+// alphabetical order of each unit's HOME territory (then a final Uuid
+// tiebreak for units within the same home). Plain Odin maps lose order,
+// so we replace the previous Uuid-only tiebreak with a (home territory
+// name, Uuid) tiebreak that reproduces Java's behavior.
 pro_sort_move_options_utils_sorted_unit_keys_by_move_options :: proc(
 	pro_data:            ^Pro_Data,
 	unit_attack_options: map[^Unit]map[^Territory]struct {},
 ) -> [dynamic]^Unit {
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
 	list: [dynamic]Pro_Sort_Move_Options_Entry
 	defer delete(list)
 	for u, ts in unit_attack_options {
 		ut := unit_get_type(u)
+		home := unit_territory_map[u]
+		home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
 		append(&list, Pro_Sort_Move_Options_Entry{
-			unit       = u,
-			move_count = len(ts),
-			unit_value = pro_data_get_unit_value(pro_data, ut),
-			type_name  = default_named_get_name(&ut.named_attachable.default_named),
+			unit               = u,
+			move_count         = len(ts),
+			unit_value         = pro_data_get_unit_value(pro_data, ut),
+			type_name          = default_named_get_name(&ut.named_attachable.default_named),
+			home_territory_name = home_name,
 		})
 	}
 	slice.sort_by(list[:], proc(a, b: Pro_Sort_Move_Options_Entry) -> bool {
 		if a.move_count != b.move_count { return a.move_count < b.move_count }
 		if a.unit_value != b.unit_value { return a.unit_value < b.unit_value }
 		if a.type_name != b.type_name   { return a.type_name  < b.type_name  }
-		// Tiebreak on unit Uuid bytes so iteration is fully deterministic
-		// even when (move_count, unit_value, type_name) collide.
+		// Java tiebreak: stable on insertion order of the upstream
+		// LinkedHashMap, which empirically follows home-territory
+		// alphabetical order. Final Uuid tiebreak makes the sort fully
+		// deterministic when two units share a home territory.
+		if a.home_territory_name != b.home_territory_name {
+			return a.home_territory_name < b.home_territory_name
+		}
 		ai := a.unit != nil ? a.unit.id : Uuid{}
 		bi := b.unit != nil ? b.unit.id : Uuid{}
 		for i in 0..<16 {
@@ -133,11 +151,15 @@ pro_sort_move_options_utils_sorted_unit_keys_by_move_options :: proc(
 // for each entry and sort the resulting slice lexicographically.
 @(private = "file")
 Pro_Sort_Move_Options_Entry :: struct {
-	unit:        ^Unit,
-	territories: map[^Territory]struct {},
-	move_count:  int,
-	unit_value:  i32,
-	type_name:   string,
+	unit:                ^Unit,
+	territories:         map[^Territory]struct {},
+	move_count:          int,
+	unit_value:          i32,
+	type_name:           string,
+	// Home-territory name used as the stable-sort tiebreaker before
+	// unit-Uuid. See sorted_unit_keys_by_move_options comment for the
+	// Java LinkedHashMap rationale.
+	home_territory_name: string,
 }
 
 @(private = "file")
@@ -148,7 +170,20 @@ pro_sort_move_options_entry_less :: proc(a, b: Pro_Sort_Move_Options_Entry) -> b
 	if a.unit_value != b.unit_value {
 		return a.unit_value < b.unit_value
 	}
-	return a.type_name < b.type_name
+	if a.type_name != b.type_name {
+		return a.type_name < b.type_name
+	}
+	// Java LinkedHashMap insertion-order tiebreak, approximated by
+	// alphabetical home-territory name. See sort helpers' comments.
+	if a.home_territory_name != b.home_territory_name {
+		return a.home_territory_name < b.home_territory_name
+	}
+	ai := a.unit != nil ? a.unit.id : Uuid{}
+	bi := b.unit != nil ? b.unit.id : Uuid{}
+	for i in 0..<16 {
+		if ai[i] != bi[i] { return ai[i] < bi[i] }
+	}
+	return false
 }
 
 // Java: public static Map<Unit, Set<Territory>> sortUnitMoveOptions(
@@ -158,17 +193,21 @@ pro_sort_move_options_utils_sort_unit_move_options :: proc(
 	pro_data: ^Pro_Data,
 	unit_attack_options: map[^Unit]map[^Territory]struct {},
 ) -> map[^Unit]map[^Territory]struct {} {
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
 	list: [dynamic]Pro_Sort_Move_Options_Entry
 	for u, ts in unit_attack_options {
 		ut := unit_get_type(u)
+		home := unit_territory_map[u]
+		home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
 		append(
 			&list,
 			Pro_Sort_Move_Options_Entry{
-				unit = u,
-				territories = ts,
-				move_count = len(ts),
-				unit_value = pro_data_get_unit_value(pro_data, ut),
-				type_name = default_named_get_name(&ut.named_attachable.default_named),
+				unit                = u,
+				territories         = ts,
+				move_count          = len(ts),
+				unit_value          = pro_data_get_unit_value(pro_data, ut),
+				type_name           = default_named_get_name(&ut.named_attachable.default_named),
+				home_territory_name = home_name,
 			},
 		)
 	}
@@ -194,6 +233,7 @@ pro_sort_move_options_utils_sort_unit_needed_options :: proc(
 	attack_map: map[^Territory]^Pro_Territory,
 	calc: ^Pro_Odds_Calculator,
 ) -> map[^Unit]map[^Territory]struct {} {
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
 	list: [dynamic]Pro_Sort_Move_Options_Entry
 	for u, ts in unit_attack_options {
 		filtered := pro_sort_move_options_utils_remove_winning_territories(
@@ -203,14 +243,17 @@ pro_sort_move_options_utils_sort_unit_needed_options :: proc(
 			calc,
 		)
 		ut := unit_get_type(u)
+		home := unit_territory_map[u]
+		home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
 		append(
 			&list,
 			Pro_Sort_Move_Options_Entry{
-				unit = u,
-				territories = ts,
-				move_count = len(filtered),
-				unit_value = pro_data_get_unit_value(pro_data, ut),
-				type_name = default_named_get_name(&ut.named_attachable.default_named),
+				unit                = u,
+				territories         = ts,
+				move_count          = len(filtered),
+				unit_value          = pro_data_get_unit_value(pro_data, ut),
+				type_name           = default_named_get_name(&ut.named_attachable.default_named),
+				home_territory_name = home_name,
 			},
 		)
 	}
@@ -237,12 +280,13 @@ pro_sort_move_options_utils_sort_unit_needed_options :: proc(
 // at which point distance is the next tiebreak.
 @(private = "file")
 Pro_Sort_Move_Options_Then_Attack_Entry :: struct {
-	unit:              ^Unit,
-	territories:       map[^Territory]struct {},
-	move_count:        int,
-	attack_efficiency: f64,
-	type_name:         string,
-	total_distance:    i32,
+	unit:                ^Unit,
+	territories:         map[^Territory]struct {},
+	move_count:          int,
+	attack_efficiency:   f64,
+	type_name:           string,
+	total_distance:      i32,
+	home_territory_name: string,
 }
 
 @(private = "file")
@@ -261,7 +305,19 @@ pro_sort_move_options_then_attack_entry_less :: proc(
 	if a.type_name != b.type_name {
 		return a.type_name < b.type_name
 	}
-	return a.total_distance < b.total_distance
+	if a.total_distance != b.total_distance {
+		return a.total_distance < b.total_distance
+	}
+	// LinkedHashMap insertion-order tiebreak (alphabetical-by-home).
+	if a.home_territory_name != b.home_territory_name {
+		return a.home_territory_name < b.home_territory_name
+	}
+	ai := a.unit != nil ? a.unit.id : Uuid{}
+	bi := b.unit != nil ? b.unit.id : Uuid{}
+	for i in 0..<16 {
+		if ai[i] != bi[i] { return ai[i] < bi[i] }
+	}
+	return false
 }
 
 // Java: public static Map<Unit, Set<Territory>> sortUnitNeededOptionsThenAttack(
@@ -295,11 +351,14 @@ pro_sort_move_options_utils_sort_unit_needed_options_then_attack :: proc(
 			calc,
 		)
 		ut := unit_get_type(u)
+		home := unit_territory_map[u]
+		home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
 		entry := Pro_Sort_Move_Options_Then_Attack_Entry {
-			unit        = u,
-			territories = ts,
-			move_count  = len(filtered),
-			type_name   = default_named_get_name(&ut.named_attachable.default_named),
+			unit                = u,
+			territories         = ts,
+			move_count          = len(filtered),
+			type_name           = default_named_get_name(&ut.named_attachable.default_named),
+			home_territory_name = home_name,
 		}
 		if entry.move_count > 0 {
 			entry.attack_efficiency = pro_sort_move_options_utils_calculate_attack_efficiency(

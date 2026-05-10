@@ -2340,6 +2340,45 @@ must_fight_battle_attacker_wins :: proc(self: ^Must_Fight_Battle, bridge: ^I_Del
 //     default: throw new IllegalStateException("WhoWon? " + whoWon);
 //   }
 must_fight_battle_end_battle_who_won :: proc(self: ^Must_Fight_Battle, who_won: I_Battle_Who_Won, bridge: ^I_Delegate_Bridge) {
+	when #config(BATTLE_PROBE, false) {
+		if !self.abstract_battle.headless {
+		_terr := self.battle_site.base.name
+		_atk := self.attacker.named_attachable.default_named.name
+		_def := self.defender != nil ? self.defender.named_attachable.default_named.name : "<nil>"
+		_count_by_type :: proc(units: [dynamic]^Unit) -> string {
+			m := make(map[string]int); defer delete(m)
+			for u in units {
+				n := unit_get_type(u).named_attachable.default_named.name
+				m[n] = m[n] + 1
+			}
+			keys: [dynamic]string; defer delete(keys)
+			for k in m { append(&keys, k) }
+			slice.sort(keys[:])
+			out := ""
+			for k, i in keys {
+				if i > 0 { out = fmt.aprintf("%s,%s:%d", out, k, m[k]) }
+				else     { out = fmt.aprintf("%s:%d", k, m[k]) }
+			}
+			return out
+		}
+		_killed_atk: [dynamic]^Unit; defer delete(_killed_atk)
+		_killed_def: [dynamic]^Unit; defer delete(_killed_def)
+		for u in self.killed {
+			o := unit_get_owner(u)
+			if o != nil && o.named_attachable.default_named.name == _atk {
+				append(&_killed_atk, u)
+			} else {
+				append(&_killed_def, u)
+			}
+		}
+		fmt.printf("BATTLE t=%s atk=%s def=%s won=%v atk_alive=[%s] def_alive=[%s] killed_atk=[%s] killed_def=[%s]\n",
+			_terr, _atk, _def, who_won,
+			_count_by_type(self.attacking_units),
+			_count_by_type(self.defending_units),
+			_count_by_type(_killed_atk),
+			_count_by_type(_killed_def))
+		}
+	}
 	switch who_won {
 	case .ATTACKER:
 		must_fight_battle_attacker_wins(self, bridge)

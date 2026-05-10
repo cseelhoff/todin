@@ -204,6 +204,78 @@ Rules for subagent dispatch:
      the silent corruption described above. Promote the parameter
      to `^map[K]V` instead.
 
+   - **Java reference equality vs `equals()` — CRITICAL.** Many
+     Java domain classes override `equals()` (Lombok
+     `@EqualsAndHashCode`, explicit overrides, or by inheritance
+     from `DefaultNamed`). When the Java code calls
+     `someCollection.contains(obj)`, `a.equals(b)`, or relies on
+     `HashMap`/`HashSet` lookup, the comparison is **semantic**, not
+     pointer identity. The Odin port must mirror this. Pointer
+     comparison `a == b` between two `^Game_Player` is the WRONG
+     translation of Java's `a.equals(b)` whenever game-state copies
+     (e.g. odds-calculator simulations) can produce distinct
+     instances representing the same logical entity. Use the
+     dedicated equality helpers:
+       - `game_player_equals(a, b: ^Game_Player) -> bool` —
+         compares by name (Lombok `@EqualsAndHashCode` on
+         `GamePlayer`).
+       - `unit_is_owned_by(unit, player)` and
+         `territory_is_owned_by(t, player)` — already use
+         `game_player_equals` internally.
+     Confirmed instances of this bug at WW2v5 r=1 i=14
+     russianBattle drill-down: `matches_pred_unit_is_owned_by_any_of`,
+     `matches_lambda_is_territory_owned_by_any_of_135`,
+     `matches_lambda_unit_is_owned_by_any_of_130`, and ~10 other
+     sites. Fixed by replacing pointer equality with
+     `game_player_equals`. **Rule:** any time you port a method
+     that calls `.equals(...)`, `.contains(...)`, or
+     `.containsKey/Value(...)` on a domain object, check whether
+     the Java class overrides `equals()` (or inherits an override).
+     If yes, do NOT use `==` in Odin — use the equivalent helper.
+
+   - **Java `LinkedHashMap` / collection iteration order —
+     CRITICAL.** Java's `LinkedHashMap`, `LinkedHashSet`, and
+     `List` preserve insertion (or natural) order. Java's
+     `Collections.sort` is stable. AI code in this codebase
+     (especially `pro_combat_move_ai`, `pro_non_combat_move_ai`)
+     relies on this: when two units have identical sort keys,
+     Java's stable sort keeps them in upstream insertion order,
+     which propagates through the AI's territory-assignment
+     decisions. Odin's plain `map[K]V` is **unordered**: iteration
+     yields entries in random hash-bucket order that varies per
+     process. If the Java source uses a `LinkedHashMap` (look for
+     `new LinkedHashMap<>()`, `LinkedHashMap` field types, or
+     methods that document order-sensitivity), the Odin port MUST
+     recover Java's iteration order by one of:
+       1. Adding a parallel `[dynamic]K` insertion-order slice
+          alongside the map and iterating it instead of the map
+          (used in `pro_my_move_options.odin` —
+          `unit_move_map_order`, etc.).
+       2. Sorting at iteration sites with a stable-sort tiebreaker
+          that empirically matches Java's natural order. For unit
+          collections in `pro_sort_move_options_utils`, the
+          working tiebreak chain is:
+          `(move_count, unit_value, type_name, home_territory_name, uuid)`.
+          The home-territory-name tiebreak mirrors Java's
+          LinkedHashMap insertion order which is itself populated
+          by alphabetical territory iteration.
+       3. For territory-set iteration where Java relies on
+          `HashSet` order, the workaround is alphabetical sort by
+          territory name (see
+          `pro_sort_move_options_utils_sorted_territory_keys`).
+          This is a deterministic approximation; it may not match
+          Java's hash-bucket order in every case (a known minor
+          divergence in unit-assignment loops 2 and 4 of
+          `try_to_attack_territories`).
+     Confirmed at WW2v5 r=1 i=14 russianBattle drill-down: a
+     fighter swap between Ukraine and Baltic States caused an
+     extra Russian attack territory in Odin. Fixed (mostly) by
+     adding the home-territory-name tiebreak. **Rule:** when
+     porting code that iterates a Java map/set, check whether the
+     map type is `LinkedHashMap`/`LinkedHashSet` or a sorted type.
+     If yes, the Odin port must reproduce that iteration order at
+     the call site, not rely on `for k, v in map`.
+
 5. **No stubs. No "simplified". No "skipped".** Either fully port the
    entity or leave it untouched. The `is_implemented` flag must
    reflect reality.

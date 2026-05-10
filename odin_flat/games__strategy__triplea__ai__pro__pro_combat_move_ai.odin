@@ -1627,6 +1627,15 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				already_moved_units,
 				attack_map^,
 			)
+			when PLAN_PROBE {
+				_pn := default_named_get_name(&self.player.named_attachable.default_named)
+				for _u in units_to_add {
+					_ut := default_named_get_name(&unit_get_type(_u).named_attachable.default_named)
+					_from := pro_data_get_unit_territory(self.pro_data, _u)
+					_fname := _from != nil ? default_named_get_name(&_from.named_attachable.default_named) : "<nil>"
+					fmt.printf("ASSIGN loop=2 player=%s unit=%s from=%s to=%s est=%.4f\n", _pn, _ut, _fname, default_named_get_name(&min_t.named_attachable.default_named), min_estimate)
+				}
+			}
 			pro_territory_add_units(attack_map[min_t], units_to_add)
 			for u2 in units_to_add {
 				append(&added_units, u2)
@@ -1683,6 +1692,15 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				already_moved_units,
 				attack_map^,
 			)
+			when PLAN_PROBE {
+				_pn := default_named_get_name(&self.player.named_attachable.default_named)
+				for _u in units_to_add {
+					_ut := default_named_get_name(&unit_get_type(_u).named_attachable.default_named)
+					_from := pro_data_get_unit_territory(self.pro_data, _u)
+					_fname := _from != nil ? default_named_get_name(&_from.named_attachable.default_named) : "<nil>"
+					fmt.printf("ASSIGN loop=3 player=%s unit=%s from=%s to=%s win%%=%.4f\n", _pn, _ut, _fname, default_named_get_name(&min_win_territory.named_attachable.default_named), min_win_percentage)
+				}
+			}
 			pro_territory_add_units(attack_map[min_win_territory], units_to_add)
 			for u2 in units_to_add {
 				append(&added_units, u2)
@@ -1815,6 +1833,13 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 		if min_win_territory != nil {
 			pro_territory_set_battle_result(attack_map[min_win_territory], nil)
+			when PLAN_PROBE {
+				_pn := default_named_get_name(&self.player.named_attachable.default_named)
+				_ut := default_named_get_name(&unit_get_type(unit).named_attachable.default_named)
+				_from := pro_data_get_unit_territory(self.pro_data, unit)
+				_fname := _from != nil ? default_named_get_name(&_from.named_attachable.default_named) : "<nil>"
+				fmt.printf("ASSIGN loop=4 player=%s unit=%s from=%s to=%s win%%=%.4f\n", _pn, _ut, _fname, default_named_get_name(&min_win_territory.named_attachable.default_named), min_win_percentage)
+			}
 			pro_territory_add_unit(attack_map[min_win_territory], unit)
 			append(&added_units, unit)
 			added_set[unit] = {}
@@ -1932,6 +1957,15 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				already_moved_units,
 				attack_map^,
 			)
+			when PLAN_PROBE {
+				_pn := default_named_get_name(&self.player.named_attachable.default_named)
+				for _u in units_to_add {
+					_ut := default_named_get_name(&unit_get_type(_u).named_attachable.default_named)
+					_from := pro_data_get_unit_territory(self.pro_data, _u)
+					_fname := _from != nil ? default_named_get_name(&_from.named_attachable.default_named) : "<nil>"
+					fmt.printf("ASSIGN loop=5 player=%s unit=%s from=%s to=%s win%%=%.4f\n", _pn, _ut, _fname, default_named_get_name(&min_win_territory.named_attachable.default_named), min_win_percentage)
+				}
+			}
 			pro_territory_add_units(attack_map[min_win_territory], units_to_add)
 			for u2 in units_to_add {
 				append(&added_units, u2)
