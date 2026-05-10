@@ -1539,7 +1539,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		if !is_destroyer_unit {
 			continue
 		}
-		_ts_keys_1001 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		_ts_keys_1001 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories)
 		defer delete(_ts_keys_1001)
 		for t in _ts_keys_1001 {
 			patd := attack_map[t]
@@ -1591,7 +1591,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		// Track the smallest estimate (Java uses TreeMap.firstKey()).
 		min_estimate := 0.0
 		min_t: ^Territory = nil
-		_ts_keys_1002 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		_ts_keys_1002 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories)
 		defer delete(_ts_keys_1002)
 		for t in _ts_keys_1002 {
 			pro_territory := attack_map[t]
@@ -1667,7 +1667,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		_ts_keys_1003 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		_ts_keys_1003 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories)
 		defer delete(_ts_keys_1003)
 		for t in _ts_keys_1003 {
 			patd := attack_map[t]
@@ -1736,7 +1736,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		_ts_keys_1004 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		_ts_keys_1004 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories)
 		defer delete(_ts_keys_1004)
 		for t in _ts_keys_1004 {
 			patd := attack_map[t]
@@ -1868,7 +1868,7 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
-		_ts_keys_1005 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+		_ts_keys_1005 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories)
 		defer delete(_ts_keys_1005)
 		for t in _ts_keys_1005 {
 			patd := attack_map[t]
@@ -2723,7 +2723,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			}
 			min_win_territory: ^Territory = nil
 			min_win_percentage := max(f64)
-			_ts_keys_1006 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			_ts_keys_1006 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories^)
 			defer delete(_ts_keys_1006)
 			for t in _ts_keys_1006 {
 				patd := attack_map[t]
@@ -2794,7 +2794,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				continue
 			}
 			min_win_territory: ^Territory = nil
-			_ts_keys_1007 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			_ts_keys_1007 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories^)
 			defer delete(_ts_keys_1007)
 			for t in _ts_keys_1007 {
 				patd := attack_map[t]
@@ -2853,7 +2853,7 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			if !is_sea_unit {
 				continue
 			}
-			_ts_keys_1008 := pro_sort_move_options_utils_sorted_territory_keys(sorted_unit_attack_options[unit])
+			_ts_keys_1008 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories^)
 			defer delete(_ts_keys_1008)
 			for t in _ts_keys_1008 {
 				patd := attack_map[t]

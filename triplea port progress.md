@@ -29,14 +29,43 @@ placed units differently). Root causes uncovered (in order):
    `(move_count, unit_value, type_name, home_territory_name, uuid)`. → AI's
    per-unit ASSIGN trace now matches Java byte-for-byte for the first ~30 lines.
 
-3. **Java `HashSet<Territory>` iteration order vs Odin alphabetical sort** —
-   remaining minor divergence in `try_to_attack_territories` loops 2 and 4.
-   Odin sorts territories alphabetically via
-   `pro_sort_move_options_utils_sorted_territory_keys`; Java iterates a
-   `HashSet<Territory>` in hash-bucket order. For tied estimates/win%, the two
-   ordering schemes pick different territories. Documented in
-   `llm-instructions.md` as a known limitation; deeper fix would require
-   emulating Java's `String.hashCode()` + `HashMap` bucket layout.
+3. **Per-unit `LinkedHashSet<Territory>` iteration order** — was misdiagnosed
+   as a `HashSet` issue; in fact Java uses `LinkedHashSet<Territory>`
+   populated by walking the `prioritizedTerritories` list, so iteration
+   order = priority order. **Fix:** added
+   `pro_sort_move_options_utils_sorted_territory_keys_by_priority(territories,
+   prioritized_territories)` which walks `prioritized_territories` and
+   yields any member of `territories`. Replaced all 8 call sites in
+   `pro_combat_move_ai.odin` (`try_to_attack_territories` ×5,
+   `determine_units_to_attack_with` ×3). After the fix, DIGEST i=0..14
+   matches Java byte-for-byte.
+
+4. **AI retreat-query was never dispatched** — `default_delegate_bridge_get_remote_player`
+   returned a no-op `Player` singleton with all proc-fields nil, so
+   `must_fight_battle.player_retreat_query` short-circuited to nil and
+   the Pro AI's `retreatQuery` override never ran. Java's air units
+   retreat from losing battles (e.g. fighter at West Russia survives);
+   Odin's died. **Fix (two parts):**
+   (a) Added `default_delegate_bridge_get_remote_player_for_retreat` —
+       a NARROW lookup that consults `server_game.game_players[player]`
+       to find the AI Player stub for the given Game_Player. Cannot be
+       used for `get_remote_player` in general because many call sites
+       (casualty selection, etc.) rely on the singleton's nil proc
+       fields to take default branches; widening to AI stubs crashes
+       russianPurchase during odds-calc sims.
+   (b) Wired `ai.retreat_query = test_server_game_player_retreat_query`
+       in test_server_game.odin: the thunk dispatches to
+       `abstract_pro_ai_retreat_query` on the bound `Pro_Ai`. Mirrors
+       Java's `AbstractAi implements Player` reflection-based
+       dispatch through the messengers.
+   `must_fight_battle_query_retreat_territory` and
+   `must_fight_battle_query_submerge_territory` now call
+   `i_delegate_bridge_get_remote_player_for_retreat` instead of the
+   generic `abstract_battle_get_remote_for_player`. After fix, DIGEST
+   i=0..15 (incl. russianBattle and russianNonCombatMove) matches Java
+   byte-for-byte; first remaining divergence is at i=16 russianPlace
+   (uc_h differs but unit count matches → AI's non-combat move targeted
+   different territory).
 
 Also added `BATTLE` probes to `must_fight_battle_end_battle_who_won` (gated by
 `#config(BATTLE_PROBE,false)` / `Boolean.getBoolean("plan")`, filtered by

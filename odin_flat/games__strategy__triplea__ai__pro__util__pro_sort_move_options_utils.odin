@@ -80,6 +80,57 @@ pro_sort_move_options_utils_sorted_territory_keys :: proc(
 	return out
 }
 
+// Returns the territory keys of `territories` ordered by their
+// position in `prioritized_territories`. In Java, the per-unit
+// candidate set in `try_to_attack_territories` is a `LinkedHashSet`
+// populated by iterating `prioritizedTerritories` and inserting any
+// territory that the unit can attack — so iteration order of that
+// set IS the prioritization order. The Odin port loses that order
+// because the candidate set is `map[^Territory]struct{}`. This
+// helper recovers it by walking `prioritized_territories` (a
+// `[dynamic]^Pro_Territory`) and yielding only those territories
+// that are members of `territories`. Anything not in the priority
+// list is appended at the end in alphabetical order (defensive — in
+// practice the candidate set is a strict subset of the priority
+// list, so the trailing block is empty).
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_sort_move_options_utils_sorted_territory_keys_by_priority :: proc(
+	territories:             map[^Territory]struct {},
+	prioritized_territories: [dynamic]^Pro_Territory,
+) -> [dynamic]^Territory {
+	out: [dynamic]^Territory
+	seen: map[^Territory]struct {}
+	defer delete(seen)
+	for patd in prioritized_territories {
+		t := pro_territory_get_territory(patd)
+		if _, ok := territories[t]; ok {
+			append(&out, t)
+			seen[t] = {}
+		}
+	}
+	// Defensive: append any leftovers not present in the priority list,
+	// alphabetically by name. Should be empty in normal usage.
+	leftovers: [dynamic]^Territory
+	defer delete(leftovers)
+	for t, _ in territories {
+		if _, ok := seen[t]; !ok {
+			append(&leftovers, t)
+		}
+	}
+	if len(leftovers) > 0 {
+		slice.sort_by(leftovers[:], proc(a, b: ^Territory) -> bool {
+			na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
+			nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
+			return strings.compare(na, nb) < 0
+		})
+		for t in leftovers {
+			append(&out, t)
+		}
+	}
+	return out
+}
+
 // Returns the unit keys of `unit_attack_options` sorted by the same
 // (move_count, unit_value, type_name) keys used by
 // pro_sort_move_options_utils_sort_unit_move_options. Tiebreaks by

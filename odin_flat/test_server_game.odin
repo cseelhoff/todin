@@ -75,6 +75,35 @@ test_server_game_player_get_name_from_gp :: proc(self: ^Player) -> string {
 	return default_named_get_name(&gp.named_attachable.default_named)
 }
 
+// Player.retreat_query vtable thunk: dispatches to
+// abstract_pro_ai_retreat_query on the bound Pro_Ai. Mirrors Java's
+// AbstractProAi.retreatQuery being routed through the bridge's
+// remote-player lookup. Without this wiring,
+// `default_delegate_bridge_get_remote_player` returns a no-op
+// singleton whose retreat_query field is nil, and air units cannot
+// retreat from losing battles even when the AI would have chosen to
+// (observed at WW2v5 r=1 i=14 russianBattle West Russia).
+@(private = "file")
+test_server_game_player_retreat_query :: proc(
+	self: ^Player,
+	battle_id: Uuid,
+	submerge: bool,
+	battle_site: ^Territory,
+	possible_territories: [dynamic]^Territory,
+	message: string,
+) -> ^Territory {
+	ai := test_server_game_player_to_ai[self]
+	if ai == nil { return nil }
+	return abstract_pro_ai_retreat_query(
+		cast(^Abstract_Pro_Ai)ai,
+		battle_id,
+		submerge,
+		battle_site,
+		possible_territories,
+		message,
+	)
+}
+
 // Player.start vtable thunk: dispatches to abstract_ai_start on the
 // bound Pro_Ai. Mirrors Java's `AbstractAi implements Player`
 // dispatch via reflection. If no Pro_Ai is bound (e.g. the Neutral
@@ -305,6 +334,7 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		// 0021, 0029 etc.). The Pro_Ai backing this thunk is built
 		// below.
 		ai.start = test_server_game_player_start
+		ai.retreat_query = test_server_game_player_retreat_query
 		// Stash the Game_Player pointer so the proc-fields can recover
 		// it: I_Remote has no fields here, so reuse `name` slot is not
 		// available — we rely on a parallel map below.

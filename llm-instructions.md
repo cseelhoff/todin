@@ -233,6 +233,25 @@ Rules for subagent dispatch:
      the Java class overrides `equals()` (or inherits an override).
      If yes, do NOT use `==` in Odin — use the equivalent helper.
 
+   - **Headless-harness Player wiring — CRITICAL.** The snapshot
+     harness's `default_delegate_bridge_get_remote_player` returns a
+     no-op `Player` singleton (proc-fields nil) so most callers fall
+     through to AbstractAi defaults. This is correct for casualty
+     selection, error reporting, etc. — those default branches match
+     Java's AbstractAi semantics. BUT the AI's overrides for
+     `retreatQuery`, `selectAttackUnits`, etc. are silently dropped
+     unless their proc-fields are explicitly wired on the per-Game_Player
+     `Player` stub built in `test_server_game.odin` AND the bridge has
+     a narrow lookup that returns that stub instead of the singleton.
+     See `default_delegate_bridge_get_remote_player_for_retreat` and
+     `test_server_game_player_retreat_query` for the working pattern.
+     **Rule:** every Pro AI `^Override` method on `Player` (Java's
+     `@Override public ... AbstractProAi.foo(...)`) needs (a) a
+     proc-field on `Player`, (b) a per-stub thunk wired in
+     test_server_game, and (c) either a narrow bridge lookup or a
+     widening of `get_remote_player` (the latter is risky — see the
+     comments in `default_delegate_bridge.odin`).
+
    - **Java `LinkedHashMap` / collection iteration order —
      CRITICAL.** Java's `LinkedHashMap`, `LinkedHashSet`, and
      `List` preserve insertion (or natural) order. Java's
@@ -259,22 +278,39 @@ Rules for subagent dispatch:
           The home-territory-name tiebreak mirrors Java's
           LinkedHashMap insertion order which is itself populated
           by alphabetical territory iteration.
-       3. For territory-set iteration where Java relies on
-          `HashSet` order, the workaround is alphabetical sort by
-          territory name (see
-          `pro_sort_move_options_utils_sorted_territory_keys`).
-          This is a deterministic approximation; it may not match
-          Java's hash-bucket order in every case (a known minor
-          divergence in unit-assignment loops 2 and 4 of
-          `try_to_attack_territories`).
+       3. For per-unit candidate **`LinkedHashSet<Territory>`**
+          values populated by walking a `List<ProTerritory>` (the
+          `prioritizedTerritories` list in
+          `try_to_attack_territories`), iterate that list and
+          filter by membership in the Odin `map[^Territory]struct{}`
+          — see
+          `pro_sort_move_options_utils_sorted_territory_keys_by_priority`.
+          This recovers the original insertion order without
+          needing to emulate Java's hash buckets.
+       4. For Java `HashSet` whose iteration order has no
+          upstream list to mirror, the only fully faithful
+          recovery would be to emulate Java's `String.hashCode()`
+          + `HashMap` bucket math (capacity = pow2 ≥ size/0.75,
+          bucket = `(h ^ h>>>16) & (cap-1)`, walk buckets 0..cap-1
+          + per-bucket linked-list insertion order). We have NOT
+          needed this yet in the WW2v5 port — every divergence so
+          far traced back to a `LinkedHashSet`/`LinkedHashMap`
+          source and was fixable with options 1-3.
      Confirmed at WW2v5 r=1 i=14 russianBattle drill-down: a
      fighter swap between Ukraine and Baltic States caused an
-     extra Russian attack territory in Odin. Fixed (mostly) by
-     adding the home-territory-name tiebreak. **Rule:** when
-     porting code that iterates a Java map/set, check whether the
-     map type is `LinkedHashMap`/`LinkedHashSet` or a sorted type.
-     If yes, the Odin port must reproduce that iteration order at
-     the call site, not rely on `for k, v in map`.
+     extra Russian attack territory in Odin. Fixed in two layers:
+     (a) home-territory-name tiebreak in `Pro_Sort_Move_Options_Entry`
+     and (b) replacing `sorted_territory_keys` with
+     `sorted_territory_keys_by_priority` at all 8 call sites in
+     `pro_combat_move_ai.odin` so per-unit candidate iteration
+     follows `prioritized_territories` order (matching Java's
+     `LinkedHashSet`). After both fixes, DIGEST i=0..14 matches
+     Java byte-for-byte through r=1 i=14 russianBattle.
+     **Rule:** when porting code that iterates a Java map/set,
+     check whether the map type is `LinkedHashMap`/`LinkedHashSet`
+     or a sorted type. If yes, the Odin port must reproduce that
+     iteration order at the call site, not rely on
+     `for k, v in map`.
 
 5. **No stubs. No "simplified". No "skipped".** Either fully port the
    entity or leave it untouched. The `is_implemented` flag must
