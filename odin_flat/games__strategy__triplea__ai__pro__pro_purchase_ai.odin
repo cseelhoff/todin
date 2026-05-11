@@ -226,6 +226,23 @@ pro_purchase_ai_find_defenders_in_place_territories :: proc(
 					append(&units, u)
 				}
 			}
+			when PUR_TRACE {
+				pname_fd := default_named_get_name(&self.player.named_attachable.default_named)
+				if pname_fd == "Russians" && territory_get_name(t) == "Caucasus" {
+					all_n := 0
+					all_owners := make(map[string]int)
+					defer delete(all_owners)
+					for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+						all_n += 1
+						o := unit_get_owner(u)
+						on := default_named_get_name(&o.named_attachable.default_named)
+						utn := unit_type_get_name(unit_get_type(u))
+						key := fmt.tprintf("%s:%s", on, utn)
+						all_owners[key] = all_owners[key] + 1
+					}
+					fmt.printf("FD_TRACE t=Caucasus all_units=%d allied=%d breakdown=%v\n", all_n, len(units), all_owners)
+				}
+			}
 			pro_place_territory_set_defending_units(place_territory, units)
 			pro_logger_debug(
 				fmt.tprintf(
@@ -2586,6 +2603,25 @@ pro_purchase_ai_purchase_defenders :: proc(
 					bombard_list,
 				)
 
+				when PUR_TRACE {
+					pname_pd := default_named_get_name(&self.player.named_attachable.default_named)
+					if pname_pd == "Russians" {
+						sel_n := unit_type_get_name(pro_purchase_option_get_unit_type(selected_option))
+						fmt.printf(
+							"PD_TRACE t=%s sel=%s utp_n=%d def_n=%d enemy_n=%d bomb_n=%d tuv_swing=%v has_land=%v win%%=%v capital=%v\n",
+							territory_get_name(t),
+							sel_n,
+							len(units_to_place),
+							len(defenders),
+							len(enemy_attacking_units),
+							len(bombard_list),
+							pro_battle_result_get_tuv_swing(final_result),
+							pro_battle_result_is_has_land_unit_remaining(final_result),
+							pro_battle_result_get_win_percentage(final_result),
+							t == pro_data_get_my_capital(self.pro_data),
+						)
+					}
+				}
 				// Break if it can be held
 				is_capital := t == pro_data_get_my_capital(self.pro_data)
 				if (!is_capital &&
@@ -4466,6 +4502,7 @@ pro_purchase_ai_purchase :: proc(
 		pro_purchase_option_map_get_air_options(purchase_options),
 		true,
 	)
+	pro_pur_trace_emit("P01_after_purchaseDefenders_land", &purchase_territories)
 
 	// Find strategic value for each territory
 	pro_logger_info("Find strategic value for place territories")
@@ -4519,9 +4556,11 @@ pro_purchase_ai_purchase :: proc(
 		prioritized_land_territories,
 		pro_purchase_option_map_get_aa_options(purchase_options),
 	)
+	pro_pur_trace_emit("P02_after_purchaseAa", &purchase_territories)
 	pro_purchase_ai_purchase_land_units(
 		self, purchase_territories, prioritized_land_territories, purchase_options,
 	)
+	pro_pur_trace_emit("P03_after_purchaseLand", &purchase_territories)
 
 	// Prioritize sea territories that need defended and purchase additional defenders
 	need_to_defend_sea_territories := pro_purchase_ai_prioritize_territories_to_defend(
@@ -4541,6 +4580,7 @@ pro_purchase_ai_purchase :: proc(
 		)
 		delete(empty_zero_move)
 	}
+	pro_pur_trace_emit("P04_after_purchaseDefenders_sea", &purchase_territories)
 
 	// Determine whether to purchase new land factory
 	factory_purchase_territories := make(map[^Territory]^Pro_Purchase_Territory)
@@ -4552,6 +4592,7 @@ pro_purchase_ai_purchase :: proc(
 		purchase_options,
 		false,
 	)
+	pro_pur_trace_emit("P05_after_purchaseFactory_first", &purchase_territories)
 
 	// Prioritize sea place options and purchase units
 	prioritized_sea_territories := pro_purchase_ai_prioritize_sea_territories(
@@ -4561,6 +4602,7 @@ pro_purchase_ai_purchase :: proc(
 	should_save_up_for_a_fleet := pro_purchase_ai_purchase_sea_and_amphib_units(
 		self, purchase_territories, prioritized_sea_territories, purchase_options,
 	)
+	pro_pur_trace_emit("P06_after_purchaseSeaAndAmphib", &purchase_territories)
 
 	// Try to use any remaining PUs on high value units, except if we need to save up for a fleet.
 	if !should_save_up_for_a_fleet {
@@ -4570,9 +4612,11 @@ pro_purchase_ai_purchase :: proc(
 			pro_purchase_option_map_get_land_options(purchase_options),
 			pro_purchase_option_map_get_air_options(purchase_options),
 		)
+		pro_pur_trace_emit("P07_after_purchaseUnitsWithRemaining", &purchase_territories)
 		pro_purchase_ai_upgrade_units_with_remaining_pus(
 			self, purchase_territories, purchase_options,
 		)
+		pro_pur_trace_emit("P08_after_upgradeUnitsWithRemaining", &purchase_territories)
 		// Try to purchase land/sea factory with extra PUs
 		pro_purchase_ai_purchase_factory(
 			self,
@@ -4582,6 +4626,7 @@ pro_purchase_ai_purchase :: proc(
 			purchase_options,
 			true,
 		)
+		pro_pur_trace_emit("P09_after_purchaseFactory_second", &purchase_territories)
 	}
 
 	// Add factory purchase territory to list. Iterate in master-territory
@@ -4595,6 +4640,7 @@ pro_purchase_ai_purchase :: proc(
 		purchase_territories[t] = factory_purchase_territories[t]
 	}
 	delete(factory_purchase_territories)
+	pro_pur_trace_emit("P10_final", &purchase_territories)
 
 	// Determine final count of each production rule
 	purchase_map := pro_purchase_ai_populate_production_rule_map(
