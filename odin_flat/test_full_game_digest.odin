@@ -162,6 +162,41 @@ test_full_game_digest_emit :: proc(gd: ^Game_Data) {
 	uc_h    := fnv1a64(strings.to_string(uc_pairs))
 	comp_h  := fnv1a64(strings.to_string(comp_pairs))
 
+	// all_h: hash over the GLOBAL units registry (data.units_list).
+	// Includes units placed in territories AND units sitting in player.unitCollection
+	// (purchased-but-unplaced) AND any other Unit owned by the GameData.
+	// This is what compare_game_states uses; without it DIGEST cannot detect
+	// purchase-phase divergences (the bought units don't enter any territory until
+	// the place step). Tally by "<owner>_<type>" with total count, then sort.
+	all_count := 0
+	all_tally := make(map[string]int)
+	defer delete(all_tally)
+	if gd.units_list != nil {
+		for _, u in gd.units_list.units {
+			if u == nil { continue }
+			ut_name := "?"
+			oo := "-"
+			if u.type != nil {
+				ut_name = default_named_get_name(&u.type.named_attachable.default_named)
+			}
+			if u.owner != nil {
+				oo = default_named_get_name(&u.owner.named_attachable.default_named)
+			}
+			all_tally[fmt.tprintf("%s_%s", oo, ut_name)] += 1
+			all_count += 1
+		}
+	}
+	all_keys := make([dynamic]string)
+	defer delete(all_keys)
+	for k, _ in all_tally { append(&all_keys, k) }
+	slice.sort(all_keys[:])
+	all_pairs := strings.builder_make()
+	defer strings.builder_destroy(&all_pairs)
+	for k in all_keys {
+		fmt.sbprintf(&all_pairs, "%s:%d|", k, all_tally[k])
+	}
+	all_h := fnv1a64(strings.to_string(all_pairs))
+
 	terr_buf := strings.builder_make()
 	defer strings.builder_destroy(&terr_buf)
 	owners_sorted := make([dynamic]string)
@@ -178,10 +213,10 @@ test_full_game_digest_emit :: proc(gd: ^Game_Data) {
 	}
 
 	fmt.printf(
-		"DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x comp_h=%016x\n",
+		"DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x comp_h=%016x all=%d all_h=%016x\n",
 		round, idx, step_name, player_name,
 		strings.to_string(pus_buf), strings.to_string(terr_buf),
-		total_units, owner_h, uc_h, comp_h,
+		total_units, owner_h, uc_h, comp_h, all_count, all_h,
 	)
 
 	// Detailed per-territory dump for one specific (round, step). Emit
