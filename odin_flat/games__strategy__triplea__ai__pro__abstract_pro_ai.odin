@@ -27,6 +27,31 @@ Abstract_Pro_Ai :: struct {
 	stored_strafing_territories: [dynamic]^Territory,
 }
 
+when PUR_TRACE {
+	abstract_pro_ai_dump_caucasus :: proc(data_copy: ^Game_Data, player: ^Game_Player, tag: string) {
+		pname := default_named_get_name(&player.named_attachable.default_named)
+		if pname != "Russians" { return }
+		gm := game_data_get_map(data_copy)
+		if gm == nil { return }
+		for t in gm.territories {
+			if t == nil { continue }
+			if territory_get_name(t) != "Caucasus" { continue }
+			n := 0
+			owners := make(map[string]int)
+			defer delete(owners)
+			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+				n += 1
+				o := unit_get_owner(u)
+				on := default_named_get_name(&o.named_attachable.default_named)
+				utn := unit_type_get_name(unit_get_type(u))
+				k := fmt.tprintf("%s:%s", on, utn)
+				owners[k] = owners[k] + 1
+			}
+			fmt.printf("SIM_CAUCASUS tag=%s addr=%p n=%d breakdown=%v\n", tag, t, n, owners)
+		}
+	}
+}
+
 // Java: public AbstractProAi(String name, IBattleCalculator battleCalculator,
 //                            ProData proData, String playerLabel)
 abstract_pro_ai_new :: proc(
@@ -664,6 +689,9 @@ abstract_pro_ai_purchase :: proc(
 		pro_logger_info("Starting simulation for purchase phase")
 
 		// Setup data copy and delegates
+		when PUR_TRACE {
+			abstract_pro_ai_dump_caucasus(data, player, "PRE_COPYDATA_LIVE")
+		}
 		data_copy := abstract_pro_ai_copy_data(self, data)
 		if data_copy == nil {
 			return
@@ -730,6 +758,9 @@ abstract_pro_ai_purchase :: proc(
 			next_step_index,
 		)
 		defer delete(game_steps)
+		when PUR_TRACE {
+			abstract_pro_ai_dump_caucasus(data_copy, player, "00_after_copyData")
+		}
 		for step in game_steps {
 			game_sequence_set_round_and_step(
 				sequence,
@@ -739,6 +770,9 @@ abstract_pro_ai_purchase :: proc(
 			)
 			step_name := step.name
 			pro_logger_info(fmt.tprintf("Simulating phase: %s", step_name))
+			when PUR_TRACE {
+				abstract_pro_ai_dump_caucasus(data_copy, player, fmt.tprintf("BEFORE_%s", step_name))
+			}
 			if game_step_is_non_combat_move_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
 				factory_move_map := pro_non_combat_move_ai_simulate_non_combat_move(

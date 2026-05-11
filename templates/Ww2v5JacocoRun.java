@@ -199,6 +199,7 @@ public class Ww2v5JacocoRun {
 
     StringBuilder ownerPairs = new StringBuilder();
     StringBuilder ucPairs = new StringBuilder();
+    StringBuilder compPairs = new StringBuilder();
     Map<String, Integer> ownerCount = new TreeMap<>();
     int totalUnits = 0;
     for (Territory t : terrs) {
@@ -208,9 +209,21 @@ public class Ww2v5JacocoRun {
       ownerCount.merge(owner, 1, Integer::sum);
       ownerPairs.append(t.getName()).append('=').append(owner).append('|');
       ucPairs.append(t.getName()).append('=').append(uc).append('|');
+      Map<String, Integer> compCounts = new TreeMap<>();
+      for (Unit u : t.getUnitCollection().getUnits()) {
+        String oo = u.getOwner() == null ? "-" : u.getOwner().getName();
+        String tn = u.getType() == null ? "?" : u.getType().getName();
+        compCounts.merge(oo + "_" + tn, 1, Integer::sum);
+      }
+      compPairs.append(t.getName()).append('=');
+      for (Map.Entry<String, Integer> ce : compCounts.entrySet()) {
+        compPairs.append(ce.getKey()).append(':').append(ce.getValue()).append(',');
+      }
+      compPairs.append('|');
     }
     long ownerH = fnv1a64(ownerPairs.toString());
     long ucH = fnv1a64(ucPairs.toString());
+    long compH = fnv1a64(compPairs.toString());
 
     StringBuilder terr = new StringBuilder();
     first = true;
@@ -221,8 +234,8 @@ public class Ww2v5JacocoRun {
     }
 
     System.out.printf(
-        "DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x%n",
-        round, idx, stepName, playerName, pus, terr, totalUnits, ownerH, ucH);
+        "DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x comp_h=%016x%n",
+        round, idx, stepName, playerName, pus, terr, totalUnits, ownerH, ucH, compH);
 
     // Detailed per-territory dump for one specific (round, step), keyed
     // by -Ddigest.detail.r=R -Ddigest.detail.i=I.

@@ -229,6 +229,27 @@ pro_purchase_ai_find_defenders_in_place_territories :: proc(
 			when PUR_TRACE {
 				pname_fd := default_named_get_name(&self.player.named_attachable.default_named)
 				if pname_fd == "Russians" && territory_get_name(t) == "Caucasus" {
+					live_t: ^Territory = nil
+					gm := game_data_get_map(self.data)
+					if gm != nil {
+						for lt in gm.territories {
+							if lt != nil && territory_get_name(lt) == "Caucasus" {
+								live_t = lt
+								break
+							}
+						}
+					}
+					live_n := 0
+					if live_t != nil {
+						for _ in unit_collection_get_units(territory_get_unit_collection(live_t)) {
+							live_n += 1
+						}
+					}
+					fmt.printf("FD_PTR_CHECK ppt_t=%p live_t=%p ppt_units_n=%d live_units_n=%d\n",
+						t, live_t,
+						len(unit_collection_get_units(territory_get_unit_collection(t))),
+						live_n,
+					)
 					all_n := 0
 					all_owners := make(map[string]int)
 					defer delete(all_owners)

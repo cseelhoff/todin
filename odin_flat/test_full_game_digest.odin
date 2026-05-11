@@ -107,6 +107,8 @@ test_full_game_digest_emit :: proc(gd: ^Game_Data) {
 	defer strings.builder_destroy(&owner_pairs)
 	uc_pairs := strings.builder_make()
 	defer strings.builder_destroy(&uc_pairs)
+	comp_pairs := strings.builder_make()
+	defer strings.builder_destroy(&comp_pairs)
 	owner_count := make(map[string]int)
 	defer delete(owner_count)
 	total_units := 0
@@ -118,14 +120,47 @@ test_full_game_digest_emit :: proc(gd: ^Game_Data) {
 		}
 		units := territory_get_units(t)
 		uc := len(units)
-		delete(units)
 		total_units += uc
 		owner_count[owner] = owner_count[owner] + 1
 		fmt.sbprintf(&owner_pairs, "%s=%s|", tn, owner)
 		fmt.sbprintf(&uc_pairs, "%s=%d|", tn, uc)
+		when DIGEST {
+			if tn == "Caucasus" && int(round) == 1 && int(idx) == 12 {
+				fmt.printf("DIGEST_CAUCASUS_PTR t_addr=%p uc=%d\n", t, uc)
+			}
+		}
+		// Composition: sorted "Owner_UnitType:count,..." per territory
+		comp_counts := make(map[string]int)
+		for u in units {
+			if u == nil { continue }
+			ut_name := "?"
+			oo := "-"
+			if u.type != nil {
+				ut_name = default_named_get_name(&u.type.named_attachable.default_named)
+			}
+			if u.owner != nil {
+				oo = default_named_get_name(&u.owner.named_attachable.default_named)
+			}
+			key := fmt.tprintf("%s_%s", oo, ut_name)
+			comp_counts[key] = comp_counts[key] + 1
+		}
+		ckeys := make([dynamic]string)
+		for k, _ in comp_counts {
+			append(&ckeys, k)
+		}
+		slice.sort(ckeys[:])
+		fmt.sbprintf(&comp_pairs, "%s=", tn)
+		for k in ckeys {
+			fmt.sbprintf(&comp_pairs, "%s:%d,", k, comp_counts[k])
+		}
+		fmt.sbprintf(&comp_pairs, "|")
+		delete(ckeys)
+		delete(comp_counts)
+		delete(units)
 	}
 	owner_h := fnv1a64(strings.to_string(owner_pairs))
 	uc_h    := fnv1a64(strings.to_string(uc_pairs))
+	comp_h  := fnv1a64(strings.to_string(comp_pairs))
 
 	terr_buf := strings.builder_make()
 	defer strings.builder_destroy(&terr_buf)
@@ -143,10 +178,10 @@ test_full_game_digest_emit :: proc(gd: ^Game_Data) {
 	}
 
 	fmt.printf(
-		"DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x\n",
+		"DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x comp_h=%016x\n",
 		round, idx, step_name, player_name,
 		strings.to_string(pus_buf), strings.to_string(terr_buf),
-		total_units, owner_h, uc_h,
+		total_units, owner_h, uc_h, comp_h,
 	)
 
 	// Detailed per-territory dump for one specific (round, step). Emit
