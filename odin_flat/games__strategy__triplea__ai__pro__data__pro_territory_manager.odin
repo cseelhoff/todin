@@ -4,6 +4,8 @@ import "core:fmt"
 import "core:os"
 import "core:slice"
 
+ENEMY_ATK_DUMP :: #config(ENEMY_ATK_DUMP, false)
+
 Pro_Territory_Manager :: struct {
 	calc:                     ^Pro_Odds_Calculator,
 	pro_data:                 ^Pro_Data,
@@ -431,17 +433,14 @@ pro_territory_manager_find_naval_move_options :: proc(
 			append(&units_one, my_sea_unit)
 
 			for potential_territory in potential_territories {
-				rf := route_finder_new_with_units_player(
+				optional_route := game_map_get_route_for_units_ctx(
 					game_map,
+					my_unit_territory,
+					potential_territory,
 					can_move_p,
 					can_move_c,
 					units_one,
 					player,
-				)
-				optional_route := route_finder_find_route_by_cost_pair(
-					rf,
-					my_unit_territory,
-					potential_territory,
 				)
 				if optional_route == nil {
 					continue
@@ -548,17 +547,14 @@ pro_territory_manager_find_bombard_options :: proc(
 			append(&units_one, my_sea_unit)
 
 			for bombard_from_territory in potential_territories {
-				rf := route_finder_new_with_units_player(
+				optional_route := game_map_get_route_for_units_ctx(
 					game_map,
+					my_unit_territory,
+					bombard_from_territory,
 					can_move_p,
 					can_move_c,
 					units_one,
 					player,
-				)
-				optional_route := route_finder_find_route_by_cost_pair(
-					rf,
-					my_unit_territory,
-					bombard_from_territory,
 				)
 				if optional_route == nil {
 					continue
@@ -968,17 +964,14 @@ pro_territory_manager_find_air_move_options :: proc(
 			append(&units_one, my_air_unit)
 
 			for potential_territory in potential_territories {
-				rf := route_finder_new_with_units_player(
+				optional_route := game_map_get_route_for_units_ctx(
 					game_map,
+					my_unit_territory,
+					potential_territory,
 					can_fly_over_p,
 					can_fly_over_c,
 					units_one,
 					player,
-				)
-				optional_route := route_finder_find_route_by_cost_pair(
-					rf,
-					my_unit_territory,
-					potential_territory,
 				)
 				when NCM_TRACE {
 					pname := default_named_get_name(&player.named_attachable.default_named)
@@ -1258,6 +1251,14 @@ pro_territory_manager_find_amphib_move_options :: proc(
 
 	for transport_territory in my_unit_territories {
 		transports := territory_get_matches(transport_territory, is_transport_p, is_transport_c)
+		when ENEMY_ATK_DUMP {
+			if is_checking_enemy_attacks && len(transports) > 0 {
+				fmt.printf("FAMO_TT player=%s tt=%s n_tx=%d\n",
+					default_named_get_name(&player.default_named),
+					default_named_get_name(&transport_territory.named_attachable.default_named),
+					len(transports))
+			}
+		}
 
 		for transport in transports {
 			pro_transport_data := pro_transport_new(transport)
@@ -1378,15 +1379,32 @@ pro_territory_manager_find_amphib_move_options :: proc(
 							near_p,
 							near_c,
 						)
+						when ENEMY_ATK_DUMP {
+							if is_checking_enemy_attacks {
+								pn := default_named_get_name(&player.default_named)
+								fn := default_named_get_name(&from.named_attachable.default_named)
+								if pn == "Japanese" && fn == "61 Sea Zone" && moves_left == 2 {
+									in_near_35 := false
+									for nt in near {
+										if default_named_get_name(&nt.named_attachable.default_named) == "35 Sea Zone" {
+											in_near_35 = true
+											break
+										}
+									}
+									fmt.printf("NEAR_DBG from=61 ml=2 has35=%v near_count=%d\n", in_near_35, len(near))
+								}
+							}
+						}
 						for to in near {
-							rf := route_finder_new_with_units_player(
+							route := game_map_get_route_for_units_ctx(
 								game_map,
+								from,
+								to,
 								can_move_sea_through_p,
 								can_move_sea_through_c,
 								transports_one,
 								player,
 							)
-							route := route_finder_find_route_by_cost_pair(rf, from, to)
 							if route != nil {
 								sea_move_territories[to] = {}
 							}
@@ -1409,7 +1427,6 @@ pro_territory_manager_find_amphib_move_options :: proc(
 							unload_territories[ut] = {}
 						}
 					}
-
 					pro_transport_add_territories(
 						pro_transport_data,
 						unload_territories,
@@ -1420,6 +1437,45 @@ pro_territory_manager_find_amphib_move_options :: proc(
 						sea_move_territories,
 						load_from_territories,
 					)
+					when ENEMY_ATK_DUMP {
+						if is_checking_enemy_attacks {
+							pname := default_named_get_name(&player.default_named)
+							if pname == "Japanese" {
+								from_name := default_named_get_name(&from.named_attachable.default_named)
+								tt_name := default_named_get_name(&transport_territory.named_attachable.default_named)
+								sea_names: [dynamic]string
+								for sm in sea_move_territories {
+									append(&sea_names, default_named_get_name(&sm.named_attachable.default_named))
+								}
+								unload_names: [dynamic]string
+								for ut, _ in unload_territories {
+									append(&unload_names, default_named_get_name(&ut.named_attachable.default_named))
+								}
+								load_names: [dynamic]string
+								for lf in load_from_territories {
+									append(&load_names, default_named_get_name(&lf.named_attachable.default_named))
+								}
+								fmt.printf("FAMO_ITER tt=%s from=%s ml=%d sea=%v unload=%v loads=%v\n",
+									tt_name, from_name, moves_left, sea_names, unload_names, load_names)
+							}
+							for ut, _ in unload_territories {
+								utn := default_named_get_name(&ut.named_attachable.default_named)
+								if utn == "India" || utn == "Trans-Jordan" {
+									load_names: [dynamic]string
+									for lf in load_from_territories {
+										append(&load_names, default_named_get_name(&lf.named_attachable.default_named))
+									}
+									sea_names: [dynamic]string
+									for sm in sea_move_territories {
+										append(&sea_names, default_named_get_name(&sm.named_attachable.default_named))
+									}
+									fmt.printf("FAMO_UNLOAD player=%s tx=%p target=%s loads=%v sea=%v moves_left=%d\n",
+										default_named_get_name(&player.default_named),
+										transport, utn, load_names, sea_names, moves_left)
+								}
+							}
+						}
+					}
 				}
 				clear(&current_territories)
 				for t in next_territories {
@@ -1452,6 +1508,30 @@ pro_territory_manager_find_amphib_move_options :: proc(
 		}
 		for t in empty_keys {
 			delete_key(&transport_map, t)
+		}
+		when ENEMY_ATK_DUMP {
+			if is_checking_enemy_attacks {
+				for t, inner in transport_map {
+					if t == nil { continue }
+					tn := default_named_get_name(&t.named_attachable.default_named)
+					if tn == "India" || tn == "Trans-Jordan" {
+						load_names: [dynamic]string
+						for lf in inner {
+							append(&load_names, default_named_get_name(&lf.named_attachable.default_named))
+						}
+						lr_names: [dynamic]string
+						if lr, ok := land_routes_map[t]; ok {
+							for lt in lr {
+								append(&lr_names, default_named_get_name(&lt.named_attachable.default_named))
+							}
+						}
+						fmt.printf("FAMO_PRUNED player=%s tx=%p target=%s n_load=%d loads=%v land_routes=%v\n",
+							default_named_get_name(&player.default_named),
+							pro_transport_get_transport(pro_transport_data),
+							tn, len(inner), load_names, lr_names)
+					}
+				}
+			}
 		}
 	}
 
@@ -1486,6 +1566,28 @@ pro_territory_manager_find_amphib_move_options :: proc(
 			}
 			pt := pro_data_get_pro_territory(pro_data, move_map, move_territory)
 			pro_territory_add_max_amphib_units(pt, amphib_units)
+			when ENEMY_ATK_DUMP {
+				if is_checking_enemy_attacks {
+					mtn := default_named_get_name(&move_territory.named_attachable.default_named)
+					if mtn == "India" || mtn == "Trans-Jordan" {
+						load_count := len(territories_can_load_from)
+						load_names: [dynamic]string
+						for lt in territories_can_load_from {
+							append(&load_names, default_named_get_name(&lt.named_attachable.default_named))
+						}
+						mm_ptrs: [dynamic]rawptr
+						for mk, _ in move_map {
+							if mk != nil && default_named_get_name(&mk.named_attachable.default_named) == mtn {
+								append(&mm_ptrs, rawptr(mk))
+							}
+						}
+						fmt.printf("AMPHIB_ADD player=%s target=%s tx=%p loadable=%d added=%d already=%d mt_ptr=%p mm_keys_with_name=%d mm_ptrs=%v load_terrs=%v\n",
+							default_named_get_name(&player.default_named),
+							mtn, transport, load_count, len(amphib_units), len(already_added),
+							move_territory, len(mm_ptrs), mm_ptrs, load_names)
+					}
+				}
+			}
 		}
 	}
 }
@@ -1940,6 +2042,11 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 	data := pro_data_get_data(pro_data)
 	enemy_players := pro_utils_get_enemy_players_in_turn_order(player)
 	defer delete(enemy_players)
+	when ENEMY_ATK_DUMP {
+		fmt.printf("FEAO_ENTRY for=%s n_enemy_players=%d cleared=%d to_check=%d\n",
+			default_named_get_name(&player.default_named),
+			len(enemy_players), len(cleared_territories), len(territories_to_check))
+	}
 	enemy_attack_maps: [dynamic]map[^Territory]^Pro_Territory
 	allied_territories := make(map[^Territory]struct {})
 	defer delete(allied_territories)
@@ -1951,21 +2058,26 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 
 	for enemy_player in enemy_players {
 		has_units_p, has_units_c := matches_territory_has_units_owned_by(enemy_player)
+		// Java's enemyUnitTerritories.removeAll(clearedTerritories) matches by
+		// Territory.equals (by name via DefaultNamed). cleared_territories
+		// pointers may originate from a different GameData copy than the map
+		// returned by game_map_get_territories — compare by name to mirror Java.
+		cleared_names := make(map[string]struct {})
+		defer delete(cleared_names)
+		for ct in cleared_territories {
+			if ct == nil { continue }
+			cleared_names[default_named_get_name(&ct.named_attachable.default_named)] = {}
+		}
 		enemy_unit_territories := make([dynamic]^Territory)
 		for t in game_map_get_territories(game_data_get_map(data)) {
 			if !has_units_p(has_units_c, t) {
 				continue
 			}
-			in_cleared := false
-			for ct in cleared_territories {
-				if ct == t {
-					in_cleared = true
-					break
-				}
+			tn := default_named_get_name(&t.named_attachable.default_named)
+			if tn in cleared_names {
+				continue
 			}
-			if !in_cleared {
-				append(&enemy_unit_territories, t)
-			}
+			append(&enemy_unit_territories, t)
 		}
 		attack_map := make(map[^Territory]^Pro_Territory, 128)
 		unit_attack_map := make(map[^Unit]map[^Territory]struct {}, 128)
@@ -1973,6 +2085,12 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 		bombard_map := make(map[^Unit]map[^Territory]struct {}, 128)
 		transport_map_list: [dynamic]^Pro_Transport
 		append(&enemy_attack_maps, attack_map)
+		when ENEMY_ATK_DUMP {
+			fmt.printf("FEAO_PLAYER for=%s enemy=%s n_enemy_unit_terr=%d\n",
+				default_named_get_name(&player.default_named),
+				default_named_get_name(&enemy_player.default_named),
+				len(enemy_unit_territories))
+		}
 		// Java passes new ArrayList<>(alliedTerritories) — copy.
 		allied_list := make([dynamic]^Territory)
 		for t in allied_territories {
@@ -1999,12 +2117,40 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 				allied_territories[t] = {}
 			}
 		}
-		// enemyTerritories.removeAll(alliedTerritories);
+		when ENEMY_ATK_DUMP {
+			for t, pt in attack_map {
+				if t == nil { continue }
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				if tn == "India" || tn == "Trans-Jordan" {
+					mu := pro_territory_get_max_units(pt)
+					ma := pro_territory_get_max_amphib_units(pt)
+					ep := default_named_get_name(&enemy_player.default_named)
+					fmt.printf("ENEMY_ATK_DUMP for=%s vs_player=%s enemy=%s max_units=%d amphib=%d\n",
+						default_named_get_name(&player.default_named), ep, tn, len(mu), len(ma))
+					for u in mu {
+						ut := unit_get_type(u)
+						fmt.printf("  EAU t=%s ep=%s u=%s\n", tn, ep, default_named_get_name(&ut.named_attachable.default_named))
+					}
+					for u in ma {
+						ut := unit_get_type(u)
+						fmt.printf("  EAA t=%s ep=%s u=%s\n", tn, ep, default_named_get_name(&ut.named_attachable.default_named))
+					}
+				}
+			}
+		}
+		// enemyTerritories.removeAll(alliedTerritories); — match by name to mirror Java's Territory.equals.
+		allied_names := make(map[string]struct {})
+		defer delete(allied_names)
+		for at, _ in allied_territories {
+			if at == nil { continue }
+			allied_names[default_named_get_name(&at.named_attachable.default_named)] = {}
+		}
 		new_enemy := make([dynamic]^Territory)
 		for t in enemy_territories {
-			if !(t in allied_territories) {
-				append(&new_enemy, t)
-			}
+			if t == nil { continue }
+			tn := default_named_get_name(&t.named_attachable.default_named)
+			if tn in allied_names { continue }
+			append(&new_enemy, t)
 		}
 		delete(enemy_territories)
 		enemy_territories = new_enemy

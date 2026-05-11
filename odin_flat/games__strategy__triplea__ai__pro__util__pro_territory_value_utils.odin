@@ -426,14 +426,15 @@ pro_territory_value_utils_calculate_territory_value_to_targets :: proc(
 	empty_units: [dynamic]^Unit
 	game_map := game_data_get_map(data)
 	for target_territory in target_territories {
-		rf := route_finder_new_with_units_player(
+		optional_route := game_map_get_route_for_units_ctx(
 			game_map,
+			t,
+			target_territory,
 			sea_pred,
 			sea_ctx,
 			empty_units,
 			player,
 		)
-		optional_route := route_finder_find_route_by_cost_pair(rf, t, target_territory)
 		if optional_route == nil {
 			continue
 		}
@@ -1021,14 +1022,15 @@ pro_territory_value_utils_find_water_value :: proc(
 	empty_units: [dynamic]^Unit
 
 	for enemy_cap_or_factory in nearby_enemy_capitals_and_factories {
-		rf := route_finder_new_with_units_player(
+		optional_route := game_map_get_route_for_units_ctx(
 			game_map,
+			t,
+			enemy_cap_or_factory,
 			sea_pred,
 			sea_ctx,
 			empty_units,
 			player,
 		)
-		optional_route := route_finder_find_route_by_cost_pair(rf, t, enemy_cap_or_factory)
 		if optional_route == nil {
 			continue
 		}
@@ -1081,14 +1083,15 @@ pro_territory_value_utils_find_water_value :: proc(
 		if in_attack {
 			continue
 		}
-		rf := route_finder_new_with_units_player(
+		optional_route := game_map_get_route_for_units_ctx(
 			game_map,
+			t,
+			nearby_land_territory,
 			sea_pred,
 			sea_ctx,
 			empty_units,
 			player,
 		)
-		optional_route := route_finder_find_route_by_cost_pair(rf, t, nearby_land_territory)
 		if optional_route == nil {
 			continue
 		}

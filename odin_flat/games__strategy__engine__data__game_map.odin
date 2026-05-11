@@ -1155,3 +1155,49 @@ game_map_get_route_for_units :: proc(
 	)
 	return route_finder_find_route_by_cost_pair(rf, start, end)
 }
+
+// Mirrors Java GameMap#getRouteForUnits but accepts a Predicate<Territory>
+// expressed in the rawptr-ctx closure-capture form
+// (`proc(rawptr, ^Territory) -> bool` + userdata) used throughout the Pro
+// AI port. Behavior is identical to game_map_get_route_for_units: wraps
+// `cond` with `Matches.territoryIs(end).or(cond)` so the destination is
+// always reachable, then delegates to RouteFinder#findRouteByCost.
+Game_Map_Ctx_Route_Or_Ctx :: struct {
+	end:      ^Territory,
+	cond_p:   proc(rawptr, ^Territory) -> bool,
+	cond_ctx: rawptr,
+}
+
+@(private = "file")
+game_map_pred_route_or_ctx :: proc(ctx_ptr: rawptr, t: ^Territory) -> bool {
+	c := cast(^Game_Map_Ctx_Route_Or_Ctx)ctx_ptr
+	if t == c.end || (t != nil && c.end != nil && t.named.base.name == c.end.named.base.name) {
+		return true
+	}
+	return c.cond_p(c.cond_ctx, t)
+}
+
+game_map_get_route_for_units_ctx :: proc(
+	self: ^Game_Map,
+	start: ^Territory,
+	end: ^Territory,
+	cond_p: proc(rawptr, ^Territory) -> bool,
+	cond_ctx: rawptr,
+	units: [dynamic]^Unit,
+	player: ^Game_Player,
+) -> ^Route {
+	assert(start != nil)
+	assert(end != nil)
+	ctx := new(Game_Map_Ctx_Route_Or_Ctx)
+	ctx.end = end
+	ctx.cond_p = cond_p
+	ctx.cond_ctx = cond_ctx
+	rf := route_finder_new_with_units_player(
+		self,
+		game_map_pred_route_or_ctx,
+		rawptr(ctx),
+		units,
+		player,
+	)
+	return route_finder_find_route_by_cost_pair(rf, start, end)
+}

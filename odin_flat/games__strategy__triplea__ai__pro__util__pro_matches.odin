@@ -3,6 +3,8 @@ package game
 import "core:fmt"
 import "core:os"
 
+ENEMY_ATK_DUMP_PRED :: #config(ENEMY_ATK_DUMP_PRED, false)
+
 // Java owners covered by this file:
 //   - games.strategy.triplea.ai.pro.util.ProMatches
 //
@@ -218,13 +220,20 @@ pro_matches_pred_territory_can_move_sea_units :: proc(ctx_ptr: rawptr, t: ^Terri
 		}
 	}
 	p1, c1 := matches_territory_does_not_cost_money_to_enter(props)
-	if !p1(c1, t) {
-		return false
-	}
+	r1 := p1(c1, t)
 	p2, c2 := matches_territory_is_passable_and_not_restricted_and_ok_by_relationships(
 		ctx.player, ctx.is_combat_move, false, true, false, false,
 	)
-	return p2(c2, t)
+	r2 := r1 ? p2(c2, t) : false
+	when ENEMY_ATK_DUMP_PRED {
+		tn := default_named_get_name(&t.named_attachable.default_named)
+		pn := default_named_get_name(&ctx.player.default_named)
+		if pn == "Japanese" && (tn == "35 Sea Zone" || tn == "39 Sea Zone" || tn == "37 Sea Zone" || tn == "36 Sea Zone") {
+			fmt.printf("PRED_CMS player=%s t=%s combat=%v r1=%v r2=%v\n", pn, tn, ctx.is_combat_move, r1, r2)
+		}
+	}
+	if !r1 { return false }
+	return r2
 }
 
 pro_matches_territory_can_move_sea_units :: proc(

@@ -3331,7 +3331,26 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 		_defend_opts_order := pro_my_move_options_get_unit_move_map_order(
 			pro_territory_manager_get_defend_options(self.territory_manager),
 		)
-		for unit in _defend_opts_order {
+		// Fallback: the order slice is currently never populated by
+		// find_*_move_options helpers. Reconstruct insertion order
+		// deterministically from my_unit_territories × territory.units,
+		// matching Java's LinkedHashMap insertion order.
+		_defend_opts_order_fallback: [dynamic]^Unit
+		_defend_opts_order_use := _defend_opts_order
+		if len(_defend_opts_order) == 0 && len(unit_move_map) > 0 {
+			seen := make(map[^Unit]struct {})
+			defer delete(seen)
+			for tt in pro_data_get_my_unit_territories(self.pro_data) {
+				for u in territory_get_units(tt) {
+					if _, in_map := unit_move_map[u]; !in_map { continue }
+					if _, dup := seen[u]; dup { continue }
+					seen[u] = {}
+					append(&_defend_opts_order_fallback, u)
+				}
+			}
+			_defend_opts_order_use = _defend_opts_order_fallback
+		}
+		for unit in _defend_opts_order_use {
 			can_defend_territories := make(map[^Territory]struct {})
 			for attack_territory_data in territories_to_try_to_defend {
 				attk_t := pro_territory_get_territory(attack_territory_data)
@@ -3573,7 +3592,22 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 			_t_order := pro_my_move_options_get_transport_move_map_order(
 				pro_territory_manager_get_defend_options(self.territory_manager),
 			)
-			for unit in _t_order {
+			_t_order_fallback: [dynamic]^Unit
+			_t_order_use := _t_order
+			if len(_t_order) == 0 && len(transport_move_map) > 0 {
+				seen2 := make(map[^Unit]struct {})
+				defer delete(seen2)
+				for tt in pro_data_get_my_unit_territories(self.pro_data) {
+					for u in territory_get_units(tt) {
+						if _, in_map := transport_move_map[u]; !in_map { continue }
+						if _, dup := seen2[u]; dup { continue }
+						seen2[u] = {}
+						append(&_t_order_fallback, u)
+					}
+				}
+				_t_order_use = _t_order_fallback
+			}
+			for unit in _t_order_use {
 				can_defend_territories := make(map[^Territory]struct {})
 				for attack_territory_data in territories_to_try_to_defend {
 					attk_t := pro_territory_get_territory(attack_territory_data)

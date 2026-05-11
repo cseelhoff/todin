@@ -105,4 +105,15 @@ pro_ncm_trace_emit_list :: proc(label: string, list: ^[dynamic]^Pro_Territory) {
 	}
 	fmt.printf("NCM_TRACE label=%s h=%016x n=%d\n",
 		label, ncm_fnv1a64(strings.to_string(sb)), len(list^))
+	when NCM_TRACE_DUMP {
+		for pt, i in list^ {
+			if pt == nil { continue }
+			t := pt.territory
+			n := default_named_get_name(&t.named_attachable.default_named)
+			v := pro_territory_get_value(pt)
+			units := pro_territory_get_units(pt)
+			fmt.printf("NCM_DUMP label=%s i=%d t=%s V=%d U=%d\n",
+				label, i, n, i64(v * 1000.0), len(units))
+		}
+	}
 }
