@@ -151,13 +151,43 @@ pro_purchase_utils_get_original_factory_owner :: proc(
 pro_purchase_utils_get_place_units :: proc(
 	t: ^Territory,
 	purchase_territories: map[^Territory]^Pro_Purchase_Territory,
+	data: ^Game_Data = nil,
 ) -> [dynamic]^Unit {
 	place_units: [dynamic]^Unit
-	for _, purchase_territory in purchase_territories {
-		for ppt in pro_purchase_territory_get_can_place_territories(purchase_territory) {
-			if t == pro_place_territory_get_territory(ppt) {
-				for u in pro_place_territory_get_place_units(ppt) {
-					append(&place_units, u)
+	// Iterate purchase_territories in Java's LinkedHashMap order
+	// (master-game-data territory order). Odin's builtin map iteration
+	// is randomized, which would make the appended unit list order
+	// non-deterministic and divergent from Java. When `data` is nil
+	// (legacy callers), fall back to sorting keys by name for at
+	// least intra-Odin stability.
+	if data != nil {
+		all_terrs := game_map_get_territories(game_data_get_map(data))
+		defer delete(all_terrs)
+		for k in all_terrs {
+			purchase_territory, ok := purchase_territories[k]
+			if !ok { continue }
+			for ppt in pro_purchase_territory_get_can_place_territories(purchase_territory) {
+				if t == pro_place_territory_get_territory(ppt) {
+					for u in pro_place_territory_get_place_units(ppt) {
+						append(&place_units, u)
+					}
+				}
+			}
+		}
+	} else {
+		keys: [dynamic]^Territory
+		defer delete(keys)
+		for k, _ in purchase_territories { append(&keys, k) }
+		slice.sort_by(keys[:], proc(a, b: ^Territory) -> bool {
+			return strings.compare(territory_get_name(a), territory_get_name(b)) < 0
+		})
+		for k in keys {
+			purchase_territory := purchase_territories[k]
+			for ppt in pro_purchase_territory_get_can_place_territories(purchase_territory) {
+				if t == pro_place_territory_get_territory(ppt) {
+					for u in pro_place_territory_get_place_units(ppt) {
+						append(&place_units, u)
+					}
 				}
 			}
 		}

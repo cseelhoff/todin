@@ -710,7 +710,7 @@ pro_battle_utils_territory_has_local_naval_superiority :: proc(
 		for u in owned_matches {
 			append(&my_units, u)
 		}
-		place_units := pro_purchase_utils_get_place_units(nearby_sea, purchase_territories)
+		place_units := pro_purchase_utils_get_place_units(nearby_sea, purchase_territories, pro_data_get_data(pro_data))
 		for u in place_units {
 			append(&my_units, u)
 		}

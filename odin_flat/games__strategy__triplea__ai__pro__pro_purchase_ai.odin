@@ -1917,7 +1917,7 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 		for u in pro_place_territory_get_defending_units(place_territory) {
 			append(&units, u)
 		}
-		place_units := pro_purchase_utils_get_place_units(t, purchase_territories)
+		place_units := pro_purchase_utils_get_place_units(t, purchase_territories, pro_data_get_data(self.pro_data))
 		for u in place_units {
 			append(&units, u)
 		}
@@ -3385,7 +3385,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			for u in pro_place_territory_get_defending_units(place_territory) {
 				append(&defending_units, u)
 			}
-			place_units := pro_purchase_utils_get_place_units(t, purchase_territories)
+			place_units := pro_purchase_utils_get_place_units(t, purchase_territories, pro_data_get_data(self.pro_data))
 			for u in place_units {
 				append(&defending_units, u)
 			}
@@ -3528,7 +3528,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						append(&defending_units, u)
 					}
 					place_units2 := pro_purchase_utils_get_place_units(
-						t, purchase_territories,
+						t, purchase_territories, pro_data_get_data(self.pro_data),
 					)
 					for u in place_units2 {
 						append(&defending_units, u)
@@ -3687,7 +3687,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 				append(&my_units_in_sea_territories, u)
 			}
 			delete(matched)
-			place_units2 := pro_purchase_utils_get_place_units(nst, purchase_territories)
+			place_units2 := pro_purchase_utils_get_place_units(nst, purchase_territories, pro_data_get_data(self.pro_data))
 			for u in place_units2 {
 				append(&my_units_in_sea_territories, u)
 			}
@@ -3936,7 +3936,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			)
 			for sea_territory, _ in sea_territories {
 				units_in_territory := pro_purchase_utils_get_place_units(
-					sea_territory, purchase_territories,
+					sea_territory, purchase_territories, pro_data_get_data(self.pro_data),
 				)
 				for u in territory_get_units(sea_territory) {
 					append(&units_in_territory, u)
@@ -3993,7 +3993,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					for u in territory_get_units(neighbor) {
 						append(&units_in_territory, u)
 					}
-					more := pro_purchase_utils_get_place_units(neighbor, purchase_territories)
+					more := pro_purchase_utils_get_place_units(neighbor, purchase_territories, pro_data_get_data(self.pro_data))
 					for u in more {
 						append(&units_in_territory, u)
 					}

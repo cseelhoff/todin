@@ -1203,9 +1203,6 @@ pro_territory_manager_find_land_move_options :: proc(
 				unit_inner, unit_ok := unit_move_map[u]
 				if !unit_ok {
 					unit_inner = make(map[^Territory]struct {})
-					if unit_move_order != nil {
-						append(unit_move_order, u)
-					}
 				}
 				unit_inner[t] = {}
 				unit_move_map[u] = unit_inner
@@ -1787,6 +1784,7 @@ pro_territory_manager_find_defend_options :: proc(
 		false,
 		is_checking_enemy_attacks,
 		false,
+		unit_move_order,
 	)
 	pro_ncm_trace_emit_raw("01b_after_land", move_map)
 
