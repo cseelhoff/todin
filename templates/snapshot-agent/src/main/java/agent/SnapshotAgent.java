@@ -96,6 +96,32 @@ public class SnapshotAgent {
             new AgentBuilder.Default()
                     .disableClassFormatChanges()
                     .with(AgentBuilder.RedefinitionStrategy.RETRANSFORMATION)
+                    .with(new AgentBuilder.Listener.Adapter() {
+                        @Override
+                        public void onTransformation(net.bytebuddy.description.type.TypeDescription typeDescription,
+                                                    ClassLoader classLoader, net.bytebuddy.utility.JavaModule module,
+                                                    boolean loaded, net.bytebuddy.dynamic.DynamicType dynamicType) {
+                            System.err.println("[SnapshotAgent] TRANSFORMED " + typeDescription.getName()
+                                    + " (loaded=" + loaded + ", loader=" + classLoader + ")");
+                        }
+                        @Override
+                        public void onError(String typeName, ClassLoader classLoader,
+                                            net.bytebuddy.utility.JavaModule module, boolean loaded, Throwable throwable) {
+                            System.err.println("[SnapshotAgent] ERROR transforming " + typeName
+                                    + " (loaded=" + loaded + "): " + throwable);
+                            throwable.printStackTrace(System.err);
+                        }
+                        @Override
+                        public void onIgnored(net.bytebuddy.description.type.TypeDescription typeDescription,
+                                              ClassLoader classLoader, net.bytebuddy.utility.JavaModule module,
+                                              boolean loaded) {
+                            // Only log ignores for our target classes; otherwise spammy.
+                            if (typeDescription.getName().equals(className)) {
+                                System.err.println("[SnapshotAgent] IGNORED " + typeDescription.getName()
+                                        + " (loaded=" + loaded + ", loader=" + classLoader + ")");
+                            }
+                        }
+                    })
                     .type(ElementMatchers.named(className))
                     .transform((builder, typeDescription, classLoader, module, protectionDomain) ->
                             builder.visit(

@@ -2718,6 +2718,37 @@ pro_purchase_ai_purchase_land_units :: proc(
 	prioritized_land_territories: [dynamic]^Pro_Place_Territory,
 	purchase_options:             ^Pro_Purchase_Option_Map,
 ) {
+	when #config(LAND_OPTS_PROBE, false) {
+		_dump_opts := proc(label: string, opts: [dynamic]^Pro_Purchase_Option) {
+			fmt.printf("LAND_OPTS %s n=%d [", label, len(opts))
+			for o, i in opts {
+				if i > 0 { fmt.printf(",") }
+				ut_name := "?"
+				if o != nil && o.unit_type != nil {
+					ut_name = default_named_get_name(&o.unit_type.named_attachable.default_named)
+				}
+				fmt.printf("%s(c=%d,a=%.1f,d=%.1f,m=%d,ae=%.3f,de=%.3f)",
+					ut_name,
+					pro_purchase_option_get_cost(o),
+					pro_purchase_option_get_attack(o),
+					pro_purchase_option_get_defense(o),
+					pro_purchase_option_get_movement(o),
+					pro_purchase_option_get_attack_efficiency(o),
+					pro_purchase_option_get_defense_efficiency(o),
+				)
+			}
+			fmt.printf("]\n")
+		}
+		player_name := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("LAND_OPTS === player=%s ===\n", player_name)
+		_dump_opts("land_attack",    purchase_options.land_attack_options)
+		_dump_opts("land_defense",   purchase_options.land_defense_options)
+		_dump_opts("land_fodder",    purchase_options.land_fodder_options)
+		_dump_opts("land_zero_move", purchase_options.land_zero_move_options)
+		_dump_opts("aa_options",     purchase_options.aa_options)
+		_dump_opts("special",        purchase_options.special_options)
+		_dump_opts("factory",        purchase_options.factory_options)
+	}
 	// player.getMatches(Matches.unitIsNotSea())
 	not_sea_p, not_sea_c := matches_unit_is_not_sea()
 	unplaced_units: [dynamic]^Unit
@@ -2895,6 +2926,15 @@ pro_purchase_ai_purchase_land_units :: proc(
 			)
 
 			selected_option: ^Pro_Purchase_Option = nil
+			when #config(LAND_OPTS_PROBE, false) {
+				_t_name := territory_get_name(t)
+				fmt.printf(
+					"LAND_LOOP terr=%s remaining=%d fodder?=%v attDiff=%.2f n_fod=%d n_att=%d n_def=%d enemyDist=%d fodderPct=%d\n",
+					_t_name, remaining_unit_production, select_fodder_unit, attack_and_defense_difference,
+					len(land_fodder_options), len(land_attack_options), len(land_defense_options),
+					enemy_distance, fodder_percent,
+				)
+			}
 			if !select_fodder_unit && attack_and_defense_difference > 0 &&
 			   len(land_defense_options) > 0 {
 				defense_efficiencies := make(map[^Pro_Purchase_Option]f64)
@@ -2960,6 +3000,11 @@ pro_purchase_ai_purchase_land_units :: proc(
 					unit_type_get_name(pro_purchase_option_get_unit_type(selected_option)),
 				),
 			)
+			when #config(LAND_OPTS_PROBE, false) {
+				_sel_name := unit_type_get_name(pro_purchase_option_get_unit_type(selected_option))
+				fmt.printf("LAND_LOOP   selected=%s units_to_place_n=%d added_fodder=%d\n",
+					_sel_name, len(units_to_place), added_fodder_units)
+			}
 		}
 
 		pro_purchase_ai_add_units_to_place(self, place_territory, units_to_place)

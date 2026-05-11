@@ -115,6 +115,13 @@ pro_purchase_validation_utils_remove_invalid_purchase_options :: proc(
 				combined,
 			)
 		should_remove := r1 || r2 || r3 || r4
+		when #config(LAND_OPTS_PROBE, false) {
+			ut_name := default_named_get_name(&purchase_option.unit_type.named_attachable.default_named)
+			t_name := "?"
+			if territory != nil { t_name = territory_get_name(territory) }
+			fmt.printf("FILTER terr=%s unit=%s r1_resources=%v r2_maxBuilt=%v r3_construct=%v r4_consume=%v -> remove=%v\n",
+				t_name, ut_name, r1, r2, r3, r4, should_remove)
+		}
 		if should_remove {
 			ordered_remove(purchase_options, i)
 		}

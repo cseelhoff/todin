@@ -215,6 +215,9 @@ def post_process(scratch_dir: Path, dest_dir: Path,
         # Copy every before-param-N.json the agent emitted (variable arity).
         for param_src in sorted(td.glob("before-param-*.json")):
             shutil.copyfile(param_src, snap / param_src.name)
+        # Same for after-param-N.json (post-state of mutating-arg methods).
+        for param_src in sorted(td.glob("after-param-*.json")):
+            shutil.copyfile(param_src, snap / param_src.name)
         # Pull the `return: ...` line out of after-meta.txt for easy diffing.
         meta = parse_meta(td / "after-meta.txt")
         if "return" in meta:

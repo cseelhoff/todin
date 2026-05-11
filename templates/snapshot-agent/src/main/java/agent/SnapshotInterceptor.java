@@ -122,6 +122,7 @@ public class SnapshotInterceptor {
             @Advice.Enter long tick,
             @Advice.Origin String methodSignature,
               @Advice.Return(readOnly = true, typing = Assigner.Typing.DYNAMIC) Object returnValue,
+            @Advice.AllArguments Object[] args,
             @Advice.Thrown Throwable thrown,
             @Advice.This(optional = true, typing = Assigner.Typing.DYNAMIC) Object self) {
         try {
@@ -129,7 +130,7 @@ public class SnapshotInterceptor {
                     && !capExceeded.get()
                     && shouldSnapshot(methodSignature)) {
                 Object gameData = extractGameData(self);
-                saveAfterSnapshot(tick, methodSignature, returnValue, thrown, cachedGameDataClass, gameData);
+                saveAfterSnapshot(tick, methodSignature, returnValue, args, thrown, cachedGameDataClass, gameData);
             }
         } catch (Exception e) {
             // Silently ignore
@@ -183,7 +184,7 @@ public class SnapshotInterceptor {
     }
 
     public static void saveAfterSnapshot(long tick, String methodSignature,
-                                           Object returnValue, Throwable thrown,
+                                           Object returnValue, Object[] args, Throwable thrown,
                                            Class<?> gameDataClass, Object gameData) {
         try {
             Path dir = Path.of(outputDir, "tick-" + String.format("%010d", tick));
@@ -211,6 +212,17 @@ public class SnapshotInterceptor {
             // .bin Java serialization).
             if (saveReturn) {
                 saveValueJson(dir.resolve("after-return.json"), returnValue);
+            }
+
+            // Save each arg's POST-state. For methods that mutate their
+            // arg(s) (e.g. purchaseLandUnits adds units to ProPurchaseTerritory.placeUnits)
+            // this captures the actual effect of the call. Same Jackson
+            // identity-tracked JSON shape as before-param-N.json so the two
+            // can be diffed directly.
+            if (saveParams && args != null) {
+                for (int i = 0; i < args.length; i++) {
+                    saveValueJson(dir.resolve("after-param-" + i + ".json"), args[i]);
+                }
             }
         } catch (Exception e) {
             System.err.println("[SnapshotAgent] Error saving after snapshot at tick " + tick + ": " + e);
@@ -355,9 +367,13 @@ public class SnapshotInterceptor {
         String className = "";
         String methodName = "";
         try {
-            // Parse "access type package.ClassName.methodName(params)"
-            int lastDot = methodSignature.lastIndexOf('.');
+            // Parse "access type package.ClassName.methodName(params)".
+            // The args list itself contains dots (e.g. java.util.Map), so we
+            // must search for the class/method-separator dot ONLY in the
+            // segment preceding '(', not the whole signature.
             int parenStart = methodSignature.indexOf('(');
+            int searchEnd = parenStart >= 0 ? parenStart : methodSignature.length();
+            int lastDot = methodSignature.lastIndexOf('.', searchEnd - 1);
             if (lastDot >= 0 && parenStart > lastDot) {
                 methodName = methodSignature.substring(lastDot + 1, parenStart);
             }

@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:strings"
 
 Pro_Resource_Tracker :: struct {
@@ -28,6 +29,12 @@ pro_resource_tracker_has_enough_amount :: proc(self: ^Pro_Resource_Tracker, amou
 	}
 	for k, v in amount^ {
 		existing, _ := remaining[k]
+		when #config(LAND_OPTS_PROBE, false) {
+			res := cast(^Resource)k
+			rname := res != nil ? default_named_get_name(&res.named_attachable.default_named) : "?"
+			fmt.printf("HAS_ENOUGH key=%s(addr=%p) need=%d have=%d -> %v\n",
+				rname, k, v, existing, existing >= v)
+		}
 		if existing < v {
 			return false
 		}
