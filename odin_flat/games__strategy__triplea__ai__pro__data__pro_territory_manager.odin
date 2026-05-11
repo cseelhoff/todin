@@ -353,6 +353,8 @@ pro_territory_manager_find_naval_move_options :: proc(
 	cleared_territories: [dynamic]^Territory,
 	is_combat_move: bool,
 	is_checking_enemy_attacks: bool,
+	unit_move_order: ^[dynamic]^Unit = nil,
+	transport_move_order: ^[dynamic]^Unit = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -457,6 +459,9 @@ pro_territory_manager_find_naval_move_options :: proc(
 					inner, ok := transport_move_map[my_sea_unit]
 					if !ok {
 						inner = make(map[^Territory]struct {})
+						if transport_move_order != nil {
+							append(transport_move_order, my_sea_unit)
+						}
 					}
 					inner[potential_territory] = {}
 					transport_move_map[my_sea_unit] = inner
@@ -464,6 +469,9 @@ pro_territory_manager_find_naval_move_options :: proc(
 					inner, ok := unit_move_map[my_sea_unit]
 					if !ok {
 						inner = make(map[^Territory]struct {})
+						if unit_move_order != nil {
+							append(unit_move_order, my_sea_unit)
+						}
 					}
 					inner[potential_territory] = {}
 					unit_move_map[my_sea_unit] = inner
@@ -815,6 +823,7 @@ pro_territory_manager_find_air_move_options :: proc(
 	is_combat_move: bool,
 	is_checking_enemy_attacks: bool,
 	is_ignoring_relationships: bool,
+	unit_move_order: ^[dynamic]^Unit = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -1043,6 +1052,9 @@ pro_territory_manager_find_air_move_options :: proc(
 				inner, ok := unit_move_map[my_air_unit]
 				if !ok {
 					inner = make(map[^Territory]struct {})
+					if unit_move_order != nil {
+						append(unit_move_order, my_air_unit)
+					}
 				}
 				inner[potential_territory] = {}
 				unit_move_map[my_air_unit] = inner
@@ -1077,6 +1089,7 @@ pro_territory_manager_find_land_move_options :: proc(
 	is_combat_move: bool,
 	is_checking_enemy_attacks: bool,
 	is_ignoring_relationships: bool,
+	unit_move_order: ^[dynamic]^Unit = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -1190,6 +1203,9 @@ pro_territory_manager_find_land_move_options :: proc(
 				unit_inner, unit_ok := unit_move_map[u]
 				if !unit_ok {
 					unit_inner = make(map[^Territory]struct {})
+					if unit_move_order != nil {
+						append(unit_move_order, u)
+					}
 				}
 				unit_inner[t] = {}
 				unit_move_map[u] = unit_inner
@@ -1729,6 +1745,8 @@ pro_territory_manager_find_defend_options :: proc(
 	transport_map_list:        ^[dynamic]^Pro_Transport,
 	cleared_territories:       [dynamic]^Territory,
 	is_checking_enemy_attacks: bool,
+	unit_move_order:           ^[dynamic]^Unit = nil,
+	transport_move_order:      ^[dynamic]^Unit = nil,
 ) {
 	land_routes_map := make(map[^Territory]map[^Territory]struct {})
 
@@ -1748,6 +1766,8 @@ pro_territory_manager_find_defend_options :: proc(
 		cleared_territories,
 		false,
 		is_checking_enemy_attacks,
+		unit_move_order,
+		transport_move_order,
 	)
 	pro_ncm_trace_emit_raw("01a_after_naval", move_map)
 
@@ -1971,6 +1991,7 @@ pro_territory_manager_populate_defense_options :: proc(
 		&self.defend_options.transport_list,
 		cleared_territories,
 		false,
+		&self.defend_options.unit_move_map_order,
 	)
 }
 

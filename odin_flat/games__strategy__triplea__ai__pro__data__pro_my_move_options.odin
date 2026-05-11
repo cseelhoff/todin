@@ -47,6 +47,10 @@ pro_my_move_options_new :: proc() -> ^Pro_My_Move_Options {
 	self.bombard_map = make(map[^Unit]map[^Territory]struct{})
 	self.transport_list = make([dynamic]^Pro_Transport)
 	self.bomber_move_map = make(map[^Unit]map[^Territory]struct{})
+	self.unit_move_map_order = make([dynamic]^Unit)
+	self.transport_move_map_order = make([dynamic]^Unit)
+	self.bombard_map_order = make([dynamic]^Unit)
+	self.bomber_move_map_order = make([dynamic]^Unit)
 	return self
 }
 

@@ -35,11 +35,7 @@ delegate_execution_manager_current_thread_has_read_lock :: proc(
 	if tl == nil || !tl.has_set {
 		return delegate_execution_manager_lambda_new_0()
 	}
-	v, ok := tl.value.(bool)
-	if !ok {
-		return false
-	}
-	return v
+	return tl.value
 }
 
 // Java: `readWriteLock.readLock().unlock(); currentThreadHasReadLock.set(FALSE);`
