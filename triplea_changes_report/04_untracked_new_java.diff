@@ -1,0 +1,1800 @@
+diff --git game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProDeterminism.java game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProDeterminism.java
+new file mode 100644
+index 000000000..296904863
+--- /dev/null
++++ game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProDeterminism.java
+@@ -0,0 +1,112 @@
++package games.strategy.triplea.ai.pro.util;
++
++import games.strategy.engine.data.GamePlayer;
++import games.strategy.engine.data.Territory;
++import games.strategy.engine.data.Unit;
++import games.strategy.engine.data.UnitType;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * Helpers that wrap map iteration in a sort order both the Java
++ * oracle AND the Odin port can reproduce identically.
++ *
++ * <p>Why: stock TripleA relies on {@code LinkedHashMap} insertion
++ * order (which is a function of JVM-hash bucket math). The Odin
++ * port hashes raw pointer values, which are non-deterministic
++ * across processes. Rather than emulate JVM hashCode + bucket
++ * math in Odin, we change BOTH sides to iterate in a sort order
++ * driven by stable, content-addressable keys (territory name,
++ * unit UUID, etc.).
++ *
++ * <p>Use these helpers at every map-iteration site whose order
++ * affects AI decisions. See {@code deterministic-maps.md} for
++ * the running site tracker and policy.
++ */
++public final class ProDeterminism {
++
++  private ProDeterminism() {}
++
++  public static <V> List<Map.Entry<Territory, V>> sortedTerritoryEntries(
++      final Map<Territory, V> m) {
++    final List<Map.Entry<Territory, V>> out = new ArrayList<>(m.entrySet());
++    out.sort(Comparator.comparing(e -> e.getKey().getName()));
++    return out;
++  }
++
++  public static List<Territory> sortedTerritoryKeys(final Map<Territory, ?> m) {
++    final List<Territory> out = new ArrayList<>(m.keySet());
++    out.sort(Comparator.comparing(Territory::getName));
++    return out;
++  }
++
++  public static List<Territory> sortedTerritories(final Iterable<Territory> ts) {
++    final List<Territory> out = new ArrayList<>();
++    for (final Territory t : ts) {
++      out.add(t);
++    }
++    out.sort(Comparator.comparing(Territory::getName));
++    return out;
++  }
++
++  /**
++   * Sort key for units: (unit-type name, alreadyMoved). UUID is
++   * deliberately NOT used — opaque keys are hostile to debugging.
++   * Property collisions are broken by the underlying {@link
++   * java.util.List#sort} stable-sort guarantee, which preserves the
++   * input collection's iteration order. If a future divergence shows
++   * that's insufficient, add a territory-name tiebreak using an
++   * overload that takes a {@code Map<Unit, Territory>}.
++   *
++   * <p>2026-05-12: Added UUID as a final tie-break. Without it,
++   * snap-test reproducibility fails when multiple interchangeable
++   * units (e.g. 4 Russian infantry at Karelia, all with same type
++   * and {@code alreadyMoved=0}) tie on every property — Java's
++   * stable sort then preserves LinkedHashMap insertion order, which
++   * Odin can't reproduce. UUID is content-addressable and
++   * deterministic across both runtimes (it's serialized into the
++   * snap file). Yes, it's opaque in logs, but reproducibility
++   * trumps debug aesthetics for end-of-step state comparison.
++   */
++  private static final Comparator<Unit> UNIT_PROPERTY_ORDER =
++      Comparator.comparing((Unit u) -> u.getType().getName())
++          .thenComparing(Unit::getAlreadyMoved)
++          .thenComparing(u -> u.getId().toString());
++
++  public static <V> List<Map.Entry<Unit, V>> sortedUnitEntries(final Map<Unit, V> m) {
++    final List<Map.Entry<Unit, V>> out = new ArrayList<>(m.entrySet());
++    out.sort(Comparator.comparing(Map.Entry::getKey, UNIT_PROPERTY_ORDER));
++    return out;
++  }
++
++  public static List<Unit> sortedUnitKeys(final Map<Unit, ?> m) {
++    final List<Unit> out = new ArrayList<>(m.keySet());
++    out.sort(UNIT_PROPERTY_ORDER);
++    return out;
++  }
++
++  public static List<Unit> sortedUnits(final Iterable<Unit> us) {
++    final List<Unit> out = new ArrayList<>();
++    for (final Unit u : us) {
++      out.add(u);
++    }
++    out.sort(UNIT_PROPERTY_ORDER);
++    return out;
++  }
++
++  public static <V> List<Map.Entry<GamePlayer, V>> sortedPlayerEntries(
++      final Map<GamePlayer, V> m) {
++    final List<Map.Entry<GamePlayer, V>> out = new ArrayList<>(m.entrySet());
++    out.sort(Comparator.comparing(e -> e.getKey().getName()));
++    return out;
++  }
++
++  public static <V> List<Map.Entry<UnitType, V>> sortedUnitTypeEntries(
++      final Map<UnitType, V> m) {
++    final List<Map.Entry<UnitType, V>> out = new ArrayList<>(m.entrySet());
++    out.sort(Comparator.comparing(e -> e.getKey().getName()));
++    return out;
++  }
++}
+diff --git game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProNcmTrace.java game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProNcmTrace.java
+new file mode 100644
+index 000000000..0897a67df
+--- /dev/null
++++ game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProNcmTrace.java
+@@ -0,0 +1,106 @@
++package games.strategy.triplea.ai.pro.util;
++
++import games.strategy.engine.data.Territory;
++import games.strategy.triplea.ai.pro.data.ProTerritory;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Map;
++
++/**
++ * Debug-only checkpoint hashes for narrowing down divergence inside ProNonCombatMoveAi.
++ * Emits one line per checkpoint to stdout. Diff against the Odin equivalent to localize.
++ *
++ * <p>Gated by -Dpro.ncm.trace=true. Off by default.
++ */
++public final class ProNcmTrace {
++  private ProNcmTrace() {}
++
++  public static final boolean ENABLED =
++      Boolean.parseBoolean(System.getProperty("pro.ncm.trace", "false"));
++
++  /**
++   * Hash a Map&lt;Territory, ProTerritory&gt; by sorted territory name with rich content.
++   * Format per row: "name|U=x|C=y|M=z|V=v|H=h|".
++   */
++  public static void emit(final String label, final Map<Territory, ProTerritory> moveMap) {
++    if (!ENABLED) return;
++    final List<String> names = new ArrayList<>();
++    for (final Territory t : moveMap.keySet()) names.add(t.getName());
++    Collections.sort(names);
++    final StringBuilder sb = new StringBuilder();
++    for (final String n : names) {
++      Territory t = null;
++      for (final Territory tt : moveMap.keySet()) {
++        if (tt.getName().equals(n)) {
++          t = tt;
++          break;
++        }
++      }
++      final ProTerritory pt = moveMap.get(t);
++      sb.append(n).append("|U=").append(pt.getUnits().size()).append("|C=")
++          .append(pt.getCantMoveUnits().size()).append("|M=")
++          .append(pt.getMaxEnemyUnits().size()).append("|V=")
++          .append((long) (pt.getValue() * 1000.0)).append("|H=")
++          .append(pt.isCanHold() ? 1 : 0).append("|");
++      if (Boolean.parseBoolean(System.getProperty("pro.ncm.trace.dump", "false"))) {
++        System.out.printf(
++            "NCM_DUMP label=%s t=%s U=%d C=%d M=%d V=%d H=%d%n",
++            label, n, pt.getUnits().size(), pt.getCantMoveUnits().size(),
++            pt.getMaxEnemyUnits().size(), (long) (pt.getValue() * 1000.0),
++            pt.isCanHold() ? 1 : 0);
++      }
++    }
++    System.out.printf(
++        "NCM_TRACE label=%s h=%016x n=%d%n",
++        label, fnv1a64(sb.toString()), names.size());
++    if (Boolean.parseBoolean(System.getProperty("pro.ncm.trace.dump", "false"))) {
++      for (final String n : names) System.out.println("NCM_DUMP label=" + label + " t=" + n);
++    }
++  }
++  public static void emitList(final String label, final List<ProTerritory> list) {
++    if (!ENABLED) return;
++    final StringBuilder sb = new StringBuilder();
++    int i = 0;
++    for (final ProTerritory pt : list) {
++      sb.append(i++).append('=').append(pt.getTerritory().getName())
++          .append("|V=").append((long) (pt.getValue() * 1000.0))
++          .append("|U=").append(pt.getUnits().size()).append("|");
++    }
++    System.out.printf(
++        "NCM_TRACE label=%s h=%016x n=%d%n",
++        label, fnv1a64(sb.toString()), list.size());
++    if (Boolean.parseBoolean(System.getProperty("pro.ncm.trace.dump", "false"))) {
++      int j = 0;
++      for (final ProTerritory pt : list) {
++        System.out.printf("NCM_DUMP label=%s i=%d t=%s V=%d U=%d%n",
++            label, j++, pt.getTerritory().getName(),
++            (long)(pt.getValue() * 1000.0), pt.getUnits().size());
++      }
++    }
++  }
++
++  private static long fnv1a64(final String s) {
++    long h = 0xcbf29ce484222325L;
++    for (int i = 0; i < s.length(); i++) {
++      h ^= (s.charAt(i) & 0xff);
++      h *= 0x100000001b3L;
++    }
++    return h;
++  }
++  /** Raw key-set hash (just territory names) — for moveMap before ProTerritory fields are populated. */
++  public static void emitRaw(final String label, final Map<Territory, ProTerritory> moveMap) {
++    if (!ENABLED) return;
++    final List<String> names = new ArrayList<>();
++    for (final Territory t : moveMap.keySet()) names.add(t.getName());
++    Collections.sort(names);
++    final StringBuilder sb = new StringBuilder();
++    for (final String n : names) sb.append(n).append('|');
++    System.out.printf(
++        "NCM_TRACE label=%s h=%016x n=%d%n",
++        label, fnv1a64(sb.toString()), names.size());
++    if (Boolean.parseBoolean(System.getProperty("pro.ncm.trace.dump", "false"))) {
++      for (final String n : names) System.out.println("NCM_DUMP label=" + label + " t=" + n);
++    }
++  }
++}
+diff --git game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProPurTrace.java game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProPurTrace.java
+new file mode 100644
+index 000000000..825abb9af
+--- /dev/null
++++ game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProPurTrace.java
+@@ -0,0 +1,56 @@
++package games.strategy.triplea.ai.pro.util;
++
++import games.strategy.engine.data.Territory;
++import games.strategy.engine.data.Unit;
++import games.strategy.triplea.ai.pro.data.ProPlaceTerritory;
++import games.strategy.triplea.ai.pro.data.ProPurchaseTerritory;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.Map;
++
++/** Debug-only checkpoint hashes for narrowing divergence inside ProPurchaseAi. */
++public final class ProPurTrace {
++  private ProPurTrace() {}
++
++  public static final boolean ENABLED =
++      Boolean.parseBoolean(System.getProperty("pro.pur.trace", "false"));
++  public static final boolean DUMP =
++      Boolean.parseBoolean(System.getProperty("pro.pur.trace.dump", "false"));
++
++  public static void emit(
++      final String label, final Map<Territory, ProPurchaseTerritory> purchaseTerritories) {
++    if (!ENABLED) return;
++    final List<String> rows = new ArrayList<>();
++    for (final ProPurchaseTerritory ppt : purchaseTerritories.values()) {
++      for (final ProPlaceTerritory placeTerritory : ppt.getCanPlaceTerritories()) {
++        final Territory t = placeTerritory.getTerritory();
++        final List<Unit> units = placeTerritory.getPlaceUnits();
++        final List<String> utNames = new ArrayList<>();
++        for (final Unit u : units) utNames.add(u.getType().getName());
++        Collections.sort(utNames);
++        final StringBuilder sb = new StringBuilder();
++        sb.append(t.getName()).append("|N=").append(units.size()).append("|");
++        for (final String n : utNames) sb.append(n).append(',');
++        rows.add(sb.toString());
++      }
++    }
++    Collections.sort(rows);
++    final StringBuilder full = new StringBuilder();
++    for (final String r : rows) full.append(r).append('|');
++    System.out.printf(
++        "PUR_TRACE label=%s h=%016x n=%d%n", label, fnv1a64(full.toString()), rows.size());
++    if (DUMP) {
++      for (final String r : rows) System.out.println("PUR_DUMP label=" + label + " row=" + r);
++    }
++  }
++
++  private static long fnv1a64(final String s) {
++    long h = 0xcbf29ce484222325L;
++    for (int i = 0; i < s.length(); i++) {
++      h ^= (s.charAt(i) & 0xff);
++      h *= 0x100000001b3L;
++    }
++    return h;
++  }
++}
+diff --git game-app/smoke-testing/src/test/java/games/strategy/engine/data/GameStateJsonSerializer.java game-app/smoke-testing/src/test/java/games/strategy/engine/data/GameStateJsonSerializer.java
+new file mode 100644
+index 000000000..48d298ed9
+--- /dev/null
++++ game-app/smoke-testing/src/test/java/games/strategy/engine/data/GameStateJsonSerializer.java
+@@ -0,0 +1,524 @@
++package games.strategy.engine.data;
++
++import com.google.gson.Gson;
++import com.google.gson.GsonBuilder;
++import com.google.gson.JsonArray;
++import com.google.gson.JsonElement;
++import com.google.gson.JsonNull;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonPrimitive;
++import games.strategy.engine.data.properties.GameProperties;
++import games.strategy.triplea.attachments.TerritoryAttachment;
++import games.strategy.triplea.attachments.UnitAttachment;
++import games.strategy.triplea.attachments.UnitSupportAttachment;
++import games.strategy.triplea.attachments.TechAttachment;
++import games.strategy.triplea.attachments.TechAbilityAttachment;
++import games.strategy.triplea.attachments.CanalAttachment;
++import games.strategy.triplea.attachments.RulesAttachment;
++import games.strategy.triplea.attachments.RelationshipTypeAttachment;
++import games.strategy.triplea.delegate.TechAdvance;
++import java.io.Serializable;
++import java.lang.reflect.Field;
++import java.math.BigDecimal;
++import java.util.*;
++
++/**
++ * Serializes the entire GameData object to JSON, covering all fields from state-audit.md.
++ * The JSON is structured to be deserialized on the Odin side into the Game_Data struct.
++ * All references are by name/id strings (flat, not nested object graphs).
++ */
++public class GameStateJsonSerializer {
++
++    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
++
++    public String serialize(GameData data) {
++        JsonObject root = new JsonObject();
++        root.addProperty("gameName", data.getGameName());
++        root.addProperty("diceSides", data.getDiceSides());
++        root.add("sequence", serializeSequence(data.getSequence()));
++        root.add("players", serializePlayers(data.getPlayerList(), data));
++        root.add("territories", serializeTerritories(data.getMap(), data));
++        root.add("unitTypes", serializeUnitTypes(data.getUnitTypeList(), data));
++        root.add("alliances", serializeAlliances(data.getAllianceTracker(), data));
++        root.add("relationships", serializeRelationships(data.getRelationshipTracker(), data));
++        root.add("properties", serializeProperties(data.getProperties()));
++        root.add("resources", serializeResourceList(data.getResourceList()));
++        root.add("productionRules", serializeProductionRules(data.getProductionRuleList()));
++        root.add("productionFrontiers", serializeProductionFrontiers(data.getProductionFrontierList()));
++        root.add("technologyFrontier", serializeTechFrontier(data.getTechnologyFrontier()));
++        root.add("units", serializeAllUnits(data));
++        root.add("relationshipTypes", serializeRelationshipTypes(data.getRelationshipTypeList()));
++        return gson.toJson(root);
++    }
++
++    // ========================================================================
++    // Sequence
++    // ========================================================================
++
++    private JsonObject serializeSequence(GameSequence seq) {
++        JsonObject obj = new JsonObject();
++        obj.addProperty("round", seq.getRound());
++        obj.addProperty("stepIndex", seq.getStepIndex());
++        JsonArray steps = new JsonArray();
++        for (GameStep step : seq) {
++            JsonObject s = new JsonObject();
++            s.addProperty("name", step.getName());
++            s.addProperty("displayName", step.getDisplayName());
++            s.addProperty("delegateName", step.getDelegateName());
++            s.addProperty("player", step.getPlayerId() != null ? step.getPlayerId().getName() : null);
++            s.addProperty("maxRunCount", step.getMaxRunCount());
++            steps.add(s);
++        }
++        obj.add("steps", steps);
++        return obj;
++    }
++
++    // ========================================================================
++    // Players
++    // ========================================================================
++
++    private JsonArray serializePlayers(PlayerList playerList, GameData data) {
++        JsonArray arr = new JsonArray();
++        for (GamePlayer p : playerList.getPlayers()) {
++            if (p == null) continue;
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", p.getName());
++            obj.addProperty("optional", p.getOptional());
++            obj.addProperty("canBeDisabled", p.getCanBeDisabled());
++            obj.addProperty("isDisabled", p.getIsDisabled());
++            obj.addProperty("whoAmI", p.getWhoAmI());
++            obj.add("resources", serializeResourceCollection(p.getResources()));
++            obj.addProperty("productionFrontier",
++                    p.getProductionFrontier() != null ? p.getProductionFrontier().getName() : null);
++            try { obj.add("techAttachment", serializeTechAttachment(p.getTechAttachment())); } catch (Exception e) { obj.add("techAttachment", com.google.gson.JsonNull.INSTANCE); }
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    private JsonObject serializeResourceCollection(ResourceCollection rc) {
++        JsonObject obj = new JsonObject();
++        if (rc != null) {
++            for (Resource r : rc.getResourcesCopy().keySet()) {
++                obj.addProperty(r.getName(), rc.getQuantity(r));
++            }
++        }
++        return obj;
++    }
++
++    private JsonObject serializeTechAttachment(TechAttachment ta) {
++        if (ta == null) return null;
++        JsonObject obj = new JsonObject();
++        obj.addProperty("techCost", ta.getTechCost());
++        obj.addProperty("heavyBomber", ta.getHeavyBomber());
++        obj.addProperty("longRangeAir", ta.getLongRangeAir());
++        obj.addProperty("jetPower", ta.getJetPower());
++        obj.addProperty("rocket", ta.getRocket());
++        obj.addProperty("industrialTechnology", ta.getIndustrialTechnology());
++        obj.addProperty("superSub", ta.getSuperSub());
++        obj.addProperty("destroyerBombard", ta.getDestroyerBombard());
++        obj.addProperty("improvedArtillerySupport", ta.getImprovedArtillerySupport());
++        obj.addProperty("paratroopers", ta.getParatroopers());
++        obj.addProperty("increasedFactoryProduction", ta.getIncreasedFactoryProduction());
++        obj.addProperty("warBonds", ta.getWarBonds());
++        obj.addProperty("mechanizedInfantry", ta.getMechanizedInfantry());
++        obj.addProperty("aaRadar", ta.getAaRadar());
++        obj.addProperty("shipyards", ta.getShipyards());
++        JsonObject genericTech = new JsonObject();
++        for (var entry : ta.getGenericTech().entrySet()) {
++            genericTech.addProperty(entry.getKey(), entry.getValue());
++        }
++        obj.add("genericTech", genericTech);
++        return obj;
++    }
++
++    // ========================================================================
++    // Territories
++    // ========================================================================
++
++    private JsonArray serializeTerritories(GameMap map, GameData data) {
++        JsonArray arr = new JsonArray();
++        for (Territory t : map.getTerritories()) {
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", t.getName());
++            obj.addProperty("water", t.isWater());
++            obj.addProperty("owner", t.getOwner() != null ? t.getOwner().getName() : null);
++
++            // Units in territory — list of unit IDs
++            JsonArray unitIds = new JsonArray();
++            for (Unit u : t.getUnitCollection().getUnits()) {
++                unitIds.add(u.getId().toString());
++            }
++            obj.add("units", unitIds);
++
++            // Neighbors
++            JsonArray neighbors = new JsonArray();
++            for (Territory n : map.getNeighbors(t)) {
++                neighbors.add(n.getName());
++            }
++            obj.add("neighbors", neighbors);
++
++            // Territory attachment
++            TerritoryAttachment.get(t).ifPresent(ta -> {
++                JsonObject taObj = new JsonObject();
++                taObj.addProperty("production", ta.getProduction());
++                taObj.addProperty("unitProduction", ta.getUnitProduction());
++                taObj.addProperty("victoryCity", ta.getVictoryCity());
++                ta.getCapital().ifPresent(cap -> taObj.addProperty("capital", cap));
++                taObj.addProperty("isImpassable", ta.getIsImpassable());
++                taObj.addProperty("convoyRoute", ta.getConvoyRoute());
++                taObj.addProperty("navalBase", ta.getNavalBase());
++                taObj.addProperty("airBase", ta.getAirBase());
++                taObj.addProperty("kamikazeZone", ta.getKamikazeZone());
++                ta.getOriginalOwner().ifPresent(oo ->
++                    taObj.addProperty("originalOwner", oo.getName()));
++                obj.add("territoryAttachment", taObj);
++            });
++
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    // ========================================================================
++    // Units — every unit with all 25 mutable fields
++    // ========================================================================
++
++    private JsonArray serializeAllUnits(GameData data) {
++        JsonArray arr = new JsonArray();
++        for (Unit u : data.getUnits().getUnits()) {
++            arr.add(serializeUnit(u));
++        }
++        return arr;
++    }
++
++    private JsonObject serializeUnit(Unit u) {
++        JsonObject obj = new JsonObject();
++        obj.addProperty("id", u.getId().toString());
++        obj.addProperty("type", u.getType().getName());
++        obj.addProperty("owner", u.getOwner() != null ? u.getOwner().getName() : null);
++        obj.addProperty("hits", u.getHits());
++        obj.addProperty("transportedBy", u.getTransportedBy() != null ? u.getTransportedBy().getId().toString() : null);
++        JsonArray unloaded = new JsonArray();
++        for (Unit ul : u.getUnloaded()) {
++            unloaded.add(ul.getId().toString());
++        }
++        obj.add("unloaded", unloaded);
++        obj.addProperty("wasLoadedThisTurn", u.getWasLoadedThisTurn());
++        obj.addProperty("unloadedTo", u.getUnloadedTo() != null ? u.getUnloadedTo().getName() : null);
++        obj.addProperty("wasUnloadedInCombatPhase", u.getWasUnloadedInCombatPhase());
++        obj.addProperty("alreadyMoved", u.getAlreadyMoved().doubleValue());
++        obj.addProperty("bonusMovement", u.getBonusMovement());
++        obj.addProperty("unitDamage", u.getUnitDamage());
++        obj.addProperty("submerged", u.getSubmerged());
++        obj.addProperty("originalOwner", u.getOriginalOwner() != null ? u.getOriginalOwner().getName() : null);
++        obj.addProperty("wasInCombat", u.getWasInCombat());
++        obj.addProperty("wasLoadedAfterCombat", u.getWasLoadedAfterCombat());
++        obj.addProperty("wasAmphibious", u.getWasAmphibious());
++        obj.addProperty("originatedFrom", u.getOriginatedFrom() != null ? u.getOriginatedFrom().getName() : null);
++        obj.addProperty("wasScrambled", u.getWasScrambled());
++        obj.addProperty("maxScrambleCount", u.getMaxScrambleCount());
++        obj.addProperty("wasInAirBattle", u.getWasInAirBattle());
++        obj.addProperty("disabled", u.getDisabled());
++        obj.addProperty("launched", u.getLaunched());
++        obj.addProperty("airborne", u.getAirborne());
++        obj.addProperty("chargedFlatFuelCost", u.getChargedFlatFuelCost());
++        return obj;
++    }
++
++    // ========================================================================
++    // Unit Types with full UnitAttachment
++    // ========================================================================
++
++    private JsonArray serializeUnitTypes(UnitTypeList utl, GameData data) {
++        // Get first player for tech-dependent getters (fallback: null catches handled)
++        GamePlayer anyPlayer = data.getPlayerList().getPlayers().isEmpty()
++                ? null : data.getPlayerList().getPlayers().get(0);
++        JsonArray arr = new JsonArray();
++        for (UnitType ut : utl.getAllUnitTypes()) {
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", ut.getName());
++            UnitAttachment ua = ut.getUnitAttachment();
++            if (ua != null) {
++                obj.add("unitAttachment", serializeUnitAttachment(ua, anyPlayer));
++            }
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    private JsonObject serializeUnitAttachment(UnitAttachment ua, GamePlayer player) {
++        // Use reflection for ALL fields to get raw base values without tech bonuses / NPE risk
++        JsonObject obj = new JsonObject();
++        obj.addProperty("isAir", getBoolField(ua, "isAir"));
++        obj.addProperty("isSea", getBoolField(ua, "isSea"));
++        obj.addProperty("movement", getIntField(ua, "movement"));
++        obj.addProperty("canBlitz", getBoolField(ua, "canBlitz"));
++        obj.addProperty("isKamikaze", getBoolField(ua, "isKamikaze"));
++        obj.addProperty("canNotMoveDuringCombatMove", getBoolField(ua, "canNotMoveDuringCombatMove"));
++        obj.addProperty("attack", getIntField(ua, "attack"));
++        obj.addProperty("defense", getIntField(ua, "defense"));
++        obj.addProperty("attackRolls", getIntField(ua, "attackRolls"));
++        obj.addProperty("defenseRolls", getIntField(ua, "defenseRolls"));
++        obj.addProperty("hitPoints", getIntField(ua, "hitPoints"));
++        obj.addProperty("isInfrastructure", getBoolField(ua, "isInfrastructure"));
++        obj.addProperty("canBombard", getBoolField(ua, "canBombard"));
++        obj.addProperty("bombard", getIntField(ua, "bombard"));
++        obj.addProperty("artillery", getBoolField(ua, "artillery"));
++        obj.addProperty("artillerySupportable", getBoolField(ua, "artillerySupportable"));
++        obj.addProperty("isMarine", getIntField(ua, "isMarine"));
++        obj.addProperty("isSuicideOnAttack", getBoolField(ua, "isSuicideOnAttack"));
++        obj.addProperty("isSuicideOnDefense", getBoolField(ua, "isSuicideOnDefense"));
++        obj.addProperty("isSuicideOnHit", getBoolField(ua, "isSuicideOnHit"));
++        obj.addProperty("chooseBestRoll", getBoolField(ua, "chooseBestRoll"));
++        obj.addProperty("canEvade", getBoolField(ua, "canEvade"));
++        obj.addProperty("isFirstStrike", getBoolField(ua, "isFirstStrike"));
++        obj.addProperty("canMoveThroughEnemies", getBoolField(ua, "canMoveThroughEnemies"));
++        obj.addProperty("canBeMovedThroughByEnemies", getBoolField(ua, "canBeMovedThroughByEnemies"));
++        obj.addProperty("isDestroyer", getBoolField(ua, "isDestroyer"));
++        obj.addProperty("isSub", getBoolField(ua, "isSub"));
++        obj.addProperty("isCombatTransport", getBoolField(ua, "isCombatTransport"));
++        obj.addProperty("transportCapacity", getIntField(ua, "transportCapacity"));
++        obj.addProperty("transportCost", getIntField(ua, "transportCost"));
++        obj.addProperty("carrierCapacity", getIntField(ua, "carrierCapacity"));
++        obj.addProperty("carrierCost", getIntField(ua, "carrierCost"));
++        obj.addProperty("isAirTransport", getBoolField(ua, "isAirTransport"));
++        obj.addProperty("isAirTransportable", getBoolField(ua, "isAirTransportable"));
++        obj.addProperty("isLandTransport", getBoolField(ua, "isLandTransport"));
++        obj.addProperty("isLandTransportable", getBoolField(ua, "isLandTransportable"));
++        obj.addProperty("isAaForCombatOnly", getBoolField(ua, "isAaForCombatOnly"));
++        obj.addProperty("isAaForBombingThisUnitOnly", getBoolField(ua, "isAaForBombingThisUnitOnly"));
++        obj.addProperty("isAaForFlyOverOnly", getBoolField(ua, "isAaForFlyOverOnly"));
++        obj.addProperty("isRocket", getBoolField(ua, "isRocket"));
++        obj.addProperty("attackAa", getIntField(ua, "attackAa"));
++        obj.addProperty("offensiveAttackAa", getIntField(ua, "offensiveAttackAa"));
++        obj.addProperty("attackAaMaxDieSides", getIntField(ua, "attackAaMaxDieSides"));
++        obj.addProperty("offensiveAttackAaMaxDieSides", getIntField(ua, "offensiveAttackAaMaxDieSides"));
++        obj.addProperty("maxAaAttacks", getIntField(ua, "maxAaAttacks"));
++        obj.addProperty("maxRoundsAa", getIntField(ua, "maxRoundsAa"));
++        obj.addProperty("typeAa", getStringField(ua, "typeAa"));
++        obj.addProperty("mayOverStackAa", getBoolField(ua, "mayOverStackAa"));
++        obj.addProperty("damageableAa", getBoolField(ua, "damageableAa"));
++        obj.addProperty("isStrategicBomber", getBoolField(ua, "isStrategicBomber"));
++        obj.addProperty("bombingMaxDieSides", getIntField(ua, "bombingMaxDieSides"));
++        obj.addProperty("bombingBonus", getIntField(ua, "bombingBonus"));
++        obj.addProperty("canIntercept", getBoolField(ua, "canIntercept"));
++        obj.addProperty("canEscort", getBoolField(ua, "canEscort"));
++        obj.addProperty("canAirBattle", getBoolField(ua, "canAirBattle"));
++        obj.addProperty("airDefense", getIntField(ua, "airDefense"));
++        obj.addProperty("airAttack", getIntField(ua, "airAttack"));
++        obj.addProperty("canProduceUnits", getBoolField(ua, "canProduceUnits"));
++        obj.addProperty("canProduceXUnits", getIntField(ua, "canProduceXUnits"));
++        obj.addProperty("canBeDamaged", getBoolField(ua, "canBeDamaged"));
++        obj.addProperty("maxDamage", getIntField(ua, "maxDamage"));
++        obj.addProperty("maxOperationalDamage", getIntField(ua, "maxOperationalDamage"));
++        obj.addProperty("canDieFromReachingMaxDamage", getBoolField(ua, "canDieFromReachingMaxDamage"));
++        obj.addProperty("isConstruction", getBoolField(ua, "isConstruction"));
++        obj.addProperty("constructionType", getStringField(ua, "constructionType"));
++        obj.addProperty("constructionsPerTerrPerTypePerTurn", getIntField(ua, "constructionsPerTerrPerTypePerTurn"));
++        obj.addProperty("maxConstructionsPerTypePerTerr", getIntField(ua, "maxConstructionsPerTypePerTerr"));
++        obj.addProperty("tuv", getIntField(ua, "tuv"));
++        obj.addProperty("whenCapturedSustainsDamage", getIntField(ua, "whenCapturedSustainsDamage"));
++        return obj;
++    }
++
++    // ========================================================================
++    // Alliances
++    // ========================================================================
++
++    private JsonObject serializeAlliances(AllianceTracker tracker, GameData data) {
++        JsonObject obj = new JsonObject();
++        for (String alliance : tracker.getAlliances()) {
++            JsonArray players = new JsonArray();
++            for (GamePlayer p : tracker.getPlayersInAlliance(alliance)) {
++                players.add(p.getName());
++            }
++            obj.add(alliance, players);
++        }
++        return obj;
++    }
++
++    // ========================================================================
++    // Relationships
++    // ========================================================================
++
++    private JsonArray serializeRelationships(RelationshipTracker tracker, GameData data) {
++        JsonArray arr = new JsonArray();
++        List<GamePlayer> players = data.getPlayerList().getPlayers();
++        for (int i = 0; i < players.size(); i++) {
++            for (int j = i + 1; j < players.size(); j++) {
++                GamePlayer p1 = players.get(i);
++                GamePlayer p2 = players.get(j);
++                RelationshipTracker.Relationship rel = tracker.getRelationship(p1, p2);
++                if (rel != null) {
++                    JsonObject obj = new JsonObject();
++                    obj.addProperty("player1", p1.getName());
++                    obj.addProperty("player2", p2.getName());
++                    obj.addProperty("type", rel.getRelationshipType().getName());
++                    obj.addProperty("roundCreated", rel.getRoundCreated());
++                    arr.add(obj);
++                }
++            }
++        }
++        return arr;
++    }
++
++    // ========================================================================
++    // Relationship Types
++    // ========================================================================
++
++    private JsonArray serializeRelationshipTypes(RelationshipTypeList rtl) {
++        JsonArray arr = new JsonArray();
++        for (RelationshipType rt : rtl.getAllRelationshipTypes()) {
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", rt.getName());
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    // ========================================================================
++    // Properties
++    // ========================================================================
++
++    private JsonObject serializeProperties(GameProperties props) {
++        JsonObject obj = new JsonObject();
++        JsonObject constants = new JsonObject();
++        for (var entry : props.getConstantPropertiesByName().entrySet()) {
++            constants.add(entry.getKey(), serializePropertyValue(entry.getValue()));
++        }
++        obj.add("constants", constants);
++        JsonObject editables = new JsonObject();
++        for (var entry : props.getEditablePropertiesByName().entrySet()) {
++            var ep = entry.getValue();
++            JsonObject epObj = new JsonObject();
++            epObj.addProperty("name", ep.getName());
++            epObj.add("value", serializePropertyValue(ep.getValue()));
++            editables.add(entry.getKey(), epObj);
++        }
++        obj.add("editables", editables);
++        return obj;
++    }
++
++    private JsonElement serializePropertyValue(Object value) {
++        if (value == null) return JsonNull.INSTANCE;
++        if (value instanceof Boolean b) return new JsonPrimitive(b);
++        if (value instanceof Number n) return new JsonPrimitive(n);
++        if (value instanceof String s) return new JsonPrimitive(s);
++        return new JsonPrimitive(value.toString());
++    }
++
++    // ========================================================================
++    // Resources
++    // ========================================================================
++
++    private JsonArray serializeResourceList(ResourceList rl) {
++        JsonArray arr = new JsonArray();
++        for (Resource r : rl.getResources()) {
++            arr.add(r.getName());
++        }
++        return arr;
++    }
++
++    // ========================================================================
++    // Production
++    // ========================================================================
++
++    private JsonArray serializeProductionRules(ProductionRuleList prl) {
++        JsonArray arr = new JsonArray();
++        for (ProductionRule rule : prl.getProductionRules()) {
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", rule.getName());
++            JsonObject costs = new JsonObject();
++            for (var entry : rule.getCosts().entrySet()) {
++                costs.addProperty(entry.getKey().getName(), entry.getValue());
++            }
++            obj.add("costs", costs);
++            JsonObject results = new JsonObject();
++            for (var entry : rule.getResults().entrySet()) {
++                results.addProperty(entry.getKey().getName(), entry.getValue());
++            }
++            obj.add("results", results);
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    private JsonArray serializeProductionFrontiers(ProductionFrontierList pfl) {
++        JsonArray arr = new JsonArray();
++        for (String name : pfl.getProductionFrontierNames()) {
++            ProductionFrontier pf = pfl.getProductionFrontier(name);
++            JsonObject obj = new JsonObject();
++            obj.addProperty("name", pf.getName());
++            JsonArray rules = new JsonArray();
++            for (ProductionRule r : pf.getRules()) {
++                rules.add(r.getName());
++            }
++            obj.add("rules", rules);
++            arr.add(obj);
++        }
++        return arr;
++    }
++
++    // ========================================================================
++    // Technology
++    // ========================================================================
++
++    private JsonObject serializeTechFrontier(TechnologyFrontier tf) {
++        if (tf == null) return null;
++        JsonObject obj = new JsonObject();
++        obj.addProperty("name", tf.getName());
++        JsonArray techs = new JsonArray();
++        for (TechAdvance ta : tf.getTechs()) {
++            techs.add(ta.getName());
++        }
++        obj.add("techs", techs);
++        return obj;
++    }
++
++    // ========================================================================
++    // Reflection helpers for accessing private raw fields
++    // ========================================================================
++
++    private static int getIntField(Object obj, String fieldName) {
++        try {
++            Field f = findField(obj.getClass(), fieldName);
++            f.setAccessible(true);
++            return f.getInt(obj);
++        } catch (Exception e) {
++            return 0;
++        }
++    }
++
++    private static boolean getBoolField(Object obj, String fieldName) {
++        try {
++            Field f = findField(obj.getClass(), fieldName);
++            f.setAccessible(true);
++            return f.getBoolean(obj);
++        } catch (Exception e) {
++            return false;
++        }
++    }
++
++    private static String getStringField(Object obj, String fieldName) {
++        try {
++            Field f = findField(obj.getClass(), fieldName);
++            f.setAccessible(true);
++            Object val = f.get(obj);
++            return val != null ? val.toString() : null;
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
++    private static Field findField(Class<?> clazz, String name) throws NoSuchFieldException {
++        while (clazz != null) {
++            try {
++                return clazz.getDeclaredField(name);
++            } catch (NoSuchFieldException e) {
++                clazz = clazz.getSuperclass();
++            }
++        }
++        throw new NoSuchFieldException(name);
++    }
++}
+diff --git game-app/smoke-testing/src/test/java/games/strategy/engine/data/GenericValueSerializer.java game-app/smoke-testing/src/test/java/games/strategy/engine/data/GenericValueSerializer.java
+new file mode 100644
+index 000000000..674083eca
+--- /dev/null
++++ game-app/smoke-testing/src/test/java/games/strategy/engine/data/GenericValueSerializer.java
+@@ -0,0 +1,339 @@
++package games.strategy.engine.data;
++
++import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
++import com.fasterxml.jackson.annotation.JsonIdentityInfo;
++import com.fasterxml.jackson.annotation.JsonTypeInfo;
++import com.fasterxml.jackson.annotation.ObjectIdGenerators;
++import com.fasterxml.jackson.annotation.PropertyAccessor;
++import com.fasterxml.jackson.core.JsonGenerator;
++import com.fasterxml.jackson.databind.JsonSerializer;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.fasterxml.jackson.databind.ObjectMapper.DefaultTyping;
++import com.fasterxml.jackson.databind.SerializationFeature;
++import com.fasterxml.jackson.databind.SerializerProvider;
++import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
++import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
++import com.fasterxml.jackson.databind.module.SimpleModule;
++
++import java.io.IOException;
++import java.util.Set;
++
++/**
++ * Generic, reflective JSON serializer for arbitrary method parameter and return
++ * values captured by the snapshot agent. Goal: produce a structurally faithful
++ * dump of any POJO graph WITHOUT per-type code, so newly-instrumented procs
++ * "just work".
++ *
++ * Design:
++ * - All non-public fields are visible (FIELD = ANY). Lombok getters are ignored
++ *   to avoid double-emitting (we read state, not API).
++ * - Concrete subtype information is preserved via DefaultTyping
++ *   OBJECT_AND_NON_CONCRETE → Jackson emits an "@class" property whenever a
++ *   declared field type is Object, an interface, or abstract. This is exactly
++ *   what we need to distinguish e.g. which Battle_Step subtype filled a slot.
++ * - Cycles are broken with @JsonIdentityInfo applied to every Object via mixin.
++ *   First encounter dumps the full body with an "@id"; later refs collapse to
++ *   {"@ref": N}. This is robust to arbitrary back-references.
++ * - "Prune list" — types whose full state is already captured by the GameData
++ *   side-channel (or whose graphs explode the dump) are emitted as compact
++ *   identity hints: {"@class":"...","_name":"...","_id":"..."} so the Odin
++ *   side can resolve the same object by looking it up in the loaded Game_Data.
++ *
++ * Loaded reflectively from the snapshot agent (no compile-time dependency).
++ */
++public class GenericValueSerializer {
++
++    /**
++     * Types that should NOT be dumped in full. They are emitted as identity
++     * stubs because (a) their state is already serialized via
++     * GameStateJsonSerializer in before/after-gamedata.json, and (b) their
++     * graphs reach back into GameData and would explode without pruning.
++     */
++    private static final Set<String> PRUNE_TYPES = Set.of(
++            "games.strategy.engine.data.GameData",
++            "games.strategy.engine.data.GameMap",
++            "games.strategy.engine.data.GameSequence",
++            "games.strategy.engine.data.GameStep",
++            "games.strategy.engine.data.Territory",
++            "games.strategy.engine.data.Unit",
++            "games.strategy.engine.data.GamePlayer",
++            "games.strategy.engine.data.UnitType",
++            "games.strategy.engine.data.Resource",
++            "games.strategy.engine.data.RelationshipType",
++            "games.strategy.engine.data.ProductionRule",
++            "games.strategy.engine.data.ProductionFrontier",
++            "games.strategy.engine.data.RepairRule",
++            "games.strategy.engine.data.RepairFrontier",
++            "games.strategy.engine.data.AllianceTracker",
++            "games.strategy.engine.data.RelationshipTracker",
++            "games.strategy.engine.data.PlayerList",
++            "games.strategy.engine.data.UnitTypeList",
++            "games.strategy.engine.data.ResourceList",
++            "games.strategy.engine.data.ProductionRuleList",
++            "games.strategy.engine.data.ProductionFrontierList",
++            "games.strategy.engine.data.RepairRuleList",
++            "games.strategy.engine.data.RepairFrontierList",
++            "games.strategy.engine.data.RelationshipTypeList",
++            "games.strategy.engine.data.TechnologyFrontier",
++            "games.strategy.engine.data.TechnologyFrontierList",
++            "games.strategy.engine.data.UnitCollection",
++            "games.strategy.engine.data.ResourceCollection",
++            "games.strategy.engine.data.properties.GameProperties",
++            "games.strategy.triplea.attachments.TerritoryAttachment",
++            "games.strategy.triplea.attachments.UnitAttachment",
++            "games.strategy.triplea.attachments.UnitSupportAttachment",
++            "games.strategy.triplea.attachments.TechAttachment",
++            "games.strategy.triplea.attachments.TechAbilityAttachment",
++            "games.strategy.triplea.attachments.CanalAttachment",
++            "games.strategy.triplea.attachments.RulesAttachment",
++            "games.strategy.triplea.attachments.RelationshipTypeAttachment",
++            "games.strategy.triplea.attachments.PlayerAttachment",
++            "games.strategy.triplea.delegate.TechAdvance",
++            // BattleState / BattleActions are snapshot-method params; their
++            // identity is unique within a tick (one active battle).
++            "games.strategy.triplea.delegate.battle.BattleState",
++            "games.strategy.triplea.delegate.battle.BattleActions",
++            "games.strategy.triplea.delegate.battle.MustFightBattle",
++            "games.strategy.triplea.delegate.battle.IBattle",
++            // Pro AI types — these are receivers / receiver-graph nodes for
++            // per-method snapshots of the AI procs (purchaseDefenders,
++            // purchaseLandUnits, etc.). Without pruning, Jackson default
++            // typing follows ProPurchaseAi.proData.proAi.playerBridge.game
++            // .messengers...endPoint.implementors → JDK Proxy and dies on
++            // setAccessible. We only need identity stubs of the receiver +
++            // a few scalar fields (isBid). Reconstruction on the Odin side
++            // uses before.json's full GameData + meta + the args.
++            "games.strategy.triplea.ai.pro.ProPurchaseAi",
++            "games.strategy.triplea.ai.pro.ProCombatMoveAi",
++            "games.strategy.triplea.ai.pro.ProNonCombatMoveAi",
++            "games.strategy.triplea.ai.pro.ProRetreatAi",
++            "games.strategy.triplea.ai.pro.ProScrambleAi",
++            "games.strategy.triplea.ai.pro.ProPoliticsAi",
++            "games.strategy.triplea.ai.pro.AbstractProAi",
++            "games.strategy.triplea.ai.pro.ProAi",
++            "games.strategy.triplea.ai.pro.ProData",
++            "games.strategy.triplea.ai.pro.data.ProResourceTracker",
++            "games.strategy.triplea.ai.pro.data.ProTerritoryManager",
++            "games.strategy.triplea.ai.pro.data.ProPurchaseOptionMap",
++            "games.strategy.triplea.ai.pro.data.ProPurchaseOption",
++            "games.strategy.triplea.ai.pro.data.ProPurchaseTerritory",
++            "games.strategy.triplea.ai.pro.data.ProPlaceTerritory",
++            "games.strategy.triplea.ai.pro.util.ProOddsCalculator",
++            "games.strategy.triplea.ai.pro.simulate.ProDummyDelegateBridge",
++            "games.strategy.triplea.ai.AbstractAi",
++            // Engine plumbing reachable from any AI receiver via back-pointers.
++            // Pruning these stops the JDK-Proxy chain at the boundary.
++            "games.strategy.engine.player.PlayerBridge",
++            "games.strategy.engine.framework.ServerGame",
++            "games.strategy.engine.framework.AbstractGame",
++            "games.strategy.engine.framework.startup.ui.PlayerTypes$Type",
++            "games.strategy.net.Messengers",
++            "games.strategy.engine.message.RemoteMessenger",
++            "games.strategy.engine.message.ChannelMessenger",
++            "games.strategy.engine.message.unifiedmessenger.UnifiedMessenger",
++            "games.strategy.engine.message.unifiedmessenger.UnifiedInvocationHandler",
++            "games.strategy.engine.message.unifiedmessenger.EndPoint"
++    );
++
++    /**
++     * How deep the structured-identity walk recurses through pruned-type
++     * references. 2 = root expanded, one level of pruned references expanded
++     * (so e.g. MustFightBattle.battleSite → Territory.name is reachable),
++     * and pruned-type grandchildren collapse to {"@class":...}. Anything
++     * deeper would re-walk the same back-reference cycles.
++     */
++    private static final int IDENTITY_MAX_DEPTH = 2;
++
++    private final ObjectMapper mapper;
++
++    public GenericValueSerializer() {
++        ObjectMapper m = new ObjectMapper()
++                .setVisibility(PropertyAccessor.ALL,    Visibility.NONE)
++                .setVisibility(PropertyAccessor.FIELD,  Visibility.ANY)
++                .activateDefaultTyping(
++                        LaissezFaireSubTypeValidator.instance,
++                        DefaultTyping.OBJECT_AND_NON_CONCRETE,
++                        JsonTypeInfo.As.PROPERTY)
++                .enable(SerializationFeature.INDENT_OUTPUT)
++                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
++                .disable(SerializationFeature.FAIL_ON_SELF_REFERENCES)
++                .addMixIn(Object.class, IdentityMixin.class);
++
++        SimpleModule prune = new SimpleModule("PruneTypes");
++        for (String fqcn : PRUNE_TYPES) {
++            try {
++                Class<?> c = Class.forName(fqcn);
++                prune.addSerializer(c, new IdentityHintSerializer(c));
++            } catch (ClassNotFoundException ignored) {
++                // Class may not be on the classpath in this build flavour.
++            }
++        }
++        m.registerModule(prune);
++
++        this.mapper = m;
++    }
++
++    /** Convenience for the agent's reflection path. Returns "null" for null. */
++    public String serialize(Object value) throws Exception {
++        if (value == null) return "null";
++        return mapper.writeValueAsString(value);
++    }
++
++    /** @JsonIdentityInfo applied to every Object (cycle breaker). */
++    @JsonIdentityInfo(generator = ObjectIdGenerators.IntSequenceGenerator.class,
++                      property = "@id")
++    abstract static class IdentityMixin {}
++
++    /**
++     * Pruned-type emitter. Walks the value's instance fields (including
++     * inherited) and emits a structural identity stub:
++     *   { "@class": "<fqcn>", "<field>": <value>, ... }
++     * where each emitted field is one of: scalar (String / number / boolean /
++     * char / enum.name() / UUID.toString()), nested pruned-type stub (recursive,
++     * depth-capped at {@link #IDENTITY_MAX_DEPTH}), Collection / Map of those,
++     * or Optional of those. Non-pruned object fields are silently skipped —
++     * we only want identity, not arbitrary state. The Odin loader uses these
++     * fields to locate the matching object inside the loaded Game_Data graph.
++     */
++    static final class IdentityHintSerializer<T> extends JsonSerializer<T> {
++        private final Class<T> declaredType;
++
++        IdentityHintSerializer(Class<T> declaredType) {
++            this.declaredType = declaredType;
++        }
++
++        @Override
++        public Class<T> handledType() { return declaredType; }
++
++        @Override
++        public void serialize(T value, JsonGenerator gen, SerializerProvider provider)
++                throws IOException {
++            writeIdentityStub(value, gen, 0);
++        }
++
++        // When default-typing engages, Jackson invokes serializeWithType
++        // instead of serialize. We already write "@class" into the body, so
++        // there is no separate type-id wrapper to emit — just delegate.
++        @Override
++        public void serializeWithType(T value, JsonGenerator gen,
++                                      SerializerProvider provider,
++                                      TypeSerializer typeSer) throws IOException {
++            serialize(value, gen, provider);
++        }
++
++        private static void writeIdentityStub(Object value, JsonGenerator gen, int depth)
++                throws IOException {
++            gen.writeStartObject();
++            gen.writeStringField("@class", value.getClass().getName());
++            if (depth >= IDENTITY_MAX_DEPTH) {
++                gen.writeEndObject();
++                return;
++            }
++            Class<?> c = value.getClass();
++            java.util.Set<String> seen = new java.util.HashSet<>();
++            while (c != null && c != Object.class) {
++                for (java.lang.reflect.Field f : c.getDeclaredFields()) {
++                    int mods = f.getModifiers();
++                    if (java.lang.reflect.Modifier.isStatic(mods)) continue;
++                    if (f.isSynthetic()) continue;
++                    // Always-skip fields: back-references that produce noise
++                    // and add no identity value. `gameData` is the universal
++                    // root back-pointer on every domain object.
++                    if ("gameData".equals(f.getName())) continue;
++                    if (!seen.add(f.getName())) continue;
++                    try {
++                        f.setAccessible(true);
++                        Object fv = f.get(value);
++                        if (fv == null) continue;
++                        if (isEmptyContainer(fv)) continue;
++                        writeFieldValue(f.getName(), fv, gen, depth + 1);
++                    } catch (Exception ignored) {}
++                }
++                c = c.getSuperclass();
++            }
++            gen.writeEndObject();
++        }
++
++        private static boolean isEmptyContainer(Object v) {
++            if (v instanceof java.util.Collection<?> col) return col.isEmpty();
++            if (v instanceof java.util.Map<?, ?> map) return map.isEmpty();
++            if (v.getClass().isArray()) return java.lang.reflect.Array.getLength(v) == 0;
++            if (v instanceof java.util.Optional<?> opt) return opt.isEmpty();
++            return false;
++        }
++
++        private static void writeFieldValue(String name, Object fv, JsonGenerator gen, int depth)
++                throws IOException {
++            if (isScalar(fv)) {
++                gen.writeFieldName(name);
++                writeScalar(fv, gen);
++                return;
++            }
++            String cls = fv.getClass().getName();
++            if (PRUNE_TYPES.contains(cls)) {
++                gen.writeFieldName(name);
++                writeIdentityStub(fv, gen, depth);
++                return;
++            }
++            if (fv instanceof java.util.Optional<?> opt) {
++                if (opt.isPresent()) writeFieldValue(name, opt.get(), gen, depth);
++                return;
++            }
++            if (fv instanceof java.util.Collection<?> col) {
++                gen.writeArrayFieldStart(name);
++                for (Object e : col) writeArrayElement(e, gen, depth);
++                gen.writeEndArray();
++                return;
++            }
++            if (fv instanceof java.util.Map<?, ?> map) {
++                gen.writeObjectFieldStart(name);
++                for (java.util.Map.Entry<?, ?> entry : map.entrySet()) {
++                    Object ek = entry.getKey();
++                    Object ev = entry.getValue();
++                    if (ev == null) continue;
++                    String key = ek == null ? "null" : String.valueOf(ek);
++                    writeFieldValue(key, ev, gen, depth);
++                }
++                gen.writeEndObject();
++                return;
++            }
++            // Non-pruned object types: silently skip. We only want identity,
++            // not arbitrary state.
++        }
++
++        private static void writeArrayElement(Object e, JsonGenerator gen, int depth)
++                throws IOException {
++            if (e == null) { gen.writeNull(); return; }
++            if (isScalar(e)) { writeScalar(e, gen); return; }
++            if (PRUNE_TYPES.contains(e.getClass().getName())) {
++                writeIdentityStub(e, gen, depth);
++                return;
++            }
++            // Skip non-pruned collection elements.
++        }
++
++        private static boolean isScalar(Object v) {
++            return v instanceof String || v instanceof Number || v instanceof Boolean
++                    || v instanceof Character || v instanceof Enum<?>
++                    || v instanceof java.util.UUID;
++        }
++
++        private static void writeScalar(Object v, JsonGenerator gen) throws IOException {
++            if (v instanceof String s)         gen.writeString(s);
++            else if (v instanceof Boolean b)   gen.writeBoolean(b);
++            else if (v instanceof Integer i)   gen.writeNumber(i);
++            else if (v instanceof Long l)      gen.writeNumber(l);
++            else if (v instanceof Double d)    gen.writeNumber(d);
++            else if (v instanceof Float f)     gen.writeNumber(f);
++            else if (v instanceof Short s)     gen.writeNumber(s);
++            else if (v instanceof Byte b)      gen.writeNumber(b);
++            else if (v instanceof java.math.BigDecimal bd) gen.writeNumber(bd);
++            else if (v instanceof java.math.BigInteger bi) gen.writeNumber(bi);
++            else if (v instanceof Number n)    gen.writeNumber(n.doubleValue());
++            else if (v instanceof Character c) gen.writeString(String.valueOf(c));
++            else if (v instanceof Enum<?> e)   gen.writeString(((Enum<?>) e).name());
++            else if (v instanceof java.util.UUID u) gen.writeString(u.toString());
++            else gen.writeNull();
++        }
++    }
++}
+diff --git game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotHarness.java game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotHarness.java
+new file mode 100644
+index 000000000..1a28d9d7c
+--- /dev/null
++++ game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotHarness.java
+@@ -0,0 +1,187 @@
++package games.strategy.engine.data;
++
++import games.strategy.engine.framework.ServerGame;
++import games.strategy.engine.random.PlainRandomSource;
++
++import java.io.*;
++import java.lang.reflect.Field;
++import java.nio.file.*;
++import java.util.Random;
++import java.util.concurrent.atomic.AtomicLong;
++
++import org.apache.commons.math3.random.MersenneTwister;
++
++/**
++ * Wrapper harness for characterization testing. Captures full GameData as JSON
++ * before/after each game step (layer 22: runNextStep).
++ *
++ * Lower layers are captured by the Byte Buddy snapshot agent configured via
++ * snapshot.config and jfr-layer* files.
++ *
++ * <p>RNG state capture (added 2026-05-09): the Odin port replays each snap
++ * in isolation, so without state capture its MT and Math.random sequences
++ * start fresh per snap (position 0) while Java's are accumulated from steps
++ * 1..N-1. The before-meta.txt now records both:
++ * <ul>
++ *   <li>{@code mt_state: hex of mti(int) || mt[0..624] (u32 LE)} — the full
++ *       MersenneTwister state used by PlainRandomSource for dice rolls.</li>
++ *   <li>{@code math_random_seed: hex of java.util.Random.seed (long)} — the
++ *       LCG state used by Math.random for AI weighted picks.</li>
++ * </ul>
++ * The Odin harness reads both at snap-load time and seeds its own RNGs to
++ * match Java's accumulated state, so step-N dice match byte-for-byte.</p>
++ */
++public class SnapshotHarness {
++
++    private final ServerGame game;
++    private final Path outputDir;
++    private int stepCounter = 0;
++    private final GameStateJsonSerializer serializer = new GameStateJsonSerializer();
++
++    public SnapshotHarness(ServerGame game, String outputDir, long rangeStart, long rangeEnd) {
++        this.game = game;
++        this.outputDir = Path.of(outputDir);
++        try {
++            Files.createDirectories(this.outputDir);
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++    }
++
++    /**
++     * Wraps a runNextStep() call. Captures before/after JSON game state.
++     */
++    public void wrapStep(Runnable stepRunner) {
++        stepCounter++;
++        String stepName = game.getData().getSequence().getStep().getName();
++        String delegateName = game.getData().getSequence().getStep().getDelegateName();
++        int round = game.getData().getSequence().getRound();
++        GamePlayer player = game.getData().getSequence().getStep().getPlayerId();
++        String playerName = player != null ? player.getName() : "none";
++
++        String stepDirName = String.format("step-%04d-round-%03d-%s", stepCounter, round, stepName);
++        Path dir = outputDir.resolve("server_game_run_next_step").resolve(stepDirName);
++
++        // Tag every fixture written by the proc-recorder agent (if attached)
++        // with the current snap id, so import_fixtures.py can correlate
++        // golden fixtures back to the snap that produced them. Reflective
++        // call avoids a hard build dependency on the agent jar.
++        setRecorderSnap(String.format("%04d", stepCounter));
++
++        saveSnapshot("step-before", dir, stepName, delegateName, playerName, round);
++        stepRunner.run();
++        saveSnapshot("step-after", dir, stepName, delegateName, playerName, round);
++    }
++
++    private static void setRecorderSnap(String snapId) {
++        try {
++            Class<?> agent = Class.forName("agent.ProcRecorderAgent");
++            agent.getMethod("setCurrentSnap", String.class).invoke(null, snapId);
++        } catch (ClassNotFoundException ignored) {
++            // Agent not attached — fine, fixtures just have empty snap.
++        } catch (Throwable t) {
++            // Don't break the snap run for an instrumentation hook.
++        }
++    }
++
++    private void saveSnapshot(String label, Path dir, String stepName, String delegateName,
++                               String playerName, int round) {
++        try {
++            Files.createDirectories(dir);
++
++            Path jsonFile = dir.resolve(label + "-gamedata.json");
++            Files.writeString(jsonFile, serializer.serialize(game.getData()));
++
++            Path metaFile = dir.resolve(label + "-meta.txt");
++            try (var pw = new PrintWriter(Files.newBufferedWriter(metaFile))) {
++                pw.println("step: " + stepCounter);
++                pw.println("round: " + round);
++                pw.println("stepName: " + stepName);
++                pw.println("delegateName: " + delegateName);
++                pw.println("player: " + playerName);
++                pw.println("label: " + label);
++                pw.println("timestamp: " + System.currentTimeMillis());
++                pw.println("mt_state: " + dumpMersenneTwisterState());
++                pw.println("math_random_seed: " + dumpMathRandomSeed());
++            }
++
++            System.out.println("[SnapshotHarness] Saved " + label
++                    + " step=" + stepName + " round=" + round);
++
++        } catch (Exception e) {
++            System.err.println("[SnapshotHarness] Error saving " + label + " at step "
++                    + stepCounter + ": " + e);
++            e.printStackTrace();
++        }
++    }
++
++    /**
++     * Reflectively reads the MersenneTwister inside the game's PlainRandomSource
++     * and returns a hex dump of {@code mti (4 bytes LE) || mt[0..624] (4 bytes LE each)}.
++     * Total payload = 4 + 4*624 = 2500 bytes → 5000 hex chars.
++     *
++     * <p>If the game uses a non-PlainRandomSource (e.g. dummy random source in
++     * tests) or the MT state cannot be read, returns "unknown" so the Odin
++     * harness can fall back to a fresh seed (and snap will diverge but still
++     * load).</p>
++     */
++    private String dumpMersenneTwisterState() {
++        try {
++            Object randomSource = game.getRandomSource();
++            if (!(randomSource instanceof PlainRandomSource)) {
++                return "unknown";
++            }
++            Field randomField = PlainRandomSource.class.getDeclaredField("random");
++            randomField.setAccessible(true);
++            Object generator = randomField.get(randomSource);
++            if (!(generator instanceof MersenneTwister)) {
++                return "unknown";
++            }
++            Field mtField = MersenneTwister.class.getDeclaredField("mt");
++            Field mtiField = MersenneTwister.class.getDeclaredField("mti");
++            mtField.setAccessible(true);
++            mtiField.setAccessible(true);
++            int[] mt = (int[]) mtField.get(generator);
++            int mti = (int) mtiField.get(generator);
++            StringBuilder sb = new StringBuilder(5000);
++            // mti first (4 bytes LE)
++            appendHexLE(sb, mti);
++            for (int i = 0; i < mt.length; i++) {
++                appendHexLE(sb, mt[i]);
++            }
++            return sb.toString();
++        } catch (ReflectiveOperationException e) {
++            return "error:" + e.getClass().getSimpleName();
++        }
++    }
++
++    /**
++     * Reflectively reads the seed of {@code java.lang.Math$RandomNumberGeneratorHolder.randomNumberGenerator}.
++     * Requires {@code --add-opens java.base/java.lang=ALL-UNNAMED} on the JVM
++     * (already set by smoke-testing/build.gradle.kts).
++     *
++     * <p>Returns the 16-char hex of the long seed. If reflection fails, returns
++     * "unknown".</p>
++     */
++    private String dumpMathRandomSeed() {
++        try {
++            Class<?> holderClass = Class.forName("java.lang.Math$RandomNumberGeneratorHolder");
++            Field genField = holderClass.getDeclaredField("randomNumberGenerator");
++            genField.setAccessible(true);
++            Random random = (Random) genField.get(null);
++            Field seedField = Random.class.getDeclaredField("seed");
++            seedField.setAccessible(true);
++            AtomicLong seed = (AtomicLong) seedField.get(random);
++            return String.format("%016x", seed.get());
++        } catch (ReflectiveOperationException e) {
++            return "error:" + e.getClass().getSimpleName();
++        }
++    }
++
++    private static void appendHexLE(StringBuilder sb, int v) {
++        sb.append(String.format("%02x", v & 0xff));
++        sb.append(String.format("%02x", (v >> 8) & 0xff));
++        sb.append(String.format("%02x", (v >> 16) & 0xff));
++        sb.append(String.format("%02x", (v >> 24) & 0xff));
++    }
++}
+diff --git game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotProcessor.java game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotProcessor.java
+new file mode 100644
+index 000000000..54588d493
+--- /dev/null
++++ game-app/smoke-testing/src/test/java/games/strategy/engine/data/SnapshotProcessor.java
+@@ -0,0 +1,142 @@
++package games.strategy.engine.data;
++
++import java.io.*;
++import java.nio.file.*;
++import java.util.*;
++import java.util.stream.*;
++
++/**
++ * Processes snapshot directories from SnapshotHarness and organizes them into
++ * per-proc test directories for Odin unit testing.
++ *
++ * Input:  build/snapshots/{method_name}/step-NNNN-round-RRR-stepName/
++ *         Each step dir has: step-before-gamedata.json, step-after-gamedata.json, metadata
++ *
++ * Output: conversion/odin_tests/{method_name}/snapshots/{NNNN}/before.json, after.json
++ *         Plus auto-generated Odin test file if missing.
++ *
++ * Run via: java -cp ... games.strategy.engine.data.SnapshotProcessor [inputDir] [outputDir]
++ */
++public class SnapshotProcessor {
++
++    private final Path snapshotInputDir;
++    private final Path odinTestOutputDir;
++
++    public SnapshotProcessor(Path snapshotInputDir, Path odinTestOutputDir) {
++        this.snapshotInputDir = snapshotInputDir;
++        this.odinTestOutputDir = odinTestOutputDir;
++    }
++
++    /**
++     * Process all method-level snapshot directories.
++     * The harness creates: {inputDir}/{methodName}/step-NNNN-round-RRR-stepName/
++     * We produce:          {outputDir}/{methodName}/snapshots/{NNNN}/before.json + after.json
++     */
++    public int process() throws IOException {
++        if (!Files.isDirectory(snapshotInputDir)) {
++            System.err.println("[SnapshotProcessor] Input dir does not exist: " + snapshotInputDir);
++            return 0;
++        }
++
++        int totalCount = 0;
++
++        // Iterate over method-level subdirectories (e.g. server_game_run_next_step/)
++        try (var methodDirs = Files.list(snapshotInputDir)) {
++            for (Path methodDir : methodDirs.sorted().collect(Collectors.toList())) {
++                if (!Files.isDirectory(methodDir)) continue;
++                String methodName = methodDir.getFileName().toString();
++                int count = processMethodDir(methodDir, methodName);
++                totalCount += count;
++            }
++        }
++
++        return totalCount;
++    }
++
++    private int processMethodDir(Path methodDir, String methodName) throws IOException {
++        Map<Integer, Path> stepDirs = new TreeMap<>();
++        try (var stream = Files.list(methodDir)) {
++            for (Path dir : stream.sorted().collect(Collectors.toList())) {
++                String name = dir.getFileName().toString();
++                if (name.startsWith("step-") && Files.isDirectory(dir)) {
++                    try {
++                        int stepNum = Integer.parseInt(name.substring(5, 9));
++                        stepDirs.put(stepNum, dir);
++                    } catch (NumberFormatException e) {
++                        // skip
++                    }
++                }
++            }
++        }
++
++        Path procDir = odinTestOutputDir.resolve(methodName);
++        Path procSnapshotsDir = procDir.resolve("snapshots");
++        Files.createDirectories(procSnapshotsDir);
++
++        int count = 0;
++        for (var entry : stepDirs.entrySet()) {
++            int stepNum = entry.getKey();
++            Path stepDir = entry.getValue();
++
++            Path beforeJson = stepDir.resolve("step-before-gamedata.json");
++            Path afterJson = stepDir.resolve("step-after-gamedata.json");
++
++            if (!Files.exists(beforeJson) || !Files.exists(afterJson)) continue;
++
++            String snapshotId = String.format("%04d", stepNum);
++            Path snapshotDir = procSnapshotsDir.resolve(snapshotId);
++            Files.createDirectories(snapshotDir);
++
++            Files.copy(beforeJson, snapshotDir.resolve("before.json"), StandardCopyOption.REPLACE_EXISTING);
++            Files.copy(afterJson, snapshotDir.resolve("after.json"), StandardCopyOption.REPLACE_EXISTING);
++
++            for (String metaName : List.of("step-before-meta.txt", "step-after-meta.txt")) {
++                Path meta = stepDir.resolve(metaName);
++                String outName = metaName.replace("step-before-", "before-").replace("step-after-", "after-");
++                if (Files.exists(meta)) {
++                    Files.copy(meta, snapshotDir.resolve(outName), StandardCopyOption.REPLACE_EXISTING);
++                }
++            }
++
++            count++;
++        }
++
++        System.out.println("[SnapshotProcessor] " + methodName + ": " + count + " snapshot pairs");
++
++        // Generate Odin test file if it doesn't exist
++        Path odinTestFile = procDir.resolve("test_" + methodName + ".odin");
++        if (!Files.exists(odinTestFile)) {
++            generateOdinTestFile(odinTestFile, methodName);
++        }
++
++        return count;
++    }
++
++    private void generateOdinTestFile(Path outputFile, String procName) throws IOException {
++        String snapshotPath = "conversion/odin_tests/" + procName + "/snapshots";
++
++        String content = """
++                package test_%s
++
++                import "core:testing"
++                import game "../../odin_flat"
++                import tc "../test_common"
++
++                @(test)
++                test_all_snapshots :: proc(t: ^testing.T) {
++                    tc.run_snapshot_tests(t,
++                        "%s",
++                        game.%s)
++                }
++                """.formatted(procName, snapshotPath, procName);
++
++        Files.writeString(outputFile, content);
++        System.out.println("[SnapshotProcessor] Generated Odin test: " + outputFile);
++    }
++
++    public static void main(String[] args) throws IOException {
++        Path input = args.length > 0 ? Path.of(args[0]) : Path.of("game-app/smoke-testing/build/snapshots");
++        Path output = args.length > 1 ? Path.of(args[1]) : Path.of("conversion/odin_tests");
++        new SnapshotProcessor(input, output).process();
++    }
++}
+diff --git game-app/smoke-testing/src/test/java/org/triplea/portbootstrap/Ww2v5JacocoRun.java game-app/smoke-testing/src/test/java/org/triplea/portbootstrap/Ww2v5JacocoRun.java
+new file mode 100644
+index 000000000..cb50ea51f
+--- /dev/null
++++ game-app/smoke-testing/src/test/java/org/triplea/portbootstrap/Ww2v5JacocoRun.java
+@@ -0,0 +1,286 @@
++package org.triplea.portbootstrap;
++
++import games.strategy.engine.data.GameData;
++import games.strategy.engine.data.GamePlayer;
++import games.strategy.engine.data.GameStateJsonSerializer;
++import games.strategy.engine.data.GameStep;
++import games.strategy.engine.data.GameTestUtils;
++import games.strategy.engine.data.SnapshotHarness;
++import games.strategy.engine.data.Territory;
++import games.strategy.engine.data.Unit;
++import games.strategy.engine.framework.ServerGame;
++import games.strategy.engine.random.PlainRandomSource;
++import org.junit.jupiter.api.BeforeAll;
++import org.junit.jupiter.api.Test;
++
++import java.io.IOException;
++import java.lang.reflect.Field;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Random;
++import java.util.TreeMap;
++
++/**
++ * triplea-port-bootstrap test driver.
++ *
++ * <p>Two modes, selected at runtime by Gradle test selectors:
++ *
++ * <ul>
++ *   <li>{@link #run()} &mdash; 8-round AI-vs-AI game on
++ *       {@code WW2v5_1942_2nd.xml}, default RNG. Used as the JaCoCo
++ *       coverage trace by the bootstrap pipeline.
++ *   <li>{@link #runWithSnapshots()} &mdash; 1-round AI-vs-AI game on the
++ *       same map with {@code PlainRandomSource.fixedSeed = 42L}, wrapped
++ *       in {@link SnapshotHarness} which dumps full {@code GameData} JSON
++ *       before and after each delegate step. Used as the
++ *       Java-side reference oracle for Odin port validation.
++ * </ul>
++ *
++ * <p>This file is dropped into the smoke-testing module by
++ * {@code scripts/patch_triplea.py}. It depends only on classes that
++ * exist in upstream TripleA plus the snapshot harness sources that
++ * the same script copies in alongside it.
++ */
++public class Ww2v5JacocoRun {
++
++  /** Round cap for the JaCoCo run. Replaced at patch time. */
++  private static final int MAX_ROUNDS = 8;
++
++  /** Default round cap for the snapshot run. Override with -Dsnapshot.rounds=N. */
++  private static final int SNAPSHOT_ROUNDS_DEFAULT = 2;
++
++  /** Deterministic seed for the snapshot run. */
++  private static final long SNAPSHOT_SEED = 42L;
++
++  @BeforeAll
++  public static void setUp() throws IOException {
++    GameTestUtils.setUp();
++  }
++
++  @Test
++  void run() {
++    ServerGame game =
++        GameTestUtils.setUpGameWithAis("WW2v5_1942_2nd.xml");
++    game.setStopGameOnDelegateExecutionStop(true);
++    while (!game.isGameOver()) {
++      if (game.getData().getSequence().getRound() > MAX_ROUNDS) {
++        break;
++      }
++      game.runNextStep();
++    }
++  }
++
++  @Test
++  void runWithSnapshots() {
++    // Must be set BEFORE setUpGameWithAis so the game's PlainRandomSource picks
++    // up the seed at construction.
++    PlainRandomSource.fixedSeed = SNAPSHOT_SEED;
++    // Seed Math.random() too. The Pro AI uses Math.random() for weighted
++    // purchase picks, casualty selection, and political-action choice
++    // (see ProPurchaseUtils.randomizePurchaseOption + AbstractAi). Without
++    // this, snapshots are statistically unreproducible across JVM runs and
++    // the Odin port can never byte-match. Requires the
++    // --add-opens java.base/java.lang=ALL-UNNAMED JVM arg, set by
++    // smoke-testing/build.gradle.kts.
++    seedMathRandom(SNAPSHOT_SEED);
++    try {
++      ServerGame game =
++          GameTestUtils.setUpGameWithAis("WW2v5_1942_2nd.xml");
++      game.setStopGameOnDelegateExecutionStop(true);
++
++      String outDir =
++          System.getProperty("snapshot.outDir", "build/snapshots");
++      long rangeStart = Long.getLong("snapshot.rangeStart", 1);
++      long rangeEnd = Long.getLong("snapshot.rangeEnd", Long.MAX_VALUE);
++
++      SnapshotHarness harness =
++          new SnapshotHarness(game, outDir, rangeStart, rangeEnd);
++
++      int rounds = Integer.getInteger("snapshot.rounds", SNAPSHOT_ROUNDS_DEFAULT);
++      while (!game.isGameOver()) {
++        if (game.getData().getSequence().getRound() > rounds) {
++          break;
++        }
++        harness.wrapStep(() -> game.runNextStep());
++      }
++    } finally {
++      // Don't leak the seed into other tests in the same JVM.
++      PlainRandomSource.fixedSeed = null;
++    }
++  }
++
++  /**
++   * Determinism probe: run a full WW2v5 game (capped at -Dgame.rounds, default 100)
++   * with seeded RNG, then write the final GameData JSON to -Dgame.outFile (default
++   * /tmp/ww2v5-final.json). Run this twice and diff the two output files; if Java
++   * is fully deterministic the diff should be empty.
++   *
++   * <p>Invocation:
++   * <pre>
++   *   ./gradlew :game-app:smoke-testing:test \
++   *     --tests 'org.triplea.portbootstrap.Ww2v5JacocoRun.runFullGameDeterminismProbe' \
++   *     --rerun -Dgame.rounds=100 -Dgame.outFile=/tmp/ww2v5-A.json
++   * </pre>
++   */
++  @Test
++  void runFullGameDeterminismProbe() {
++    PlainRandomSource.fixedSeed = SNAPSHOT_SEED;
++    seedMathRandom(SNAPSHOT_SEED);
++    try {
++      ServerGame game =
++          GameTestUtils.setUpGameWithAis("WW2v5_1942_2nd.xml");
++      game.setStopGameOnDelegateExecutionStop(true);
++
++      int maxRounds = Integer.getInteger("game.rounds", 100);
++      boolean digest = Boolean.getBoolean("digest");
++      while (!game.isGameOver()) {
++        if (game.getData().getSequence().getRound() > maxRounds) {
++          break;
++        }
++        if (digest) emitDigest(game.getData());
++        game.runNextStep();
++      }
++
++      String outFile = System.getProperty("game.outFile", "/tmp/ww2v5-final.json");
++      String json = new GameStateJsonSerializer().serialize(game.getData());
++      try {
++        Files.writeString(Path.of(outFile), json);
++      } catch (IOException e) {
++        throw new RuntimeException("Failed to write " + outFile, e);
++      }
++      System.err.println("[Ww2v5JacocoRun] Final state written to " + outFile
++          + " (round=" + game.getData().getSequence().getRound()
++          + ", isGameOver=" + game.isGameOver() + ")");
++    } finally {
++      PlainRandomSource.fixedSeed = null;
++    }
++  }
++
++  /**
++   * Seeds the JVM-global {@code java.lang.Math$RandomNumberGeneratorHolder.randomNumberGenerator}
++   * to the given value. Throws {@link RuntimeException} if reflective access is denied
++   * (run with {@code --add-opens java.base/java.lang=ALL-UNNAMED}).
++   */
++  /**
++   * Per-step state digest. Mirrors `test_full_game_digest_emit` in
++   * `odin_flat/test_full_game_digest.odin`. Emit ONE line BEFORE each
++   * runNextStep so a unified diff of Java vs Odin digest streams
++   * pinpoints the first divergent step.
++   */
++  private static void emitDigest(GameData data) {
++    int round = data.getSequence().getRound();
++    int idx = data.getSequence().getStepIndex();
++    GameStep step;
++    try { step = data.getSequence().getStep(idx); } catch (RuntimeException e) { step = null; }
++    String stepName = step == null ? "" : step.getName();
++    GamePlayer stepPlayer = step == null ? null : step.getPlayerId();
++    String playerName = stepPlayer == null ? "-" : stepPlayer.getName();
++
++    // Sorted player list.
++    List<GamePlayer> players = new ArrayList<>(data.getPlayerList().getPlayers());
++    players.sort((a, b) -> a.getName().compareTo(b.getName()));
++
++    StringBuilder pus = new StringBuilder();
++    boolean first = true;
++    for (GamePlayer gp : players) {
++      if (!first) pus.append(',');
++      first = false;
++      pus.append(gp.getName()).append(':').append(gp.getResources().getQuantity("PUs"));
++    }
++
++    // Sorted territories.
++    List<Territory> terrs = new ArrayList<>(data.getMap().getTerritories());
++    terrs.sort((a, b) -> a.getName().compareTo(b.getName()));
++
++    StringBuilder ownerPairs = new StringBuilder();
++    StringBuilder ucPairs = new StringBuilder();
++    StringBuilder compPairs = new StringBuilder();
++    Map<String, Integer> ownerCount = new TreeMap<>();
++    int totalUnits = 0;
++    for (Territory t : terrs) {
++      String owner = t.getOwner() == null ? "-" : t.getOwner().getName();
++      int uc = t.getUnitCollection().size();
++      totalUnits += uc;
++      ownerCount.merge(owner, 1, Integer::sum);
++      ownerPairs.append(t.getName()).append('=').append(owner).append('|');
++      ucPairs.append(t.getName()).append('=').append(uc).append('|');
++      Map<String, Integer> compCounts = new TreeMap<>();
++      for (Unit u : t.getUnitCollection().getUnits()) {
++        String oo = u.getOwner() == null ? "-" : u.getOwner().getName();
++        String tn = u.getType() == null ? "?" : u.getType().getName();
++        compCounts.merge(oo + "_" + tn, 1, Integer::sum);
++      }
++      compPairs.append(t.getName()).append('=');
++      for (Map.Entry<String, Integer> ce : compCounts.entrySet()) {
++        compPairs.append(ce.getKey()).append(':').append(ce.getValue()).append(',');
++      }
++      compPairs.append('|');
++    }
++    long ownerH = fnv1a64(ownerPairs.toString());
++    long ucH = fnv1a64(ucPairs.toString());
++    long compH = fnv1a64(compPairs.toString());
++
++    StringBuilder terr = new StringBuilder();
++    first = true;
++    for (Map.Entry<String, Integer> e : ownerCount.entrySet()) {
++      if (!first) terr.append(',');
++      first = false;
++      terr.append(e.getKey()).append(':').append(e.getValue());
++    }
++
++    System.out.printf(
++        "DIGEST r=%d i=%d step=%s player=%s PUs=[%s] terr=[%s] units=%d owner_h=%016x uc_h=%016x comp_h=%016x%n",
++        round, idx, stepName, playerName, pus, terr, totalUnits, ownerH, ucH, compH);
++
++    // Detailed per-territory dump for one specific (round, step), keyed
++    // by -Ddigest.detail.r=R -Ddigest.detail.i=I.
++    int dr = Integer.getInteger("digest.detail.r", -1);
++    int di = Integer.getInteger("digest.detail.i", -1);
++    if (round == dr && idx == di) {
++      for (Territory t : terrs) {
++        String owner = t.getOwner() == null ? "-" : t.getOwner().getName();
++        Map<String, Integer> typeCount = new TreeMap<>();
++        for (Unit u : t.getUnitCollection().getUnits()) {
++          String oo = u.getOwner() == null ? "-" : u.getOwner().getName();
++          String tn = u.getType() == null ? "?" : u.getType().getName();
++          typeCount.merge(oo + "_" + tn, 1, Integer::sum);
++        }
++        StringBuilder tb = new StringBuilder();
++        boolean f = true;
++        for (Map.Entry<String,Integer> e : typeCount.entrySet()) {
++          if (!f) tb.append(',');
++          f = false;
++          tb.append(e.getKey()).append(':').append(e.getValue());
++        }
++        System.out.printf("DETAIL r=%d i=%d terr=%s owner=%s units=%d types=[%s]%n",
++            round, idx, t.getName(), owner, t.getUnitCollection().size(), tb);
++      }
++    }
++  }
++
++  private static long fnv1a64(String s) {
++    long h = 0xcbf29ce484222325L;
++    for (int i = 0; i < s.length(); i++) {
++      h ^= (s.charAt(i) & 0xff);
++      h *= 0x100000001b3L;
++    }
++    return h;
++  }
++
++  private static void seedMathRandom(long seed) {
++    try {
++      Class<?> holder = Class.forName("java.lang.Math$RandomNumberGeneratorHolder");
++      Field f = holder.getDeclaredField("randomNumberGenerator");
++      f.setAccessible(true);
++      ((Random) f.get(null)).setSeed(seed);
++    } catch (ReflectiveOperationException e) {
++      throw new RuntimeException(
++          "Cannot seed Math.random(); add `--add-opens java.base/java.lang=ALL-UNNAMED`", e);
++    }
++  }
++}
