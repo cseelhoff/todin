@@ -55,12 +55,20 @@ i_battle_get_bombarding_units :: proc(self: ^I_Battle) -> [dynamic]^Unit {
 
 // games.strategy.triplea.delegate.battle.IBattle#getRemainingAttackingUnits
 i_battle_get_remaining_attacking_units :: proc(self: ^I_Battle) -> [dynamic]^Unit {
-	return abstract_battle_get_remaining_attacking_units(cast(^Abstract_Battle)self)
+	ab := cast(^Abstract_Battle)self
+	if ab.is_must_fight_battle {
+		return must_fight_battle_get_remaining_attacking_units(cast(^Must_Fight_Battle)self)
+	}
+	return abstract_battle_get_remaining_attacking_units(ab)
 }
 
 // games.strategy.triplea.delegate.battle.IBattle#getRemainingDefendingUnits
 i_battle_get_remaining_defending_units :: proc(self: ^I_Battle) -> [dynamic]^Unit {
-	return abstract_battle_get_remaining_defending_units(cast(^Abstract_Battle)self)
+	ab := cast(^Abstract_Battle)self
+	if ab.is_must_fight_battle {
+		return must_fight_battle_get_remaining_defending_units(cast(^Must_Fight_Battle)self)
+	}
+	return abstract_battle_get_remaining_defending_units(ab)
 }
 
 // games.strategy.triplea.delegate.battle.IBattle#getDependentUnits

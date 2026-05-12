@@ -722,9 +722,13 @@ pro_transport_utils_get_units_to_transport_from_territories :: proc(
 	}
 	delete(transporting)
 
-	// Get all units that can be transported.
+	// Get all units that can be transported. Iterate territories in name order so the
+	// candidate list is deterministic across runs (Odin map iter is pointer-hash random,
+	// matching Java's HashSet which is JVM-deterministic on a single run).
 	units: [dynamic]^Unit
-	for load_from, _ in territories_to_load_from {
+	sorted_load_from := pro_determinism_sorted_territory_keys(territories_to_load_from)
+	defer delete(sorted_load_from)
+	for load_from in sorted_load_from {
 		matched := territory_get_matches(load_from, valid_unit_match, valid_unit_match_ctx)
 		for u in matched {
 			append(&units, u)
@@ -1180,9 +1184,12 @@ pro_transport_utils_get_units_to_transport_that_cant_move_to_higher_value :: pro
 		can_be_loaded_pred, can_be_loaded_ctx :=
 			pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(player, transport, true)
 
-		// Gather candidate units across every load-from territory.
+		// Gather candidate units across every load-from territory. Sort territories by
+		// name first so candidate-unit order is deterministic across runs.
 		units: [dynamic]^Unit
-		for load_from, _ in territories_to_load_from {
+		sorted_load_from := pro_determinism_sorted_territory_keys(territories_to_load_from)
+		defer delete(sorted_load_from)
+		for load_from in sorted_load_from {
 			matched := territory_get_matches(load_from, can_be_loaded_pred, can_be_loaded_ctx)
 			for u in matched {
 				append(&units, u)
