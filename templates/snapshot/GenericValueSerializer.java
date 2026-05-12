@@ -94,7 +94,45 @@ public class GenericValueSerializer {
             "games.strategy.triplea.delegate.battle.BattleState",
             "games.strategy.triplea.delegate.battle.BattleActions",
             "games.strategy.triplea.delegate.battle.MustFightBattle",
-            "games.strategy.triplea.delegate.battle.IBattle"
+            "games.strategy.triplea.delegate.battle.IBattle",
+            // Pro AI types — these are receivers / receiver-graph nodes for
+            // per-method snapshots of the AI procs (purchaseDefenders,
+            // purchaseLandUnits, etc.). Without pruning, Jackson default
+            // typing follows ProPurchaseAi.proData.proAi.playerBridge.game
+            // .messengers...endPoint.implementors → JDK Proxy and dies on
+            // setAccessible. We only need identity stubs of the receiver +
+            // a few scalar fields (isBid). Reconstruction on the Odin side
+            // uses before.json's full GameData + meta + the args.
+            "games.strategy.triplea.ai.pro.ProPurchaseAi",
+            "games.strategy.triplea.ai.pro.ProCombatMoveAi",
+            "games.strategy.triplea.ai.pro.ProNonCombatMoveAi",
+            "games.strategy.triplea.ai.pro.ProRetreatAi",
+            "games.strategy.triplea.ai.pro.ProScrambleAi",
+            "games.strategy.triplea.ai.pro.ProPoliticsAi",
+            "games.strategy.triplea.ai.pro.AbstractProAi",
+            "games.strategy.triplea.ai.pro.ProAi",
+            "games.strategy.triplea.ai.pro.ProData",
+            "games.strategy.triplea.ai.pro.data.ProResourceTracker",
+            "games.strategy.triplea.ai.pro.data.ProTerritoryManager",
+            "games.strategy.triplea.ai.pro.data.ProPurchaseOptionMap",
+            "games.strategy.triplea.ai.pro.data.ProPurchaseOption",
+            "games.strategy.triplea.ai.pro.data.ProPurchaseTerritory",
+            "games.strategy.triplea.ai.pro.data.ProPlaceTerritory",
+            "games.strategy.triplea.ai.pro.util.ProOddsCalculator",
+            "games.strategy.triplea.ai.pro.simulate.ProDummyDelegateBridge",
+            "games.strategy.triplea.ai.AbstractAi",
+            // Engine plumbing reachable from any AI receiver via back-pointers.
+            // Pruning these stops the JDK-Proxy chain at the boundary.
+            "games.strategy.engine.player.PlayerBridge",
+            "games.strategy.engine.framework.ServerGame",
+            "games.strategy.engine.framework.AbstractGame",
+            "games.strategy.engine.framework.startup.ui.PlayerTypes$Type",
+            "games.strategy.net.Messengers",
+            "games.strategy.engine.message.RemoteMessenger",
+            "games.strategy.engine.message.ChannelMessenger",
+            "games.strategy.engine.message.unifiedmessenger.UnifiedMessenger",
+            "games.strategy.engine.message.unifiedmessenger.UnifiedInvocationHandler",
+            "games.strategy.engine.message.unifiedmessenger.EndPoint"
     );
 
     /**

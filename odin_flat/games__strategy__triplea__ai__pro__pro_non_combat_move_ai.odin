@@ -1171,6 +1171,27 @@ pro_non_combat_move_ai_do_move :: proc(
 	self.player = player
 
 	move_routes := pro_move_utils_calculate_move_routes(self.pro_data, player, move_map, is_combat_move)
+	when #config(NCM_MOVE_TRACE, false) {
+		pname_nm := default_named_get_name(&player.named_attachable.default_named)
+		if pname_nm == "Russians" {
+			fmt.printf("NCM_MOVE_TRACE move_routes_count=%d\n", len(move_routes))
+			for m in move_routes {
+				r := move_description_get_route(m)
+				start := route_get_start(r)
+				end := route_get_end(r)
+				start_name := start != nil ? territory_get_name(start) : "?"
+				end_name := end != nil ? territory_get_name(end) : "?"
+				type_count := make(map[string]int)
+				defer delete(type_count)
+				for u in m.units {
+					if u == nil || u.type == nil { continue }
+					type_count[unit_type_get_name(u.type)] += 1
+				}
+				fmt.printf("NCM_MOVE_TRACE %s -> %s units=%d types=%v\n",
+					start_name, end_name, len(m.units), type_count)
+			}
+		}
+	}
 	pro_move_utils_do_move(self.pro_data, &move_routes, move_del)
 
 	amphib_routes := pro_move_utils_calculate_amphib_routes(self.pro_data, player, move_map, is_combat_move)

@@ -1,5 +1,7 @@
 package game
 
+import "core:fmt"
+
 Pro_Simulate_Turn_Utils :: struct {}
 
 // games.strategy.triplea.ai.pro.simulate.ProSimulateTurnUtils#simulateBattles(ProData, GameData, GamePlayer, IDelegateBridge, ProOddsCalculator)
@@ -61,13 +63,60 @@ pro_simulate_turn_utils_simulate_battles :: proc(
 			)
 			remaining_attackers := pro_battle_result_get_average_attackers_remaining(result)
 			remaining_defenders := pro_battle_result_get_average_defenders_remaining(result)
+			when #config(SIMBATTLE_TRACE, false) {
+				pname_sb := default_named_get_name(&player.named_attachable.default_named)
+				if pname_sb == "Russians" {
+					att_tally := make(map[string]int)
+					defer delete(att_tally)
+					for u in attackers {
+						utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+						on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+						att_tally[fmt.tprintf("%s_%s", on, utn)] += 1
+					}
+					def_tally := make(map[string]int)
+					defer delete(def_tally)
+					for u in defenders {
+						utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+						on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+						def_tally[fmt.tprintf("%s_%s", on, utn)] += 1
+					}
+					rem_att_tally := make(map[string]int)
+					defer delete(rem_att_tally)
+					for u in remaining_attackers {
+						utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+						on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+						rem_att_tally[fmt.tprintf("%s_%s", on, utn)] += 1
+					}
+					rem_def_tally := make(map[string]int)
+					defer delete(rem_def_tally)
+					for u in remaining_defenders {
+						utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+						on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+						rem_def_tally[fmt.tprintf("%s_%s", on, utn)] += 1
+					}
+					win_pct := pro_battle_result_get_win_percentage(result)
+					tuv_swing := pro_battle_result_get_tuv_swing(result)
+					fmt.printf("SB_TRACE t=%s att_n=%d def_n=%d att=%v def=%v win%%=%v tuv_swing=%v rem_att_n=%d rem_att=%v rem_def_n=%d rem_def=%v\n",
+						territory_get_name(t),
+						len(attackers), len(defenders), att_tally, def_tally,
+						win_pct, tuv_swing,
+						len(remaining_attackers), rem_att_tally,
+						len(remaining_defenders), rem_def_tally,
+					)
+				}
+			}
 
 			// attackersToRemove = new ArrayList<>(attackers); attackersToRemove.removeAll(remainingAttackers)
+			//
+			// Java's removeAll uses Unit.equals which compares by UUID — battle
+			// calculator returns COPIES of units (Monte Carlo cloned), so pointer
+			// equality (r == a) would always fail and incorrectly kill EVERY
+			// attacker including survivors. Compare by UUID id field to match Java.
 			attackers_to_remove: [dynamic]^Unit
 			for a in attackers {
 				keep := false
 				for r in remaining_attackers {
-					if r == a {
+					if r.id == a.id {
 						keep = true
 						break
 					}
@@ -84,7 +133,7 @@ pro_simulate_turn_utils_simulate_battles :: proc(
 				}
 				keep := false
 				for r in remaining_defenders {
-					if r == d {
+					if r.id == d.id {
 						keep = true
 						break
 					}

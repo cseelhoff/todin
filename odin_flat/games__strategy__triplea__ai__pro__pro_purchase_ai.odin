@@ -2407,6 +2407,39 @@ pro_purchase_ai_purchase_defenders :: proc(
 			append(&max_units_list, u)
 		}
 		max_amphib_list := pro_territory_get_max_amphib_units(max_terr)
+		when PUR_TRACE {
+			pname_pde := default_named_get_name(&self.player.named_attachable.default_named)
+			if pname_pde == "Russians" {
+				def_units := pro_place_territory_get_defending_units(place_territory)
+				def_owners := make(map[string]int)
+				defer delete(def_owners)
+				def_n_owned := 0
+				for u in def_units {
+					if u == nil { continue }
+					on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+					utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+					def_owners[fmt.tprintf("%s_%s", on, utn)] += 1
+					if u.owner == self.player { def_n_owned += 1 }
+				}
+				enemy_owners := make(map[string]int)
+				defer delete(enemy_owners)
+				for u in max_units_list {
+					if u == nil { continue }
+					on := "-"; if u.owner != nil { on = default_named_get_name(&u.owner.named_attachable.default_named) }
+					utn := "?"; if u.type != nil { utn = unit_type_get_name(u.type) }
+					enemy_owners[fmt.tprintf("%s_%s", on, utn)] += 1
+				}
+				amphib_n := 0
+				for _ in max_amphib_list { amphib_n += 1 }
+				is_land_str := "land"
+				if !is_land { is_land_str = "sea" }
+				fmt.printf("PDE_TRACE phase=%s t=%s def_n=%d def_owned=%d def_breakdown=%v enemy_n=%d amphib_n=%d enemy_breakdown=%v\n",
+					is_land_str, territory_get_name(t),
+					len(def_units), def_n_owned, def_owners,
+					len(max_units_list), amphib_n, enemy_owners,
+				)
+			}
+		}
 		pro_logger_debug(
 			fmt.tprintf(
 				"Purchasing defenders for %s, enemyAttackers=%s, amphibEnemyAttackers=%s, defenders=%s",

@@ -213,6 +213,14 @@ ADD_OPENS_GRADLE_BLOCK_GROOVY = """
 // triplea-port-bootstrap: add-opens for Math.random reseed
 tasks.withType(Test).configureEach {
     jvmArgs '--add-opens', 'java.base/java.lang=ALL-UNNAMED'
+    // Snapshot agent reflectively walks every field of every captured
+    // object (GenericValueSerializer.IdentityHintSerializer + Jackson
+    // default typing). Needed so f.setAccessible(true) succeeds for
+    // private fields on java.lang.reflect.Proxy and java.util internals
+    // when an AI receiver's transitive graph reaches a JDK Proxy.
+    jvmArgs '--add-opens', 'java.base/java.lang.reflect=ALL-UNNAMED'
+    jvmArgs '--add-opens', 'java.base/java.util=ALL-UNNAMED'
+    jvmArgs '--add-opens', 'java.base/java.util.concurrent=ALL-UNNAMED'
     // Propagate snapshot-tuning system properties from gradle to the
     // forked test JVM (see equivalent block in the kotlin DSL variant).
     ['snapshot.outDir', 'snapshot.rounds', 'snapshot.rangeStart', 'snapshot.rangeEnd'].each { key ->
@@ -227,6 +235,14 @@ ADD_OPENS_GRADLE_BLOCK_KTS = """
 // triplea-port-bootstrap: add-opens for Math.random reseed
 tasks.withType<Test>().configureEach {
     jvmArgs("--add-opens", "java.base/java.lang=ALL-UNNAMED")
+    // Snapshot agent reflectively walks every field of every captured
+    // object (GenericValueSerializer.IdentityHintSerializer + Jackson
+    // default typing). Needed so f.setAccessible(true) succeeds for
+    // private fields on java.lang.reflect.Proxy and java.util internals
+    // when an AI receiver's transitive graph reaches a JDK Proxy.
+    jvmArgs("--add-opens", "java.base/java.lang.reflect=ALL-UNNAMED")
+    jvmArgs("--add-opens", "java.base/java.util=ALL-UNNAMED")
+    jvmArgs("--add-opens", "java.base/java.util.concurrent=ALL-UNNAMED")
     // Propagate snapshot tuning system properties from the gradle invocation
     // into the test JVM, so e.g. `./gradlew :smoke-testing:test
     // -Dsnapshot.outDir=/tmp -Dsnapshot.rounds=1` actually reaches

@@ -775,10 +775,65 @@ abstract_pro_ai_purchase :: proc(
 			}
 			if game_step_is_non_combat_move_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				when PUR_TRACE {
+					abstract_pro_ai_dump_caucasus(data_copy, player, fmt.tprintf("PRE_SIM_%s", step_name))					// Pre-NCM-sim air units owned by player_copy
+					gm_pre := game_data_get_map(data_copy)
+					if gm_pre != nil {
+						for t in gm_pre.territories {
+							if t == nil { continue }
+							n_air := 0
+							for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+								if u == nil || u.type == nil { continue }
+								if u.owner != player_copy { continue }
+								utn := unit_type_get_name(u.type)
+								if utn == "fighter" || utn == "bomber" {
+									n_air += 1
+								}
+							}
+							if n_air > 0 {
+								tn := territory_get_name(t)
+								own_name := "-"
+								if to := territory_get_owner(t); to != nil {
+									own_name = default_named_get_name(&to.named_attachable.default_named)
+								}
+								fmt.printf("PRE_SIM_AIR step=%s t=%s terr_owner=%s n_player_air=%d\n",
+									step_name, tn, own_name, n_air)
+							}
+						}
+					}				}
 				factory_move_map := pro_non_combat_move_ai_simulate_non_combat_move(
 					self.non_combat_move_ai,
 					cast(^I_Move_Delegate)move_del,
 				)
+				when PUR_TRACE {
+					abstract_pro_ai_dump_caucasus(data_copy, player, fmt.tprintf("POST_SIM_%s", step_name))
+					// Dump per-territory air-unit counts for ANY territory with units owned by player_copy
+					// (NOT just where territory.owner == player_copy — air can be on allied land too).
+					gm := game_data_get_map(data_copy)
+					if gm != nil {
+						for t in gm.territories {
+							if t == nil { continue }
+							n_air := 0
+							for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+								if u == nil || u.type == nil { continue }
+								if u.owner != player_copy { continue }
+								utn := unit_type_get_name(u.type)
+								if utn == "fighter" || utn == "bomber" {
+									n_air += 1
+								}
+							}
+							if n_air > 0 {
+								tn := territory_get_name(t)
+								own_name := "-"
+								if to := territory_get_owner(t); to != nil {
+									own_name = default_named_get_name(&to.named_attachable.default_named)
+								}
+								fmt.printf("POST_SIM_AIR step=%s t=%s terr_owner=%s n_player_air=%d\n",
+									step_name, tn, own_name, n_air)
+							}
+						}
+					}
+				}
 				if self.stored_factory_move_map == nil {
 					self.stored_factory_move_map = pro_simulate_turn_utils_transfer_move_map(
 						self.pro_data,
