@@ -133,28 +133,7 @@ change_factory_change_owner :: proc(territory: ^Territory, owner: ^Game_Player) 
 // damage (each unit's current `hits`) keyed by the unit's UUID string,
 // plus the names of the territories that contain the affected units.
 change_factory_units_hit :: proc(hits: ^Integer_Map_Unit, territories: [dynamic]^Territory) -> ^Change {
-	udrc := new(Unit_Damage_Received_Change)
-	udrc.kind = .Unit_Damage_Received_Change
-	udrc.new_total_damage = make(map[string]i32, len(hits.entries))
-	udrc.old_total_damage = make(map[string]i32, len(hits.entries))
-	for unit, damage in hits.entries {
-		id := unit.id
-		key := fmt.aprintf(
-			"%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-			id[0], id[1], id[2], id[3],
-			id[4], id[5],
-			id[6], id[7],
-			id[8], id[9],
-			id[10], id[11], id[12], id[13], id[14], id[15],
-		)
-		udrc.new_total_damage[key] = damage
-		udrc.old_total_damage[key] = unit.hits
-	}
-	udrc.territories_to_notify = make([dynamic]string, 0, len(territories))
-	for territory in territories {
-		append(&udrc.territories_to_notify, territory.named.base.name)
-	}
-	return &udrc.change
+	return &unit_damage_received_change_new_from_integer_map(hits, territories).change
 }
 
 // Java: ChangeFactory#unitPropertyChange(Unit, Object, String)

@@ -3,9 +3,35 @@ package test_common
 import "core:testing"
 import "core:log"
 import "core:strings"
+import "core:fmt"
 import game "../../odin_flat"
 
 FILTER_SNAP :: #config(FILTER_SNAP, "")
+SNAP_DUMP   :: #config(SNAP_DUMP, false)
+
+// Diagnostic dump (gated by -define:SNAP_DUMP=true) of every unit position
+// in actual vs expected post-step game states. Format per line:
+//   SNAP_DUMP <ACT|EXP> snap=<id> terr=<name> uid=<short> type=<t> owner=<p> aM=<f>
+snap_dump_units :: proc(actual: ^game.Game_Data, expected: ^game.Game_Data, id: string) {
+	when !SNAP_DUMP { return }
+	emit("ACT", id, actual)
+	emit("EXP", id, expected)
+}
+
+@(private = "file")
+emit :: proc(label, id_: string, gd: ^game.Game_Data) {
+	for terr in game.game_map_get_territories(game.game_data_get_map(gd)) {
+		tname := game.territory_get_name(terr)
+		for u in game.territory_get_units(terr) {
+			ut := game.unit_get_type(u)
+			ow := game.unit_get_owner(u)
+			utn := ut == nil ? "?" : game.unit_type_get_name(ut)
+			own := ow == nil ? "?" : game.game_player_get_name(ow)
+			fmt.printf("SNAP_DUMP %s snap=%s terr=%s uid=%02x%02x%02x%02x type=%s owner=%s aM=%.1f\n",
+				label, id_, tname, u.id[0], u.id[1], u.id[2], u.id[3], utn, own, game.unit_get_already_moved(u))
+		}
+	}
+}
 
 filter_snap_value :: proc() -> string {
 	// Allow `-define:FILTER_SNAP="0013"` (shell-passed quotes preserved
@@ -138,6 +164,10 @@ run_snapshot_tests_server_game :: proc(
 		}
 
 		run_proc(server_game)
+
+		if filter != "" {
+			snap_dump_units(server_game.data, after_expected, id)
+		}
 
 		diff := compare_game_states(before, after_expected)
 		if diff != "" {

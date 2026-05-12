@@ -118,6 +118,8 @@ unit_damage_received_change_invert :: proc(self: ^Unit_Damage_Received_Change) -
 	result.new_total_damage = self.old_total_damage
 	result.old_total_damage = self.new_total_damage
 	result.territories_to_notify = self.territories_to_notify
+	result.perform = unit_damage_received_change_v_perform
+	result.invert = unit_damage_received_change_v_invert
 	return &result.change
 }
 

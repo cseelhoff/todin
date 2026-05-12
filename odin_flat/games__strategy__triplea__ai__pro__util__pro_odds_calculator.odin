@@ -212,6 +212,21 @@ pro_odds_calculator_call_battle_calc :: proc(
 		// each call does ~1/50th the work. Toggled via -define:FAST_AI=true.
 		run_count = 1
 	}
+	when #config(ODDS_TRACE, false) {
+		t_name := territory_get_name(t)
+		fmt.printf("ODDS_IN terr=%q chk_sub=%v rta=%v n_atk=%d n_def=%d run=%d\n",
+			t_name, check_submerge, retreat_when_only_air_left,
+			len(attacking_units), len(defending_units), run_count)
+		for u, i in attacking_units {
+			odds_trace_print_unit("ODDS_IN_A", t_name, i, u)
+		}
+		for u, i in defending_units {
+			odds_trace_print_unit("ODDS_IN_D", t_name, i, u)
+		}
+		for u, i in bombarding_units {
+			odds_trace_print_unit("ODDS_IN_B", t_name, i, u)
+		}
+	}
 	attacker := unit_get_owner(attacking_units[0])
 	defender := unit_get_owner(defending_units[0])
 	concrete_calc := cast(^Concurrent_Battle_Calculator)self.calc
@@ -254,6 +269,12 @@ pro_odds_calculator_call_battle_calc :: proc(
 	tuv_swing := aggregate_results_get_average_tuv_swing(
 		results, attacker, main_combat_attackers, defender, main_combat_defenders, data,
 	)
+	when #config(ODDS_TRACE, false) {
+		fmt.printf("ODDS_OUT terr=%q win_pct=%.4f tuv_swing_pre=%.4f rounds=%.4f avg_atk_rem=%d avg_def_rem=%d\n",
+			territory_get_name(t), win_percentage, tuv_swing,
+			aggregate_results_get_average_battle_rounds_fought(results),
+			len(average_attackers_remaining), len(average_defenders_remaining))
+	}
 
 	// Set TUV swing for neutrals
 	neutral_p, neutral_c := matches_territory_is_neutral_but_not_water()
@@ -715,4 +736,28 @@ pro_odds_calculator_estimate_defend_battle_results_3 :: proc(
 		defenders,
 		bombarding_units,
 	)
+}
+
+// ODDS_TRACE helper: print one unit line in a stable, Java-comparable
+// format. UUID printed as full 32-hex (no dashes) so a simple `grep`
+// or `diff` lines up across runtimes.
+odds_trace_print_unit :: proc(tag, terr: string, i: int, u: ^Unit) {
+	if u == nil {
+		fmt.printf("%s terr=%q i=%d uid=<nil>\n", tag, terr, i)
+		return
+	}
+	type_name := "?"
+	if u.type != nil {
+		type_name = default_named_get_name(&u.type.named_attachable.default_named)
+	}
+	owner_name := "?"
+	if u.owner != nil {
+		owner_name = default_named_get_name(&u.owner.named_attachable.default_named)
+	}
+	id := u.id
+	fmt.printf("%s terr=%q i=%d uid=%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x type=%s owner=%s aM=%.3f hits=%d\n",
+		tag, terr, i,
+		id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7],
+		id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15],
+		type_name, owner_name, u.already_moved, u.hits)
 }

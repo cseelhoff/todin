@@ -112,5 +112,20 @@ change_perform :: proc(self: ^Change, data: ^Game_State) {
 change_invert :: proc(self: ^Change) -> ^Change {
 	if self == nil { return nil }
 	if self.invert != nil { return self.invert(self) }
+	// Kind-based dispatch fallback: constructors that forget to wire
+	// the invert proc-field still get correct behavior.
+	switch self.kind {
+	case .Composite_Change:
+		return composite_change_invert(cast(^Composite_Change)self)
+	case .Unit_Damage_Received_Change:
+		return unit_damage_received_change_invert(cast(^Unit_Damage_Received_Change)self)
+	case .Unknown, .Change_Attachment_Change, .Object_Property_Change, .Add_Battle_Records_Change,
+	     .Add_Production_Rule, .Add_Units, .Change_Resource_Change, .Owner_Change,
+	     .Player_Owner_Change, .Player_Who_Am_I_Change, .Bombing_Unit_Damage_Change,
+	     .Unit_Hits_Change, .Attachment_Property_Reset, .Attachment_Property_Reset_Undo,
+	     .Relationship_Change, .Remove_Battle_Records_Change, .Remove_Units,
+	     .Production_Frontier_Change, .Remove_Production_Rule, .Remove_Available_Tech,
+	     .Generic_Tech_Change, .Set_Property_Change, .Add_Available_Tech, .Change_Factory_1:
+	}
 	return self
 }

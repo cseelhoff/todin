@@ -22,8 +22,7 @@ composite_change_perform :: proc(self: ^Composite_Change, data: ^Game_State) {
 // To invert a list of changes, invert each child in reverse order of the
 // original list and wrap the result in a new CompositeChange.
 composite_change_invert :: proc(self: ^Composite_Change) -> ^Change {
-	result := new(Composite_Change)
-	result.changes = make([dynamic]^Change)
+	result := composite_change_new()
 	#reverse for child in self.changes {
 		append(&result.changes, change_invert(child))
 	}

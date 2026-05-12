@@ -2406,6 +2406,21 @@ must_fight_battle_end_battle_who_won :: proc(self: ^Must_Fight_Battle, who_won: 
 // battle-start sound, pushes the fight loop on the execution stack
 // and executes it.
 must_fight_battle_fight :: proc(self: ^Must_Fight_Battle, bridge: ^I_Delegate_Bridge) {
+	when #config(ODDS_TRACE, false) {
+		fmt.printfln("ODDS_FIGHT_ENTER terr=%q n_atk=%d n_def=%d a_wtd=%d d_wtd=%d killed=%d round=%d is_over=%v",
+			self.battle_site.base.name,
+			len(self.attacking_units), len(self.defending_units),
+			len(self.attacking_waiting_to_die), len(self.defending_waiting_to_die),
+			len(self.killed), self.round, self.is_over)
+		for u, i in self.attacking_units {
+			t := u.type != nil ? default_named_get_name(&u.type.named_attachable.default_named) : "?"
+			fmt.printfln("ODDS_FIGHT_A i=%d type=%s hits=%d", i, t, u.hits)
+		}
+		for u, i in self.defending_units {
+			t := u.type != nil ? default_named_get_name(&u.type.named_attachable.default_named) : "?"
+			fmt.printfln("ODDS_FIGHT_D i=%d type=%s hits=%d", i, t, u.hits)
+		}
+	}
 	abstract_battle_remove_units_that_no_longer_exist(&self.abstract_battle)
 	must_fight_battle_remove_disabled_units(self)
 	if execution_stack_is_executing(self.stack) {
