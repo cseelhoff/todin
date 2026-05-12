@@ -290,7 +290,7 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 
 		if all_can_bomb && targets_or_escort && game_step_properties_helper_is_combat_move(data) {
 			bombing := player_should_bomber_bomb(
-				move_performer_get_remote_player_no_args(performer),
+				i_delegate_bridge_get_remote_player_for_bombing(performer.bridge, performer.player),
 				route_get_end(self.route),
 			)
 			if bombing {
@@ -301,7 +301,7 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 					) &&
 					!can_create_air_battle {
 					target = player_what_should_bomber_bomb(
-						move_performer_get_remote_player_no_args(performer),
+						i_delegate_bridge_get_remote_player_for_bombing(performer.bridge, performer.player),
 						route_get_end(self.route),
 						enemy_targets,
 						arrived,

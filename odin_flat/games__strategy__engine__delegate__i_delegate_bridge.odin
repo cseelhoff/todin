@@ -109,6 +109,15 @@ i_delegate_bridge_get_remote_player_for_retreat :: proc(
         return default_delegate_bridge_get_remote_player_for_retreat(cast(^Default_Delegate_Bridge)self, player)
 }
 
+// Narrow variant for SBR-detection dispatch in MovePerformer. See
+// default_delegate_bridge_get_remote_player_for_bombing for rationale.
+i_delegate_bridge_get_remote_player_for_bombing :: proc(
+        self: ^I_Delegate_Bridge,
+        player: ^Game_Player,
+) -> ^Player {
+        return default_delegate_bridge_get_remote_player_for_bombing(cast(^Default_Delegate_Bridge)self, player)
+}
+
 // games.strategy.engine.delegate.IDelegateBridge#getCostsForTuv(games.strategy.engine.data.GamePlayer)
 // Java default: return new TuvCostsCalculator().getCostsForTuv(player);
 i_delegate_bridge_get_costs_for_tuv :: proc(

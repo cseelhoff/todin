@@ -272,6 +272,27 @@ default_delegate_bridge_get_remote_player_for_retreat :: proc(
 	return default_delegate_bridge_get_remote_player(self, game_player)
 }
 
+// Narrow lookup for the strategic-bombing-raid detection in MovePerformer.
+// MovePerformer asks the remote player `shouldBomberBomb(territory)` to
+// distinguish a bombing run from a regular combat air attack at the same
+// destination. The default get_remote_player returns a no-op singleton
+// whose proc-fields are nil, which forces every move to be a regular
+// combat move; for AI bombers that means an SBR like UK→Germany loses
+// the wasInCombat=true flag and (worse) is treated as a normal land
+// attack with a useless 0% odds calc. Consult the registry first so the
+// AI's own should_bomber_bomb (combatMoveAi.isBombing) can answer.
+default_delegate_bridge_get_remote_player_for_bombing :: proc(
+	self: ^Default_Delegate_Bridge,
+	game_player: ^Game_Player,
+) -> ^Player {
+	if game_player != nil {
+		if p, ok := default_delegate_bridge_remote_player_registry[game_player]; ok && p != nil {
+			return p
+		}
+	}
+	return default_delegate_bridge_get_remote_player(self, game_player)
+}
+
 // games.strategy.engine.delegate.DefaultDelegateBridge#getSoundChannelBroadcaster()
 // Java: implementor = game.getMessengers().getChannelBroadcaster(AbstractGame.getSoundChannel());
 //       return (ISound) getOutbound(implementor);

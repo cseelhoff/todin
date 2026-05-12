@@ -110,6 +110,13 @@ test_server_game_player_retreat_query :: proc(
 	)
 }
 
+@(private = "file")
+test_server_game_player_should_bomber_bomb :: proc(self: ^Player, territory: ^Territory) -> bool {
+	ai := test_server_game_player_to_ai[self]
+	if ai == nil { return false }
+	return abstract_pro_ai_should_bomber_bomb(cast(^Abstract_Pro_Ai)ai, territory)
+}
+
 // Player.start vtable thunk: dispatches to abstract_ai_start on the
 // bound Pro_Ai. Mirrors Java's `AbstractAi implements Player`
 // dispatch via reflection. If no Pro_Ai is bound (e.g. the Neutral
@@ -342,6 +349,7 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		// below.
 		ai.start = test_server_game_player_start
 		ai.retreat_query = test_server_game_player_retreat_query
+		ai.should_bomber_bomb = test_server_game_player_should_bomber_bomb
 		// Stash the Game_Player pointer so the proc-fields can recover
 		// it: I_Remote has no fields here, so reuse `name` slot is not
 		// available — we rely on a parallel map below.

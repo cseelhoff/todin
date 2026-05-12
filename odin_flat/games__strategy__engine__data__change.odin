@@ -47,6 +47,13 @@ Change :: struct {
 //   - games.strategy.engine.data.Change
 
 change_is_empty :: proc(self: ^Change) -> bool {
+	if self == nil { return true }
+	#partial switch self.kind {
+	case .Change_Factory_1:
+		return change_factory_1_is_empty(cast(^Change_Factory_1)self)
+	case .Composite_Change:
+		return composite_change_is_empty(cast(^Composite_Change)self)
+	}
 	return false
 }
 
