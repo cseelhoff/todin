@@ -428,6 +428,14 @@ move_performer_post_aa_fire_execute :: proc(self_base: ^I_Executable, stack: ^Ex
 
 	// mark movement
 	move_change := move_performer_mark_movement_change(performer, arrived, self.route, game_player)
+	when #config(MV_TRACE, false) {
+		pname_mv := default_named_get_name(&game_player.named_attachable.default_named)
+		if pname_mv == "Russians" {
+			start_n := route_get_start(self.route) != nil ? territory_get_name(route_get_start(self.route)) : "?"
+			end_n := route_get_end(self.route) != nil ? territory_get_name(route_get_end(self.route)) : "?"
+			fmt.printf("MV_TRACE %s -> %s units=%d arrived=%d\n", start_n, end_n, len(self.units), len(arrived))
+		}
+	}
 	composite_change_add(change, move_change)
 	// actually move the units
 	remove_change := change_factory_remove_units(cast(^Unit_Holder)route_get_start(self.route), self.units)
