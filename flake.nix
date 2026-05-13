@@ -28,6 +28,10 @@
             lldb
             gdb
 
+            # Sampling profiler -> Firefox Profiler UI / flamegraphs.
+            # Build Odin with `-debug -o:speed`, then `samply record ./bin <args>`.
+            samply
+
             # Glue scripting + database
             python3
             sqlite
@@ -54,6 +58,7 @@
             echo "  Odin:   $(odin version 2>&1 | head -1)"
             echo "  Python: $(python3 --version)"
             echo "  SQLite: $(sqlite3 --version | awk '{print $1}')"
+            echo "  samply: $(samply --version 2>&1 | head -1)"
             echo ""
             echo "Run ./bootstrap.sh to build the full port-tracking database."
             echo "Or step through README.md one command at a time."

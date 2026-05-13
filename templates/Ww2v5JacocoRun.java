@@ -138,12 +138,24 @@ public class Ww2v5JacocoRun {
 
       int maxRounds = Integer.getInteger("game.rounds", 100);
       boolean digest = Boolean.getBoolean("digest");
+      String stopAfterStep = System.getProperty("game.stopAfterStep", "");
       while (!game.isGameOver()) {
         if (game.getData().getSequence().getRound() > maxRounds) {
           break;
         }
         if (digest) emitDigest(game.getData());
+        // Capture the step we're about to run so we can break right after
+        // it completes (mirrors Odin's STOP_AFTER_STEP define).
+        String aboutToRun = "";
+        try {
+          int idx = game.getData().getSequence().getStepIndex();
+          GameStep s = game.getData().getSequence().getStep(idx);
+          if (s != null) aboutToRun = s.getName();
+        } catch (RuntimeException ignored) { }
         game.runNextStep();
+        if (!stopAfterStep.isEmpty() && stopAfterStep.equals(aboutToRun)) {
+          break;
+        }
       }
 
       String outFile = System.getProperty("game.outFile", "/tmp/ww2v5-final.json");

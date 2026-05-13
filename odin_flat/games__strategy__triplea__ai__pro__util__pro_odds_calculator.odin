@@ -230,7 +230,13 @@ pro_odds_calculator_call_battle_calc :: proc(
 	attacker := unit_get_owner(attacking_units[0])
 	defender := unit_get_owner(defending_units[0])
 	concrete_calc := cast(^Concurrent_Battle_Calculator)self.calc
-	results := concurrent_battle_calculator_calculate(
+	// `precache_dispatch_calculate` collapses to a direct
+	// `concurrent_battle_calculator_calculate` call when the compile-time
+	// flag `BATTLE_PRECACHE_ENABLED` is false (the default). When true and
+	// the env-var `TRIPLEA_BATTLE_PRECACHE_ENABLED` is set, it routes
+	// through the SQLite-backed memoising decorator (mirrors Java's
+	// BattleCalculatorFactory.maybeCachingWrap path).
+	results := precache_dispatch_calculate(
 		concrete_calc,
 		attacker,
 		defender,
