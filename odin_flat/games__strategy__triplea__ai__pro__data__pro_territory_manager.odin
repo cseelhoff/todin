@@ -905,6 +905,42 @@ pro_territory_manager_find_air_move_options :: proc(
 					default_named_get_name(&my_unit_territory.named_attachable.default_named),
 					len(my_air_units),
 					default_named_get_name(&player.named_attachable.default_named))
+			} else {
+				// Diagnose why we found 0 air units; print only for Russians for noise control.
+				pname_dx := default_named_get_name(&player.named_attachable.default_named)
+				if pname_dx == "Russians" && !is_combat_move {
+					air_only_p, air_only_c := matches_unit_is_air()
+					owned_only_p, owned_only_c := matches_unit_is_owned_by(player)
+					n_total := 0
+					n_air := 0
+					n_owned_air := 0
+					n_has_move := 0
+					tn := default_named_get_name(&my_unit_territory.named_attachable.default_named)
+					for u in unit_collection_get_units(territory_get_unit_collection(my_unit_territory)) {
+						n_total += 1
+						is_air := air_only_p(air_only_c, u)
+						is_owned := owned_only_p(owned_only_c, u)
+						if is_air { n_air += 1 }
+						if is_air && is_owned {
+							n_owned_air += 1
+							ml := unit_get_movement_left(u)
+							ua := unit_type_get_unit_attachment(unit_get_type(u))
+							mvmax := unit_attachment_get_movement_with_player(ua, unit_get_owner(u))
+							already := u.already_moved
+							owner_n := default_named_get_name(&unit_get_owner(u).named_attachable.default_named)
+							fmt.printf("AIR_ZERO_DETAIL terr=%s utype=%s owner=%s mvmax=%d already=%v ml=%v ptr_player_eq=%v\n",
+								tn,
+								unit_type_get_name(unit_get_type(u)),
+								owner_n, mvmax, already, ml,
+								unit_get_owner(u) == player)
+							if ml > 0 { n_has_move += 1 }
+						}
+					}
+					if n_owned_air > 0 {
+						fmt.printf("AIR_ZERO terr=%s n_units=%d n_air=%d n_owned_air=%d n_has_move=%d (this is suspicious)\n",
+							tn, n_total, n_air, n_owned_air, n_has_move)
+					}
+				}
 			}
 		}
 

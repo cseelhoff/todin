@@ -225,7 +225,9 @@ pro_data_hidden_initialize :: proc(
 	when NCM_TRACE {
 		pname := default_named_get_name(&player.named_attachable.default_named)
 		if pname == "Russians" {
-			fmt.printf("MY_UT player=Russians count=%d\n", len(my_unit_territories))
+			fmt.printf("MY_UT player=Russians count=%d is_sim=%v data_ptr=%p player_ptr=%p\n",
+				len(my_unit_territories), is_simulation,
+				rawptr(data), rawptr(player))
 			for t in my_unit_territories {
 				tn := default_named_get_name(&t.named_attachable.default_named)
 				// count air units

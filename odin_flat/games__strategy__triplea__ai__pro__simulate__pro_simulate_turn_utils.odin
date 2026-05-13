@@ -108,37 +108,113 @@ pro_simulate_turn_utils_simulate_battles :: proc(
 
 			// attackersToRemove = new ArrayList<>(attackers); attackersToRemove.removeAll(remainingAttackers)
 			//
-			// Java's removeAll uses Unit.equals which compares by UUID — battle
-			// calculator returns COPIES of units (Monte Carlo cloned), so pointer
-			// equality (r == a) would always fail and incorrectly kill EVERY
-			// attacker including survivors. Compare by UUID id field to match Java.
+			// Java's removeAll uses Unit.equals which compares by UUID. When the
+			// battle calculator runs LIVE, units are serialised into the cloned
+			// GameData and back, preserving UUIDs, so removeAll correctly keeps
+			// the surviving attackers. When the BATTLE PRECACHE returns a cache
+			// hit, however, survivors are reconstructed from a stored
+			// (type, owner, hits) composition with FRESH UUIDs — Java's removeAll
+			// would then match nothing and incorrectly kill EVERY attacker
+			// including survivors (latent bug in Java's precache path; the test
+			// harness never enables precache so it never fires there).
+			//
+			// We compare by composition (type_name + owner_name) to produce the
+			// same result as Java's live-calc path regardless of which
+			// calculator path produced the survivors.
+			rem_tally := make(map[string]int)
+			defer delete(rem_tally)
+			for r in remaining_attackers {
+				if r == nil || r.type == nil || r.owner == nil { continue }
+				utn := unit_type_get_name(r.type)
+				on  := default_named_get_name(&r.owner.named_attachable.default_named)
+				key := fmt.tprintf("%s|%s", utn, on)
+				rem_tally[key] += 1
+			}
 			attackers_to_remove: [dynamic]^Unit
 			for a in attackers {
-				keep := false
-				for r in remaining_attackers {
-					if r.id == a.id {
-						keep = true
-						break
-					}
+				if a == nil || a.type == nil || a.owner == nil {
+					append(&attackers_to_remove, a)
+					continue
 				}
-				if !keep {
+				utn := unit_type_get_name(a.type)
+				on  := default_named_get_name(&a.owner.named_attachable.default_named)
+				key := fmt.tprintf("%s|%s", utn, on)
+				if rem_tally[key] > 0 {
+					rem_tally[key] -= 1
+				} else {
 					append(&attackers_to_remove, a)
 				}
 			}
+			when #config(SIMBATTLE_TRACE, false) {
+				pname_dbg := default_named_get_name(&player.named_attachable.default_named)
+				if pname_dbg == "Russians" {
+					tn_dbg := territory_get_name(t)
+					n_air_att := 0
+					n_air_rem := 0
+					n_air_match := 0
+					for a in attackers {
+						if a.type == nil { continue }
+						if unit_type_get_name(a.type) != "fighter" { continue }
+						n_air_att += 1
+						for r in remaining_attackers {
+							if r.id == a.id {
+								n_air_match += 1
+								break
+							}
+						}
+					}
+					for r in remaining_attackers {
+						if r.type == nil { continue }
+						if unit_type_get_name(r.type) == "fighter" { n_air_rem += 1 }
+					}
+					fmt.printf("SB_AIRMATCH t=%s n_air_att=%d n_air_rem=%d n_air_match=%d to_remove=%d\n",
+						tn_dbg, n_air_att, n_air_rem, n_air_match, len(attackers_to_remove))
+					if n_air_att > 0 && n_air_match == 0 {
+						// dump the first attacker fighter id and all remaining ids in hex
+						for a in attackers {
+							if a.type == nil || unit_type_get_name(a.type) != "fighter" { continue }
+							fmt.printf("  ATTACKER_FIGHTER id=%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
+								a.id[0],a.id[1],a.id[2],a.id[3],a.id[4],a.id[5],a.id[6],a.id[7],
+								a.id[8],a.id[9],a.id[10],a.id[11],a.id[12],a.id[13],a.id[14],a.id[15])
+							break
+						}
+						for r, ri in remaining_attackers {
+							if r.type == nil { continue }
+							rname := unit_type_get_name(r.type)
+							fmt.printf("  REM[%d] type=%s id=%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x\n",
+								ri, rname,
+								r.id[0],r.id[1],r.id[2],r.id[3],r.id[4],r.id[5],r.id[6],r.id[7],
+								r.id[8],r.id[9],r.id[10],r.id[11],r.id[12],r.id[13],r.id[14],r.id[15])
+						}
+					}
+				}
+			}
 			// defendersToRemove = getMatches(defenders, !infrastructure); .removeAll(remainingDefenders)
+			// Same composition-based matching as attackers above.
+			rem_def_tally := make(map[string]int)
+			defer delete(rem_def_tally)
+			for r in remaining_defenders {
+				if r == nil || r.type == nil || r.owner == nil { continue }
+				utn := unit_type_get_name(r.type)
+				on  := default_named_get_name(&r.owner.named_attachable.default_named)
+				key := fmt.tprintf("%s|%s", utn, on)
+				rem_def_tally[key] += 1
+			}
 			defenders_to_remove: [dynamic]^Unit
 			for d in defenders {
 				if infra_pred(infra_ctx, d) {
 					continue
 				}
-				keep := false
-				for r in remaining_defenders {
-					if r.id == d.id {
-						keep = true
-						break
-					}
+				if d == nil || d.type == nil || d.owner == nil {
+					append(&defenders_to_remove, d)
+					continue
 				}
-				if !keep {
+				utn := unit_type_get_name(d.type)
+				on  := default_named_get_name(&d.owner.named_attachable.default_named)
+				key := fmt.tprintf("%s|%s", utn, on)
+				if rem_def_tally[key] > 0 {
+					rem_def_tally[key] -= 1
+				} else {
 					append(&defenders_to_remove, d)
 				}
 			}

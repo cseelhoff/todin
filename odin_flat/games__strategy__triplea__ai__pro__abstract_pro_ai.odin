@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:os"
 import "core:slice"
+import "core:strings"
 import "core:time"
 
 Abstract_Pro_Ai :: struct {
@@ -770,6 +771,39 @@ abstract_pro_ai_purchase :: proc(
 			)
 			step_name := step.name
 			pro_logger_info(fmt.tprintf("Simulating phase: %s", step_name))
+			when NCM_TRACE {
+				pname_sim := default_named_get_name(&player.named_attachable.default_named)
+				if pname_sim == "Russians" {
+					// Count Russian fighters/bombers in data_copy and print their locations.
+					gm_sim := game_data_get_map(data_copy)
+					n_air_total := 0
+					air_locations := strings.builder_make()
+					defer strings.builder_destroy(&air_locations)
+					if gm_sim != nil {
+						for t in gm_sim.territories {
+							if t == nil { continue }
+							n_at := 0
+							for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+								if u == nil || u.type == nil { continue }
+								if u.owner == nil { continue }
+								// name-based owner check (clone-safe)
+								if u.owner.named_attachable.default_named.name != "Russians" { continue }
+								utn := unit_type_get_name(u.type)
+								if utn == "fighter" || utn == "bomber" {
+									n_at += 1
+								}
+							}
+							if n_at > 0 {
+								tn := territory_get_name(t)
+								fmt.sbprintf(&air_locations, " %s=%d(amov=%v)", tn, n_at, "?")
+								n_air_total += n_at
+							}
+						}
+					}
+					fmt.printf("SIM_STEP player=Russians step=%s n_air_total=%d locs=[%s]\n",
+						step_name, n_air_total, strings.to_string(air_locations))
+				}
+			}
 			when PUR_TRACE {
 				abstract_pro_ai_dump_caucasus(data_copy, player, fmt.tprintf("BEFORE_%s", step_name))
 			}

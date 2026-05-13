@@ -18,7 +18,7 @@ import "core:strings"
 // Compile-time gate. When false, the entire SQLite-backed precache code
 // path stays out of the binary at the dispatch site (`when
 // BATTLE_PRECACHE_ENABLED { ... }`). Default OFF.
-BATTLE_PRECACHE_ENABLED :: #config(BATTLE_PRECACHE_ENABLED, false)
+BATTLE_PRECACHE_ENABLED :: #config(BATTLE_PRECACHE_ENABLED, true)
 
 // Compile-time defaults; the env-vars below override them at runtime.
 BATTLE_PRECACHE_DEFAULT_RUN_COUNT :: 1000

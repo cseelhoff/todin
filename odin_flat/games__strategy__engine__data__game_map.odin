@@ -181,6 +181,14 @@ game_map_get_distance_bipredicate :: proc(
 // the original/starting territory in the returned set. Mirrors
 // GameMap.getNeighbors(Territory) in Java; throws if the territory has no
 // entry in the connections map.
+//
+// IMPORTANT: returns a SHALLOW CLONE of the backing connections set rather
+// than the live map. Many call sites do `delete(neighbors)` after
+// iterating; freeing the live `self.connections[territory]` map would
+// corrupt the GameMap (and trigger double-frees the next time the same
+// territory's neighbors are looked up). Cloning costs an O(neighbour_count)
+// map copy per call, which is negligible compared with what the AI does
+// with the result.
 game_map_get_neighbors :: proc(self: ^Game_Map, territory: ^Territory) -> map[^Territory]struct{} {
 	neighbors, ok := self.connections[territory]
 	if !ok {
@@ -190,7 +198,11 @@ game_map_get_neighbors :: proc(self: ^Game_Map, territory: ^Territory) -> map[^T
 		// rather than aborting the whole run.
 		return make(map[^Territory]struct{})
 	}
-	return neighbors
+	out := make(map[^Territory]struct{})
+	for n, v in neighbors {
+		out[n] = v
+	}
+	return out
 }
 
 // Mirrors private GameMap.getNeighbors(Territory, BiPredicate<Territory,
@@ -370,10 +382,20 @@ game_map_add_territory :: proc(self: ^Game_Map, territory: ^Territory) {
 }
 
 // Mirrors GameMap.getTerritories(): returns an unmodifiable view of the
-// territories list. In Odin we return the backing dynamic array directly;
-// callers must not mutate it.
+// territories list. In Odin Java's `Collections.unmodifiableList` has no
+// direct equivalent, so we hand back a SHALLOW CLONE of the backing
+// dynamic array. This is required because most call sites already do
+// `defer delete(...)` on the returned slice; if we returned the backing
+// array directly that defer would free the GameMap's own storage and
+// corrupt every subsequent iteration. Cloning is O(n) over a small,
+// fixed-size territory list, so the cost is negligible compared with
+// the AI workloads that consume it.
 game_map_get_territories :: proc(self: ^Game_Map) -> [dynamic]^Territory {
-	return self.territories
+	out := make([dynamic]^Territory, 0, len(self.territories))
+	for t in self.territories {
+		append(&out, t)
+	}
+	return out
 }
 
 // Case-sensitive lookup for a Territory by name. Mirrors

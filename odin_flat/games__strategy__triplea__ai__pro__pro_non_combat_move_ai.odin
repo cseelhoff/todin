@@ -4367,6 +4367,33 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	self.unit_territory_map = pro_data_get_unit_territory_map(self.pro_data)
 	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
 
+	when NCM_TRACE {
+		pname_dnc := default_named_get_name(&self.player.named_attachable.default_named)
+		if pname_dnc == "Russians" {
+			fmt.printf("DNC_ENTRY player=Russians player_ptr=%p data_ptr=%p mut_count=%d\n",
+				rawptr(self.player), rawptr(self.data),
+				len(pro_data_get_my_unit_territories(self.pro_data)))
+			for t in pro_data_get_my_unit_territories(self.pro_data) {
+				air_p, air_c := matches_unit_is_air()
+				owner_n_p, owner_n_c := matches_unit_is_owned_by(self.player)
+				moved_p, moved_c := matches_unit_has_movement_left()
+				owned_air := 0
+				owned_air_with_move := 0
+				for u in unit_collection_get_units(territory_get_unit_collection(t)) {
+					if air_p(air_c, u) && owner_n_p(owner_n_c, u) {
+						owned_air += 1
+						if moved_p(moved_c, u) { owned_air_with_move += 1 }
+					}
+				}
+				if owned_air > 0 {
+					fmt.printf("DNC_ENTRY_AIR t=%s owned_air=%d owned_air_with_move=%d\n",
+						default_named_get_name(&t.named_attachable.default_named),
+						owned_air, owned_air_with_move)
+				}
+			}
+		}
+	}
+
 	// Find the max number of units that can move to each allied territory
 	cleared_for_defense := make([dynamic]^Territory, 0)
 	pro_territory_manager_populate_defense_options(self.territory_manager, cleared_for_defense)

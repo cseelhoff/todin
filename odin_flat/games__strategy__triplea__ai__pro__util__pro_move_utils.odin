@@ -374,6 +374,14 @@ pro_move_utils_calculate_amphib_routes :: proc(
 					units_to_remove := make([dynamic]^Unit)
 					for amphib_unit in remaining_units_to_load {
 						unit_territory := pro_data_get_unit_territory(pro_data, amphib_unit)
+						// DIVERGENCE GUARD: pro_data.unit_territory_map is
+						// not yet populated for every amphib unit during
+						// purchase-phase NCM simulation (Java's ProData
+						// initializeSimulation populates this; the Odin
+						// port is still missing some entries). Skip the
+						// unit rather than crash so the rest of the round
+						// can be digested for the divergence comparison.
+						if unit_territory == nil { continue }
 						if game_map_get_distance(gm, transport_territory, unit_territory) == 1 {
 							route := route_new_from_start_and_steps(
 								unit_territory,
@@ -483,10 +491,16 @@ pro_move_utils_calculate_amphib_routes :: proc(
 						}
 						max_unit_distance: i32 = 0
 						for u in remaining_units_to_load {
+							ut := pro_data_get_unit_territory(pro_data, u)
+							// DIVERGENCE GUARD: same as the one above —
+							// pro_data.unit_territory_map is incomplete
+							// during NCM simulation; skip the unit so the
+							// rest of the round can be digested.
+							if ut == nil { continue }
 							distance := game_map_get_distance(
 								gm,
 								neighbor,
-								pro_data_get_unit_territory(pro_data, u),
+								ut,
 							)
 							if distance > max_unit_distance {
 								max_unit_distance = distance
