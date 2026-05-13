@@ -607,9 +607,20 @@ pro_purchase_utils_sorted_purchase_territories :: proc(
 	out: [dynamic]^Pro_Purchase_Territory
 	all_terrs := game_map_get_territories(game_data_get_map(data))
 	defer delete(all_terrs)
+	// Java uses Territory.equals() (name-based via DefaultNamed) for HashMap
+	// keys, so a HashMap built with sim-clone Territory references still
+	// matches live Territory references during place. Odin maps key on raw
+	// pointer, so we have to translate via name first; otherwise lookups
+	// silently miss and the AI's purchase plan is dropped on the floor.
+	by_name: map[string]^Pro_Purchase_Territory
+	defer delete(by_name)
+	for k, v in purchase_territories {
+		if k == nil { continue }
+		by_name[territory_get_name(k)] = v
+	}
 	for t in all_terrs {
-		if ppt, ok := purchase_territories[t]; ok {
-			append(&out, ppt)
+		if v, ok := by_name[territory_get_name(t)]; ok {
+			append(&out, v)
 		}
 	}
 	return out
@@ -626,8 +637,16 @@ pro_purchase_utils_sorted_purchase_territory_keys :: proc(
 	out: [dynamic]^Territory
 	all_terrs := game_map_get_territories(game_data_get_map(data))
 	defer delete(all_terrs)
+	// Name-based matching to handle sim-clone vs live Territory pointers;
+	// see comment in pro_purchase_utils_sorted_purchase_territories.
+	names: map[string]struct{}
+	defer delete(names)
+	for k in purchase_territories {
+		if k == nil { continue }
+		names[territory_get_name(k)] = {}
+	}
 	for t in all_terrs {
-		if _, ok := purchase_territories[t]; ok {
+		if _, ok := names[territory_get_name(t)]; ok {
 			append(&out, t)
 		}
 	}

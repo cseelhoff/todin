@@ -2150,6 +2150,25 @@ pro_purchase_ai_place :: proc(
 	// do placement.
 	clear(&self.pro_data.units_to_be_consumed)
 
+	{
+		pt_local := purchase_territories
+		pro_pur_trace_emit("PLACE_ENTRY", &pt_local)
+	}
+	when #config(PLACE_TRACE, false) {
+		pname_pl := default_named_get_name(&self.player.named_attachable.default_named)
+		if pname_pl == "Russians" {
+			fmt.printf("PLACE_PLAYER_UC_BEFORE player=Russians n=%d\n",
+				len(unit_collection_get_units(game_player_get_unit_collection(self.player))))
+			tally := make(map[string]int); defer delete(tally)
+			for u in unit_collection_get_units(game_player_get_unit_collection(self.player)) {
+				if u == nil || u.type == nil { continue }
+				utn := unit_type_get_name(u.type)
+				tally[utn] += 1
+			}
+			fmt.printf("PLACE_PLAYER_UC_BEFORE tally=%v\n", tally)
+		}
+	}
+
 	// Place all units calculated during purchase phase (land then sea to
 	// reduce failed placements). The `purchase_territories` map may be
 	// empty, but the iteration handles that naturally.
@@ -2166,12 +2185,20 @@ pro_purchase_ai_place :: proc(
 				units_to_place: [dynamic]^Unit
 				for place_unit in pro_place_territory_get_place_units(ppt) {
 					placed_type := unit_get_type(place_unit)
+					placed_type_name := ""
+					if placed_type != nil { placed_type_name = unit_type_get_name(placed_type) }
 					for my_unit in unit_collection_get_units(
 						game_player_get_unit_collection(self.player),
 					) {
-						if unit_get_type(my_unit) != placed_type {
-							continue
-						}
+						// Java compares with .equals(), which on UnitType (a
+						// DefaultNamed subclass) is name-equality. The sim
+						// clone of GameData has its own UnitType pointers, so
+						// pointer comparison silently mismatches and units
+						// get assigned to wrong territories. Match by name
+						// to mirror Java semantics.
+						mu_type := unit_get_type(my_unit)
+						if mu_type == nil { continue }
+						if unit_type_get_name(mu_type) != placed_type_name { continue }
 						already := false
 						for u in units_to_place {
 							if u == my_unit {
@@ -2189,6 +2216,27 @@ pro_purchase_ai_place :: proc(
 					game_data_get_map(self.data),
 					territory_get_name(ppt_terr),
 				)
+				when #config(PLACE_TRACE, false) {
+					pname_pli := default_named_get_name(&self.player.named_attachable.default_named)
+					if pname_pli == "Russians" {
+						fmt.printf("PLACE_PICK pass=%d t=%s n_planned=%d n_chosen=%d\n",
+							pass, territory_get_name(ppt_terr),
+							len(pro_place_territory_get_place_units(ppt)),
+							len(units_to_place))
+						for pu in pro_place_territory_get_place_units(ppt) {
+							utn := "?"
+							if pu != nil && pu.type != nil { utn = unit_type_get_name(pu.type) }
+							fmt.printf("  PLACE_PLAN  t=%s type=%s\n",
+								territory_get_name(ppt_terr), utn)
+						}
+						for cu in units_to_place {
+							utn := "?"
+							if cu != nil && cu.type != nil { utn = unit_type_get_name(cu.type) }
+							fmt.printf("  PLACE_CHOSE t=%s type=%s\n",
+								territory_get_name(ppt_terr), utn)
+						}
+					}
+				}
 				pro_purchase_ai_do_place(target, units_to_place, place_delegate)
 				pro_logger_debug(
 					fmt.tprintf(
