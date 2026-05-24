@@ -1180,36 +1180,8 @@ pro_territory_manager_find_land_move_options :: proc(
 		is_combat_move,
 	)
 
-	pname_dbg := default_named_get_name(&player.named_attachable.default_named)
-	dbg_is_russians := pname_dbg == "Russians" && !is_combat_move && !is_checking_enemy_attacks
-
-	when NCM_TRACE_DUMP {
-		if dbg_is_russians {
-			// Dump owner of West Russia at this exact moment for both languages to compare.
-			for tt in game_map_get_territories(game_map) {
-				ttn := default_named_get_name(&tt.named_attachable.default_named)
-				if ttn == "West Russia" {
-					owner_name := "<nil>"
-					if tt.owner != nil {
-						owner_name = default_named_get_name(&tt.owner.named_attachable.default_named)
-					}
-					allied := game_player_is_allied(player, tt.owner)
-					fmt.printf("LMO_WR_OWNER owner=%s is_allied_with_russians=%v\n", owner_name, allied)
-					break
-				}
-			}
-		}
-	}
-
 	for my_unit_territory in my_unit_territories {
 		my_land_units := territory_get_matches(my_unit_territory, owned_land_p, owned_land_c)
-
-		when NCM_TRACE_DUMP {
-			if dbg_is_russians {
-				utn_dbg := default_named_get_name(&my_unit_territory.named_attachable.default_named)
-				fmt.printf("LMO_UT t=%s n_land_units=%d\n", utn_dbg, len(my_land_units))
-			}
-		}
 
 		for u in my_land_units {
 			start_territory := pro_data_get_unit_territory(pro_data, u)
@@ -1255,30 +1227,6 @@ pro_territory_manager_find_land_move_options :: proc(
 				}
 				if !found {
 					append(&potential_territories, my_unit_territory)
-				}
-			}
-
-			when NCM_TRACE_DUMP {
-				if dbg_is_russians {
-					utn_dbg := default_named_get_name(&my_unit_territory.named_attachable.default_named)
-					utype := unit_get_type(u)
-					utype_name := default_named_get_name(&utype.named_attachable.default_named)
-					wr_possible := false
-					for t in possible_move_territories {
-						tn := default_named_get_name(&t.named_attachable.default_named)
-						if tn == "West Russia" { wr_possible = true; break }
-					}
-					wr_potential := false
-					for t in potential_territories {
-						tn := default_named_get_name(&t.named_attachable.default_named)
-						if tn == "West Russia" { wr_potential = true; break }
-					}
-					fmt.printf(
-						"LMO_U from=%s utype=%s range=%v n_possible=%d n_potential=%d wr_possible=%v wr_potential=%v\n",
-						utn_dbg, utype_name, range,
-						len(possible_move_territories), len(potential_territories),
-						wr_possible, wr_potential,
-					)
 				}
 			}
 
