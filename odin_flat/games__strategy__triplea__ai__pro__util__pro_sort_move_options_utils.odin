@@ -415,6 +415,79 @@ pro_sort_move_options_utils_sort_unit_needed_options_then_attack :: proc(
 	return sorted
 }
 
+// Returns the unit keys of `unit_attack_options` sorted by the same key
+// schema as `pro_sort_move_options_utils_sort_unit_needed_options_then_attack`.
+//
+// Use at iteration sites that consume the result of that sort — Odin
+// maps lose insertion order, so iterating this slice instead preserves
+// Java's LinkedHashMap-style sort order for the second-pass sort used
+// in `determineUnitsToAttackWith`.
+//
+// Caller must `defer delete(<returned slice>)`.
+pro_sort_move_options_utils_sorted_unit_keys_by_needed_options_then_attack :: proc(
+	pro_data:            ^Pro_Data,
+	player:              ^Game_Player,
+	unit_attack_options: map[^Unit]map[^Territory]struct {},
+	attack_map:          map[^Territory]^Pro_Territory,
+	calc:                ^Pro_Odds_Calculator,
+) -> [dynamic]^Unit {
+	data := pro_data_get_data(pro_data)
+	unit_territory_map := pro_data_get_unit_territory_map(pro_data)
+	air_pred, air_ctx := pro_matches_territory_can_move_air_units_and_no_aa(data, player, true)
+
+	list: [dynamic]Pro_Sort_Move_Options_Then_Attack_Entry
+	defer delete(list)
+	for u, ts in unit_attack_options {
+		filtered := pro_sort_move_options_utils_remove_winning_territories(
+			ts,
+			player,
+			attack_map,
+			calc,
+		)
+		ut := unit_get_type(u)
+		home := unit_territory_map[u]
+		home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
+		entry := Pro_Sort_Move_Options_Then_Attack_Entry {
+			unit                = u,
+			territories         = ts,
+			move_count          = len(filtered),
+			type_name           = default_named_get_name(&ut.named_attachable.default_named),
+			home_territory_name = home_name,
+			already_moved       = unit_get_already_moved(u),
+		}
+		if entry.move_count > 0 {
+			entry.attack_efficiency = pro_sort_move_options_utils_calculate_attack_efficiency(
+				pro_data,
+				player,
+				attack_map,
+				filtered,
+				u,
+			)
+			if unit_attachment_is_air(unit_get_unit_attachment(u)) {
+				home2 := unit_territory_map[u]
+				total: i32 = 0
+				for t in filtered {
+					total += game_map_get_distance_predicate(
+						game_data_get_map(data),
+						home2,
+						t,
+						air_pred,
+						air_ctx,
+					)
+				}
+				entry.total_distance = total
+			}
+		}
+		append(&list, entry)
+	}
+	slice.stable_sort_by(list[:], pro_sort_move_options_then_attack_entry_less)
+	out: [dynamic]^Unit
+	for e in list {
+		append(&out, e.unit)
+	}
+	return out
+}
+
 // Java: private static double calculateAttackEfficiency(
 //           ProData proData, GamePlayer player,
 //           Map<Territory, ProTerritory> attackMap,

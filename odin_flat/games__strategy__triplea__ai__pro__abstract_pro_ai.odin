@@ -491,6 +491,14 @@ abstract_pro_ai_place :: proc(
 	data:           ^Game_State,
 	player:         ^Game_Player,
 ) {
+	when #config(PLACE_TRACE, false) {
+		fmt.printf("PLACE_ENTER player=%s stored_pt=%d\n",
+			default_named_get_name(&player.named_attachable.default_named),
+			len(self.stored_purchase_territories))
+	}
+	fmt.printf("PLACE_ENTER_UNCOND player=%s stored_pt=%d bid=%v\n",
+		default_named_get_name(&player.named_attachable.default_named),
+		len(self.stored_purchase_territories), bid)
 	start := time.tick_now()
 	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
 	// not flagged actually_called_in_ai_test, so the call is elided.
@@ -645,6 +653,11 @@ abstract_pro_ai_purchase :: proc(
 	data:               ^Game_Data,
 	player:             ^Game_Player,
 ) {
+	when NCM_HANG_PROBE {
+		_ph_entry_pn := default_named_get_name(&player.named_attachable.default_named)
+		fmt.eprintf("NCM_HANG.purchase_entry player=%s pus=%d bid=%v\n", _ph_entry_pn, pus_to_spend, purchase_for_bid)
+		os.flush(os.stderr)
+	}
 	start := time.tick_now()
 	// ProLogUi.notifyStartOfRound is a Swing UI no-op outside the editor;
 	// not flagged actually_called_in_ai_test, so the call is elided.
@@ -696,6 +709,47 @@ abstract_pro_ai_purchase :: proc(
 		data_copy := abstract_pro_ai_copy_data(self, data)
 		if data_copy == nil {
 			return
+		}
+		when #config(PLAN, false) {
+			pname_dbg := default_named_get_name(&player.named_attachable.default_named)
+			if pname_dbg == "Japanese" {
+				dump_alaska :: proc(d: ^Game_Data, label: string, pname: string) {
+					gm := game_data_get_map(d)
+					if gm == nil {
+						return
+					}
+					for t in gm.territories {
+						if t == nil {
+							continue
+						}
+						if territory_get_name(t) != "Alaska" {
+							continue
+						}
+						uc := territory_get_unit_collection(t)
+						units := unit_collection_get_units(uc)
+						fmt.printf(
+							"ALASKA_DUMP %s player=%s n=%d\n",
+							label,
+							pname,
+							len(units),
+						)
+						for u in units {
+							owner_name := "-"
+							if o := unit_get_owner(u); o != nil {
+								owner_name = default_named_get_name(&o.named_attachable.default_named)
+							}
+							fmt.printf(
+								"  ALASKA_UNIT %s type=%s owner=%s\n",
+								label,
+								unit_type_get_name(unit_get_type(u)),
+								owner_name,
+							)
+						}
+					}
+				}
+				dump_alaska(data, "LIVE_PRE_COPY", pname_dbg)
+				dump_alaska(data_copy, "COPY_AFTER", pname_dbg)
+			}
 		}
 		player_copy := player_list_get_player_id(
 			game_data_get_player_list(data_copy),
@@ -762,6 +816,19 @@ abstract_pro_ai_purchase :: proc(
 		when PUR_TRACE {
 			abstract_pro_ai_dump_caucasus(data_copy, player, "00_after_copyData")
 		}
+		when #config(AMPHIB_BYPASS, false) {
+			pname_byp := default_named_get_name(&player.named_attachable.default_named)
+			if pname_byp == "Japanese" {
+				fmt.println("AMPHIB_BYPASS: skipping sim walk for Japanese, invoking pro_purchase_ai_purchase directly")
+				pro_data_initialize_simulation(self.pro_data, self, data_copy, player)
+				self.stored_purchase_territories = pro_purchase_ai_purchase(
+					self.purchase_ai,
+					purchase_delegate,
+					&data.game_state,
+				)
+				return
+			}
+		}
 		for step in game_steps {
 			game_sequence_set_round_and_step(
 				sequence,
@@ -770,6 +837,17 @@ abstract_pro_ai_purchase :: proc(
 				game_step_get_player_id(step),
 			)
 			step_name := step.name
+			when NCM_HANG_PROBE {
+				_pn_sw_any := default_named_get_name(&player.named_attachable.default_named)
+				fmt.eprintf("NCM_HANG.simwalk_any player=%s step=%s START\n", _pn_sw_any, step_name)
+				os.flush(os.stderr)
+			}
+			when NCM_HANG_PROBE {
+				_pn_sim := default_named_get_name(&player.named_attachable.default_named)
+				if _pn_sim == "Japanese" {
+					fmt.eprintf("NCM_HANG.simwalk player=Japanese step=%s START\n", step_name)
+				}
+			}
 			pro_logger_info(fmt.tprintf("Simulating phase: %s", step_name))
 			when NCM_TRACE {
 				pname_sim := default_named_get_name(&player.named_attachable.default_named)
@@ -809,6 +887,12 @@ abstract_pro_ai_purchase :: proc(
 			}
 			if game_step_is_non_combat_move_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				when NCM_HANG_PROBE {
+					_pn_ncm := default_named_get_name(&player.named_attachable.default_named)
+					if _pn_ncm == "Japanese" {
+						fmt.eprintf("NCM_HANG.simwalk Japanese branch=ncm calling simulate_non_combat_move\n")
+					}
+				}
 				when PUR_TRACE {
 					abstract_pro_ai_dump_caucasus(data_copy, player, fmt.tprintf("PRE_SIM_%s", step_name))					// Pre-NCM-sim air units owned by player_copy
 					gm_pre := game_data_get_map(data_copy)
@@ -879,10 +963,22 @@ abstract_pro_ai_purchase :: proc(
 			} else if game_step_is_combat_move_step_name(step_name) &&
 			   !game_step_is_airborne_combat_move_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				when NCM_HANG_PROBE {
+					_pn_cm := default_named_get_name(&player.named_attachable.default_named)
+					if _pn_cm == "Japanese" {
+						fmt.eprintf("NCM_HANG.simwalk Japanese branch=combat_move calling do_combat_move\n")
+					}
+				}
 				move_map := pro_combat_move_ai_do_combat_move(
 					self.combat_move_ai,
 					cast(^I_Move_Delegate)move_del,
 				)
+				when NCM_HANG_PROBE {
+					_pn_cm2 := default_named_get_name(&player.named_attachable.default_named)
+					if _pn_cm2 == "Japanese" {
+						fmt.eprintf("NCM_HANG.simwalk Japanese branch=combat_move DONE\n")
+					}
+				}
 				if self.stored_combat_move_map == nil {
 					self.stored_combat_move_map = pro_simulate_turn_utils_transfer_move_map(
 						self.pro_data,
@@ -927,6 +1023,12 @@ abstract_pro_ai_purchase :: proc(
 				}
 			} else if game_step_is_battle_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player_copy)
+				when NCM_HANG_PROBE {
+					_pn_b := default_named_get_name(&player.named_attachable.default_named)
+					if _pn_b == "Japanese" {
+						fmt.eprintf("NCM_HANG.simwalk Japanese branch=battle calling simulate_battles\n")
+					}
+				}
 				pro_simulate_turn_utils_simulate_battles(
 					self.pro_data,
 					data_copy,
@@ -934,6 +1036,12 @@ abstract_pro_ai_purchase :: proc(
 					bridge,
 					self.calc,
 				)
+				when NCM_HANG_PROBE {
+					_pn_b2 := default_named_get_name(&player.named_attachable.default_named)
+					if _pn_b2 == "Japanese" {
+						fmt.eprintf("NCM_HANG.simwalk Japanese branch=battle DONE\n")
+					}
+				}
 			} else if game_step_is_place_step_name(step_name) ||
 			   game_step_is_end_turn_step_name(step_name) {
 				pro_data_initialize_simulation(self.pro_data, self, data_copy, player)

@@ -10,8 +10,12 @@ Power_Strength_And_Rolls :: struct {
 	dice_sides:                             i32,
 	total_strength_and_total_rolls_by_unit: map[^Unit]Unit_Power_Strength_And_Rolls,
 	sorted_strength_and_rolls:              [dynamic]Unit_Power_Strength_And_Rolls,
-	unit_support_power_map:                 map[^Unit]Integer_Map,
-	unit_support_rolls_map:                 map[^Unit]Integer_Map,
+	// Java stores Map<Unit, IntegerMap<Unit>>; IntegerMap is a reference type.
+	// Odin map values are copied on read, and Integer_Map's keys_order is a
+	// [dynamic]rawptr whose descriptor would lose updates on round-trip.
+	// Store pointers so mutations through `m[k]` propagate.
+	unit_support_power_map:                 map[^Unit]^Integer_Map,
+	unit_support_rolls_map:                 map[^Unit]^Integer_Map,
 }
 
 power_strength_and_rolls_get_active_units :: proc(
@@ -50,13 +54,13 @@ power_strength_and_rolls_get_total_strength_and_total_rolls_by_unit :: proc(
 
 power_strength_and_rolls_get_unit_support_power_map :: proc(
 	self: ^Power_Strength_And_Rolls,
-) -> map[^Unit]Integer_Map {
+) -> map[^Unit]^Integer_Map {
 	return self.unit_support_power_map
 }
 
 power_strength_and_rolls_get_unit_support_rolls_map :: proc(
 	self: ^Power_Strength_And_Rolls,
-) -> map[^Unit]Integer_Map {
+) -> map[^Unit]^Integer_Map {
 	return self.unit_support_rolls_map
 }
 
@@ -69,14 +73,14 @@ power_strength_and_rolls_has_strength_or_rolls :: proc(
 
 // Lambda from addUnits: (newSupport) -> new IntegerMap<>() used by
 // unitSupportPowerMap.computeIfAbsent.
-power_strength_and_rolls_lambda_add_units_0 :: proc(new_support: ^Unit) -> Integer_Map {
-	return Integer_Map{map_values = make(map[rawptr]i32)}
+power_strength_and_rolls_lambda_add_units_0 :: proc(new_support: ^Unit) -> ^Integer_Map {
+	return integer_map_new()
 }
 
 // Lambda from addUnits: (newSupport) -> new IntegerMap<>() used by
 // unitSupportRollsMap.computeIfAbsent.
-power_strength_and_rolls_lambda_add_units_2 :: proc(new_support: ^Unit) -> Integer_Map {
-	return Integer_Map{map_values = make(map[rawptr]i32)}
+power_strength_and_rolls_lambda_add_units_2 :: proc(new_support: ^Unit) -> ^Integer_Map {
+	return integer_map_new()
 }
 
 // Lambda from addUnits: (supporter, supportedUnits) ->
@@ -91,8 +95,7 @@ power_strength_and_rolls_lambda_add_units_1 :: proc(
 		self.unit_support_power_map[supporter] =
 			power_strength_and_rolls_lambda_add_units_0(supporter)
 	}
-	existing := self.unit_support_power_map[supporter]
-	integer_map_add_map(&existing, supported_units)
+	integer_map_add_map(self.unit_support_power_map[supporter], supported_units)
 }
 
 // Lambda from addUnits: (supporter, supportedUnits) ->
@@ -107,8 +110,7 @@ power_strength_and_rolls_lambda_add_units_3 :: proc(
 		self.unit_support_rolls_map[supporter] =
 			power_strength_and_rolls_lambda_add_units_2(supporter)
 	}
-	existing := self.unit_support_rolls_map[supporter]
-	integer_map_add_map(&existing, supported_units)
+	integer_map_add_map(self.unit_support_rolls_map[supporter], supported_units)
 }
 
 // Java: private void addUnits(final Collection<Unit> units)
@@ -193,8 +195,8 @@ power_strength_and_rolls_new :: proc(
 	self.calculator = calculator^
 	self.total_strength_and_total_rolls_by_unit = make(map[^Unit]Unit_Power_Strength_And_Rolls)
 	self.sorted_strength_and_rolls = make([dynamic]Unit_Power_Strength_And_Rolls)
-	self.unit_support_power_map = make(map[^Unit]Integer_Map)
-	self.unit_support_rolls_map = make(map[^Unit]Integer_Map)
+	self.unit_support_power_map = make(map[^Unit]^Integer_Map)
+	self.unit_support_rolls_map = make(map[^Unit]^Integer_Map)
 	if len(units) == 0 {
 		self.dice_sides = 0
 	} else {

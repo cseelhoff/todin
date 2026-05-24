@@ -14,6 +14,7 @@ import "core:fmt"
 import "core:log"
 import "core:os"
 import "core:path/filepath"
+import sp "core:path/slashpath"
 import "core:strconv"
 import "core:strings"
 import "core:sync"
@@ -33,11 +34,18 @@ Sqlite_Battle_Precache_Store :: struct {
 sqlite_battle_precache_store_open_at_file :: proc(
 	db_path: string, allocator := context.allocator,
 ) -> (^Sqlite_Battle_Precache_Store, bool) {
-	parent := filepath.dir(db_path, context.temp_allocator)
+	parent := sp.dir(db_path, context.temp_allocator)
 	if parent != "" && parent != "." {
-		os.make_directory(parent) // mode 0o755 default; harmless if exists
+		if mk_err := os.make_directory(parent); mk_err != nil && !os.is_directory(parent) {
+			log.warnf("battle_precache: make_directory(%s) failed: %v", parent, mk_err)
+		}
 	}
-	abs, _ := filepath.abs(db_path, context.temp_allocator)
+	abs, abs_err := filepath.abs(db_path, context.temp_allocator)
+	if abs_err != nil || abs == "" {
+		log.warnf("battle_precache: filepath.abs(%s) failed; using db_path as-is", db_path)
+		abs = db_path
+	}
+	log.infof("battle_precache: opening sqlite db at %s", abs)
 	jdbc_url := strings.concatenate({"file:", abs}, allocator)
 	return sqlite_battle_precache_store_open_at_url(jdbc_url, abs, allocator)
 }

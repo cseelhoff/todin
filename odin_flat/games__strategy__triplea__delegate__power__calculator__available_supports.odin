@@ -5,20 +5,50 @@ import "core:fmt"
 // Tracks the available support that a collection of units can give to other units.
 // Once a support is used, it will no longer be available for other units to use.
 Available_Supports :: struct {
-	support_rules:        map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment,
-	support_units:        map[^Unit_Support_Attachment]^Available_Supports_Support_Details,
-	units_giving_support: map[^Unit]^Integer_Map,
+	support_rules:              map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment,
+	support_units:              map[^Unit_Support_Attachment]^Available_Supports_Support_Details,
+	units_giving_support:       map[^Unit]^Integer_Map,
+	// LinkedHashMap insertion-order for `units_giving_support` so
+	// downstream consumers (e.g. SupportCalculator.getCombinedSupportGiven)
+	// observe the same supporter ordering Java does.
+	units_giving_support_order: [dynamic]^Unit,
+	// LinkedHashMap insertion-order for `support_rules`. Java line 31 +
+	// 60 + 98 declare these as LinkedHashMap; consumers iterate via
+	// .values() which preserves insertion order.
+	support_rules_order:        [dynamic]^Unit_Support_Attachment_Bonus_Type,
+	// LinkedHashMap insertion-order for `support_units`. Java line 32 +
+	// 108 declare LinkedHashMap.
+	support_units_order:        [dynamic]^Unit_Support_Attachment,
 }
 
 // Constructor: AvailableSupports(Map supportRules, Map supportUnits)
 available_supports_new :: proc(
 	support_rules: map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment,
 	support_units: map[^Unit_Support_Attachment]^Available_Supports_Support_Details,
+	support_rules_order: [dynamic]^Unit_Support_Attachment_Bonus_Type = nil,
+	support_units_order: [dynamic]^Unit_Support_Attachment = nil,
 ) -> ^Available_Supports {
 	self := new(Available_Supports)
 	self.support_rules = support_rules
 	self.support_units = support_units
 	self.units_giving_support = make(map[^Unit]^Integer_Map)
+	self.units_giving_support_order = make([dynamic]^Unit)
+	if support_rules_order != nil {
+		self.support_rules_order = support_rules_order
+	} else {
+		self.support_rules_order = make([dynamic]^Unit_Support_Attachment_Bonus_Type)
+		for k in support_rules {
+			append(&self.support_rules_order, k)
+		}
+	}
+	if support_units_order != nil {
+		self.support_units_order = support_units_order
+	} else {
+		self.support_units_order = make([dynamic]^Unit_Support_Attachment)
+		for k in support_units {
+			append(&self.support_units_order, k)
+		}
+	}
 	return self
 }
 
@@ -36,9 +66,27 @@ available_supports_get_support_rules :: proc(self: ^Available_Supports) -> map[^
 	return self.support_rules
 }
 
+// LinkedHashMap insertion order for `support_rules`. Iterate this to
+// preserve Java's `supportRules.values()` order in `giveSupportToUnit`
+// and consumers that linearize the rules map.
+available_supports_get_support_rules_order :: proc(self: ^Available_Supports) -> [dynamic]^Unit_Support_Attachment_Bonus_Type {
+	return self.support_rules_order
+}
+
+// LinkedHashMap insertion order for `support_units`.
+available_supports_get_support_units_order :: proc(self: ^Available_Supports) -> [dynamic]^Unit_Support_Attachment {
+	return self.support_units_order
+}
+
 // Map<Unit, IntegerMap<Unit>> getUnitsGivingSupport()
 available_supports_get_units_giving_support :: proc(self: ^Available_Supports) -> map[^Unit]^Integer_Map {
 	return self.units_giving_support
+}
+
+// LinkedHashMap insertion order for `units_giving_support`. Iterate this to
+// preserve Java's deterministic supporter ordering when consuming the map.
+available_supports_get_units_giving_support_order :: proc(self: ^Available_Supports) -> [dynamic]^Unit {
+	return self.units_giving_support_order
 }
 
 // Lambda from copy(): `support -> true`.
@@ -77,19 +125,25 @@ available_supports_get_support_available :: proc(self: ^Available_Supports, supp
 //   Pulls one unit out of the support pool for `support`, decrementing its
 //   per-unit count and the cached total. Removes the unit when its remaining
 //   count drops to zero. Mirrors IntegerMap<Unit>.add(u, -1) + removeKey.
+//   Java does `CollectionUtils.getAny(intMap.keySet())` which is
+//   `iterator().next()` on the LinkedHashSet — i.e. the first-inserted key.
 available_supports_get_next_available_supporter :: proc(self: ^Available_Supports, support: ^Unit_Support_Attachment) -> ^Unit {
 	details := self.support_units[support]
 	int_map := &details.support_units
 	u: ^Unit
-	for k, _ in int_map.entries {
-		u = k
-		break
+	if len(int_map.keys_order) > 0 {
+		u = int_map.keys_order[0]
+	} else {
+		for k, _ in int_map.entries {
+			u = k
+			break
+		}
 	}
 	new_val := int_map.entries[u] - 1
 	int_map.entries[u] = new_val
 	details.total_support -= 1
 	if new_val <= 0 {
-		delete_key(&int_map.entries, u)
+		integer_map_unit_remove(int_map, u)
 	}
 	return u
 }
@@ -119,9 +173,20 @@ available_supports_lambda_get_support_1 :: proc(
 //   carrying that map plus supportCalculator.getSupportRules().
 available_supports_get_support :: proc(support_calculator: ^Support_Calculator) -> ^Available_Supports {
 	src_support_units := support_calculator_get_support_units(support_calculator)
+	src_support_units_order := support_calculator_get_support_units_order(support_calculator)
 	transformed_support_units := make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details)
-	for k, v in src_support_units {
-		transformed_support_units[k] = available_supports_lambda_get_support_1(k, v)
+	transformed_support_units_order := make([dynamic]^Unit_Support_Attachment)
+	if len(src_support_units_order) > 0 {
+		for k in src_support_units_order {
+			v := src_support_units[k]
+			transformed_support_units[k] = available_supports_lambda_get_support_1(k, v)
+			append(&transformed_support_units_order, k)
+		}
+	} else {
+		for k, v in src_support_units {
+			transformed_support_units[k] = available_supports_lambda_get_support_1(k, v)
+			append(&transformed_support_units_order, k)
+		}
 	}
 	builder := available_supports_builder()
 	builder = available_supports_available_supports_builder_support_rules(
@@ -131,6 +196,14 @@ available_supports_get_support :: proc(support_calculator: ^Support_Calculator) 
 	builder = available_supports_available_supports_builder_support_units(
 		builder,
 		transformed_support_units,
+	)
+	builder = available_supports_available_supports_builder_support_rules_order(
+		builder,
+		support_calculator_get_support_rules_order(support_calculator),
+	)
+	builder = available_supports_available_supports_builder_support_units_order(
+		builder,
+		transformed_support_units_order,
 	)
 	return available_supports_available_supports_builder_build(builder)
 }
@@ -147,8 +220,19 @@ available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit:
 		if unit.type != nil { _utn = unit.type.named_attachable.default_named.name }
 		fmt.printf("SUP_GIVE unit_type=%s rules_buckets=%d support_units_size=%d\n", _utn, len(self.support_rules), len(self.support_units))
 	}
-	for _, rules_by_bonus_type in self.support_rules {
-		if len(rules_by_bonus_type) == 0 {
+	// Java: `for (List<UnitSupportAttachment> rulesByBonusType : supportRules.values())`
+	// — LinkedHashMap insertion order. Walk `support_rules_order` to match.
+	rules_iter_order: [dynamic]^Unit_Support_Attachment_Bonus_Type
+	if len(self.support_rules_order) > 0 {
+		rules_iter_order = self.support_rules_order
+	} else {
+		for k in self.support_rules {
+			append(&rules_iter_order, k)
+		}
+	}
+	for bt in rules_iter_order {
+		rules_by_bonus_type, has_bt := self.support_rules[bt]
+		if !has_bt || len(rules_by_bonus_type) == 0 {
 			continue
 		}
 		first_rule := rules_by_bonus_type[0]
@@ -179,6 +263,7 @@ available_supports_give_support_to_unit :: proc(self: ^Available_Supports, unit:
 				if !present {
 					im = available_supports_lambda_give_support_to_unit_3(supporter)
 					self.units_giving_support[supporter] = im
+					append(&self.units_giving_support_order, supporter)
 				}
 				integer_map_add(im, rawptr(unit), bonus)
 			}
@@ -240,7 +325,17 @@ available_supports_filter :: proc(
 	rule_filter_ctx: rawptr,
 ) -> ^Available_Supports {
 	support_rules := make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment)
-	for bonus_type, rules in self.support_rules {
+	support_rules_order := make([dynamic]^Unit_Support_Attachment_Bonus_Type)
+	rules_iter_order: [dynamic]^Unit_Support_Attachment_Bonus_Type
+	if len(self.support_rules_order) > 0 {
+		rules_iter_order = self.support_rules_order
+	} else {
+		for k in self.support_rules {
+			append(&rules_iter_order, k)
+		}
+	}
+	for bonus_type in rules_iter_order {
+		rules, _ := self.support_rules[bonus_type]
 		filtered_support_rules: [dynamic]^Unit_Support_Attachment
 		for rule in rules {
 			if rule_filter(rule_filter_ctx, rule) {
@@ -249,19 +344,33 @@ available_supports_filter :: proc(
 		}
 		if len(filtered_support_rules) > 0 {
 			support_rules[bonus_type] = filtered_support_rules
+			append(&support_rules_order, bonus_type)
 		}
 	}
 
 	support_units := make(map[^Unit_Support_Attachment]^Available_Supports_Support_Details)
-	for usa, details in self.support_units {
+	support_units_order := make([dynamic]^Unit_Support_Attachment)
+	units_iter_order: [dynamic]^Unit_Support_Attachment
+	if len(self.support_units_order) > 0 {
+		units_iter_order = self.support_units_order
+	} else {
+		for k in self.support_units {
+			append(&units_iter_order, k)
+		}
+	}
+	for usa in units_iter_order {
+		details, _ := self.support_units[usa]
 		if rule_filter(rule_filter_ctx, usa) {
 			support_units[usa] = available_supports_support_details_new_copy(details)
+			append(&support_units_order, usa)
 		}
 	}
 
 	builder := available_supports_builder()
 	builder = available_supports_available_supports_builder_support_rules(builder, support_rules)
 	builder = available_supports_available_supports_builder_support_units(builder, support_units)
+	builder = available_supports_available_supports_builder_support_rules_order(builder, support_rules_order)
+	builder = available_supports_available_supports_builder_support_units_order(builder, support_units_order)
 	return available_supports_available_supports_builder_build(builder)
 }
 

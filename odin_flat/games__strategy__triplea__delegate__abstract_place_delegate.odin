@@ -1506,10 +1506,24 @@ abstract_place_delegate_get_max_units_to_be_placed_from_full :: proc(
 	if original_factory && player_is_original_owner {
 		if ra != nil && ra.max_place_per_territory != -1 {
 			v := ra.max_place_per_territory - unit_count_already_produced
+			dbg_p_name_of := player != nil ? default_named_get_name(&player.named_attachable.default_named) : "<nil>"
+			dbg_at_name_of := to != nil ? default_named_get_name(&to.named_attachable.default_named) : "<nil>"
+			dbg_prod_name_of := producer != nil ? default_named_get_name(&producer.named_attachable.default_named) : "<nil>"
+			if dbg_p_name_of == "Russians" && (dbg_at_name_of == "Russia" || dbg_at_name_of == "Karelia S.S.R.") {
+				fmt.printf("GMUTBPF_RET branch=origFact_capped prod=%s at=%s ra.max=%d ucap=%d returned=%d\n",
+					dbg_prod_name_of, dbg_at_name_of, ra.max_place_per_territory, unit_count_already_produced, max(v, 0))
+			}
 			if v < 0 {
 				return 0
 			}
 			return v
+		}
+		dbg_p_name_of2 := player != nil ? default_named_get_name(&player.named_attachable.default_named) : "<nil>"
+		dbg_at_name_of2 := to != nil ? default_named_get_name(&to.named_attachable.default_named) : "<nil>"
+		dbg_prod_name_of2 := producer != nil ? default_named_get_name(&producer.named_attachable.default_named) : "<nil>"
+		if dbg_p_name_of2 == "Russians" && (dbg_at_name_of2 == "Russia" || dbg_at_name_of2 == "Karelia S.S.R.") {
+			fmt.printf("GMUTBPF_RET branch=origFact_unlimited prod=%s at=%s ucap=%d returned=-1 ra=%v\n",
+				dbg_prod_name_of2, dbg_at_name_of2, unit_count_already_produced, ra != nil)
 		}
 		return -1
 	}
@@ -1684,6 +1698,12 @@ abstract_place_delegate_get_max_units_to_be_placed_from_full :: proc(
 		unit_count_have_to_and_have_been_be_produced_here = v
 	}
 
+	dbg_p_name := player != nil ? default_named_get_name(&player.named_attachable.default_named) : "<nil>"
+	dbg_at_name := to != nil ? default_named_get_name(&to.named_attachable.default_named) : "<nil>"
+	dbg_prod_name := producer != nil ? default_named_get_name(&producer.named_attachable.default_named) : "<nil>"
+	dbg_is_target := dbg_p_name == "Russians" && (dbg_at_name == "Russia" || dbg_at_name == "Karelia S.S.R.")
+	dbg_ra_max := i32(-99)
+	if ra != nil { dbg_ra_max = ra.max_place_per_territory }
 	if ra != nil && ra.max_place_per_territory > 0 {
 		current_value := unit_count_have_to_and_have_been_be_produced_here
 		v1 := production - current_value
@@ -1692,12 +1712,24 @@ abstract_place_delegate_get_max_units_to_be_placed_from_full :: proc(
 		if v2 < value {
 			value = v2
 		}
+		if dbg_is_target {
+			fmt.printf("GMUTBPF_RET branch=ra_clamp prod=%s at=%s production=%d ucahbph=%d ra.max=%d v1=%d v2=%d returned=%d origF=%v ownerOrig=%v wasFact=%v ucap=%d maxCon=%d csw_to_n=%v\n",
+				dbg_prod_name, dbg_at_name, production, unit_count_have_to_and_have_been_be_produced_here,
+				dbg_ra_max, v1, v2, max(value, 0), original_factory, player_is_original_owner,
+				was_factory_there_at_start, unit_count_already_produced, max_constructions, count_switched_production_to_neighbors)
+		}
 		if value < 0 {
 			return 0
 		}
 		return value
 	}
 	v := production - unit_count_have_to_and_have_been_be_produced_here
+	if dbg_is_target {
+		fmt.printf("GMUTBPF_RET branch=plain prod=%s at=%s production=%d ucahbph=%d ucap=%d returned=%d origF=%v ownerOrig=%v wasFact=%v maxCon=%d csw_to_n=%v\n",
+			dbg_prod_name, dbg_at_name, production, unit_count_have_to_and_have_been_be_produced_here,
+			unit_count_already_produced, max(v, 0), original_factory, player_is_original_owner,
+			was_factory_there_at_start, max_constructions, count_switched_production_to_neighbors)
+	}
 	if v < 0 {
 		return 0
 	}

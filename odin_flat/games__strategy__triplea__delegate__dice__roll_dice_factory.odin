@@ -80,11 +80,68 @@ roll_dice_factory_roll_battle_dice :: proc(
 	tptr.get_dice_sides = roll_dice_factory_battle_dice_sides_
 	tptr.get_active_units = roll_dice_factory_battle_active_units_
 
+	when ARMOUR_TRACE {
+		// Iter 20 probe: dump active_units post-sort for UkrSSR battles
+		// so we can compare the dice consumption order against Java.
+		if len(annotation) >= 14 {
+			has_ukr := false
+			for i := 0; i + 14 <= len(annotation); i += 1 {
+				if annotation[i:i+14] == "Ukraine S.S.R." {
+					has_ukr = true
+					break
+				}
+			}
+			if has_ukr {
+				au := tptr.get_active_units(tptr)
+				fmt.printf("ARMOUR_TRACE rbd_in player=%s ann=%q n_units=%d total_rolls=%d total_power=%d sides=%d\n",
+					default_named_get_name(&player.named_attachable.default_named),
+					annotation, len(au),
+					tptr.calculate_total_rolls(tptr),
+					tptr.calculate_total_power(tptr),
+					tptr.get_dice_sides(tptr))
+				for upsr, i in au {
+					on := upsr.unit.owner == nil ? "?" : default_named_get_name(&upsr.unit.owner.named_attachable.default_named)
+					ut := upsr.unit.type == nil ? "?" : default_named_get_name(&upsr.unit.type.named_attachable.default_named)
+					fmt.printf("ARMOUR_TRACE rbd_unit i=%d owner=%s type=%s str=%d rolls=%d sides=%d cbr=%v\n",
+						i, on, ut,
+						upsr.strength_and_rolls.strength,
+						upsr.strength_and_rolls.rolls,
+						upsr.dice_sides,
+						upsr.choose_best_roll)
+				}
+			}
+		}
+	}
+
 	dice_roll: ^Dice_Roll
 	if properties_get_low_luck(game_data_get_properties(i_delegate_bridge_get_data(bridge))) {
 		dice_roll = low_luck_dice_calculate(tptr, player, dice_generator, annotation)
 	} else {
 		dice_roll = rolled_dice_calculate(tptr, player, dice_generator, annotation)
+	}
+
+	when ARMOUR_TRACE {
+		if len(annotation) >= 14 {
+			has_ukr := false
+			for i := 0; i + 14 <= len(annotation); i += 1 {
+				if annotation[i:i+14] == "Ukraine S.S.R." {
+					has_ukr = true
+					break
+				}
+			}
+			if has_ukr {
+				fmt.printf("ARMOUR_TRACE rbd_out ann=%q hits=%d expected=%.3f size=%d\n",
+					annotation,
+					dice_roll_get_hits(dice_roll),
+					dice_roll_get_expected_hits(dice_roll),
+					dice_roll_size(dice_roll))
+				for i: i32 = 0; i < dice_roll_size(dice_roll); i += 1 {
+					d := dice_roll_get_die(dice_roll, i)
+					fmt.printf("ARMOUR_TRACE rbd_die i=%d val=%d hit=%v\n",
+						i, die_get_value(d), die_get_type(d) == .HIT)
+				}
+			}
+		}
 	}
 
 	history_writer := i_delegate_bridge_get_history_writer(bridge)

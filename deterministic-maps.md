@@ -30,8 +30,8 @@ specialized overload.
 ## Workflow
 
 1. Run r=2 DIGEST diff. The first divergence point identifies the
-   step (e.g. `r=1 i=16 russianPlace` → divergence happened during
-   `russianNonCombatMove`).
+   step (e.g. `r=1 i=37 japaneseCombatMove` → divergence happened
+   during the preceding `japanesePurchase`).
 2. Inspect Java code for that step. Find map iterations whose order
    influences which-unit-where decisions (the impactful ones — pure
    logging or tally loops are skippable).
@@ -42,12 +42,15 @@ specialized overload.
 
 ## Sites — Done ✅
 
-(none yet)
+- `russianNonCombatMove` (r=1 i=15→16): fixed. Odin now matches Java
+  byte-for-byte through i=20.
 
 ## Sites — In progress 🟡
 
-- `russianNonCombatMove` (r=1 i=15→16, divergence visible at i=16
-  russianPlace via `uc_h`). Investigation just starting.
+- `japanesePurchase` (r=1 i=36→37, divergence visible at i=37
+  japaneseCombatMove via PUs[Japanese]=1 Java vs 17 Odin). Japan's
+  amphib loop returns nil → Odin buys 2 transports + 0 amphibs while
+  Java buys 1 transport + 1 artillery + 1 infantry.
 
 ## Sites — Not yet investigated
 

@@ -33,7 +33,10 @@ pro_determinism_sorted_territory_keys :: proc(
 // Returns units in `m` sorted by (unit-type name, already-moved).
 // Stable sort is used so units that tie on every property keep
 // the input collection's iteration order. UUID is deliberately
-// NOT used. Caller must `defer delete(<result>)`.
+// NOT used (it may not survive game-state copies in all paths).
+// When property-tied units affect AI decisions, fix the upstream
+// iteration site so insertion order is deterministic instead of
+// relying on a per-unit tiebreak.
 @(private = "file")
 pro_determinism_unit_property_less :: proc(a, b: ^Unit) -> bool {
 	an := unit_type_get_name(unit_get_type(a))

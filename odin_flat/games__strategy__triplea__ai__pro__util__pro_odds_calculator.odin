@@ -212,6 +212,36 @@ pro_odds_calculator_call_battle_calc :: proc(
 		// each call does ~1/50th the work. Toggled via -define:FAST_AI=true.
 		run_count = 1
 	}
+	when ARMOUR_TRACE {
+		_tn_atk := t == nil ? "<nil>" : territory_get_name(t)
+		if _tn_atk == "Ukraine S.S.R." {
+			fmt.printf("ARMOUR_TRACE cbc_in t=%s n_atk=%d n_def=%d run_count=%d retr_air=%v\n",
+				_tn_atk, len(attacking_units), len(defending_units), run_count, retreat_when_only_air_left)
+			for u, i in defending_units {
+				on := u.owner == nil ? "?" : default_named_get_name(&u.owner.named_attachable.default_named)
+				ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+				ua := unit_get_unit_attachment(u)
+				atk := unit_attachment_get_attack(ua, u.owner)
+				def := unit_attachment_get_defense(ua, u.owner)
+				is_air := unit_attachment_is_air(ua)
+				is_sea := unit_attachment_is_sea(ua)
+				fmt.printf("ARMOUR_TRACE cbc_def i=%d owner=%s type=%s atk=%d def=%d isAir=%v isSea=%v\n",
+					i, on, ut, atk, def, is_air, is_sea)
+			}
+			for u, i in attacking_units {
+				on := u.owner == nil ? "?" : default_named_get_name(&u.owner.named_attachable.default_named)
+				ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+				ua := unit_get_unit_attachment(u)
+				atk := unit_attachment_get_attack(ua, u.owner)
+				def := unit_attachment_get_defense(ua, u.owner)
+				src_t := pro_data_get_unit_territory(pro_data, u)
+				src_name := src_t == nil ? "<unknown>" : territory_get_name(src_t)
+				mov_left := unit_get_movement_left(u)
+				fmt.printf("ARMOUR_TRACE cbc_atk i=%d owner=%s type=%s atk=%d def=%d src=%s movLeft=%v\n",
+					i, on, ut, atk, def, src_name, mov_left)
+			}
+		}
+	}
 	when #config(ODDS_TRACE, false) {
 		t_name := territory_get_name(t)
 		fmt.printf("ODDS_IN terr=%q chk_sub=%v rta=%v n_atk=%d n_def=%d run=%d\n",
@@ -230,6 +260,13 @@ pro_odds_calculator_call_battle_calc :: proc(
 	attacker := unit_get_owner(attacking_units[0])
 	defender := unit_get_owner(defending_units[0])
 	concrete_calc := cast(^Concurrent_Battle_Calculator)self.calc
+	when NCM_HANG_PROBE {
+		_tn_cbc := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_cbc == "Burma" {
+			fmt.eprintf("NCM_HANG.cbc.before_dispatch t=%s n_atk=%d n_def=%d n_bomb=%d run=%d\n",
+				_tn_cbc, len(attacking_units), len(defending_units), len(bombarding_units), run_count)
+		}
+	}
 	// `precache_dispatch_calculate` collapses to a direct
 	// `concurrent_battle_calculator_calculate` call when the compile-time
 	// flag `BATTLE_PRECACHE_ENABLED` is false (the default). When true and
@@ -248,6 +285,12 @@ pro_odds_calculator_call_battle_calc :: proc(
 		retreat_when_only_air_left,
 		run_count,
 	)
+	when NCM_HANG_PROBE {
+		_tn_cbc2 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_cbc2 == "Burma" {
+			fmt.eprintf("NCM_HANG.cbc.after_dispatch t=%s\n", _tn_cbc2)
+		}
+	}
 
 	// Find battle result statistics
 	win_percentage := aggregate_results_get_attacker_win_percent(results) * 100
@@ -587,6 +630,13 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 	defending_units: [dynamic]^Unit,
 	bombarding_units: [dynamic]^Unit,
 ) -> ^Pro_Battle_Result {
+	when NCM_HANG_PROBE {
+		_tn_probe := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_probe == "Burma" {
+			fmt.eprintf("NCM_HANG.estbr.entry t=%s n_atk=%d n_def=%d n_bomb=%d\n",
+				_tn_probe, len(attacking_units), len(defending_units), len(bombarding_units))
+		}
+	}
 	result := pro_odds_calculator_check_if_no_attackers_or_defenders(
 		pro_data,
 		t,
@@ -595,6 +645,12 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 		true,
 	)
 	if result != nil {
+		when NCM_HANG_PROBE {
+			_tn_probe2 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+			if _tn_probe2 == "Burma" {
+				fmt.eprintf("NCM_HANG.estbr.early_return t=%s\n", _tn_probe2)
+			}
+		}
 		return result
 	}
 
@@ -603,6 +659,12 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 		attacking_units,
 		defending_units,
 	)
+	when NCM_HANG_PROBE {
+		_tn_probe3 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_probe3 == "Burma" {
+			fmt.eprintf("NCM_HANG.estbr.after_strength t=%s strDiff=%.4f\n", _tn_probe3, strength_difference)
+		}
+	}
 	when #config(PLAN, false) {
 		_tn := default_named_get_name(&t.named_attachable.default_named)
 		if _tn == "West Russia" || _tn == "Baltic States" {
@@ -626,6 +688,12 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 		}
 	}
 	if strength_difference < 45 {
+		when NCM_HANG_PROBE {
+			_tn_probe4 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+			if _tn_probe4 == "Burma" {
+				fmt.eprintf("NCM_HANG.estbr.shortcut_lt45 t=%s\n", _tn_probe4)
+			}
+		}
 		return pro_battle_result_new(
 			0,
 			-999,
@@ -635,7 +703,13 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 			1,
 		)
 	}
-	return pro_odds_calculator_call_battle_calc_5(
+	when NCM_HANG_PROBE {
+		_tn_probe5 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_probe5 == "Burma" {
+			fmt.eprintf("NCM_HANG.estbr.before_callBattleCalc5 t=%s\n", _tn_probe5)
+		}
+	}
+	res5 := pro_odds_calculator_call_battle_calc_5(
 		self,
 		pro_data,
 		t,
@@ -643,6 +717,13 @@ pro_odds_calculator_estimate_attack_battle_results :: proc(
 		defending_units,
 		bombarding_units,
 	)
+	when NCM_HANG_PROBE {
+		_tn_probe6 := t == nil ? "<nil>" : default_named_get_name(&t.named_attachable.default_named)
+		if _tn_probe6 == "Burma" {
+			fmt.eprintf("NCM_HANG.estbr.after_callBattleCalc5 t=%s\n", _tn_probe6)
+		}
+	}
+	return res5
 }
 
 // Java: ProOddsCalculator#estimateDefendBattleResults(ProData, Territory, ...)

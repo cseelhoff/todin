@@ -734,6 +734,38 @@ pro_combat_move_ai_prioritize_attack_options :: proc(
 				append(&defending_units, u)
 			}
 		}
+		when #config(PLAN, false) {
+			if territory_to_string(t) == "Alaska" {
+				uc := territory_get_unit_collection(t)
+				fmt.printf(
+					"PRIO_ALASKA_RAW player=%s terr_units=%d max_enemy_defenders=%d filtered=%d\n",
+					game_player_get_name(player),
+					len(unit_collection_get_units(uc)),
+					len(max_enemy_defenders),
+					len(defending_units),
+				)
+				for u in unit_collection_get_units(uc) {
+					owner := unit_get_owner(u)
+					at_war := game_player_is_at_war(player, owner)
+					fmt.printf(
+						"  PRIO_ALASKA_UNIT type=%s owner=%s at_war=%v\n",
+						unit_type_get_name(unit_get_type(u)),
+						game_player_get_name(owner),
+						at_war,
+					)
+				}
+				for u in max_enemy_defenders {
+					owner := unit_get_owner(u)
+					passed := eni_p(eni_c, u)
+					fmt.printf(
+						"  PRIO_ALASKA_DEF type=%s owner=%s passes_filter=%v\n",
+						unit_type_get_name(unit_get_type(u)),
+						game_player_get_name(owner),
+						passed,
+					)
+				}
+			}
+		}
 		is_empty_land: i32 = 0
 		if !territory_is_water(t) &&
 		   len(defending_units) == 0 &&
@@ -783,6 +815,63 @@ pro_combat_move_ai_prioritize_attack_options :: proc(
 			(1.0 + 4.0 * f64(production_and_is_capital.is_capital)) *
 			(1.0 + 2.0 * f64(is_not_neutral_adjacent_to_my_capital)) *
 			(1.0 - 0.9 * f64(is_neutral))
+		when #config(PLAN, false) {
+			tn_dbg := territory_to_string(t)
+			if tn_dbg == "Alaska" || tn_dbg == "Yunnan" || tn_dbg == "Anhwei" || tn_dbg == "Buryatia S.S.R." {
+				tuv_bits := transmute(u64)tuv_swing
+				tv_bits := transmute(u64)territory_value
+				av_bits := transmute(u64)attack_value
+				fmt.printf(
+					"PRIO_VAL player=%s t=%s tuvSwing=0x%x territoryValue=0x%x attackValue=0x%x attackValueDec=%v\n",
+					game_player_get_name(player),
+					tn_dbg,
+					tuv_bits,
+					tv_bits,
+					av_bits,
+					attack_value,
+				)
+				// SCRAMBLE_DEFEND probe: dump max scramble units to test
+				// hypothesis that Odin's find_scramble_options misses
+				// scramblers Java sees on Alaska. Mirrors the Java probe
+				// in ProCombatMoveAi#prioritizeAttackOptions.
+				live_pred, live_ctx := matches_enemy_unit(player)
+				live_uc := territory_get_unit_collection(t)
+				live_count := 0
+				for u in unit_collection_get_units(live_uc) {
+					if live_pred(live_ctx, u) {
+						live_count += 1
+					}
+				}
+				scramble_count := len(patd.max_scramble_units)
+				max_enemy_def := pro_territory_get_max_enemy_defenders(patd, player)
+				type_buf := strings.builder_make()
+				strings.write_string(&type_buf, "[")
+				for u in max_enemy_def {
+					ut := unit_get_type(u)
+					tn := unit_type_get_name(ut)
+					strings.write_string(&type_buf, tn)
+					strings.write_string(&type_buf, "/")
+					o := unit_get_owner(u)
+					if o != nil {
+						strings.write_string(&type_buf, default_named_get_name(&o.named_attachable.default_named))
+					} else {
+						strings.write_string(&type_buf, "-")
+					}
+					strings.write_string(&type_buf, ",")
+				}
+				strings.write_string(&type_buf, "]")
+				fmt.printf(
+					"SCRAMBLE_DEFEND player=%s t=%s liveEnemy=%d maxScramble=%d maxEnemyDef=%d types=%s\n",
+					game_player_get_name(player),
+					tn_dbg,
+					live_count,
+					scramble_count,
+					len(max_enemy_def),
+					strings.to_string(type_buf),
+				)
+				strings.builder_destroy(&type_buf)
+			}
+		}
 
 		// Check if a negative value neutral territory should be attacked
 		if attack_value <= 0 &&
@@ -910,8 +999,26 @@ pro_combat_move_ai_prioritize_attack_options :: proc(
 		i += 1
 	}
 
-	// Sort attack territories by value descending
-	slice.sort_by(attack_options^[:], pro_combat_move_ai_value_desc_less_)
+	// Sort attack territories by value descending. Java mirror:
+	//   `attackOptions.sort(Comparator.comparingDouble(ProTerritory::getValue).reversed())`
+	// `List.sort` is guaranteed stable (TimSort) — equal-valued entries keep
+	// their input order. Use Odin's `stable_sort_by` to mirror that, otherwise
+	// equal-valued territories can swap and downstream pickers (e.g. air-unit
+	// target selection in try_to_attack_territories) diverge from Java.
+	//
+	// Pre-sort alphabetically by territory name first so the stable
+	// value-sort below produces deterministic, portable tie breaks. The
+	// Java side applies the same alphabetic pre-sort so tied attackValues
+	// iterate in the same order on both ports regardless of LinkedHashMap
+	// insertion order (Odin maps don't preserve insertion order).
+	slice.stable_sort_by(attack_options^[:], proc(a, b: ^Pro_Territory) -> bool {
+		ta := pro_territory_get_territory(a)
+		tb := pro_territory_get_territory(b)
+		na := default_named_get_name(&ta.named_attachable.default_named)
+		nb := default_named_get_name(&tb.named_attachable.default_named)
+		return strings.compare(na, nb) < 0
+	})
+	slice.stable_sort_by(attack_options^[:], pro_combat_move_ai_value_desc_less_)
 
 	// Log prioritized territories
 	for patd in attack_options^ {
@@ -1992,9 +2099,18 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 	already_attacked_with_transports_set := make(map[^Unit]struct {})
 	defer delete(already_attacked_with_transports_set)
 	if !properties_get_transport_casualties_restricted(game_data_get_properties(self.data)) {
-		// Loop through all my transports and see which territories they can attack
+		// Loop through all my transports and see which territories they can attack.
+		// Java mirror: `Map<Unit, Set<Territory>> transportAttackOptions = new
+		// LinkedHashMap<>();` populated by iterating `transportAttackMap.entrySet()`
+		// (also a LinkedHashMap). Iterate `transport_move_map_order` (the parallel
+		// insertion-order slice maintained by Pro_My_Move_Options) to mirror that
+		// iteration order. Inner `canAttackTerritories` is a LinkedHashSet populated
+		// from `prioritized_territories`, so iterating that slice preserves order.
 		transport_attack_options := make(map[^Unit]map[^Territory]struct {})
-		for u, ts in transport_attack_map {
+		_tam_order := pro_my_move_options_get_transport_move_map_order(attack_options)
+		for u in _tam_order {
+			ts, in_tam := transport_attack_map[u]
+			if !in_tam { continue }
 			can_attack: map[^Territory]struct {}
 			for atd in prioritized_territories {
 				at := pro_territory_get_territory(atd)
@@ -2009,9 +2125,16 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 			}
 		}
 
-		// Loop through transports with attack options and determine if any naval battle needs it
-		for transport, ts in transport_attack_options {
-			for t, _ in ts {
+		// Loop through transports with attack options and determine if any naval
+		// battle needs it. Iterate in `transport_move_map_order` (LinkedHashMap
+		// insertion order) and inner `ts` in `prioritized_territories` order
+		// (LinkedHashSet insertion order).
+		for transport in _tam_order {
+			ts, in_tao := transport_attack_options[transport]
+			if !in_tao { continue }
+			for atd in prioritized_territories {
+				t := pro_territory_get_territory(atd)
+				if _, ok := ts[t]; !ok { continue }
 				patd := attack_map[t]
 				defending_units := pro_territory_get_max_enemy_defenders(patd, self.player)
 				if !pro_territory_is_currently_wins(patd) &&
@@ -2063,14 +2186,23 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		}
 	}
 
-	// Loop through transports with amphib attack options and determine if any land battle needs it
-	for transport, ts in amphib_attack_options {
+	// Loop through transports with amphib attack options and determine if any land
+	// battle needs it. Java mirror: `for Map.Entry e : amphibAttackOptions.entrySet()`
+	// where `amphibAttackOptions` is a LinkedHashMap populated by iterating
+	// `transportMapList` in order. Inner `e.getValue()` is a LinkedHashSet populated
+	// from `prioritizedTerritories`. Iterate the same source slices to mirror Java.
+	for pro_transport_data_outer in transport_map_list {
+		transport := pro_transport_get_transport(pro_transport_data_outer)
+		ts, in_amph := amphib_attack_options[transport]
+		if !in_amph { continue }
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
 		min_amphib_units_to_add: [dynamic]^Unit
 		have_amphib_units := false
 		min_unload_from_territory: ^Territory = nil
-		for t, _ in ts {
+		for atd in prioritized_territories {
+			t := pro_territory_get_territory(atd)
+			if _, ok := ts[t]; !ok { continue }
 			patd := attack_map[t]
 			if pro_territory_is_currently_wins(patd) {
 				continue
@@ -2127,7 +2259,42 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				for u in amphib_units_to_add {
 					load_from_territories[pro_data_get_unit_territory(self.pro_data, u)] = {}
 				}
-				for destination, _ in territories_to_move_transport {
+				// Java mirror: `data.getMap().getNeighbors(t, predicate)` returns
+				// `Stream.collect(Collectors.toSet())` — a HashSet whose iteration is
+				// HashMap bucket order over Territory.hashCode (= name.hashCode). The
+				// `<= min_strength_difference` check below makes the LAST iterated
+				// tied destination win, so iteration order directly determines which
+				// sea zone the transport unloads from when multiple destinations have
+				// equal strength_difference. Sort by Java HashMap bucket of name to
+				// match Java's iteration order. Same pattern as step-24 cruiser fix.
+				ttmt_keys: [dynamic]struct{ bucket: int, name: string, t: ^Territory }
+				defer delete(ttmt_keys)
+				_ttmt_cap := java_hashmap_capacity_for_size(len(territories_to_move_transport))
+				for d, _ in territories_to_move_transport {
+					dn := territory_get_name(d)
+					append(&ttmt_keys, struct{ bucket: int, name: string, t: ^Territory }{
+						bucket = java_hashmap_bucket_for_string(dn, _ttmt_cap),
+						name   = dn,
+						t      = d,
+					})
+				}
+				slice.sort_by(ttmt_keys[:], proc(a, b: struct{ bucket: int, name: string, t: ^Territory }) -> bool {
+					if a.bucket != b.bucket { return a.bucket < b.bucket }
+					return strings.compare(a.name, b.name) < 0
+				})
+				when PLAN_PROBE {
+					_pn_cand := default_named_get_name(&self.player.named_attachable.default_named)
+					_t_name := default_named_get_name(&t.named_attachable.default_named)
+					for _e in ttmt_keys {
+						_dn := default_named_get_name(&_e.t.named_attachable.default_named)
+						fmt.printf(
+							"AMPHIB_CAND player=%s to=%s dest=%s bucket=%d cap=%d\n",
+							_pn_cand, _t_name, _dn, _e.bucket, _ttmt_cap,
+						)
+					}
+				}
+				for _ttmt_e in ttmt_keys {
+					destination := _ttmt_e.t
 					sea_tmap := pro_transport_get_sea_transport_map(inner_pt)
 					reachable, has_dest := sea_tmap[destination]
 					if !has_dest {
@@ -2160,6 +2327,15 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 					)
 					delete(attackers)
 					delete(defenders)
+					when PLAN_PROBE {
+						_pn_sd := default_named_get_name(&self.player.named_attachable.default_named)
+						_t_name_sd := default_named_get_name(&t.named_attachable.default_named)
+						_dn_sd := default_named_get_name(&destination.named_attachable.default_named)
+						fmt.printf(
+							"AMPHIB_SD player=%s to=%s dest=%s strDiff=%.4f\n",
+							_pn_sd, _t_name_sd, _dn_sd, strength_difference,
+						)
+					}
 					if strength_difference <= min_strength_difference {
 						min_strength_difference = strength_difference
 						min_unload_from_territory = destination
@@ -2200,6 +2376,30 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 					territory_to_string(min_unload_from_territory),
 				),
 			)
+			when PLAN_PROBE {
+				_pn_amph := default_named_get_name(&self.player.named_attachable.default_named)
+				_to_name := default_named_get_name(&min_win_territory.named_attachable.default_named)
+				_uf_name := "<nil>"
+				if min_unload_from_territory != nil {
+					_uf_name = default_named_get_name(&min_unload_from_territory.named_attachable.default_named)
+				}
+				_unit_summary := strings.builder_make()
+				defer strings.builder_destroy(&_unit_summary)
+				_first := true
+				for _u in min_amphib_units_to_add {
+					if !_first { strings.write_string(&_unit_summary, ",") }
+					_first = false
+					if _u != nil && _u.type != nil {
+						strings.write_string(&_unit_summary,
+							default_named_get_name(&_u.type.named_attachable.default_named))
+					}
+				}
+				fmt.printf(
+					"AMPHIB player=%s to=%s unloadFrom=%s win%%=%.4f units=%d types=[%s]\n",
+					_pn_amph, _to_name, _uf_name, min_win_percentage,
+					len(min_amphib_units_to_add), strings.to_string(_unit_summary),
+				)
+			}
 		} else if have_amphib_units {
 			delete(min_amphib_units_to_add)
 		}
@@ -2437,11 +2637,13 @@ pro_combat_move_ai_determine_territories_to_attack :: proc(
 //   capturing it. Uses ProTerritoryValueUtils to score the value of every
 //   territory adjacent to our attackers, then runs a counter-attack
 //   simulation through the odds calculator.
+
 pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 	self:                    ^Pro_Combat_Move_Ai,
 	prioritized_territories: [dynamic]^Pro_Territory,
 	cleared_territories:     [dynamic]^Territory,
 ) {
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.entry") }
 	pro_logger_info("Check if we should try to hold attack territories")
 
 	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(self.territory_manager)
@@ -2465,6 +2667,7 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 
 	empty_cant_be_held: [dynamic]^Territory
 	defer delete(empty_cant_be_held)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.before_findTerritoryValues") }
 	territory_value_map := pro_territory_value_utils_find_territory_values(
 		self.pro_data,
 		self.player,
@@ -2473,9 +2676,16 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 		territories_to_check,
 	)
 	defer delete(territory_value_map)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.after_findTerritoryValues") }
 
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.main_before_loop") }
+	ch_idx := 0
 	for patd in prioritized_territories {
 		t := pro_territory_get_territory(patd)
+		when NCM_HANG_PROBE {
+			fmt.eprintf("NCM_HANG.canhold.main_iter idx=%d t=%s\n", ch_idx, default_named_get_name(&t.named_attachable.default_named))
+		}
+		ch_idx += 1
 
 		// If strafing then can't hold
 		if pro_territory_is_strafing(patd) {
@@ -2562,6 +2772,14 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 			for u, _ in max_bombard_set {
 				append(&max_bombard_list, u)
 			}
+			when NCM_HANG_PROBE {
+				fmt.eprintf("NCM_HANG.canhold.before_estimate idx=%d t=%s attN=%d defN=%d bombN=%d\n",
+					ch_idx-1,
+					default_named_get_name(&t.named_attachable.default_named),
+					len(attacking_units_list),
+					len(pro_territory_get_max_enemy_defenders(patd, self.player)),
+					len(max_bombard_list))
+			}
 			result := pro_odds_calculator_estimate_attack_battle_results(
 				self.calc,
 				self.pro_data,
@@ -2570,6 +2788,7 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 				pro_territory_get_max_enemy_defenders(patd, self.player),
 				max_bombard_list,
 			)
+			when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.after_estimate") }
 			air_p, air_c := matches_unit_is_air()
 			remaining_units_to_defend_with: [dynamic]^Unit
 			for u in pro_battle_result_get_average_attackers_remaining(result) {
@@ -2596,6 +2815,14 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 			for u, _ in enemy_max_bombard_set {
 				append(&enemy_max_bombard_list, u)
 			}
+			when NCM_HANG_PROBE {
+				fmt.eprintf("NCM_HANG.canhold.before_calc2 idx=%d t=%s enemyAtt=%d def=%d bombN=%d\n",
+					ch_idx-1,
+					default_named_get_name(&t.named_attachable.default_named),
+					len(pro_territory_get_max_enemy_units(patd)),
+					len(remaining_units_to_defend_with),
+					len(enemy_max_bombard_list))
+			}
 			result2 := pro_odds_calculator_calculate_battle_results(
 				self.calc,
 				self.pro_data,
@@ -2604,6 +2831,7 @@ pro_combat_move_ai_determine_territories_that_can_be_held :: proc(
 				remaining_units_to_defend_with,
 				enemy_max_bombard_list,
 			)
+			when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "canhold.after_calc2") }
 			can_hold :=
 				(!pro_battle_result_is_has_land_unit_remaining(result2) && !territory_is_water(t)) ||
 				(pro_battle_result_get_tuv_swing(result2) < 0) ||
@@ -2714,7 +2942,12 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 		defer delete(added_set)
 
 		// Set air units in any territory with no AA
-		_units_keys_6 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+		// triplea-port-bootstrap: must use needed_options_then_attack key
+		// schema, since the immediately-prior re-sort uses that comparator.
+		// Iterating with sorted_unit_keys_by_move_options here was a bug
+		// — it picked the wrong air-unit-to-territory assignment relative
+		// to Java, e.g. swapping fighter↔bomber between Anhwei/Yunnan.
+		_units_keys_6 := pro_sort_move_options_utils_sorted_unit_keys_by_needed_options_then_attack(self.pro_data, self.player, sorted_unit_attack_options, attack_map^, self.calc)
 		defer delete(_units_keys_6)
 		for unit in _units_keys_6 {
 			is_air_unit := unit_attachment_is_air(unit_get_unit_attachment(unit))
@@ -2787,7 +3020,9 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			)
 
 		// Find territory that we can try to hold that needs unit
-		_units_keys_7 := pro_sort_move_options_utils_sorted_unit_keys_by_move_options(self.pro_data, sorted_unit_attack_options)
+		// triplea-port-bootstrap: same fix as above (use needed_options_then_attack
+		// key schema after the re-sort).
+		_units_keys_7 := pro_sort_move_options_utils_sorted_unit_keys_by_needed_options_then_attack(self.pro_data, self.player, sorted_unit_attack_options, attack_map^, self.calc)
 		defer delete(_units_keys_7)
 		for unit in _units_keys_7 {
 			if _, in_added := added_set[unit]; in_added {
@@ -3432,29 +3667,65 @@ pro_combat_move_ai_do_combat_move :: proc(
 	self.is_bombing = false
 	pro_logger_debug(fmt.tprintf("Currently in defensive stance: %v", self.is_defensive))
 
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.entry") }
 	// Find the maximum number of units that can attack each territory and max enemy defenders
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_populateAttack") }
 	pro_territory_manager_populate_attack_options(self.territory_manager)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_populateEnemyDefense") }
 	pro_territory_manager_populate_enemy_defense_options(self.territory_manager)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_removeCantBeConquered") }
 
 	// Remove territories that aren't worth attacking and prioritize the remaining ones
 	attack_options := pro_territory_manager_remove_territories_that_cant_be_conquered_0(
 		self.territory_manager,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_removeCantBeConquered") }
+	when PLAN_PROBE {
+		_player_name_init := default_named_get_name(&self.player.named_attachable.default_named)
+		fmt.printf("PRIO_INIT player=%s count=%d\n", _player_name_init, len(attack_options))
+		// Print raw iteration order BEFORE alphabetical sort.
+		for patd, _idx in attack_options {
+			t_raw := pro_territory_get_territory(patd)
+			fmt.printf("PRIO0_RAW player=%s idx=%d t=%s\n", _player_name_init, _idx,
+				default_named_get_name(&t_raw.named_attachable.default_named))
+		}
+		// Sort by territory name for stable comparison with Java.
+		_ao_sort := make([dynamic]^Pro_Territory)
+		defer delete(_ao_sort)
+		for patd in attack_options { append(&_ao_sort, patd) }
+		slice.sort_by(_ao_sort[:], proc(a, b: ^Pro_Territory) -> bool {
+			ta := pro_territory_get_territory(a)
+			tb := pro_territory_get_territory(b)
+			na := ta != nil ? default_named_get_name(&ta.named_attachable.default_named) : ""
+			nb := tb != nil ? default_named_get_name(&tb.named_attachable.default_named) : ""
+			return strings.compare(na, nb) < 0
+		})
+		for patd in _ao_sort {
+			t := pro_territory_get_territory(patd)
+			fmt.printf("PRIO0 player=%s t=%s value=%.4f\n", _player_name_init,
+				default_named_get_name(&t.named_attachable.default_named),
+				pro_territory_get_value(patd))
+		}
+	}
 	cleared_territories: [dynamic]^Territory
 	for patd in attack_options {
 		append(&cleared_territories, pro_territory_get_territory(patd))
 	}
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_populateEnemyAttack1") }
 	pro_territory_manager_populate_enemy_attack_options(
 		self.territory_manager,
 		cleared_territories,
 		cleared_territories,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_canBeHeld1") }
 	pro_combat_move_ai_determine_territories_that_can_be_held(
 		self,
 		attack_options,
 		cleared_territories,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_prioritize") }
 	pro_combat_move_ai_prioritize_attack_options(self, self.player, &attack_options)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_prioritize") }
 	when PLAN_PROBE {
 		_player_name_a := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_PRIORITIZE player=%s count=%d\n", _player_name_a, len(attack_options))
@@ -3465,7 +3736,9 @@ pro_combat_move_ai_do_combat_move :: proc(
 				pro_territory_get_value(patd))
 		}
 	}
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_removeNotWorth1") }
 	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_removeNotWorth1") }
 	when PLAN_PROBE {
 		_player_name_b := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_REMOVE_NW player=%s count=%d\n", _player_name_b, len(attack_options))
@@ -3478,7 +3751,9 @@ pro_combat_move_ai_do_combat_move :: proc(
 	}
 
 	// Determine which territories to attack
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_determineToAttack") }
 	pro_combat_move_ai_determine_territories_to_attack(self, &attack_options)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_determineToAttack") }
 	when PLAN_PROBE {
 		_player_name_c := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_DETERMINE player=%s count=%d\n", _player_name_c, len(attack_options))
@@ -3519,17 +3794,21 @@ pro_combat_move_ai_do_combat_move :: proc(
 	for t in possible_transport_territories {
 		append(&possible_transport_dyn, t)
 	}
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_populateEnemyAttack2") }
 	pro_territory_manager_populate_enemy_attack_options(
 		self.territory_manager,
 		cleared_territories,
 		possible_transport_dyn,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_canBeHeld2") }
 	pro_combat_move_ai_determine_territories_that_can_be_held(
 		self,
 		attack_options,
 		cleared_territories,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_removeNotWorth2") }
 	pro_combat_move_ai_remove_territories_that_arent_worth_attacking(self, &attack_options)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_removeNotWorth2") }
 	when PLAN_PROBE {
 		_pn4 := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_REMOVE_NW2 player=%s count=%d\n", _pn4, len(attack_options))
@@ -3540,16 +3819,19 @@ pro_combat_move_ai_do_combat_move :: proc(
 	}
 
 	// Determine how many units to attack each territory with
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_moveOneDefender") }
 	already_moved_units :=
 		pro_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy(
 			self,
 			attack_options,
 		)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_determineUnitsToAttackWith") }
 	pro_combat_move_ai_determine_units_to_attack_with(
 		self,
 		&attack_options,
 		already_moved_units,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_determineUnitsToAttackWith") }
 	when PLAN_PROBE {
 		_pn5 := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_DETERMINE_UNITS player=%s count=%d\n", _pn5, len(attack_options))
@@ -3560,6 +3842,7 @@ pro_combat_move_ai_do_combat_move :: proc(
 	}
 
 	// Get all transport final territories (side-effects bookkeeping)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_calculateAmphibRoutes") }
 	_ = pro_move_utils_calculate_amphib_routes(
 		self.pro_data,
 		self.player,
@@ -3568,9 +3851,12 @@ pro_combat_move_ai_do_combat_move :: proc(
 		)^,
 		true,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_calculateAmphibRoutes") }
 
 	// Determine max enemy counter-attack units and remove territories where transports are exposed
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_removeTransportsExposed") }
 	pro_combat_move_ai_remove_territories_where_transports_are_exposed(self)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_removeTransportsExposed") }
 	when PLAN_PROBE {
 		_pn6 := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PRIO_AFTER_REMOVE_TRANS player=%s count=%d\n", _pn6, len(attack_options))
@@ -3581,8 +3867,10 @@ pro_combat_move_ai_do_combat_move :: proc(
 	}
 
 	// Determine if capital can be held if I still own it
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_capitalHeldCheck") }
 	my_capital := pro_data_get_my_capital(self.pro_data)
 	if my_capital != nil && territory_is_owned_by(my_capital, self.player) {
+		when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_removeAttacksUntilCapHeld") }
 		pro_combat_move_ai_remove_attacks_until_capital_can_be_held(
 			self,
 			&attack_options,
@@ -3590,10 +3878,13 @@ pro_combat_move_ai_do_combat_move :: proc(
 				pro_data_get_purchase_options(self.pro_data),
 			),
 		)
+		when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_removeAttacksUntilCapHeld") }
 	}
 
 	// Check if any subs in contested territory that's not being attacked
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_checkContestedSea") }
 	pro_combat_move_ai_check_contested_sea_territories(self)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_checkContestedSea") }
 
 	// Diagnostic: dump the AI's final attack plan before commit. Enabled
 	// with -define:PLAN=true. Mirror in Java's ProCombatMoveAi.
@@ -3603,9 +3894,58 @@ pro_combat_move_ai_do_combat_move :: proc(
 		)
 		player_name := default_named_get_name(&self.player.named_attachable.default_named)
 		fmt.printf("PLAN player=%s count=%d\n", player_name, len(attack_options))
-		for patd in attack_options {
-			t := pro_territory_get_territory(patd)
-			tname := default_named_get_name(&t.named_attachable.default_named)
+		// triplea-port-bootstrap: also dump per-unit (PLAN_U). Iterate all
+		// territories in attack_map (sorted by name) so iteration is
+		// deterministic. Mirrors Java's PLAN_U dump in ProCombatMoveAi.
+		// Sort units by (type_name, from_name) for stable comparison.
+		PlanUnit :: struct { tname: string, type_name: string, from_name: string }
+		plan_units := make([dynamic]PlanUnit)
+		defer delete(plan_units)
+		am_keys := make([dynamic]^Territory)
+		defer delete(am_keys)
+		for tk in attack_map_for_plan {
+			append(&am_keys, tk)
+		}
+		slice.sort_by(am_keys[:], proc(a, b: ^Territory) -> bool {
+			na := a != nil ? default_named_get_name(&a.named_attachable.default_named) : ""
+			nb := b != nil ? default_named_get_name(&b.named_attachable.default_named) : ""
+			return strings.compare(na, nb) < 0
+		})
+		for tk in am_keys {
+			patd := attack_map_for_plan[tk]
+			tname := default_named_get_name(&tk.named_attachable.default_named)
+			units := pro_territory_get_units(patd)
+			if len(units) == 0 { continue }
+			for u in units {
+				ut_name := "?"
+				if u != nil && u.type != nil {
+					ut_name = default_named_get_name(&u.type.named_attachable.default_named)
+				}
+				from_name := "<nil>"
+				utm := pro_data_get_unit_territory_map(self.pro_data)
+				if from_t, ok := utm[u]; ok && from_t != nil {
+					from_name = default_named_get_name(&from_t.named_attachable.default_named)
+				}
+				append(&plan_units, PlanUnit{tname=tname, type_name=ut_name, from_name=from_name})
+			}
+		}
+		// Sort matching Java side: (type_name, from_name).
+		// Don't pre-sort by territory — Java iterates territory by alphabetical
+		// already (we did the same), so output order is naturally aligned.
+		slice.stable_sort_by(plan_units[:], proc(a, b: PlanUnit) -> bool {
+			c1 := strings.compare(a.tname, b.tname)
+			if c1 != 0 { return c1 < 0 }
+			c2 := strings.compare(a.type_name, b.type_name)
+			if c2 != 0 { return c2 < 0 }
+			return strings.compare(a.from_name, b.from_name) < 0
+		})
+		for pu in plan_units {
+			fmt.printf("PLAN_U player=%s t=%s unit=%s from=%s\n",
+				player_name, pu.tname, pu.type_name, pu.from_name)
+		}
+		for tk in am_keys {
+			patd := attack_map_for_plan[tk]
+			tname := default_named_get_name(&tk.named_attachable.default_named)
 			value := pro_territory_get_value(patd)
 			units := pro_territory_get_units(patd)
 			type_count := make(map[string]int)
@@ -3637,6 +3977,7 @@ pro_combat_move_ai_do_combat_move :: proc(
 	}
 
 	// Calculate attack routes and perform moves
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.before_doMove") }
 	pro_combat_move_ai_do_move(
 		self,
 		pro_my_move_options_get_territory_map(
@@ -3646,6 +3987,7 @@ pro_combat_move_ai_do_combat_move :: proc(
 		self.data,
 		self.player,
 	)
+	when NCM_HANG_PROBE { pro_ncm_hang_stage(game_player_get_name(self.player), "cm.after_doMove") }
 
 	// Set strafing territories to avoid retreats
 	abstract_pro_ai_set_stored_strafing_territories(

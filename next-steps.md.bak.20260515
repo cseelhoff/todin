@@ -1,0 +1,117 @@
+# Next Steps — i=37 japanesePurchase divergence
+
+**Status as of 2026-05-14 ~15:11**: snap-0037 still running (PID 76282, et 31:19, RSS 13.5GB),
+stuck in `japaneseNonCombatMove` simulation. `AMPHIB_LOOP` probes have not fired yet because the
+inner simulation walk in `abstract_pro_ai_purchase` reaches `pro_purchase_ai_purchase` only after
+simulating combat → battle → NCM → tech → place. NCM alone has run >22 minutes.
+
+## What we know
+- First snap divergence at **i=37 (japanesePurchase)**. Java buys 1 transport + 1 artillery + 1
+  infantry; Odin buys 2 transports + 0 amphibs.
+- `find_purchase_options_for_territory_5` works correctly for Japan capital — returns 4 valid
+  options (infantry, artillery, armour, aaGun) with all 4 passing CANBE_PLACE and CANBE_CONSUME.
+  → Bug is **downstream of option discovery**.
+- AI is invoked correctly: `AMPHIB_ABS_ENTRY player="Japanese" bid=false pus=17`.
+- Loop structure (sea+amphib while-loop in `pro_purchase_ai.odin` lines 4210–4310) appears to
+  match Java structurally: when `transports_that_need_units` is empty, buy a transport and append
+  it; next iteration loads it.
+
+## Bug must be one of:
+1. `remove_invalid_purchase_options` strips all 4 amphib options for Japan.
+2. `transport_cost > transport_capacity` for all options after the inner filter
+   (artillery xport_cost should be 1, infantry 1; capacity should be 2 — both should fit).
+3. `amphib_efficiency` returns 0 for all 4 (numerator zero).
+4. `randomize_purchase_option` returns nil despite non-zero efficiencies.
+5. `transports_that_need_units` is structured wrong — e.g. the new transport gets purchased,
+   appended, but the next outer iteration sees an empty list (Odin slice/dynamic semantics
+   differ from Java ArrayList?). Worth re-reading once probe data lands.
+
+## Recommended next action — Option A: bypass the simulation walk
+
+The current diagnostic loop is too slow (~30+ min per snap-0037 run, with OOM risk). Patch
+`abstract_pro_ai_purchase` to short-circuit the simulation walk when:
+
+  `#config(AMPHIB_PROBE, false) && player.name == "Japanese" && step is japanesePurchase`
+
+so it directly invokes `pro_purchase_ai_purchase` on the original game state. Then:
+
+1. Kill current snap-0037 process: `kill 76282` (or wait for it to finish/OOM).
+2. Add the bypass guard in
+   [odin_flat/games__strategy__triplea__ai__pro__abstract_pro_ai.odin](odin_flat/games__strategy__triplea__ai__pro__abstract_pro_ai.odin)
+   around the `step_name` dispatch loop (~line 800–981).
+3. Rebuild and re-run snap-0037. Should fire `AMPHIB_ENTRY` + `AMPHIB_LOOP*` in **<60s** total.
+4. Inspect `AMPHIB_LOOP*` output to discriminate between hypotheses 1–5 above.
+5. Patch the implicated code in
+   [odin_flat/games__strategy__triplea__ai__pro__pro_purchase_ai.odin](odin_flat/games__strategy__triplea__ai__pro__pro_purchase_ai.odin)
+   (lines 4220–4310) or
+   [odin_flat/games__strategy__triplea__ai__pro__util__pro_purchase_validation_utils.odin](odin_flat/games__strategy__triplea__ai__pro__util__pro_purchase_validation_utils.odin)
+   (lines 95–160).
+6. **Remove the bypass** before final verification.
+7. Re-run snap-0037 *without* the bypass (the slow 30-min simulation path) to confirm the actual
+   purchase output matches Java. If outputs match, run full r=1 DIGEST comparison to confirm
+   i=37 is byte-equal and find new first-divergence point.
+
+### Caveat
+The bypass changes the input state to `pro_purchase_ai_purchase` (no simulated combat losses /
+production accounting / unit positions). The bug *should* still reproduce because the Japan
+capital starts with 17 PUs and the same 4 unit-type options regardless of simulation. If the
+bypass run produces 1T+1art+1inf (i.e. *correct* output), then the bug depends on simulated
+state and we need a different approach (e.g. dump simulated state before purchase and replay
+in a unit test).
+
+## Side issue — NCM step never completes (confirmed 40+ min hang)
+
+Polling loop 14:40 → 15:20 confirmed `AMPHIB_SIM` count frozen at 3 (combat → battle → NCM) from
+i=28 (14:54) through i=80 (15:20). NCM has been "running" for 26+ minutes without producing
+the `japaneseTechActivation` or `japanesePlace` step trace. Memory grows linearly
+(~3 MB/s sustained — ~180MB/min, NOT the ~50MB/min estimated earlier; RSS hit 15.2GB at i=80).
+
+This is essentially confirmed as an infinite loop or unbounded growth in Odin's NCM port.
+**Java completes NCM in seconds.** The slowness blocks `pro_purchase_ai_purchase` from ever
+being reached via the simulation path, which is why Option A (bypass simulation) is required —
+not just convenient.
+
+After fixing i=37, file a follow-up issue and profile NCM (sampling profiler or add per-iter
+trace probes inside the NCM dispatch).
+
+### Correction
+Earlier note said `pus=17`; latest run shows `AMPHIB_ABS_ENTRY player="Japanese" pus=30`.
+Real PU count at simulated purchase point is 30, not 17.
+
+## Probe inventory (already in tree, gated by `-define:AMPHIB_PROBE=true`)
+- `AMPHIB_ABS_ENTRY` — entry of `abstract_pro_ai_purchase` (Japanese only)
+- `AMPHIB_SIM` — per-step simulation trace inside `abstract_pro_ai_purchase`
+- `AMPHIB_ENTRY` — entry of `pro_purchase_ai_purchase` (Japanese only)
+- `AMPHIB_LOOP` / `AMPHIB_LOOP.opt` / `AMPHIB_LOOP.after_filter` / `AMPHIB_LOOP.eff` /
+  `AMPHIB_LOOP.choice` — inside the amphib while-loop
+- `FOPT` / `FOPT.opt` / `FOPT.done` — `find_purchase_options_for_territory` (Japanese only)
+- `CANBE_PLACE` / `CANBE_CONSUME` — `can_units_be_placed` (Japanese only)
+
+All use `fmt.eprintf` (unbuffered stderr) — `fmt.printf` to stdout is block-buffered when
+redirected, which is why earlier `LAND_OPTS_PROBE`/`FILTER`/`PLACE_PICK` printfs were invisible.
+
+## Run command
+```bash
+cd /home/caleb/todin/triplea
+export ODIN=/nix/store/dj690miai5nk9h5d38apq0xp0nq84i02-odin-dev-2026-04/bin/odin
+export LD_LIBRARY_PATH=/nix/store/ccif8gy9z7c4v6d3hnwsph9fqaqw8hwv-sqlite-3.50.4/lib
+rm -f /tmp/snap-0037.log /tmp/snap-0037.err
+$ODIN test conversion/odin_tests/server_game_run_next_step \
+    -collection:flat=/home/caleb/todin/odin_flat \
+    -collection:test_common=conversion/odin_tests/test_common \
+    -define:ODIN_TEST_THREADS=1 -define:ODIN_TEST_TRACK_MEMORY=false \
+    "-define:FILTER_SNAP=\"0037\"" -define:AMPHIB_PROBE=true \
+    -extra-linker-flags:"-L/nix/store/ccif8gy9z7c4v6d3hnwsph9fqaqw8hwv-sqlite-3.50.4/lib" \
+    > /tmp/snap-0037.log 2> /tmp/snap-0037.err &
+```
+
+## Files to touch for Option A
+- [odin_flat/games__strategy__triplea__ai__pro__abstract_pro_ai.odin](odin_flat/games__strategy__triplea__ai__pro__abstract_pro_ai.odin) — add bypass guard
+- (After fix) [odin_flat/games__strategy__triplea__ai__pro__pro_purchase_ai.odin](odin_flat/games__strategy__triplea__ai__pro__pro_purchase_ai.odin)
+- (Possibly) [odin_flat/games__strategy__triplea__ai__pro__util__pro_purchase_validation_utils.odin](odin_flat/games__strategy__triplea__ai__pro__util__pro_purchase_validation_utils.odin)
+
+## Java reference
+- [triplea/game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/ProPurchaseAi.java](triplea/game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/ProPurchaseAi.java)
+  line 1530+ `purchaseSeaAndAmphibUnits`
+- [triplea/game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProPurchaseValidationUtils.java](triplea/game-app/game-core/src/main/java/games/strategy/triplea/ai/pro/util/ProPurchaseValidationUtils.java)
+  line 38+ `findPurchaseOptionsForTerritory` + `canUnitsBePlaced`

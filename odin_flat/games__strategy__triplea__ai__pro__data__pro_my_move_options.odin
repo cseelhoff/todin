@@ -37,6 +37,15 @@ Pro_My_Move_Options :: struct {
 	transport_move_map_order: [dynamic]^Unit,
 	bombard_map_order:        [dynamic]^Unit,
 	bomber_move_map_order:    [dynamic]^Unit,
+	// Parallel insertion-order territory slices for each inner Set
+	// (Java uses LinkedHashSet<Territory>). Mirrors the per-unit
+	// inner sets in unit_move_map. Append a (u, t) pair ONCE the
+	// first time t is inserted into unit_move_map[u]. See
+	// `pro_my_move_options_record_unit_move_inner` helper. Iteration
+	// order matters for AI tiebreaks (e.g. cruiser fallback at
+	// pro_non_combat_move_ai's "Move sea units to best location"
+	// pass — see step24 cruiser divergence memo).
+	unit_move_map_inner_order: map[^Unit][dynamic]^Territory,
 }
 
 pro_my_move_options_new :: proc() -> ^Pro_My_Move_Options {
@@ -51,6 +60,7 @@ pro_my_move_options_new :: proc() -> ^Pro_My_Move_Options {
 	self.transport_move_map_order = make([dynamic]^Unit)
 	self.bombard_map_order = make([dynamic]^Unit)
 	self.bomber_move_map_order = make([dynamic]^Unit)
+	self.unit_move_map_inner_order = make(map[^Unit][dynamic]^Territory)
 	return self
 }
 
@@ -93,6 +103,36 @@ pro_my_move_options_get_bombard_map_order :: proc(self: ^Pro_My_Move_Options) ->
 }
 pro_my_move_options_get_bomber_move_map_order :: proc(self: ^Pro_My_Move_Options) -> [dynamic]^Unit {
 	return self.bomber_move_map_order
+}
+
+// Returns a pointer to the per-unit inner-territory insertion-order map.
+// Mirrors Java's LinkedHashSet<Territory> iteration. Used by AI passes
+// where tiebreak order matches Java requires deterministic territory
+// iteration (e.g. cruiser fallback in non-combat move).
+pro_my_move_options_get_unit_move_map_inner_order :: proc(
+	self: ^Pro_My_Move_Options,
+) -> ^map[^Unit][dynamic]^Territory {
+	return &self.unit_move_map_inner_order
+}
+
+// Idempotent recorder: appends `t` to `inner_order[u]` only if not
+// already present (matches LinkedHashSet semantics). Pass the inner
+// order map by pointer.
+pro_my_move_options_record_unit_move_inner :: proc(
+	inner_order: ^map[^Unit][dynamic]^Territory,
+	u: ^Unit,
+	t: ^Territory,
+) {
+	if inner_order == nil { return }
+	list, ok := inner_order[u]
+	if !ok {
+		list = make([dynamic]^Territory)
+	}
+	for existing in list {
+		if existing == t { return }
+	}
+	append(&list, t)
+	inner_order[u] = list
 }
 
 pro_my_move_options_get_territory_map :: proc(self: ^Pro_My_Move_Options) -> ^map[^Territory]^Pro_Territory {
@@ -208,6 +248,14 @@ pro_my_move_options_new_copy :: proc(other: ^Pro_My_Move_Options, pro_data: ^Pro
 			self.bomber_move_map[u] = terrs
 			append(&self.bomber_move_map_order, u)
 		}
+	}
+	// Copy inner-territory insertion order (LinkedHashSet equivalent).
+	for u, list in other.unit_move_map_inner_order {
+		copied := make([dynamic]^Territory, 0, len(list))
+		for t in list {
+			append(&copied, t)
+		}
+		self.unit_move_map_inner_order[u] = copied
 	}
 	return self
 }

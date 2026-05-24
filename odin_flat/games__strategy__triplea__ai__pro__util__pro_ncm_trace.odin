@@ -9,6 +9,15 @@ import "core:strings"
 
 NCM_TRACE :: #config(NCM_TRACE, false)
 NCM_TRACE_DUMP :: #config(NCM_TRACE_DUMP, false)
+NCM_HANG_PROBE :: #config(NCM_HANG_PROBE, false)
+
+pro_ncm_hang_stage :: proc(player_name: string, stage: string) {
+	when NCM_HANG_PROBE {
+		if player_name == "Japanese" {
+			fmt.eprintf("NCM_HANG.stage %s\n", stage)
+		}
+	}
+}
 
 @(private="file")
 ncm_fnv1a64 :: proc(s: string) -> u64 {

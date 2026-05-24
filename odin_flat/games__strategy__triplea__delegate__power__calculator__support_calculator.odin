@@ -6,10 +6,16 @@ import "core:fmt"
 //   - games.strategy.triplea.delegate.power.calculator.SupportCalculator
 
 Support_Calculator :: struct {
-	support_rules: map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment,
-	support_units: map[^Unit_Support_Attachment]^Integer_Map_Unit,
-	side:          Battle_State_Side,
-	allies:        bool,
+	support_rules:       map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment,
+	support_units:       map[^Unit_Support_Attachment]^Integer_Map_Unit,
+	side:                Battle_State_Side,
+	allies:              bool,
+	// LinkedHashMap insertion-order for `support_rules`. Java declares
+	// the field as LinkedHashMap (AvailableSupports.java:31, 60, 98)
+	// and AvailableSupports.giveSupportToUnit iterates .values().
+	support_rules_order: [dynamic]^Unit_Support_Attachment_Bonus_Type,
+	// LinkedHashMap insertion-order for `support_units` (Java line 32, 108).
+	support_units_order: [dynamic]^Unit_Support_Attachment,
 }
 
 support_calculator_get_side :: proc(self: ^Support_Calculator) -> Battle_State_Side {
@@ -24,16 +30,33 @@ support_calculator_get_support_units :: proc(self: ^Support_Calculator) -> map[^
 	return self.support_units
 }
 
+support_calculator_get_support_rules_order :: proc(self: ^Support_Calculator) -> [dynamic]^Unit_Support_Attachment_Bonus_Type {
+	return self.support_rules_order
+}
+
+support_calculator_get_support_units_order :: proc(self: ^Support_Calculator) -> [dynamic]^Unit_Support_Attachment {
+	return self.support_units_order
+}
+
 support_calculator_is_allies :: proc(self: ^Support_Calculator) -> bool {
 	return self.allies
 }
 
 // Java: Collection<List<UnitSupportAttachment>> getUnitSupportAttachments()
-// returns supportRules.values(); collect map values into a dynamic array.
+// returns supportRules.values(); collect map values into a dynamic array
+// in LinkedHashMap insertion order so downstream consumers see Java order.
 support_calculator_get_unit_support_attachments :: proc(self: ^Support_Calculator) -> [dynamic][dynamic]^Unit_Support_Attachment {
 	result: [dynamic][dynamic]^Unit_Support_Attachment
-	for _, v in self.support_rules {
-		append(&result, v)
+	if len(self.support_rules_order) > 0 {
+		for k in self.support_rules_order {
+			if v, ok := self.support_rules[k]; ok {
+				append(&result, v)
+			}
+		}
+	} else {
+		for _, v in self.support_rules {
+			append(&result, v)
+		}
 	}
 	return result
 }
@@ -68,6 +91,8 @@ support_calculator_new :: proc(
 	self.allies = allies
 	self.support_rules = make(map[^Unit_Support_Attachment_Bonus_Type][dynamic]^Unit_Support_Attachment)
 	self.support_units = make(map[^Unit_Support_Attachment]^Integer_Map_Unit)
+	self.support_rules_order = make([dynamic]^Unit_Support_Attachment_Bonus_Type)
+	self.support_units_order = make([dynamic]^Unit_Support_Attachment)
 
 	if len(units_giving_the_support) == 0 {
 		when #config(SUP_PROBE, false) {
@@ -144,7 +169,7 @@ support_calculator_new :: proc(
 			if !owned_p(owned_c, unit) {
 				continue
 			}
-			units_for_rule.entries[unit] = number
+			integer_map_unit_put(units_for_rule, unit, number)
 
 			imp_art_hit: bool
 			if has_imp_art {
@@ -153,7 +178,7 @@ support_calculator_new :: proc(
 				imp_art_hit = support_calculator_lambda_new_0(self, unit)
 			}
 			if imp_art_hit {
-				units_for_rule.entries[unit] += number
+				integer_map_unit_put(units_for_rule, unit, units_for_rule.entries[unit] + number)
 			}
 		}
 		if len(units_for_rule.entries) > 0 {
@@ -162,11 +187,15 @@ support_calculator_new :: proc(
 				if attached_ut != nil { attached_name = attached_ut.named_attachable.default_named.name }
 				fmt.printf("SUP_RULE_ADD attached=%s side=%v allies=%v supporters=%d\n", attached_name, side, allies, len(units_for_rule.entries))
 			}
+			if _, already := self.support_units[rule]; !already {
+				append(&self.support_units_order, rule)
+			}
 			self.support_units[rule] = units_for_rule
 			bt := unit_support_attachment_get_bonus_type(rule)
 			list, ok := self.support_rules[bt]
 			if !ok {
 				list = support_calculator_lambda_new_1(self, bt)
+				append(&self.support_rules_order, bt)
 			}
 			append(&list, rule)
 			self.support_rules[bt] = list
@@ -240,7 +269,12 @@ support_calculator_get_combined_support_given :: proc(
 	support_from_enemies: ^Available_Supports,
 ) -> map[^Unit]^Integer_Map {
 	support := make(map[^Unit]^Integer_Map)
-	for k, v in available_supports_get_units_giving_support(support_from_friends) {
+	// Walk LinkedHashMap insertion order on both sides so downstream
+	// consumers (PowerStrengthAndRolls.addUnits) build their
+	// unit_support_*_map in the same supporter order Java does.
+	friends_units := available_supports_get_units_giving_support(support_from_friends)
+	for k in available_supports_get_units_giving_support_order(support_from_friends) {
+		v := friends_units[k]
 		entry, ok := support[k]
 		if !ok {
 			entry = support_calculator_lambda_get_combined_support_given_2(k)
@@ -248,7 +282,9 @@ support_calculator_get_combined_support_given :: proc(
 		}
 		integer_map_add_map(entry, v)
 	}
-	for k, v in available_supports_get_units_giving_support(support_from_enemies) {
+	enemies_units := available_supports_get_units_giving_support(support_from_enemies)
+	for k in available_supports_get_units_giving_support_order(support_from_enemies) {
+		v := enemies_units[k]
 		entry, ok := support[k]
 		if !ok {
 			entry = support_calculator_lambda_get_combined_support_given_3(k)

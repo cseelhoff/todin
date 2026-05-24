@@ -3,6 +3,7 @@ package game
 import "core:fmt"
 import "core:os"
 import "core:slice"
+import "core:strings"
 
 Pro_Purchase_Ai :: struct {
 	calc:               ^Pro_Odds_Calculator,
@@ -335,6 +336,23 @@ pro_purchase_ai_place_units :: proc(
 ) {
 	player_units := unit_collection_get_units(game_player_get_unit_collection(self.player))
 	pro_logger_info(fmt.tprintf("Place units=%v", player_units))
+	pname_pu := default_named_get_name(&self.player.named_attachable.default_named)
+	is_russians_dbg := pname_pu == "Russians"
+	if is_russians_dbg {
+		apd := cast(^Abstract_Place_Delegate)place_delegate.concrete
+		fmt.printf("PLACE_UNITS_FALLBACK_ENTRY player=Russians n_prio=%d pool=%d placements=%d\n",
+			len(prioritized_territories), len(player_units), len(apd.placements))
+		for i := 0; i < len(apd.placements); i += 1 {
+			up := apd.placements[i]
+			ptn := territory_get_name(up.producer_territory)
+			ptp := territory_get_name(up.place_territory)
+			fmt.printf("  PLACEMENT[%d] producer=%s place=%s n_units=%d\n",
+				i, ptn, ptp, len(up.units))
+		}
+		for k, v in apd.produced {
+			fmt.printf("  PRODUCED[%s]=%d\n", territory_get_name(k), len(v))
+		}
+	}
 
 	for place_territory in prioritized_territories {
 		t := pro_place_territory_get_territory(place_territory)
@@ -352,6 +370,15 @@ pro_purchase_ai_place_units :: proc(
 			matched,
 			t,
 		)
+		if is_russians_dbg {
+			fmt.printf("PLACE_UNITS_FALLBACK t=%s matched=%d is_err=%v max=%d gpu_len=%d\n",
+				territory_get_name(t),
+				len(matched),
+				placeable_units_is_error(placeable_units),
+				placeable_units_get_max_units(placeable_units),
+				len(placeable_units_get_units(placeable_units)),
+			)
+		}
 		if placeable_units_is_error(placeable_units) {
 			pro_logger_trace(
 				fmt.tprintf(
@@ -387,6 +414,10 @@ pro_purchase_ai_place_units :: proc(
 		units_to_place: [dynamic]^Unit
 		for i in 0 ..< int(place_count) {
 			append(&units_to_place, units_that_can_be_placed[i])
+		}
+		if is_russians_dbg && place_count > 0 {
+			fmt.printf("PLACE_UNITS_FALLBACK_DO t=%s place_count=%d\n",
+				territory_get_name(t), place_count)
 		}
 		pro_logger_trace(
 			fmt.tprintf("%s, placedUnits=%v", territory_to_string(t), units_to_place),
@@ -447,7 +478,7 @@ pro_purchase_ai_populate_production_rule_map :: proc(
 		for t in _sorted_pt_4 {
 			for ppt in pro_purchase_territory_get_can_place_territories(t) {
 				for u in pro_place_territory_get_place_units(ppt) {
-					if unit_get_type(u) != pro_purchase_option_get_unit_type(ppo) {
+					if !unit_type_equals(unit_get_type(u), pro_purchase_option_get_unit_type(ppo)) {
 						continue
 					}
 					already_unplaced := false
@@ -703,7 +734,7 @@ pro_purchase_ai_repair :: proc(
 				}
 			}
 			for fix_unit, fix_terr in units_that_can_produce_needing_repair {
-				if fix_unit == nil || unit_get_type(fix_unit) != any_result_key {
+				if fix_unit == nil || !unit_type_equals(unit_get_type(fix_unit), any_result_key) {
 					continue
 				}
 				if !owned_match_p(owned_match_c, fix_terr) {
@@ -2395,6 +2426,32 @@ pro_purchase_ai_place :: proc(
 		}
 	}
 
+	{
+		pname_dbg := default_named_get_name(&self.player.named_attachable.default_named)
+		if pname_dbg == "Russians" {
+			fmt.printf("PLACE_PRIORITIZED_DUMP player=Russians n=%d\n",
+				len(prioritized_territories))
+			for ptd in prioritized_territories {
+				tn := territory_get_name(pro_place_territory_get_territory(ptd))
+				ch := pro_place_territory_is_can_hold(ptd)
+				sv := pro_place_territory_get_strategic_value(ptd)
+				fmt.printf("  PRIO t=%s canHold=%v sv=%v\n", tn, ch, sv)
+			}
+			fmt.printf("PLACE_NEED_TO_DEFEND_LAND n=%d\n", len(need_to_defend_land_territories))
+			for ptd in need_to_defend_land_territories {
+				tn := territory_get_name(pro_place_territory_get_territory(ptd))
+				ch := pro_place_territory_is_can_hold(ptd)
+				fmt.printf("  NTD_LAND t=%s canHold=%v\n", tn, ch)
+			}
+			fmt.printf("PLACE_NEED_TO_DEFEND_SEA n=%d\n", len(need_to_defend_sea_territories))
+			for ptd in need_to_defend_sea_territories {
+				tn := territory_get_name(pro_place_territory_get_territory(ptd))
+				ch := pro_place_territory_is_can_hold(ptd)
+				fmt.printf("  NTD_SEA t=%s canHold=%v\n", tn, ch)
+			}
+		}
+	}
+
 	// Place regular then isConstruction units (placeDelegate.getPlaceableUnits
 	// doesn't handle combined).
 	not_construction_p, not_construction_c := matches_unit_is_not_construction()
@@ -2898,6 +2955,19 @@ pro_purchase_ai_purchase_land_units :: proc(
 				remaining_unit_production,
 			),
 		)
+		when #config(LAND_OPTS_PROBE, false) {
+			fmt.printf("LAND_TERR terr=%s remainingProd=%d resources=%s\n",
+				territory_get_name(t), remaining_unit_production,
+				pro_resource_tracker_to_string(self.resource_tracker))
+			fmt.printf("LAND_TERR_UNPLACED n=%d:\n", len(unplaced_units))
+			for u in unplaced_units {
+				utn := "?"
+				if u != nil && u.type != nil {
+					utn = unit_type_get_name(u.type)
+				}
+				fmt.printf("  unplaced unit=%s\n", utn)
+			}
+		}
 		if remaining_unit_production <= 0 {
 			continue
 		}
@@ -3060,7 +3130,21 @@ pro_purchase_ai_purchase_land_units :: proc(
 				break
 			}
 
+			when #config(LAND_OPTS_PROBE, false) {
+				_sel_n := unit_type_get_name(pro_purchase_option_get_unit_type(selected_option))
+				_sel_c := pro_purchase_option_get_cost(selected_option)
+				_costs := pro_purchase_option_get_costs(selected_option)
+				_costs_n := 0
+				if _costs != nil { _costs_n = len(_costs^) }
+				fmt.printf("LAND_PICK terr=%s unit=%s cost=%d costs_map_n=%d tracker_before=%s\n",
+					territory_get_name(t), _sel_n, _sel_c, _costs_n,
+					pro_resource_tracker_to_string(self.resource_tracker))
+			}
 			pro_resource_tracker_purchase(self.resource_tracker, selected_option)
+			when #config(LAND_OPTS_PROBE, false) {
+				fmt.printf("LAND_PICK_AFTER tracker_after=%s\n",
+					pro_resource_tracker_to_string(self.resource_tracker))
+			}
 			remaining_unit_production -= pro_purchase_option_get_quantity(selected_option)
 			temp_units := pro_purchase_option_create_temp_units(selected_option)
 			for u in temp_units {
@@ -3343,7 +3427,7 @@ pro_purchase_ai_purchase_factory :: proc(
 		for place_territory in prioritized_land_territories {
 			for u in pro_place_territory_get_place_units(place_territory) {
 				for ppo in pro_purchase_option_map_get_land_options(purchase_options) {
-					if unit_get_type(u) == pro_purchase_option_get_unit_type(ppo) &&
+					if unit_type_equals(unit_get_type(u), pro_purchase_option_get_unit_type(ppo)) &&
 					   pro_purchase_option_get_quantity(ppo) == 1 &&
 					   (max_placed_option == nil ||
 							   pro_purchase_option_get_cost(ppo) >=
@@ -3481,7 +3565,28 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 	)
 	gm := game_data_get_map(self.data)
 
-	for place_territory in prioritized_sea_territories {
+	// Sort prioritized sea territories by territory name so the iteration
+	// order is content-addressable and matches the Java oracle (which
+	// applies the same sort in ProPurchaseAi.purchaseSeaAndAmphibUnits).
+	// The original priority-value order would tie-break via LinkedHashMap
+	// insertion order on the Java side, which the Odin port cannot
+	// reproduce.
+	sorted_prioritized_sea_territories: [dynamic]^Pro_Place_Territory
+	for p in prioritized_sea_territories {
+		append(&sorted_prioritized_sea_territories, p)
+	}
+	defer delete(sorted_prioritized_sea_territories)
+	slice.sort_by(
+		sorted_prioritized_sea_territories[:],
+		proc(a, b: ^Pro_Place_Territory) -> bool {
+			return strings.compare(
+				territory_get_name(pro_place_territory_get_territory(a)),
+				territory_get_name(pro_place_territory_get_territory(b)),
+			) < 0
+		},
+	)
+
+	for place_territory in sorted_prioritized_sea_territories {
 		t := pro_place_territory_get_territory(place_territory)
 		pro_logger_debug(fmt.tprintf("Checking sea place for %s", territory_get_name(t)))
 
@@ -4110,14 +4215,42 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			// Find transports that need loaded and units to ignore that
 			// are already paired up.
 			transports_that_need_units: [dynamic]^Unit
-			potential_units_to_load: map[^Unit]struct {}
+			// Insertion-ordered set, mirroring Java's
+			// `LinkedHashSet<Unit> potentialUnitsToLoad`. The greedy
+			// fill in `select_units_to_transport_from_list` walks this
+			// in iteration (== insertion) order, so a hash-keyed map
+			// would yield Odin/Java divergence whenever two units of
+			// different types are both candidates. We keep a parallel
+			// presence map for O(1) dedup.
+			potential_units_to_load: [dynamic]^Unit
+			potential_units_to_load_set: map[^Unit]bool
 			sea_territories := game_map_get_neighbors_distance_predicate(
 				gm, land_territory, distance, can_move_sea_p, can_move_sea_c,
 			)
 			owned_xport_p, owned_xport_c := pro_matches_unit_is_owned_transport(
 				self.player,
 			)
-			for sea_territory, _ in sea_territories {
+			// Iterate sea_territories in name-sorted order so insertion
+			// into potential_units_to_load is deterministic and matches
+			// Java (which we also wrap with ProDeterminism.sortedTerritories
+			// at this site). See deterministic-maps.md (japanesePurchase).
+			sea_territories_sorted := pro_determinism_sorted_territory_keys(sea_territories)
+			defer delete(sea_territories_sorted)
+			when #config(AMPHIB_PROBE, false) {
+				if game_player_get_name(self.player) == "Japanese" {
+					fmt.eprintf(
+						"GATHER.sea_loop t=%s land=%s distance=%d sea_n=%d\n",
+						territory_to_string(t),
+						territory_to_string(land_territory),
+						distance,
+						len(sea_territories_sorted),
+					)
+					for st in sea_territories_sorted {
+						fmt.eprintf("GATHER.sea[i] name=%s\n", territory_to_string(st))
+					}
+				}
+			}
+			for sea_territory in sea_territories_sorted {
 				units_in_territory := pro_purchase_utils_get_place_units(
 					sea_territory, purchase_territories, pro_data_get_data(self.pro_data),
 				)
@@ -4131,11 +4264,42 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					}
 				}
 				delete(units_in_territory)
+				when #config(AMPHIB_PROBE, false) {
+					if game_player_get_name(self.player) == "Japanese" {
+						fmt.eprintf(
+							"GATHER.sea sea=%s xports_n=%d\n",
+							territory_to_string(sea_territory),
+							len(transports),
+						)
+					}
+				}
 				for transport in transports {
 					append(&transports_that_need_units, transport)
 					territories_to_load_from := game_map_get_neighbors_distance(
 						gm, sea_territory, distance,
 					)
+					when #config(AMPHIB_PROBE, false) {
+						if game_player_get_name(self.player) == "Japanese" {
+							fmt.eprintf(
+								"GATHER.tlf_raw sea=%s xport=%p raw_n=%d\n",
+								territory_to_string(sea_territory),
+								transport,
+								len(territories_to_load_from),
+							)
+							_raw_sorted := pro_determinism_sorted_territory_keys(territories_to_load_from)
+							defer delete(_raw_sorted)
+							for _pt in _raw_sorted {
+								_v, _ok := territory_value_map[_pt]
+								fmt.eprintf(
+									"GATHER.tlf_raw.t name=%s water=%v val=%.4f in_map=%v\n",
+									territory_to_string(_pt),
+									territory_is_water(_pt),
+									_v,
+									_ok,
+								)
+							}
+						}
+					}
 					to_remove: [dynamic]^Territory
 					for pt, _ in territories_to_load_from {
 						val := territory_value_map[pt]
@@ -4148,14 +4312,44 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					}
 					delete(to_remove)
 					ignore_list: [dynamic]^Unit
-					for u, _ in potential_units_to_load {
+					for u in potential_units_to_load {
 						append(&ignore_list, u)
 					}
 					units := pro_transport_utils_get_units_to_transport_from_territories_4(
 						self.player, transport, territories_to_load_from, ignore_list,
 					)
+					when #config(AMPHIB_PROBE, false) {
+						if game_player_get_name(self.player) == "Japanese" {
+							_kept_sorted := pro_determinism_sorted_territory_keys(territories_to_load_from)
+							defer delete(_kept_sorted)
+							fmt.eprintf(
+								"GATHER.tlf_kept sea=%s xport=%p kept_n=%d units_returned=%d\n",
+								territory_to_string(sea_territory),
+								transport,
+								len(_kept_sorted),
+								len(units),
+							)
+							for _pt in _kept_sorted {
+								fmt.eprintf(
+									"GATHER.tlf_kept.t name=%s\n",
+									territory_to_string(_pt),
+								)
+							}
+							for _u, _i in units {
+								fmt.eprintf(
+									"GATHER.tlf_unit[%d] type=%s ptr=%p\n",
+									_i,
+									unit_type_get_name(unit_get_type(_u)),
+									_u,
+								)
+							}
+						}
+					}
 					for u in units {
-						potential_units_to_load[u] = {}
+						if _, exists := potential_units_to_load_set[u]; !exists {
+							append(&potential_units_to_load, u)
+							potential_units_to_load_set[u] = true
+						}
 					}
 					delete(units)
 					delete(ignore_list)
@@ -4170,7 +4364,32 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			lhood := game_map_get_neighbors_predicate(gm, t, land_p, land_c)
 			combat_xport_p, combat_xport_c :=
 				pro_matches_unit_is_owned_combat_transportable_unit(self.player)
-			for neighbor, _ in lhood {
+			// Sort neighbor iteration for the same reason as sea_territories
+			// above.
+			lhood_sorted := pro_determinism_sorted_territory_keys(lhood)
+			defer delete(lhood_sorted)
+			when #config(AMPHIB_PROBE, false) {
+				if game_player_get_name(self.player) == "Japanese" {
+					fmt.eprintf(
+						"GATHER.lhood_loop t=%s lhood_n=%d\n",
+						territory_to_string(t),
+						len(lhood_sorted),
+					)
+				}
+			}
+			for neighbor in lhood_sorted {
+				when #config(AMPHIB_PROBE, false) {
+					if game_player_get_name(self.player) == "Japanese" {
+						_v, _ok := territory_value_map[neighbor]
+						fmt.eprintf(
+							"GATHER.lhood name=%s val=%.4f in_map=%v pass=%v\n",
+							territory_to_string(neighbor),
+							_v,
+							_ok,
+							_v <= 0.25,
+						)
+					}
+				}
 				if territory_value_map[neighbor] <= 0.25 {
 					units_in_territory: [dynamic]^Unit
 					for u in territory_get_units(neighbor) {
@@ -4181,28 +4400,47 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						append(&units_in_territory, u)
 					}
 					delete(more)
+					_added: int
 					for u in units_in_territory {
 						if combat_xport_p(combat_xport_c, u) {
-							potential_units_to_load[u] = {}
+							if _, exists := potential_units_to_load_set[u]; !exists {
+								append(&potential_units_to_load, u)
+								potential_units_to_load_set[u] = true
+								_added += 1
+								when #config(AMPHIB_PROBE, false) {
+									if game_player_get_name(self.player) == "Japanese" {
+										fmt.eprintf(
+											"GATHER.lhood_add neighbor=%s type=%s ptr=%p\n",
+											territory_to_string(neighbor),
+											unit_type_get_name(unit_get_type(u)),
+											u,
+										)
+									}
+								}
+							}
+						}
+					}
+					when #config(AMPHIB_PROBE, false) {
+						if game_player_get_name(self.player) == "Japanese" {
+							fmt.eprintf(
+								"GATHER.lhood_done neighbor=%s added_n=%d\n",
+								territory_to_string(neighbor),
+								_added,
+							)
 						}
 					}
 					delete(units_in_territory)
 				}
 			}
 			delete(lhood)
-			ptl_list: [dynamic]^Unit
-			for u, _ in potential_units_to_load {
-				append(&ptl_list, u)
-			}
 			pro_logger_trace(
 				fmt.tprintf(
 					"%s, potentialUnitsToLoad=%s, transportsThatNeedUnits=%s",
 					territory_to_string(t),
-					pro_utils_summarize_units(ptl_list),
+					pro_utils_summarize_units(potential_units_to_load),
 					pro_utils_summarize_units(transports_that_need_units),
 				),
 			)
-			delete(ptl_list)
 
 			// Purchase transports and amphib units
 			amphib_units_to_place: [dynamic]^Unit
@@ -4214,18 +4452,63 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						unit_get_unit_attachment(transport),
 					)
 
-					ptl_arr: [dynamic]^Unit
-					for u, _ in potential_units_to_load {
-						append(&ptl_arr, u)
+					when #config(AMPHIB_PROBE, false) {
+						_pname_ptl := game_player_get_name(self.player)
+						if _pname_ptl == "Japanese" {
+							fmt.eprintf(
+								"AMPHIB_LOOP.before_select transport_cap=%d ptl_n=%d\n",
+								transport_capacity, len(potential_units_to_load),
+							)
+							for _u, _i in potential_units_to_load {
+								_un := unit_type_get_name(unit_get_type(_u))
+								_xc := unit_attachment_get_transport_cost(unit_get_unit_attachment(_u))
+								_am := unit_get_already_moved(_u)
+								_owner := game_player_get_name(unit_get_owner(_u))
+								fmt.eprintf(
+									"AMPHIB_LOOP.ptl[%d] type=%s xport_cost=%d already_moved=%v owner=%s ptr=%p\n",
+									_i, _un, _xc, _am, _owner, _u,
+								)
+							}
+						}
 					}
+
+					// Iterate potential_units_to_load directly: it's now an
+					// insertion-ordered set (parallel array + presence
+					// map), matching Java's LinkedHashSet semantics.
 					selected_units :=
 						pro_transport_utils_select_units_to_transport_from_list(
-							transport, ptl_arr,
+							transport, potential_units_to_load,
 						)
-					delete(ptl_arr)
+
+					when #config(AMPHIB_PROBE, false) {
+						_pname_sel := game_player_get_name(self.player)
+						if _pname_sel == "Japanese" {
+							_sel_cost := pro_transport_utils_find_units_transport_cost(selected_units)
+							fmt.eprintf(
+								"AMPHIB_LOOP.selected_units n=%d total_cost=%d\n",
+								len(selected_units), _sel_cost,
+							)
+							for _u, _i in selected_units {
+								_un := unit_type_get_name(unit_get_type(_u))
+								_xc := unit_attachment_get_transport_cost(unit_get_unit_attachment(_u))
+								fmt.eprintf(
+									"AMPHIB_LOOP.sel[%d] type=%s xport_cost=%d ptr=%p\n",
+									_i, _un, _xc, _u,
+								)
+							}
+						}
+					}
 					if len(selected_units) > 0 {
 						for u in selected_units {
-							delete_key(&potential_units_to_load, u)
+							if _, exists := potential_units_to_load_set[u]; exists {
+								delete_key(&potential_units_to_load_set, u)
+								for i := 0; i < len(potential_units_to_load); i += 1 {
+									if potential_units_to_load[i] == u {
+										ordered_remove(&potential_units_to_load, i)
+										break
+									}
+								}
+							}
 						}
 						transport_capacity -= pro_transport_utils_find_units_transport_cost(
 							selected_units,
@@ -4234,6 +4517,22 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					delete(selected_units)
 
 					for transport_capacity > 0 {
+						when #config(AMPHIB_PROBE, false) {
+							_pname := game_player_get_name(self.player)
+							if _pname == "Japanese" {
+								_t_name := t != nil ? territory_get_name(t) : "?"
+								_lt_name := land_territory != nil ? territory_get_name(land_territory) : "?"
+								fmt.eprintf("AMPHIB_LOOP player=%s t=%s land=%s cap=%d opts_n=%d remProd=%d\n",
+									_pname, _t_name, _lt_name, transport_capacity,
+									len(amphib_purchase_options_for_territory), remaining_unit_production)
+								for _o, _i in amphib_purchase_options_for_territory {
+									_un := default_named_get_name(&_o.unit_type.named_attachable.default_named)
+									fmt.eprintf("AMPHIB_LOOP.opt[%d] unit=%s qty=%d cost=%d xport_cost=%d\n",
+										_i, _un, pro_purchase_option_get_quantity(_o),
+										pro_purchase_option_get_cost(_o), pro_purchase_option_get_transport_cost(_o))
+								}
+							}
+						}
 						pro_purchase_validation_utils_remove_invalid_purchase_options(
 							self.pro_data, self.player, self.start_of_turn_data,
 							&amphib_purchase_options_for_territory, self.resource_tracker,
@@ -4253,10 +4552,31 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 									)
 							}
 						}
+						when #config(AMPHIB_PROBE, false) {
+							_pname2 := game_player_get_name(self.player)
+							if _pname2 == "Japanese" {
+								fmt.eprintf("AMPHIB_LOOP.after_filter eff_n=%d remaining_opts_n=%d\n",
+									len(amphib_efficiencies), len(amphib_purchase_options_for_territory))
+								for _o, _e in amphib_efficiencies {
+									_un2 := default_named_get_name(&_o.unit_type.named_attachable.default_named)
+									fmt.eprintf("AMPHIB_LOOP.eff unit=%s eff=%.4f\n", _un2, _e)
+								}
+							}
+						}
 						amphib_choice := pro_purchase_utils_randomize_purchase_option(
 							amphib_efficiencies, "Amphib",
 						)
 						delete(amphib_efficiencies)
+						when #config(AMPHIB_PROBE, false) {
+							_pname3 := game_player_get_name(self.player)
+							if _pname3 == "Japanese" {
+								_chn := "<nil>"
+								if amphib_choice != nil {
+									_chn = default_named_get_name(&amphib_choice.unit_type.named_attachable.default_named)
+								}
+								fmt.eprintf("AMPHIB_LOOP.choice -> %s\n", _chn)
+							}
+						}
 						if amphib_choice == nil {
 							break
 						}
@@ -4309,21 +4629,16 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					pro_resource_tracker_purchase(self.resource_tracker, transport_choice)
 					remaining_unit_production -=
 						pro_purchase_option_get_quantity(transport_choice)
-					ptl_log: [dynamic]^Unit
-					for u, _ in potential_units_to_load {
-						append(&ptl_log, u)
-					}
 					pro_logger_trace(
 						fmt.tprintf(
 							"Selected unit=%s, potentialUnitsToLoad=%v, transportsThatNeedUnits=%v",
 							unit_type_get_name(
 								pro_purchase_option_get_unit_type(transport_choice),
 							),
-							ptl_log,
+							potential_units_to_load,
 							transports_that_need_units,
 						),
 					)
-					delete(ptl_log)
 				}
 			}
 
@@ -4350,6 +4665,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			delete(transport_units_to_place)
 			delete(transports_that_need_units)
 			delete(potential_units_to_load)
+			delete(potential_units_to_load_set)
 			delete(owned_local_amphib_units)
 			delete(sea_transport_purchase_options_for_territory)
 			delete(amphib_purchase_options_for_territory)
@@ -4583,6 +4899,11 @@ pro_purchase_ai_purchase :: proc(
 	self.territory_manager = pro_territory_manager_new(self.calc, self.pro_data)
 	self.is_bid = false
 	purchase_options := pro_data_get_purchase_options(self.pro_data)
+	when #config(AMPHIB_PROBE, false) {
+		_pname0 := game_player_get_name(self.player)
+		fmt.eprintf("AMPHIB_ENTRY pro_purchase_ai_purchase player=%q\n", _pname0)
+		os.flush(os.stderr)
+	}
 
 	pro_logger_info(
 		fmt.tprintf("Starting purchase phase with resources: %v", self.resource_tracker),
@@ -4793,6 +5114,20 @@ pro_purchase_ai_purchase :: proc(
 	purchase_map := pro_purchase_ai_populate_production_rule_map(
 		self, purchase_territories, purchase_options,
 	)
+
+	when #config(PURCHASE_PROBE, false) {
+		_pn := game_player_get_name(self.player)
+		_total: int
+		fmt.eprintf("PURCHASE_PROBE player=%q purchase_map_n=%d:\n",
+			_pn, integer_map_size(purchase_map))
+		for k, q in purchase_map.map_values {
+			rule := cast(^Production_Rule)k
+			fmt.eprintf("  rule=%s qty=%d\n", production_rule_to_string(rule), q)
+			_total += int(q)
+		}
+		fmt.eprintf("PURCHASE_PROBE player=%q total_units=%d\n", _pn, _total)
+		os.flush(os.stderr)
+	}
 
 	// Purchase units
 	error := i_purchase_delegate_purchase(purchase_delegate, purchase_map)

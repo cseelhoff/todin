@@ -738,6 +738,7 @@ strategic_bombing_raid_battle_new :: proc(
 	self.aa_types = make([dynamic]string)
 	self.bombing_raid_total = 0
 	self.bombing_raid_damage.map_values = make(map[rawptr]i32)
+	self.bombing_raid_damage.keys_order = make([dynamic]rawptr)
 	self.is_amphibious = false
 	strategic_bombing_raid_battle_update_defending_units(self)
 	return self

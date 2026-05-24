@@ -223,11 +223,12 @@ strategic_bombing_raid_battle_1_kill_any_suicide_attackers :: proc(
 //   killAnySuicideAttackers(bridge);
 //   killAnyWithMaxDamageReached(bridge);
 strategic_bombing_raid_battle_1_execute :: proc(
-	self: ^Strategic_Bombing_Raid_Battle_1,
+	self_base: ^I_Executable,
 	stack: ^Execution_Stack,
 	bridge: ^I_Delegate_Bridge,
 ) {
 	_ = stack
+	self := cast(^Strategic_Bombing_Raid_Battle_1)self_base
 	outer := self.outer
 	display := i_delegate_bridge_get_display_channel_broadcaster(bridge)
 	i_display_goto_battle_step(display, outer.battle_id, "Strategic bombing raid")

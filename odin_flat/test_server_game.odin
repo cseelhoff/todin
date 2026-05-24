@@ -46,6 +46,16 @@ Test_Server_Game :: struct {
 	// whose name equals this value completes. Used by oracle comparisons
 	// scoped to a particular player's turn (e.g. "russianEndTurn").
 	stop_after_step: string,
+
+	// Path to the per-snapshot ProAi state sidecar (Java's
+	// `<label>-proai-state.json`, copied into the snapshot dir as
+	// `before-proai-state.json` by process_snapshots.py). When non-empty,
+	// the harness parses it after Pro_Ai construction and populates
+	// each AI's stored_purchase_territories + stored_strafing_territories
+	// so cross-phase AI state survives snapshot replay (the GameData
+	// JSON alone cannot reconstruct it: ProAi instance state lives on
+	// the AI object, not in the engine's serialized GameData graph).
+	proai_state_path: string,
 }
 
 @(private = "file")
@@ -125,6 +135,7 @@ test_server_game_player_should_bomber_bomb :: proc(self: ^Player, territory: ^Te
 @(private = "file")
 test_server_game_player_start :: proc(self: ^Player, step_name: string) {
 	ai := test_server_game_player_to_ai[self]
+	fmt.printf("PSTART step=%s self=%p ai=%p\n", step_name, self, ai)
 	if ai == nil { return }
 	abstract_ai_start(cast(^Abstract_Ai)ai, step_name)
 }
@@ -237,6 +248,30 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		}
 	}
 
+	// Populate per-player pool (units_held) with every unit owned by the
+	// player that is not currently placed on any territory. The snapshot
+	// JSON serializes units flat in `units[]` and references on-board
+	// ones from `territories[].units`; everything left over is the
+	// purchase pool. Without this, abstract_place_delegate's
+	// requires_user_input check sees an empty pool and skips dispatch.
+	if self.data.units_list != nil {
+		on_map: map[^Unit]struct{}
+		defer delete(on_map)
+		if gm := game_data_get_map(self.data); gm != nil {
+			for t in gm.territories {
+				for u in territory_get_units(t) {
+					on_map[u] = {}
+				}
+			}
+		}
+		for _, u in self.data.units_list.units {
+			if u == nil || u.owner == nil { continue }
+			if _, placed := on_map[u]; placed { continue }
+			if u.owner.units_held == nil { continue }
+			append(&u.owner.units_held.units, u)
+		}
+	}
+
 	// Backfill game_data on UnitType.unit_attachment and on
 	// RelationshipType.relationshipTypeAttachment. Battle delegate paths
 	// (e.g. unit_attachment_get_attack_for_player) deref
@@ -306,6 +341,24 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// game_data_get_delegate(name) resolves the same way XML-loaded
 	// games do.
 	test_server_game_register_ww2v5_delegates(self.data)
+
+	// Java's `InitializationDelegate.needToInitialize` defaults true and is
+	// flipped false the first time `start()` runs at round 1 / stepIndex 0;
+	// `saveState`/`loadState` round-trip it so later snapshots load it as
+	// false. The snapshot JSON does NOT serialize delegate fields, so the
+	// freshly-registered Odin delegate is always true on load. For any snap
+	// captured AFTER Java already ran init (anything that isn't round=1
+	// stepIndex=0), re-running init re-fires initShipyards → re-adds
+	// buyInfantry to productionShipyards → `Rule already added` panic.
+	if seq := game_data_get_sequence(self.data); seq != nil {
+		is_first_init := (seq.round == 1 && seq.current_index == 0)
+		if !is_first_init {
+			init_delegate := cast(^Initialization_Delegate)game_data_get_delegate_optional(self.data, "initDelegate")
+			if init_delegate != nil {
+				init_delegate.need_to_initialize = false
+			}
+		}
+	}
 
 	// JSON loader doesn't materialize battle_records_list (Java game-XML
 	// init creates it via GameData ctor → battleRecordsList = new BRL(this)).
@@ -462,6 +515,8 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 		i_game_shim := abstract_game_as_i_game(&sg.abstract_game)
 		// Don't free i_game_shim: the listener registered by
 		// player_bridge_new captures it for the run-step lifetime.
+		ai_list := make([dynamic]^Pro_Ai)
+		defer delete(ai_list)
 		for gp, ai in sg.game_players {
 			pro := pro_ai_new(
 				default_named_get_name(&gp.named_attachable.default_named),
@@ -474,6 +529,77 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 				gp,
 			)
 			test_server_game_player_to_ai[ai] = pro
+			append(&ai_list, pro)
+		}
+
+		// Cross-phase AI state: restore each AbstractProAi's
+		// stored_purchase_territories + stored_strafing_territories from
+		// the Java-emitted sidecar so snap replay sees the same AI memory
+		// it would in a continuous Java run. Required for e.g. NCM's
+		// findUnitsThatCantMove IF-branch (purchaseTerritories != nil),
+		// which adds planned place-units to cantMoveUnits. Skipped (no-op)
+		// when the snapshot has no sidecar.
+		if self.proai_state_path != "" {
+			test_proai_state_apply(self.data, self.proai_state_path, ai_list[:])
+
+			// Snapshot semantics fix: the earlier orphan-backfill loop
+			// (~line 256) puts EVERY player-owned unit that is not on the
+			// map into player.units_held. That over-counts whenever the
+			// snapshot's flat units[] still carries casualties from prior
+			// battle steps that Java already removed from the player's
+			// UnitCollection but kept in data.allUnits as orphans (not
+			// yet gc'd). For snap 0017 russianPlace this inflates the
+			// Russian pool from the real 6 (purchase output) to 17
+			// (6 purchase + 11 dead defenders of West Russia / Ukraine
+			// S.S.R. / Belorussia from russianBattle), so Java's
+			// `if (player.getUnits().isEmpty()) return;` early-return
+			// in ProPurchaseAi.place() doesn't fire and Odin runs the
+			// fallback placeUnits() loop placing phantom units.
+			//
+			// Authoritative ground truth for the per-player pool size is
+			// the AI's stored_purchase_territories plan (proai-state),
+			// which records exactly the unit types Java intends to place
+			// this round. Trim units_held per player to match those
+			// per-type counts, dropping the orphan casualties.
+			for ai in ai_list {
+				if ai == nil { continue }
+				gp := ai.game_player
+				if gp == nil || gp.units_held == nil { continue }
+				plan_counts: map[^Unit_Type]int
+				defer delete(plan_counts)
+				if ai.stored_purchase_territories != nil {
+					for _, ppt in ai.stored_purchase_territories {
+						if ppt == nil { continue }
+						for place in ppt.can_place_territories {
+							if place == nil { continue }
+							for u in place.place_units {
+								if u == nil || u.type == nil { continue }
+								plan_counts[u.type] = plan_counts[u.type] + 1
+							}
+						}
+					}
+				}
+				// Trim units_held to match the AI's stored placement plan.
+				// For snaps between Purchase and Place the plan is non-empty
+				// and records exactly the unit types Java intends to place
+				// this round; orphan casualties are dropped.
+				// For snaps with no active plan (e.g. germanPurchase snap 21,
+				// where the next phase will purchase fresh units) Java's
+				// `player.getUnitCollection()` is empty — those "orphan"
+				// units exist only in `data.allUnits` (the registry),
+				// never in the player's held pool. Trim to empty.
+				new_held := make([dynamic]^Unit)
+				for u in gp.units_held.units {
+					if u == nil || u.type == nil { continue }
+					needed := plan_counts[u.type]
+					if needed > 0 {
+						append(&new_held, u)
+						plan_counts[u.type] = needed - 1
+					}
+				}
+				delete(gp.units_held.units)
+				gp.units_held.units = new_held
+			}
 		}
 	}
 

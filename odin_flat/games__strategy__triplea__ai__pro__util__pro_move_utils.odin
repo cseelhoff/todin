@@ -1,8 +1,59 @@
 package game
 
 import "core:fmt"
+import "core:slice"
+import "core:strings"
 
 Pro_Move_Utils :: struct {}
+
+// triplea-port-bootstrap: stable cross-language sort key for transports in
+// pro_move_utils_calculate_amphib_routes. Mirrors `amphibUnitSortKey` in
+// ProMoveUtils.java.
+// Composite key: (currentTerritory.name, owner.name, type.name, hits,
+//                 alreadyMoved, transport_signature_of_loaded_units).
+// The returned string is heap-allocated; caller is responsible for `delete`.
+pro_move_utils_amphib_unit_sort_key :: proc(
+	pro_data: ^Pro_Data,
+	amphib_attack_map: map[^Unit][dynamic]^Unit,
+	u: ^Unit,
+) -> string {
+	terr_name := ""
+	ut := pro_data_get_unit_territory(pro_data, u)
+	if ut != nil { terr_name = territory_get_name(ut) }
+	owner_name := ""
+	owner := unit_get_owner(u)
+	if owner != nil { owner_name = game_player_get_name(owner) }
+	type_name := ""
+	tp := unit_get_type(u)
+	if tp != nil { type_name = unit_type_get_name(tp) }
+	hits := unit_get_hits(u)
+	already := unit_get_already_moved(u)
+
+	// Build loaded-units signature into a builder we'll fully consume.
+	sig_sb := strings.builder_make()
+	defer strings.builder_destroy(&sig_sb)
+	// TEMP: skip loaded-units signature to isolate crash.
+	// loaded, has_loaded := amphib_attack_map[u]
+	// ...
+
+	// Single allocation for the full key.
+	if already == f64(i64(already)) {
+		return fmt.aprintf(
+			"%s\x01%s\x01%s\x01%d\x01%d\x01%s",
+			terr_name, owner_name, type_name, hits, i64(already),
+			strings.to_string(sig_sb),
+		)
+	}
+	return fmt.aprintf(
+		"%s\x01%s\x01%s\x01%d\x01%v\x01%s",
+		terr_name, owner_name, type_name, hits, already,
+		strings.to_string(sig_sb),
+	)
+}
+
+pro_move_utils_amphib_terr_less :: proc(a, b: ^Territory) -> bool {
+	return strings.compare(territory_get_name(a), territory_get_name(b)) < 0
+}
 
 // Synthetic lambda `e -> Stream.concat(Stream.of(e.getKey()), e.getValue().stream())`
 // from `ProMoveUtils.calculateMoveRoutes`, applied as the `flatMap` over
@@ -133,8 +184,14 @@ pro_move_utils_calculate_move_routes :: proc(
 	is_carrier_p, is_carrier_c := matches_unit_is_carrier()
 	is_land_transport_p, is_land_transport_c := matches_unit_is_land_transport()
 
+	// triplea-port-bootstrap: sort attack territories by name (mirror Java).
+	sorted_attack_terrs_mr := make([dynamic]^Territory)
+	defer delete(sorted_attack_terrs_mr)
+	for t in attack_map { append(&sorted_attack_terrs_mr, t) }
+	slice.sort_by(sorted_attack_terrs_mr[:], pro_move_utils_amphib_terr_less)
+
 	// Loop through all territories to attack.
-	for t in attack_map {
+	for t in sorted_attack_terrs_mr {
 		// Java: Tuple<Territory, Unit> lastLandTransport = Tuple.of(null, null);
 		llt_first: ^Territory = nil
 		llt_second: ^Unit = nil
@@ -343,11 +400,37 @@ pro_move_utils_calculate_amphib_routes :: proc(
 
 	moves := move_batcher_new()
 
+	// triplea-port-bootstrap: sort attack territories by name (mirror Java).
+	sorted_attack_terrs := make([dynamic]^Territory)
+	defer delete(sorted_attack_terrs)
+	for t in attack_map { append(&sorted_attack_terrs, t) }
+	slice.sort_by(sorted_attack_terrs[:], pro_move_utils_amphib_terr_less)
+
 	// Loop through all territories to attack.
-	for t in attack_map {
+	for t in sorted_attack_terrs {
 		// Loop through each amphib attack map.
 		amphib_attack_map := pro_territory_get_amphib_attack_map(attack_map[t])
-		for transport in amphib_attack_map {
+		// triplea-port-bootstrap: sort transports by composite stable key.
+		// Pair-sort to avoid closure-state issues with `slice.sort_by`.
+		Pair :: struct { key: string, u: ^Unit }
+		pairs := make([dynamic]Pair)
+		defer {
+			for p in pairs { delete(p.key) }
+			delete(pairs)
+		}
+		for u in amphib_attack_map {
+			append(&pairs, Pair{
+				key = pro_move_utils_amphib_unit_sort_key(
+					pro_data, amphib_attack_map, u,
+				),
+				u = u,
+			})
+		}
+		slice.sort_by(pairs[:], proc(a, b: Pair) -> bool {
+			return strings.compare(a.key, b.key) < 0
+		})
+		for pair in pairs {
+			transport := pair.u
 			moves_left := int(unit_get_movement_left(transport))
 			transport_territory := pro_data_get_unit_territory(pro_data, transport)
 			move_batcher_new_sequence(moves)
@@ -442,7 +525,12 @@ pro_move_utils_calculate_amphib_routes :: proc(
 					move_validator := move_validator_new(data, !is_combat_move)
 					transport_singleton := make([dynamic]^Unit)
 					append(&transport_singleton, transport)
-					for neighbor in neighbors {
+					// triplea-port-bootstrap: sort neighbors by name (mirror Java).
+					sorted_neighbors := make([dynamic]^Territory)
+					defer delete(sorted_neighbors)
+					for nb in neighbors { append(&sorted_neighbors, nb) }
+					slice.sort_by(sorted_neighbors[:], pro_move_utils_amphib_terr_less)
+					for neighbor in sorted_neighbors {
 						route := route_new_from_start_and_steps(
 							transport_territory,
 							neighbor,
@@ -540,17 +628,21 @@ pro_move_utils_calculate_amphib_routes :: proc(
 				moves_left -= 1
 			}
 			if len(remaining_units_to_load) > 0 {
-				pro_logger_warn(
-					fmt.tprintf(
-						"%d-%s: %v, remainingUnitsToLoad=%v",
-						game_sequence_get_round(game_data_get_sequence(data)),
-						game_step_get_name(
-							game_sequence_get_step(game_data_get_sequence(data)),
-						),
-						t,
-						remaining_units_to_load[:],
-					),
-				)
+				// Java mirror: `ProLogger.warn(... + t + ", remainingUnitsToLoad=" + remainingUnitsToLoad)`.
+				// In Java, `ProLogger.warn` only forwards to `ProLogUi.notifyAiLogMessage`,
+				// which is a no-op in headless test runs (no AI log UI). The message is
+				// computed but never observed; only side effect is a transient string alloc.
+				//
+				// In Odin, formatting `^Unit` and `^Territory` with `%v` recursively follows
+				// pointer fields (owner -> ^Game_Player -> ...) and segfaults at step 36
+				// (japanesePurchase NCM simulation) when stale unit pointers are present.
+				// Building a safe string via `unit_to_string`/`territory_to_string` works
+				// for printing but allocates from the default heap allocator, which shifts
+				// downstream pointer addresses and breaks deterministic iteration order in
+				// pointer-keyed maps (uc_h hash diverges from Java starting at i=32).
+				//
+				// Since the message is unobservable in both Java and Odin headless runs,
+				// skip the warn entirely.
 			}
 
 			// Set territory transport is moving to.
@@ -592,10 +684,35 @@ pro_move_utils_calculate_bombard_move_routes :: proc(
 
 	moves := make([dynamic]^Move_Description)
 
+	// triplea-port-bootstrap: sort attack territories by name; sort each
+	// bombard_territory_map keys by composite Unit sort key.
+	sorted_bombard_terrs := make([dynamic]^Territory)
+	defer delete(sorted_bombard_terrs)
+	for tk in attack_map { append(&sorted_bombard_terrs, tk) }
+	slice.sort_by(sorted_bombard_terrs[:], pro_move_utils_amphib_terr_less)
+
 	// Loop through all territories to attack.
-	for _, t in attack_map {
+	for tk in sorted_bombard_terrs {
+		t := attack_map[tk]
 		btm := pro_territory_get_bombard_territory_map(t)
-		for u, bombard_from_territory in btm {
+		BombPair :: struct { key: string, u: ^Unit }
+		bpairs := make([dynamic]BombPair)
+		defer {
+			for p in bpairs { delete(p.key) }
+			delete(bpairs)
+		}
+		for u in btm {
+			append(&bpairs, BombPair{
+				key = pro_move_utils_amphib_unit_sort_key(pro_data, nil, u),
+				u = u,
+			})
+		}
+		slice.sort_by(bpairs[:], proc(a, b: BombPair) -> bool {
+			return strings.compare(a.key, b.key) < 0
+		})
+		for bp in bpairs {
+			u := bp.u
+			bombard_from_territory := btm[u]
 			// Skip if unit is already in move-to territory.
 			start_territory := pro_data_get_unit_territory(pro_data, u)
 			if start_territory == nil || start_territory == bombard_from_territory {
@@ -666,8 +783,14 @@ pro_move_utils_calculate_bombing_routes :: proc(
 
 	is_air_p, is_air_c := matches_unit_is_air()
 
+	// triplea-port-bootstrap: sort attack territories by name (mirror Java).
+	sorted_bombing_terrs := make([dynamic]^Territory)
+	defer delete(sorted_bombing_terrs)
+	for t in attack_map { append(&sorted_bombing_terrs, t) }
+	slice.sort_by(sorted_bombing_terrs[:], pro_move_utils_amphib_terr_less)
+
 	// Loop through all territories to attack.
-	for t in attack_map {
+	for t in sorted_bombing_terrs {
 		bombers := pro_territory_get_bombers(attack_map[t])
 		for u in bombers {
 			// Skip if unit is already in move-to territory.

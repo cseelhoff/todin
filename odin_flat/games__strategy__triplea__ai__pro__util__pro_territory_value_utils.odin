@@ -1,5 +1,6 @@
 package game
 
+import "core:fmt"
 import "core:math"
 import "core:slice"
 
@@ -896,6 +897,15 @@ pro_territory_value_utils_find_land_value :: proc(
 	is_land_pred, is_land_ctx := pro_matches_territory_has_infra_factory_and_is_land()
 	if is_land_pred(is_land_ctx, t) {
 		value *= 1.1
+	}
+	when ARMOUR_TRACE {
+		if game_player_get_name(player) == "Germans" {
+			_tn := default_named_get_name(&t.named_attachable.default_named)
+			if _tn == "Ukraine S.S.R." || _tn == "Germany" || _tn == "Poland" || _tn == "West Russia" || _tn == "Belorussia" || _tn == "Russia" || _tn == "Karelia S.S.R." || _tn == "Caucasus" {
+				fmt.printf("TVAL t=%s nearby_enemy_value=%.3f land_mass_size=%d max_land_mass=%d cap_or_fac_value=%.3f nearby_enemy_caps_n=%d final=%.3f\n",
+					_tn, nearby_enemy_value, land_mass_size, max_land_mass_size, capital_or_factory_value, len(nearby_enemy_capitals_and_factories), value)
+			}
+		}
 	}
 	return value
 }

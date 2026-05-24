@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 STEP_RE = re.compile(r"^step-(\d{4})-round-\d{3}-")
+PHASE_RE = re.compile(r"^phase-(\d{2})-(.+)$")
 
 ODIN_TEST_TEMPLATE = '''package test_{name}
 
@@ -39,33 +40,46 @@ test_all_snapshots :: proc(t: ^testing.T) {{
 
 def process_method_dir(method_dir: Path, out_root: Path) -> int:
     name = method_dir.name
+    is_phase = name == "server_game_phase_snapshots"
     step_dirs = {}
     for sub in sorted(method_dir.iterdir()):
         if not sub.is_dir():
             continue
-        m = STEP_RE.match(sub.name)
-        if not m:
-            continue
-        step_dirs[int(m.group(1))] = sub
+        if is_phase:
+            m = PHASE_RE.match(sub.name)
+            if not m:
+                continue
+            step_dirs[(int(m.group(1)), m.group(2))] = sub
+        else:
+            m = STEP_RE.match(sub.name)
+            if not m:
+                continue
+            step_dirs[int(m.group(1))] = sub
 
     proc_dir = out_root / name
     snap_dir = proc_dir / "snapshots"
     snap_dir.mkdir(parents=True, exist_ok=True)
 
     count = 0
-    for step_num in sorted(step_dirs):
-        sd = step_dirs[step_num]
+    for key in sorted(step_dirs):
+        sd = step_dirs[key]
         before = sd / "step-before-gamedata.json"
         after = sd / "step-after-gamedata.json"
         if not (before.is_file() and after.is_file()):
             continue
-        target = snap_dir / f"{step_num:04d}"
+        if is_phase:
+            num, slug = key
+            target = snap_dir / f"{num:02d}_{slug}"
+        else:
+            target = snap_dir / f"{key:04d}"
         target.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(before, target / "before.json")
         shutil.copyfile(after, target / "after.json")
         for meta_in, meta_out in (
             ("step-before-meta.txt", "before-meta.txt"),
             ("step-after-meta.txt", "after-meta.txt"),
+            ("step-before-proai-state.json", "before-proai-state.json"),
+            ("step-after-proai-state.json", "after-proai-state.json"),
         ):
             mi = sd / meta_in
             if mi.is_file():

@@ -370,6 +370,32 @@ battle_calculator_calculate :: proc(
 			aggregate_results,
 			battle_results_new(cast(^I_Battle)&battle.abstract_battle, self.game_data),
 		)
+		when ARMOUR_TRACE {
+			if i < 3 && location2 != nil && territory_get_name(location2) == "Ukraine S.S.R." && (len(defending_units) == 11 || len(defending_units) == 10) {
+				rem_a := i_battle_get_remaining_attacking_units(cast(^I_Battle)&battle.abstract_battle)
+				rem_d := i_battle_get_remaining_defending_units(cast(^I_Battle)&battle.abstract_battle)
+				who := i_battle_get_who_won(cast(^I_Battle)&battle.abstract_battle)
+				rounds := i_battle_get_battle_round(cast(^I_Battle)&battle.abstract_battle)
+				rem_a_parts: [dynamic]string
+				ta := make(map[string]int); defer delete(ta)
+				for u in rem_a {
+					ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+					ta[ut] += 1
+				}
+				for k, v in ta { append(&rem_a_parts, fmt.tprintf("%s=%d", k, v)) }
+				rem_d_parts: [dynamic]string
+				td := make(map[string]int); defer delete(td)
+				for u in rem_d {
+					ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+					td[ut] += 1
+				}
+				for k, v in td { append(&rem_d_parts, fmt.tprintf("%s=%d", k, v)) }
+				fmt.printf("ARMOUR_TRACE bc_run i=%d t=Ukraine S.S.R. nDef=%d who=%v rounds=%d remA_n=%d remA=[%s] remD_n=%d remD=[%s]\n",
+					i, len(defending_units), who, rounds, len(rem_a), strings.join(rem_a_parts[:], ", "),
+					len(rem_d), strings.join(rem_d_parts[:], ", "))
+				delete(rem_a_parts); delete(rem_d_parts)
+			}
+		}
 		// restore the game to its original state
 		game_data_perform_change(self.game_data, composite_change_invert(all_changes))
 		battle_tracker_clear(battle_tracker)

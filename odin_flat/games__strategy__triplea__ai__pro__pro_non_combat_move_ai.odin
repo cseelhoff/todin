@@ -5,6 +5,43 @@ import "core:math"
 import "core:slice"
 import "core:strings"
 
+ARMOUR_TRACE :: #config(ARMOUR_TRACE, false)
+
+armour_trace_dump_germans :: proc(self: ^Pro_Non_Combat_Move_Ai, phase: string) {
+	when ARMOUR_TRACE {
+		if game_player_get_name(self.player) != "Germans" {
+			return
+		}
+		move_map := pro_my_move_options_get_territory_map(
+			pro_territory_manager_get_defend_options(self.territory_manager),
+		)
+		probe_targets := [?]string{
+			"Belorussia", "Ukraine S.S.R.",
+			"Finland", "Norway",
+			"Libya", "Algeria",
+		}
+		for t_name in probe_targets {
+			for t, pt in move_map {
+				if default_named_get_name(&t.named_attachable.default_named) != t_name {
+					continue
+				}
+				tally := make(map[string]int)
+				defer delete(tally)
+				for u in pro_territory_get_units(pt) {
+					owner := unit_get_owner(u)
+					if owner == nil || game_player_get_name(owner) != "Germans" {
+						continue
+					}
+					ut := unit_get_type(u)
+					ut_name := default_named_get_name(&ut.named_attachable.default_named)
+					tally[ut_name] = tally[ut_name] + 1
+				}
+				fmt.printf("ARMOUR_TRACE phase=%s t=%s germans=%v\n", phase, t_name, tally)
+			}
+		}
+	}
+}
+
 @(private = "file")
 pro_non_combat_move_ai_territory_load_index :: proc(t: ^Territory) -> int {
 	if t == nil { return max(int) }
@@ -863,6 +900,33 @@ pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
 		enemy_attacking_units := make([dynamic]^Unit, 0, len(enemy_set))
 		for u, _ in enemy_set {
 			append(&enemy_attacking_units, u)
+		}
+		when NCM_TRACE_DUMP {
+			tn_dbg := default_named_get_name(&t.named_attachable.default_named)
+			if tn_dbg == "33 Sea Zone" || tn_dbg == "34 Sea Zone" {
+				utm := pro_data_get_unit_territory_map(self.pro_data)
+				lines := make([dynamic]string, 0, len(enemy_attacking_units))
+				defer delete(lines)
+				for u in enemy_attacking_units {
+					ut := unit_get_type(u)
+					ow := unit_get_owner(u)
+					tn_u := ""
+					if u in utm {
+						tu := utm[u]
+						if tu != nil {
+							tn_u = default_named_get_name(&tu.named_attachable.default_named)
+						}
+					}
+					append(&lines, fmt.tprintf("%s|%s|%s",
+						default_named_get_name(&ut.named_attachable.default_named),
+						default_named_get_name(&ow.default_named),
+						tn_u))
+				}
+				slice.sort(lines[:])
+				for ln in lines {
+					fmt.printf("ENEMY_ATK_UNIT t=%s n=%d unit=%s\n", tn_dbg, len(enemy_attacking_units), ln)
+				}
+			}
 		}
 		pro_territory_set_max_enemy_units(patd, enemy_attacking_units)
 		pro_territory_set_max_enemy_bombard_units(
@@ -1743,7 +1807,22 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 
 			prioritized_load_territories := make([dynamic]^Pro_Territory, 0)
 			defer delete(prioritized_load_territories)
-			for t, pro_territory in move_map {
+			// Java iterates moveMap.keySet() which is a LinkedHashMap
+			// keyed in master-game-data territory order. Odin's
+			// move_map is a hash-keyed map, so iterate via the
+			// sorted helper to get Java order. The downstream sort
+			// by load value is stable, so input order is the
+			// tiebreaker — this matters for r=1 i=24 German
+			// transport which ties on load value across multiple
+			// territories and needs Java's first-pick to route via
+			// 6 SZ. See /memories/repo/step24-cruiser-divergence.md.
+			move_map_keys_load := pro_my_move_options_sorted_territory_keys(
+				pro_territory_manager_get_defend_options(self.territory_manager),
+				self.data,
+			)
+			defer delete(move_map_keys_load)
+			for t in move_map_keys_load {
+				pro_territory := move_map[t]
 				transportable_pred, transportable_ctx := pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(
 					self.player,
 					transport,
@@ -1918,7 +1997,34 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 
 			min_strength_difference: f64 = max(f64)
 			min_territory: ^Territory = nil
-			for t in current_transport_move_map[transport] {
+			// Java's transportMoveMap inner Set is a LinkedHashSet
+			// inserted in HashSet bucket order of the source
+			// `possibleMoveTerritories`. Odin's
+			// `current_transport_move_map[transport]` is hash-ordered
+			// (pointer-based). Sort the inner-set by Java HashMap
+			// bucket of the territory name to recover Java's order
+			// — matters for tie-breaks in the SD min selection at
+			// e.g. r=1 i=24 German transport (5 SZ vs 6 SZ tied SD,
+			// Java's inner-set order picks 6 SZ first).
+			tmm_inner := current_transport_move_map[transport]
+			tmm_keys := make([dynamic]struct{ bucket: int, name: string, t: ^Territory },
+				0, len(tmm_inner))
+			defer delete(tmm_keys)
+			java_cap_tmm := java_hashmap_capacity_for_size(len(tmm_inner))
+			for tt in tmm_inner {
+				name := territory_get_name(tt)
+				append(&tmm_keys, struct{ bucket: int, name: string, t: ^Territory }{
+					bucket = java_hashmap_bucket_for_string(name, java_cap_tmm),
+					name = name,
+					t = tt,
+				})
+			}
+			slice.sort_by(tmm_keys[:], proc(a, b: struct{ bucket: int, name: string, t: ^Territory }) -> bool {
+				if a.bucket != b.bucket { return a.bucket < b.bucket }
+				return a.name < b.name
+			})
+			for tk in tmm_keys {
+				t := tk.t
 				pro_territory := move_map[t]
 				attackers := pro_territory_get_max_enemy_units(pro_territory)
 				max_def := pro_territory_get_max_defenders(pro_territory)
@@ -2048,10 +2154,46 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		pro_logger_debug("Move sea units")
 
 		// Move sea units to defend transports.
+		// Use the insertion-order slice so per-unit iteration matches
+		// Java's LinkedHashMap order (mirrors the fix in
+		// move_units_to_defend_territories). The hash-order iteration
+		// caused divergence vs Java when multiple sea units share the
+		// same starting territory and their processing order matters
+		// for downstream destination scoring.
+		sea_unit_order := pro_my_move_options_get_unit_move_map_order(
+			pro_territory_manager_get_defend_options(self.territory_manager),
+		)
+		// Java uses LinkedHashSet<Territory> for the per-unit inner
+		// destination set; Odin's map[^Territory]struct{} is unordered.
+		// Use the parallel insertion-order slice so the cruiser
+		// fallback "min strength_difference" tiebreak picks the same
+		// territory as Java (e.g. r=1 i=24 germanNonCombatMove cruiser
+		// at 5 SZ should fall back to 6 SZ, not 5 SZ — because in
+		// Java's order 6 SZ comes before 5 SZ and `<` doesn't replace
+		// on tie). See /memories/repo/step24-cruiser-divergence.md.
+		unit_move_inner_order := pro_my_move_options_get_unit_move_map_inner_order(
+			pro_territory_manager_get_defend_options(self.territory_manager),
+		)
 		sea_unit_keys := make([dynamic]^Unit, 0, len(current_unit_move_map))
 		defer delete(sea_unit_keys)
-		for u in current_unit_move_map {
-			append(&sea_unit_keys, u)
+		{
+			seen_su := make(map[^Unit]struct {})
+			defer delete(seen_su)
+			for u in sea_unit_order {
+				if _, ok := current_unit_move_map[u]; !ok { continue }
+				if _, dup := seen_su[u]; dup { continue }
+				seen_su[u] = {}
+				append(&sea_unit_keys, u)
+			}
+			// Defensive: include any units present in current_unit_move_map
+			// but missing from the order list (shouldn't happen, but
+			// avoids dropping units silently if upstream missed an
+			// insertion).
+			for u in current_unit_move_map {
+				if _, dup := seen_su[u]; dup { continue }
+				seen_su[u] = {}
+				append(&sea_unit_keys, u)
+			}
 		}
 		sea_p, sea_c := matches_unit_is_sea()
 		owned_transport_p, owned_transport_c := pro_matches_unit_is_owned_transport(self.player)
@@ -2097,8 +2239,20 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		// Move air units to defend transports.
 		air_def_keys := make([dynamic]^Unit, 0, len(current_unit_move_map))
 		defer delete(air_def_keys)
-		for u in current_unit_move_map {
-			append(&air_def_keys, u)
+		{
+			seen_ad := make(map[^Unit]struct {})
+			defer delete(seen_ad)
+			for u in sea_unit_order {
+				if _, ok := current_unit_move_map[u]; !ok { continue }
+				if _, dup := seen_ad[u]; dup { continue }
+				seen_ad[u] = {}
+				append(&air_def_keys, u)
+			}
+			for u in current_unit_move_map {
+				if _, dup := seen_ad[u]; dup { continue }
+				seen_ad[u] = {}
+				append(&air_def_keys, u)
+			}
 		}
 		can_carrier_p, can_carrier_c := matches_unit_can_land_on_carrier()
 		for u in air_def_keys {
@@ -2166,8 +2320,20 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		// Move sea units to best location or safest location.
 		sea_best_keys := make([dynamic]^Unit, 0, len(current_unit_move_map))
 		defer delete(sea_best_keys)
-		for u in current_unit_move_map {
-			append(&sea_best_keys, u)
+		{
+			seen_sb := make(map[^Unit]struct {})
+			defer delete(seen_sb)
+			for u in sea_unit_order {
+				if _, ok := current_unit_move_map[u]; !ok { continue }
+				if _, dup := seen_sb[u]; dup { continue }
+				seen_sb[u] = {}
+				append(&sea_best_keys, u)
+			}
+			for u in current_unit_move_map {
+				if _, dup := seen_sb[u]; dup { continue }
+				seen_sb[u] = {}
+				append(&sea_best_keys, u)
+			}
 		}
 		for u in sea_best_keys {
 			if _, still := current_unit_move_map[u]; !still {
@@ -2178,25 +2344,56 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 			}
 			max_value_t: ^Territory = nil
 			max_value: f64 = 0
-			for t in current_unit_move_map[u] {
-				pro_territory := move_map[t]
-				if !pro_territory_is_can_hold(pro_territory) {
-					continue
-				}
-				transports: i32 = 0
-				all_def := pro_territory_get_all_defenders(pro_territory)
-				for du in all_def {
-					if owned_transport_p(owned_transport_c, du) {
-						transports += 1
+			// Iterate the inner set in Java LinkedHashSet insertion
+			// order. The current_unit_move_map snapshot shares the
+			// inner sets by reference; the parallel order list reflects
+			// the same insertions.
+			inner_set_best := current_unit_move_map[u]
+			ordered_best, has_order_best := unit_move_inner_order[u]
+			if has_order_best {
+				for t in ordered_best {
+					if _, in_set := inner_set_best[t]; !in_set { continue }
+					pro_territory := move_map[t]
+					if !pro_territory_is_can_hold(pro_territory) {
+						continue
+					}
+					transports: i32 = 0
+					all_def := pro_territory_get_all_defenders(pro_territory)
+					for du in all_def {
+						if owned_transport_p(owned_transport_c, du) {
+							transports += 1
+						}
+					}
+					value :=
+						f64(1 + transports) * pro_territory_get_sea_value(pro_territory) +
+						(1.0 + f64(transports) * 100.0) * pro_territory_get_value(pro_territory) /
+							10000.0
+					if value > max_value {
+						max_value = value
+						max_value_t = t
 					}
 				}
-				value :=
-					f64(1 + transports) * pro_territory_get_sea_value(pro_territory) +
-					(1.0 + f64(transports) * 100.0) * pro_territory_get_value(pro_territory) /
-						10000.0
-				if value > max_value {
-					max_value = value
-					max_value_t = t
+			} else {
+				for t in inner_set_best {
+					pro_territory := move_map[t]
+					if !pro_territory_is_can_hold(pro_territory) {
+						continue
+					}
+					transports: i32 = 0
+					all_def := pro_territory_get_all_defenders(pro_territory)
+					for du in all_def {
+						if owned_transport_p(owned_transport_c, du) {
+							transports += 1
+						}
+					}
+					value :=
+						f64(1 + transports) * pro_territory_get_sea_value(pro_territory) +
+						(1.0 + f64(transports) * 100.0) * pro_territory_get_value(pro_territory) /
+							10000.0
+					if value > max_value {
+						max_value = value
+						max_value_t = t
+					}
 				}
 			}
 			if max_value_t != nil {
@@ -2219,28 +2416,58 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				}
 				min_strength_difference: f64 = max(f64)
 				min_territory: ^Territory = nil
-				for t in current_unit_move_map[u] {
-					pro_territory := move_map[t]
-					attackers := pro_territory_get_max_enemy_units(pro_territory)
-					max_def := pro_territory_get_max_defenders(pro_territory)
-					defenders := make([dynamic]^Unit, 0, len(max_def))
-					for du in max_def {
-						if _, in_moved := already_moved_set[du]; !in_moved {
+				inner_set_fb := current_unit_move_map[u]
+				ordered_fb, has_order_fb := unit_move_inner_order[u]
+				if has_order_fb {
+					for t in ordered_fb {
+						if _, in_set := inner_set_fb[t]; !in_set { continue }
+						pro_territory := move_map[t]
+						attackers := pro_territory_get_max_enemy_units(pro_territory)
+						max_def := pro_territory_get_max_defenders(pro_territory)
+						defenders := make([dynamic]^Unit, 0, len(max_def))
+						for du in max_def {
+							if _, in_moved := already_moved_set[du]; !in_moved {
+								append(&defenders, du)
+							}
+						}
+						for du in pro_territory_get_units(pro_territory) {
 							append(&defenders, du)
 						}
+						strength_difference := pro_battle_utils_estimate_strength_difference(
+							t,
+							attackers,
+							defenders,
+						)
+						delete(defenders)
+						if strength_difference < min_strength_difference {
+							min_strength_difference = strength_difference
+							min_territory = t
+						}
 					}
-					for du in pro_territory_get_units(pro_territory) {
-						append(&defenders, du)
-					}
-					strength_difference := pro_battle_utils_estimate_strength_difference(
-						t,
-						attackers,
-						defenders,
-					)
-					delete(defenders)
-					if strength_difference < min_strength_difference {
-						min_strength_difference = strength_difference
-						min_territory = t
+				} else {
+					for t in inner_set_fb {
+						pro_territory := move_map[t]
+						attackers := pro_territory_get_max_enemy_units(pro_territory)
+						max_def := pro_territory_get_max_defenders(pro_territory)
+						defenders := make([dynamic]^Unit, 0, len(max_def))
+						for du in max_def {
+							if _, in_moved := already_moved_set[du]; !in_moved {
+								append(&defenders, du)
+							}
+						}
+						for du in pro_territory_get_units(pro_territory) {
+							append(&defenders, du)
+						}
+						strength_difference := pro_battle_utils_estimate_strength_difference(
+							t,
+							attackers,
+							defenders,
+						)
+						delete(defenders)
+						if strength_difference < min_strength_difference {
+							min_strength_difference = strength_difference
+							min_territory = t
+						}
 					}
 				}
 				delete(already_moved_units)
@@ -2405,10 +2632,42 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 	defer delete(added_set)
 
 	land_p, land_c := matches_unit_is_land()
+	// Java's `for (Unit u : unitMoveMap.keySet())` iterates the
+	// LinkedHashMap in insertion order, and the inner
+	// `for (Territory t : unitMoveMap.get(u))` iterates a LinkedHashSet
+	// in insertion order. Two adjacent inland destinations (e.g.
+	// Belorussia ↔ Ukraine S.S.R for German armour at NCM step 24)
+	// tie on `value` AND on `needAmphibUnitValue` (0 sea neighbors,
+	// no factory). The Java tiebreak gives the destination iterated
+	// FIRST in the set (because the `>` comparisons can't replace on
+	// tie). Odin's `map[^Territory]struct{}` is pointer-hashed →
+	// unstable order → tiebreak flips and 4 armour go to the wrong
+	// territory. Fix matches /memories/repo/step24-cruiser-divergence.md.
+	land_outer_order := pro_my_move_options_get_unit_move_map_order(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
+	land_inner_order := pro_my_move_options_get_unit_move_map_inner_order(
+		pro_territory_manager_get_defend_options(self.territory_manager),
+	)
 	land_keys := make([dynamic]^Unit, 0, len(unit_move_map))
 	defer delete(land_keys)
-	for u in unit_move_map {
-		append(&land_keys, u)
+	{
+		seen_lk := make(map[^Unit]struct {})
+		defer delete(seen_lk)
+		for u in land_outer_order {
+			if _, ok := unit_move_map[u]; !ok { continue }
+			if _, dup := seen_lk[u]; dup { continue }
+			seen_lk[u] = {}
+			append(&land_keys, u)
+		}
+		// Defensive: include any units in unit_move_map missing from
+		// the recorded order (shouldn't happen, but avoids dropping
+		// units silently).
+		for u in unit_move_map {
+			if _, dup := seen_lk[u]; dup { continue }
+			seen_lk[u] = {}
+			append(&land_keys, u)
+		}
 	}
 	for u in land_keys {
 		if !land_p(land_c, u) {
@@ -2420,7 +2679,34 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 		max_value_t: ^Territory = nil
 		max_value: f64 = 0
 		max_need_amphib_unit_value: i32 = min(i32)
-		for t in unit_move_map[u] {
+		inner_set := unit_move_map[u]
+		inner_list, has_inner := land_inner_order[u]
+		t_iter_buf: [dynamic]^Territory
+		t_iter_list: []^Territory
+		if has_inner {
+			t_iter_buf = make([dynamic]^Territory, 0, len(inner_list))
+			seen_t := make(map[^Territory]struct {})
+			defer delete(seen_t)
+			for tt in inner_list {
+				if _, in_set := inner_set[tt]; !in_set { continue }
+				if _, dup := seen_t[tt]; dup { continue }
+				seen_t[tt] = {}
+				append(&t_iter_buf, tt)
+			}
+			// Defensive: include any in inner_set missing from order.
+			for tt in inner_set {
+				if _, dup := seen_t[tt]; dup { continue }
+				seen_t[tt] = {}
+				append(&t_iter_buf, tt)
+			}
+			t_iter_list = t_iter_buf[:]
+		} else {
+			t_iter_buf = make([dynamic]^Territory, 0, len(inner_set))
+			for tt in inner_set { append(&t_iter_buf, tt) }
+			t_iter_list = t_iter_buf[:]
+		}
+		defer delete(t_iter_buf)
+		for t in t_iter_list {
 			pro_territory := move_map[t]
 			if !pro_territory_is_can_hold(pro_territory) ||
 			   pro_territory_get_value(pro_territory) < max_value {
@@ -3102,6 +3388,29 @@ pro_non_combat_move_ai_prioritize_defend_options :: proc(
 	air_p, air_c := matches_unit_is_air()
 
 	kept := make([dynamic]^Pro_Territory, 0, len(prioritized_territories))
+	when ARMOUR_TRACE {
+		if game_player_get_name(self.player) == "Germans" {
+			belo_in_map := false
+			for t, _ in move_map {
+				if default_named_get_name(&t.named_attachable.default_named) == "Belorussia" {
+					belo_in_map = true
+					break
+				}
+			}
+			belo_in_prio := false
+			for patd in prioritized_territories {
+				t := pro_territory_get_territory(patd)
+				if default_named_get_name(&t.named_attachable.default_named) == "Belorussia" {
+					belo_in_prio = true
+					fmt.printf("ARMOUR_TRACE prio_pre_filter t=Belorussia value=%.3f canHold=%v\n",
+						pro_territory_get_value(patd), pro_territory_is_can_hold(patd))
+					break
+				}
+			}
+			fmt.printf("ARMOUR_TRACE prio_input belo_in_move_map=%v belo_in_prio_pre_filter=%v move_map_size=%d prio_size=%d\n",
+				belo_in_map, belo_in_prio, len(move_map), len(prioritized_territories))
+		}
+	}
 	for patd in prioritized_territories {
 		t := pro_territory_get_territory(patd)
 		has_factory := factory_p(factory_c, t)
@@ -3153,6 +3462,37 @@ pro_non_combat_move_ai_prioritize_defend_options :: proc(
 			!has_factory &&
 			!any_max_land &&
 			cant_move_unit_value < 5
+
+		when ARMOUR_TRACE {
+			if game_player_get_name(self.player) == "Germans" {
+				_tn := default_named_get_name(&t.named_attachable.default_named)
+				if _tn == "Belorussia" || _tn == "Ukraine S.S.R." || _tn == "Baltic States" || _tn == "Finland" || _tn == "Libya" || _tn == "Norway" || _tn == "Algeria" {
+					removed := !pro_territory_is_can_hold(patd) ||
+					   pro_territory_get_value(patd) <= 0 ||
+					   is_land_and_can_only_be_attacked_by_air ||
+					   is_not_factory_and_should_hold ||
+					   can_already_be_held ||
+					   is_not_factory_and_has_no_enemy_neighbors ||
+					   is_not_factory_and_only_amphib
+					fmt.printf("ARMOUR_TRACE prio_filter t=%s removed=%v canHold=%v value=%.3f isLandAirOnly=%v notFacShouldHold=%v canAlreadyHeld=%v notFacNoEnemyN=%v notFacOnlyAmphib=%v hasFac=%v tuvSwing=%.2f hasLandRem=%v winPct=%.2f maxEnemy=%d cantMoveVal=%d\n",
+						_tn,
+						removed,
+						pro_territory_is_can_hold(patd),
+						pro_territory_get_value(patd),
+						is_land_and_can_only_be_attacked_by_air,
+						is_not_factory_and_should_hold,
+						can_already_be_held,
+						is_not_factory_and_has_no_enemy_neighbors,
+						is_not_factory_and_only_amphib,
+						has_factory,
+						pro_battle_result_get_tuv_swing(min_result),
+						pro_battle_result_is_has_land_unit_remaining(min_result),
+						pro_battle_result_get_win_percentage(min_result),
+						len(max_enemy_units),
+						cant_move_unit_value)
+				}
+			}
+		}
 
 		if !pro_territory_is_can_hold(patd) ||
 		   pro_territory_get_value(patd) <= 0 ||
@@ -3330,6 +3670,17 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 	// Assign units to territories by prioritization.
 	num_to_defend: i32 = 1
 	for {
+		when ARMOUR_TRACE {
+			if game_player_get_name(self.player) == "Germans" {
+				names: [dynamic]string
+				defer delete(names)
+				for patd in prioritized_territories {
+					t := pro_territory_get_territory(patd)
+					append(&names, default_named_get_name(&t.named_attachable.default_named))
+				}
+				fmt.printf("ARMOUR_TRACE iter_start num_to_defend=%d prioritized=%v\n", num_to_defend, names)
+			}
+		}
 		// Reset lists.
 		for _, t in move_map {
 			clear(&t.temp_units)
@@ -3426,11 +3777,69 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					pro_territory_get_max_enemy_units(pro_territory),
 					eligible,
 				)
+				when ARMOUR_TRACE {
+					if game_player_get_name(self.player) == "Germans" {
+						ut_tk := unit_get_type(unit)
+						ut_tk_name := default_named_get_name(&ut_tk.named_attachable.default_named)
+						t_tk_name := default_named_get_name(&t.named_attachable.default_named)
+						if ut_tk_name == "armour" && t_tk_name == "Ukraine S.S.R." {
+							enemy_units_dbg := pro_territory_get_max_enemy_units(pro_territory)
+							atk_str_dbg := pro_battle_utils_estimate_strength(t, enemy_units_dbg, eligible, true)
+							def_str_dbg := pro_battle_utils_estimate_strength(t, eligible, enemy_units_dbg, false)
+							enemy_tally: map[string]int
+							for eu in enemy_units_dbg {
+								eut := unit_get_type(eu)
+								eutn := default_named_get_name(&eut.named_attachable.default_named)
+								enemy_tally[eutn] = enemy_tally[eutn] + 1
+							}
+							elig_tally: map[string]int
+							for du in eligible {
+								dut := unit_get_type(du)
+								dutn := default_named_get_name(&dut.named_attachable.default_named)
+								dop := unit_get_owner(du)
+								dopn := game_player_get_name(dop)
+								key := fmt.aprintf("%s/%s", dopn, dutn)
+								elig_tally[key] = elig_tally[key] + 1
+							}
+							fmt.printf("ARMOUR_TRACE p1_ukrSSR ntd=%d unit=%p enemy_n=%d enemy=%v elig_n=%d elig=%v atkStr=%.3f defStr=%.3f est=%.3f\n",
+								num_to_defend, unit, len(enemy_units_dbg), enemy_tally, len(eligible), elig_tally,
+								atk_str_dbg, def_str_dbg, estimate)
+							delete(enemy_tally)
+							for k in elig_tally { delete(k) }
+							delete(elig_tally)
+						}
+					}
+				}
 				delete(eligible)
 				if !any_estimate || estimate >= max_estimate {
 					max_estimate = estimate
 					max_t = t
 					any_estimate = true
+				}
+				when ARMOUR_TRACE {
+					if game_player_get_name(self.player) == "Germans" {
+						ut := unit_get_type(unit)
+						ut_name := default_named_get_name(&ut.named_attachable.default_named)
+						if ut_name == "armour" {
+							home := pro_data_get_unit_territory_map(self.pro_data)[unit]
+							home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
+							t_name := default_named_get_name(&t.named_attachable.default_named)
+							fmt.printf("ARMOUR_TRACE p1_armour_eval ntd=%d home=%s unit=%p t=%s est=%.3f max=%.3f\n", num_to_defend, home_name, unit, t_name, estimate, max_estimate)
+						}
+					}
+				}
+			}
+			when ARMOUR_TRACE {
+				if game_player_get_name(self.player) == "Germans" {
+					ut := unit_get_type(unit)
+					ut_name := default_named_get_name(&ut.named_attachable.default_named)
+					if ut_name == "armour" {
+						home := pro_data_get_unit_territory_map(self.pro_data)[unit]
+						home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
+						chosen_name := max_t != nil ? default_named_get_name(&max_t.named_attachable.default_named) : "<none>"
+						will_add := any_estimate && max_estimate > 60
+						fmt.printf("ARMOUR_TRACE p1_armour_pick ntd=%d home=%s unit=%p chosen=%s max_est=%.3f will_add=%v\n", num_to_defend, home_name, unit, chosen_name, max_estimate, will_add)
+					}
 				}
 			}
 			if any_estimate && max_estimate > 60 {
@@ -3491,15 +3900,40 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 				is_my_capital := t == pro_data_get_my_capital(self.pro_data)
 				win_pct := pro_battle_result_get_win_percentage(result)
 				tuv_swing := pro_battle_result_get_tuv_swing(result)
-				if win_pct > max_win_percentage &&
+				updated := win_pct > max_win_percentage &&
 				   ((is_my_capital &&
 							   win_pct > (100.0 - pro_data_get_win_percentage(self.pro_data))) ||
 						   (has_factory &&
 									   win_pct >
 									   (100.0 - self.pro_data.min_win_percentage)) ||
-						   tuv_swing >= 0) {
+						   tuv_swing >= 0)
+				if updated {
 					max_win_territory = t
 					max_win_percentage = win_pct
+				}
+				when ARMOUR_TRACE {
+					if game_player_get_name(self.player) == "Germans" {
+						ut := unit_get_type(unit)
+						ut_name := default_named_get_name(&ut.named_attachable.default_named)
+						if ut_name == "armour" {
+							home := pro_data_get_unit_territory_map(self.pro_data)[unit]
+							home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
+							t_name := default_named_get_name(&t.named_attachable.default_named)
+							fmt.printf("ARMOUR_TRACE p2_armour_eval ntd=%d home=%s unit=%p t=%s win=%.2f tuv=%.2f hasFac=%v isCap=%v upd=%v\n", num_to_defend, home_name, unit, t_name, win_pct, tuv_swing, has_factory, is_my_capital, updated)
+						}
+					}
+				}
+			}
+			when ARMOUR_TRACE {
+				if game_player_get_name(self.player) == "Germans" {
+					ut := unit_get_type(unit)
+					ut_name := default_named_get_name(&ut.named_attachable.default_named)
+					if ut_name == "armour" {
+						home := pro_data_get_unit_territory_map(self.pro_data)[unit]
+						home_name := home != nil ? default_named_get_name(&home.named_attachable.default_named) : ""
+						chosen_name := max_win_territory != nil ? default_named_get_name(&max_win_territory.named_attachable.default_named) : "<none>"
+						fmt.printf("ARMOUR_TRACE p2_armour_pick ntd=%d home=%s unit=%p chosen=%s max_win=%.2f\n", num_to_defend, home_name, unit, chosen_name, max_win_percentage)
+					}
 				}
 			}
 			if max_win_territory != nil {
@@ -3976,10 +4410,83 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 			// Check if its worth defending.
 			min_swing := pro_battle_result_get_tuv_swing(pro_territory_get_min_battle_result(patd))
 			result_swing := pro_battle_result_get_tuv_swing(result)
-			if (result_swing - hold_value) > max(0.0, min_swing) ||
-			   (!has_higher_strategic_value &&
-					   (result_swing + extra_unit_value / 2.0) >= min_swing) {
+			worth_def_first := (result_swing - hold_value) > max(0.0, min_swing)
+			worth_def_second := (!has_higher_strategic_value &&
+					   (result_swing + extra_unit_value / 2.0) >= min_swing)
+			if worth_def_first || worth_def_second {
 				are_successful = false
+			}
+			when ARMOUR_TRACE {
+				if game_player_get_name(self.player) == "Germans" {
+					_tn := default_named_get_name(&t.named_attachable.default_named)
+					if _tn == "Ukraine S.S.R." || _tn == "Belorussia" || _tn == "Baltic States" || _tn == "Finland" || _tn == "Libya" {
+						tval, tval_ok := territory_value_map[t]
+						_ = tval_ok
+						temp_avg: f64 = 0
+						temp_n := 0
+						temp_total: f64 = 0
+						for u in pro_territory_get_temp_units(patd) {
+							if not_air_p(not_air_c, u) {
+								home := self.unit_territory_map[u]
+								hv, _ := territory_value_map[home]
+								temp_total += hv
+								temp_n += 1
+							}
+						}
+						if temp_n > 0 { temp_avg = temp_total / f64(temp_n) }
+						fmt.printf("ARMOUR_TRACE worth_def ntd=%d t=%s tval=%.3f temp_n=%d temp_avg=%.3f hasHigherStrat=%v resultSwing=%.3f minSwing=%.3f holdVal=%.3f extraUV=%.3f worth1=%v worth2=%v areSuccess=%v\n",
+							num_to_defend, _tn, tval, temp_n, temp_avg, has_higher_strategic_value,
+							result_swing, min_swing, hold_value, extra_unit_value, worth_def_first, worth_def_second, are_successful)
+					}
+				}
+			}
+			when ARMOUR_TRACE {
+				if game_player_get_name(self.player) == "Germans" {
+					_tn := default_named_get_name(&t.named_attachable.default_named)
+					if _tn == "Ukraine S.S.R." {
+						defenders_set := pro_territory_get_all_defenders(patd)
+						def_parts: [dynamic]string
+						{
+							tally := make(map[string]int)
+							defer delete(tally)
+							for u, _ in defenders_set {
+								on := u.owner == nil ? "?" : default_named_get_name(&u.owner.named_attachable.default_named)
+								ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+								k := fmt.tprintf("%s/%s", on, ut)
+								tally[k] += 1
+							}
+							for k, v in tally {
+								append(&def_parts, fmt.tprintf("%s=%d", k, v))
+							}
+						}
+						atk_parts: [dynamic]string
+						{
+							tally := make(map[string]int)
+							defer delete(tally)
+							for u in pro_territory_get_max_enemy_units(patd) {
+								on := u.owner == nil ? "?" : default_named_get_name(&u.owner.named_attachable.default_named)
+								ut := u.type == nil ? "?" : default_named_get_name(&u.type.named_attachable.default_named)
+								k := fmt.tprintf("%s/%s", on, ut)
+								tally[k] += 1
+							}
+							for k, v in tally {
+								append(&atk_parts, fmt.tprintf("%s=%d", k, v))
+							}
+						}
+						bomb_n := len(pro_territory_get_max_enemy_bombard_units(patd))
+						fmt.printf("ARMOUR_TRACE bres ntd=%d t=%s defN=%d def=[%s] atkN=%d atk=[%s] bombN=%d tuvSwing=%.3f winPct=%.3f hasLandRem=%v rounds=%.2f avgAtkRemN=%d avgDefRemN=%d\n",
+							num_to_defend, _tn,
+							len(defenders_set), strings.join(def_parts[:], ", "),
+							len(pro_territory_get_max_enemy_units(patd)), strings.join(atk_parts[:], ", "),
+							bomb_n,
+							result.tuv_swing, result.win_percentage, result.has_land_unit_remaining,
+							result.battle_rounds,
+							len(result.average_attackers_remaining), len(result.average_defenders_remaining))
+						delete(defenders_set)
+						delete(def_parts)
+						delete(atk_parts)
+					}
+				}
 			}
 			pro_logger_debug(
 				fmt.tprintf(
@@ -4047,15 +4554,25 @@ pro_non_combat_move_ai_move_units_to_defend_territories :: proc(
 					can_move_land_p,
 					can_move_land_c,
 				)
-				if distance > 0 &&
-				   (enemy_distance == distance || enemy_distance == (distance - 1)) &&
-				   !pro_battle_utils_territory_has_local_land_superiority_after_moves(
+				cap_superior := pro_battle_utils_territory_has_local_land_superiority_after_moves(
 					   self.pro_data,
 					   my_capital,
 					   enemy_distance,
 					   self.player,
 					   move_map^,
-				   ) {
+				   )
+				when ARMOUR_TRACE {
+					if game_player_get_name(self.player) == "Germans" {
+						_ctn := default_named_get_name(&current_territory.named_attachable.default_named)
+						fmt.printf("ARMOUR_TRACE cap_local ntd=%d ct=%s enemyDist=%d capDist=%d cap_superior=%v fires=%v areSuccessBefore=%v\n",
+							num_to_defend, _ctn, enemy_distance, distance, cap_superior,
+							(distance > 0 && (enemy_distance == distance || enemy_distance == (distance - 1)) && !cap_superior),
+							are_successful)
+					}
+				}
+				if distance > 0 &&
+				   (enemy_distance == distance || enemy_distance == (distance - 1)) &&
+				   !cap_superior {
 					are_successful = false
 					pro_logger_debug(
 						fmt.tprintf(
@@ -4427,6 +4944,8 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		moved_one_defender_to_territories,
 		pro_territory_manager_get_defend_territories(self.territory_manager),
 	)
+	pro_ncm_trace_emit("03b_after_populateEnemyAttack",
+		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
 	pro_non_combat_move_ai_determine_if_move_territories_can_be_held(self)
 	pro_ncm_trace_emit("04_after_determineCanHold",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
@@ -4457,6 +4976,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		)
 		pro_ncm_trace_emit("06_after_moveUnitsToDefend",
 			pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+		armour_trace_dump_germans(self, "after_defend")
 	}
 
 	// Copy data in case capital defense needs increased
@@ -4522,6 +5042,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 
 			pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
 			pro_ncm_trace_emit("07_after_moveUnitsToBest", move_map)
+			armour_trace_dump_germans(self, "after_best")
 
 			// Check if capital has local land superiority
 			pro_logger_info(
@@ -4551,6 +5072,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		}
 	} else {
 		pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
+		armour_trace_dump_germans(self, "after_best_nocap")
 	}
 
 	// Determine where to move infra units
@@ -4583,6 +5105,7 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	}
 
 	// Calculate move routes and perform moves
+	armour_trace_dump_germans(self, "pre_do_move")
 	pro_non_combat_move_ai_do_move(
 		self,
 		is_combat_move,

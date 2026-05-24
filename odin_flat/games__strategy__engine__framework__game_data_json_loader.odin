@@ -48,7 +48,7 @@ list_snapshot_ids :: proc(snapshot_dir: string) -> [dynamic]string {
 // filename: e.g. "before.json"
 load_game_state :: proc(snapshot_dir: string, id: string, filename: string) -> ^Game_Data {
 	full_path := fmt.tprintf("%s/%s/%s", snapshot_dir, id, filename)
-	data, read_err := os.read_entire_file(full_path, context.allocator)
+	data, read_err := os.read_entire_file_from_path(full_path, context.allocator)
 	if read_err != nil {
 		log.errorf("Failed to read file: %s", full_path)
 		return nil
@@ -445,6 +445,42 @@ deserialize_game_data :: proc(root: json.Object) -> ^Game_Data {
 		}
 	}
 
+	// Repair rules + frontiers scaffold for WW2v5_1942_2nd snapshots.
+	// Java's GameStateJsonSerializer does NOT serialize repair frontiers
+	// (they're static map config from the XML), and the snapshot JSON
+	// players carry no `repairFrontier` field. Without this scaffold the
+	// AI's repair() bails out at `getRepairFrontier() != null`, so damaged
+	// factories never get repaired during round-2+ Purchase phases.
+	// Mirrors WW2v5_1942_2nd.xml lines 815-828.
+	if gd.repair_frontier_list != nil && gd.resource_list != nil && gd.unit_type_list != nil {
+		pus_res, _ := gd.resource_list.resources["PUs"]
+		factory_ut, _ := gd.unit_type_list.unit_types["factory"]
+		if pus_res != nil && factory_ut != nil {
+			make_rule :: proc(name: string, factory_qty: i32, pus_res: ^Resource, factory_ut: ^Unit_Type, gd: ^Game_Data) -> ^Repair_Rule {
+				costs := integer_map_new()
+				integer_map_put(costs, rawptr(pus_res), 1)
+				results := integer_map_new()
+				integer_map_put(results, rawptr(factory_ut), factory_qty)
+				rr := repair_rule_new(name, gd, costs, results)
+				delete_key(&costs.map_values, rawptr(pus_res))
+				free(costs)
+				delete_key(&results.map_values, rawptr(factory_ut))
+				free(results)
+				return rr
+			}
+			if _, exists := gd.repair_frontier_list.repair_frontiers["repair"]; !exists {
+				rf := repair_frontier_new("repair", gd)
+				repair_frontier_add_rule(rf, make_rule("repairFactory", 1, pus_res, factory_ut, gd))
+				repair_frontier_list_add_repair_frontier(gd.repair_frontier_list, rf)
+			}
+			if _, exists := gd.repair_frontier_list.repair_frontiers["repairIndustrialTechnology"]; !exists {
+				rf := repair_frontier_new("repairIndustrialTechnology", gd)
+				repair_frontier_add_rule(rf, make_rule("repairFactoryIndustrialTechnology", 2, pus_res, factory_ut, gd))
+				repair_frontier_list_add_repair_frontier(gd.repair_frontier_list, rf)
+			}
+		}
+	}
+
 	// Post-pass: bind each player's productionFrontier (and repairFrontier
 	// if present) by looking up the named frontier in the now-populated
 	// production_frontier_list. The Java game-XML parser does this at
@@ -467,6 +503,15 @@ deserialize_game_data :: proc(root: json.Object) -> ^Game_Data {
 					if rf := repair_frontier_list_get_repair_frontier(gd.repair_frontier_list, rf_name); rf != nil {
 						gp.repair_frontier = rf
 					}
+				}
+			}
+			// Default fallback: WW2v5 XML assigns `<playerRepair player=X frontier="repair"/>`
+			// to every major nation. Snapshot JSON omits this static config,
+			// so default any player without an explicit repair frontier to
+			// "repair" if it exists.
+			if gp.repair_frontier == nil && gd.repair_frontier_list != nil {
+				if rf := repair_frontier_list_get_repair_frontier(gd.repair_frontier_list, "repair"); rf != nil {
+					gp.repair_frontier = rf
 				}
 			}
 		}
@@ -690,7 +735,7 @@ apply_xml_territory_attachments :: proc(gd: ^Game_Data) {
 	bytes: []u8
 	read_ok: bool
 	for path in candidates {
-		b, err := os.read_entire_file(path, context.allocator)
+		b, err := os.read_entire_file_from_path(path, context.allocator)
 		if err == nil {
 			bytes = b
 			read_ok = true

@@ -42,9 +42,12 @@ repair_rule_new_simple :: proc(name: string, data: ^Game_Data) -> ^Repair_Rule {
 repair_rule_get_costs :: proc(self: ^Repair_Rule) -> Integer_Map {
 	result := Integer_Map{}
 	result.map_values = make(map[rawptr]i32)
+	result.keys_order = make([dynamic]rawptr)
 	if self.costs != nil {
-		for k, v in self.costs.map_values {
+		for k in self.costs.keys_order {
+			v := self.costs.map_values[k]
 			result.map_values[k] = v
+			append(&result.keys_order, k)
 		}
 	}
 	return result

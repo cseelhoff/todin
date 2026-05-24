@@ -41,21 +41,45 @@ pro_purchase_validation_utils_find_purchase_options_for_territory :: proc(
 	is_bid: bool,
 ) -> [dynamic]^Pro_Purchase_Option {
 	result := make([dynamic]^Pro_Purchase_Option, 0, len(purchase_options))
+	when #config(AMPHIB_PROBE, false) {
+		_pn := player != nil ? game_player_get_name(player) : "?"
+		_tn := t != nil ? territory_get_name(t) : "?"
+		_fn := factory_territory != nil ? territory_get_name(factory_territory) : "?"
+		if _pn == "Japanese" {
+			fmt.eprintf("FOPT player=%s t=%s ft=%s isBid=%v in_n=%d\n", _pn, _tn, _fn, is_bid, len(purchase_options))
+		}
+	}
 	for ppo, idx in purchase_options {
 		units := unit_type_create_temp(
 			pro_purchase_option_get_unit_type(ppo),
 			pro_purchase_option_get_quantity(ppo),
 			player,
 		)
-		if pro_purchase_validation_utils_can_units_be_placed(
+		ok := pro_purchase_validation_utils_can_units_be_placed(
 			pro_data,
 			units,
 			player,
 			t,
 			factory_territory,
 			is_bid,
-		) {
+		)
+		when #config(AMPHIB_PROBE, false) {
+			_pn2 := player != nil ? game_player_get_name(player) : "?"
+			if _pn2 == "Japanese" {
+				_tn2 := t != nil ? territory_get_name(t) : "?"
+				_un := default_named_get_name(&ppo.unit_type.named_attachable.default_named)
+				fmt.eprintf("FOPT.opt player=%s t=%s unit=%s qty=%d -> ok=%v\n", _pn2, _tn2, _un, pro_purchase_option_get_quantity(ppo), ok)
+			}
+		}
+		if ok {
 			append(&result, ppo)
+		}
+	}
+	when #config(AMPHIB_PROBE, false) {
+		_pn3 := player != nil ? game_player_get_name(player) : "?"
+		if _pn3 == "Japanese" {
+			_tn3 := t != nil ? territory_get_name(t) : "?"
+			fmt.eprintf("FOPT.done player=%s t=%s out_n=%d\n", _pn3, _tn3, len(result))
 		}
 	}
 	return result
@@ -170,7 +194,7 @@ pro_purchase_validation_utils_find_number_of_construction_type_to_place :: proc(
 	target_type := pro_purchase_option_get_unit_type(purchase_option)
 	num_construction_type_to_place: i32 = 0
 	for u in units_to_place {
-		if unit_get_type(u) == target_type {
+		if unit_type_equals(unit_get_type(u), target_type) {
 			num_construction_type_to_place += 1
 		}
 	}
@@ -178,7 +202,7 @@ pro_purchase_validation_utils_find_number_of_construction_type_to_place :: proc(
 		for place_territory in pro_purchase_territory_get_can_place_territories(t) {
 			if pro_place_territory_get_territory(place_territory) == territory {
 				for u in pro_place_territory_get_place_units(place_territory) {
-					if unit_get_type(u) == target_type {
+					if unit_type_equals(unit_get_type(u), target_type) {
 						num_construction_type_to_place += 1
 					}
 				}
@@ -213,7 +237,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 		// Predicate: unit.getType() == type && unit.getOwner() == player.
 		currently_built: i32 = 0
 		for u in units_to_place {
-			if unit_get_type(u) == type && unit_is_owned_by(u, player) {
+			if unit_type_equals(unit_get_type(u), type) && unit_is_owned_by(u, player) {
 				currently_built += 1
 			}
 		}
@@ -223,7 +247,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 			// unit_collection_count_matches (whose pred is a bare
 			// proc(^Unit) -> bool with no closure).
 			for u in unit_collection_get_units(territory_get_unit_collection(t)) {
-				if unit_get_type(u) == type && unit_is_owned_by(u, player) {
+				if unit_type_equals(unit_get_type(u), type) && unit_is_owned_by(u, player) {
 					currently_built += 1
 				}
 			}
@@ -231,7 +255,7 @@ pro_purchase_validation_utils_has_reached_max_unit_built_per_player :: proc(
 		for _, t in purchase_territories {
 			for place_territory in pro_purchase_territory_get_can_place_territories(t) {
 				for u in pro_place_territory_get_place_units(place_territory) {
-					if unit_get_type(u) == type && unit_is_owned_by(u, player) {
+					if unit_type_equals(unit_get_type(u), type) && unit_is_owned_by(u, player) {
 						currently_built += 1
 					}
 				}
@@ -401,7 +425,7 @@ pro_purchase_validation_utils_has_reached_construction_limits :: proc(
 		target_type := pro_purchase_option_get_unit_type(purchase_option)
 		num_existing_construction_type: i32 = 0
 		for u in unit_collection_get_units(territory_get_unit_collection(territory)) {
-			if unit_get_type(u) == target_type {
+			if unit_type_equals(unit_get_type(u), target_type) {
 				num_existing_construction_type += 1
 			}
 		}
@@ -593,8 +617,36 @@ pro_purchase_validation_utils_can_units_be_placed :: proc(
 	} else {
 		error = abstract_place_delegate_can_units_be_placed(place_delegate, t, units, player)
 	}
+	when #config(AMPHIB_PROBE, false) {
+		_pn := player != nil ? game_player_get_name(player) : "?"
+		if _pn == "Japanese" {
+			_tn := t != nil ? territory_get_name(t) : "?"
+			_un := "?"
+			if len(units) > 0 && units[0] != nil {
+				ut := unit_get_type(units[0])
+				if ut != nil { _un = default_named_get_name(&ut.named_attachable.default_named) }
+			}
+			_err := "<nil>"
+			if e, has := error.?; has { _err = e }
+			fmt.eprintf("CANBE_PLACE player=%s t=%s unit=%s n_units=%d err=%q\n", _pn, _tn, _un, len(units), _err)
+		}
+	}
 	if _, has := error.?; has {
 		return false
+	}
+	when #config(AMPHIB_PROBE, false) {
+		_pn2 := player != nil ? game_player_get_name(player) : "?"
+		if _pn2 == "Japanese" {
+			_consume_ok := pro_purchase_validation_utils_units_to_consume_are_all_present(pro_data, player, t, units)
+			_tn2 := t != nil ? territory_get_name(t) : "?"
+			_un2 := "?"
+			if len(units) > 0 && units[0] != nil {
+				ut2 := unit_get_type(units[0])
+				if ut2 != nil { _un2 = default_named_get_name(&ut2.named_attachable.default_named) }
+			}
+			fmt.eprintf("CANBE_CONSUME player=%s t=%s unit=%s -> consume_ok=%v\n", _pn2, _tn2, _un2, _consume_ok)
+			return _consume_ok
+		}
 	}
 	return pro_purchase_validation_utils_units_to_consume_are_all_present(
 		pro_data,

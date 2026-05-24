@@ -3,8 +3,12 @@ package game
 import "core:fmt"
 import "core:os"
 import "core:slice"
+import "core:strings"
 
 ENEMY_ATK_DUMP :: #config(ENEMY_ATK_DUMP, false)
+
+@(private="file")
+g_peao_call_seq: int = 0
 
 Pro_Territory_Manager :: struct {
 	calc:                     ^Pro_Odds_Calculator,
@@ -355,6 +359,7 @@ pro_territory_manager_find_naval_move_options :: proc(
 	is_checking_enemy_attacks: bool,
 	unit_move_order: ^[dynamic]^Unit = nil,
 	transport_move_order: ^[dynamic]^Unit = nil,
+	unit_move_inner_order: ^map[^Unit][dynamic]^Territory = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -430,6 +435,38 @@ pro_territory_manager_find_naval_move_options :: proc(
 					append(&potential_territories, my_unit_territory)
 				}
 			}
+			// Mirror Java HashSet iteration order over
+			// `possibleMoveTerritories` (a HashSet<Territory> in
+			// Java; pointer-hashed map in Odin). Java's downstream
+			// `LinkedHashSet<Territory>` for `unitMoveMap[unit]`
+			// inherits this order — so the inner_order we record
+			// must too. Sort by Java HashMap bucket index using a
+			// capacity sized to the source set so AI tiebreaks
+			// (e.g. cruiser fallback at germanNonCombatMove pick
+			// 6 SZ over 5 SZ on sd-tie) match Java exactly.
+			//
+			// See /memories/repo/step24-cruiser-divergence.md and
+			// java_hashmap_order.odin for the algorithm.
+			java_cap_naval := java_hashmap_capacity_for_size(len(possible_move_territories))
+			pt_keys := make([dynamic]struct{ bucket: int, name: string, t: ^Territory },
+				0, len(potential_territories))
+			defer delete(pt_keys)
+			for t in potential_territories {
+				name := territory_get_name(t)
+				append(&pt_keys, struct{ bucket: int, name: string, t: ^Territory }{
+					bucket = java_hashmap_bucket_for_string(name, java_cap_naval),
+					name = name,
+					t = t,
+				})
+			}
+			slice.sort_by(pt_keys[:], proc(a, b: struct{ bucket: int, name: string, t: ^Territory }) -> bool {
+				if a.bucket != b.bucket { return a.bucket < b.bucket }
+				return a.name < b.name
+			})
+			clear(&potential_territories)
+			for k in pt_keys {
+				append(&potential_territories, k.t)
+			}
 
 			units_one := make([dynamic]^Unit, 0, 1)
 			append(&units_one, my_sea_unit)
@@ -475,6 +512,9 @@ pro_territory_manager_find_naval_move_options :: proc(
 					}
 					inner[potential_territory] = {}
 					unit_move_map[my_sea_unit] = inner
+					pro_my_move_options_record_unit_move_inner(
+						unit_move_inner_order, my_sea_unit, potential_territory,
+					)
 				}
 			}
 		}
@@ -824,6 +864,7 @@ pro_territory_manager_find_air_move_options :: proc(
 	is_checking_enemy_attacks: bool,
 	is_ignoring_relationships: bool,
 	unit_move_order: ^[dynamic]^Unit = nil,
+	unit_move_inner_order: ^map[^Unit][dynamic]^Territory = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -1094,6 +1135,9 @@ pro_territory_manager_find_air_move_options :: proc(
 				}
 				inner[potential_territory] = {}
 				unit_move_map[my_air_unit] = inner
+				pro_my_move_options_record_unit_move_inner(
+					unit_move_inner_order, my_air_unit, potential_territory,
+				)
 			}
 		}
 	}
@@ -1126,6 +1170,7 @@ pro_territory_manager_find_land_move_options :: proc(
 	is_checking_enemy_attacks: bool,
 	is_ignoring_relationships: bool,
 	unit_move_order: ^[dynamic]^Unit = nil,
+	unit_move_inner_order: ^map[^Unit][dynamic]^Territory = nil,
 ) {
 	data := pro_data_get_data(pro_data)
 	game_map := game_data_get_map(data)
@@ -1135,8 +1180,36 @@ pro_territory_manager_find_land_move_options :: proc(
 		is_combat_move,
 	)
 
+	pname_dbg := default_named_get_name(&player.named_attachable.default_named)
+	dbg_is_russians := pname_dbg == "Russians" && !is_combat_move && !is_checking_enemy_attacks
+
+	when NCM_TRACE_DUMP {
+		if dbg_is_russians {
+			// Dump owner of West Russia at this exact moment for both languages to compare.
+			for tt in game_map_get_territories(game_map) {
+				ttn := default_named_get_name(&tt.named_attachable.default_named)
+				if ttn == "West Russia" {
+					owner_name := "<nil>"
+					if tt.owner != nil {
+						owner_name = default_named_get_name(&tt.owner.named_attachable.default_named)
+					}
+					allied := game_player_is_allied(player, tt.owner)
+					fmt.printf("LMO_WR_OWNER owner=%s is_allied_with_russians=%v\n", owner_name, allied)
+					break
+				}
+			}
+		}
+	}
+
 	for my_unit_territory in my_unit_territories {
 		my_land_units := territory_get_matches(my_unit_territory, owned_land_p, owned_land_c)
+
+		when NCM_TRACE_DUMP {
+			if dbg_is_russians {
+				utn_dbg := default_named_get_name(&my_unit_territory.named_attachable.default_named)
+				fmt.printf("LMO_UT t=%s n_land_units=%d\n", utn_dbg, len(my_land_units))
+			}
+		}
 
 		for u in my_land_units {
 			start_territory := pro_data_get_unit_territory(pro_data, u)
@@ -1182,6 +1255,30 @@ pro_territory_manager_find_land_move_options :: proc(
 				}
 				if !found {
 					append(&potential_territories, my_unit_territory)
+				}
+			}
+
+			when NCM_TRACE_DUMP {
+				if dbg_is_russians {
+					utn_dbg := default_named_get_name(&my_unit_territory.named_attachable.default_named)
+					utype := unit_get_type(u)
+					utype_name := default_named_get_name(&utype.named_attachable.default_named)
+					wr_possible := false
+					for t in possible_move_territories {
+						tn := default_named_get_name(&t.named_attachable.default_named)
+						if tn == "West Russia" { wr_possible = true; break }
+					}
+					wr_potential := false
+					for t in potential_territories {
+						tn := default_named_get_name(&t.named_attachable.default_named)
+						if tn == "West Russia" { wr_potential = true; break }
+					}
+					fmt.printf(
+						"LMO_U from=%s utype=%s range=%v n_possible=%d n_potential=%d wr_possible=%v wr_potential=%v\n",
+						utn_dbg, utype_name, range,
+						len(possible_move_territories), len(potential_territories),
+						wr_possible, wr_potential,
+					)
 				}
 			}
 
@@ -1242,6 +1339,7 @@ pro_territory_manager_find_land_move_options :: proc(
 				}
 				unit_inner[t] = {}
 				unit_move_map[u] = unit_inner
+				pro_my_move_options_record_unit_move_inner(unit_move_inner_order, u, t)
 			}
 		}
 	}
@@ -1780,6 +1878,7 @@ pro_territory_manager_find_defend_options :: proc(
 	is_checking_enemy_attacks: bool,
 	unit_move_order:           ^[dynamic]^Unit = nil,
 	transport_move_order:      ^[dynamic]^Unit = nil,
+	unit_move_inner_order:     ^map[^Unit][dynamic]^Territory = nil,
 ) {
 	land_routes_map := make(map[^Territory]map[^Territory]struct {})
 
@@ -1801,6 +1900,7 @@ pro_territory_manager_find_defend_options :: proc(
 		is_checking_enemy_attacks,
 		unit_move_order,
 		transport_move_order,
+		unit_move_inner_order,
 	)
 	pro_ncm_trace_emit_raw("01a_after_naval", move_map)
 
@@ -1821,6 +1921,7 @@ pro_territory_manager_find_defend_options :: proc(
 		is_checking_enemy_attacks,
 		false,
 		unit_move_order,
+		unit_move_inner_order,
 	)
 	pro_ncm_trace_emit_raw("01b_after_land", move_map)
 
@@ -2026,6 +2127,8 @@ pro_territory_manager_populate_defense_options :: proc(
 		cleared_territories,
 		false,
 		&self.defend_options.unit_move_map_order,
+		nil,
+		&self.defend_options.unit_move_map_inner_order,
 	)
 }
 
@@ -2097,6 +2200,11 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 	data := pro_data_get_data(pro_data)
 	enemy_players := pro_utils_get_enemy_players_in_turn_order(player)
 	defer delete(enemy_players)
+	when NCM_TRACE_DUMP {
+		g_peao_call_seq += 1
+	}
+	peao_seq := 0
+	when NCM_TRACE_DUMP { peao_seq = g_peao_call_seq }
 	when ENEMY_ATK_DUMP {
 		fmt.printf("FEAO_ENTRY for=%s n_enemy_players=%d cleared=%d to_check=%d\n",
 			default_named_get_name(&player.default_named),
@@ -2170,6 +2278,46 @@ pro_territory_manager_find_enemy_attack_options :: proc(
 		for t, _ in attack_map {
 			if land_p(land_c, t) {
 				allied_territories[t] = {}
+			}
+		}
+		when NCM_TRACE_DUMP {
+			for t, pt in attack_map {
+				if t == nil { continue }
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				if tn == "33 Sea Zone" || tn == "34 Sea Zone" {
+					mu := pro_territory_get_max_units(pt)
+					ma := pro_territory_get_max_amphib_units(pt)
+					ep := default_named_get_name(&enemy_player.default_named)
+					utm := pro_data_get_unit_territory_map(pro_data)
+					lines := make([dynamic]string, 0)
+					defer delete(lines)
+					for u in mu {
+						ut := unit_get_type(u)
+						ow := unit_get_owner(u)
+						tn_u := ""
+						if u in utm {
+							tu := utm[u]
+							if tu != nil {
+								tn_u = default_named_get_name(&tu.named_attachable.default_named)
+							}
+						}
+						append(&lines, fmt.tprintf("%s|%s|%s",
+							default_named_get_name(&ut.named_attachable.default_named),
+							default_named_get_name(&ow.default_named),
+							tn_u))
+					}
+					slice.sort(lines[:])
+					for ln in lines {
+						fmt.printf("PEAO_DUMP seq=%d for=%s enemy=%s t=%s n=%d unit=%s\n",
+							peao_seq,
+							default_named_get_name(&player.default_named), ep, tn, len(mu), ln)
+					}
+					if len(lines) == 0 {
+						fmt.printf("PEAO_DUMP seq=%d for=%s enemy=%s t=%s n=0 unit=NONE\n",
+							peao_seq,
+							default_named_get_name(&player.default_named), ep, tn)
+					}
+				}
 			}
 		}
 		when ENEMY_ATK_DUMP {
@@ -2294,6 +2442,7 @@ pro_territory_manager_remove_territories_that_cant_be_conquered :: proc(
 	territories_to_remove := make([dynamic]^Territory)
 	has_infra_p, has_infra_c := pro_matches_territory_has_infra_factory_and_is_land()
 
+	// Java mirror: iterate `attackMap.entrySet()` (LinkedHashMap order).
 	for t, patd in attack_map {
 		// Defenders: ignoring-relationships → t.units minus patd.maxUnits;
 		// otherwise → patd.getMaxEnemyDefenders(player).
@@ -2592,6 +2741,7 @@ pro_territory_manager_remove_territories_that_cant_be_conquered :: proc(
 	}
 
 	result := make([dynamic]^Pro_Territory)
+	// Java mirror: result = new ArrayList<>(attackMap.values()) — preserves LinkedHashMap order.
 	for _, v in attack_map {
 		if !(v in remove_set) {
 			append(&result, v)

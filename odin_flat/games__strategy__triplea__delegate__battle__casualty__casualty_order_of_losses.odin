@@ -180,7 +180,7 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 			// Add any support power that it provides to other units.
 			if u in unit_support_power_map {
 				support_power_for_unit := unit_support_power_map[u]
-				keys := integer_map_key_set(&support_power_for_unit)
+				keys := integer_map_key_set(support_power_for_unit)
 				for sk in keys {
 					supported_unit := cast(^Unit)sk
 					strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
@@ -190,19 +190,19 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 					// Remove any rolls provided by this support, so they aren't counted twice.
 					if u in unit_support_rolls_map {
 						support_rolls_for_unit := unit_support_rolls_map[u]
-						rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+						rolls := integer_map_get_int(support_rolls_for_unit, rawptr(supported_unit))
 						adjusted := unit_power_strength_and_rolls_subtract_rolls(&strength_and_rolls, rolls)
 						strength_and_rolls = adjusted^
 					}
 					// If one roll then just add the power.
 					if unit_power_strength_and_rolls_get_rolls(&strength_and_rolls) == 1 {
-						power += integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+						power += integer_map_get_int(support_power_for_unit, rawptr(supported_unit))
 						continue
 					}
 					// Find supported unit power with support.
 					power_with_support := unit_power_strength_and_rolls_get_power(&strength_and_rolls)
 					// Find supported unit power without support.
-					strength := integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+					strength := integer_map_get_int(support_power_for_unit, rawptr(supported_unit))
 					adjusted_no_support := unit_power_strength_and_rolls_subtract_strength(
 						&strength_and_rolls,
 						strength,
@@ -217,7 +217,7 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 			// Add any power from support rolls that it provides to other units.
 			if u in unit_support_rolls_map {
 				support_rolls_for_unit := unit_support_rolls_map[u]
-				keys := integer_map_key_set(&support_rolls_for_unit)
+				keys := integer_map_key_set(support_rolls_for_unit)
 				for sk in keys {
 					supported_unit := cast(^Unit)sk
 					strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
@@ -227,7 +227,7 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 					// Find supported unit power with support.
 					power_with_support := unit_power_strength_and_rolls_get_power(&strength_and_rolls)
 					// Find supported unit power without support.
-					rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+					rolls := integer_map_get_int(support_rolls_for_unit, rawptr(supported_unit))
 					adjusted_no_support := unit_power_strength_and_rolls_subtract_rolls(
 						&strength_and_rolls,
 						rolls,
@@ -253,14 +253,14 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 		// other collections.
 		if worst_unit in unit_support_power_map {
 			support_power_for_unit := unit_support_power_map[worst_unit]
-			keys := integer_map_key_set(&support_power_for_unit)
+			keys := integer_map_key_set(support_power_for_unit)
 			for sk in keys {
 				supported_unit := cast(^Unit)sk
 				strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
 				if !ok {
 					continue
 				}
-				strength := integer_map_get_int(&support_power_for_unit, rawptr(supported_unit))
+				strength := integer_map_get_int(support_power_for_unit, rawptr(supported_unit))
 				without_support := unit_power_strength_and_rolls_subtract_strength(
 					&strength_and_rolls,
 					strength,
@@ -273,14 +273,14 @@ casualty_order_of_losses_sort_units_for_casualties_with_support_impl :: proc(
 		}
 		if worst_unit in unit_support_rolls_map {
 			support_rolls_for_unit := unit_support_rolls_map[worst_unit]
-			keys := integer_map_key_set(&support_rolls_for_unit)
+			keys := integer_map_key_set(support_rolls_for_unit)
 			for sk in keys {
 				supported_unit := cast(^Unit)sk
 				strength_and_rolls, ok := unit_power_and_rolls_map[supported_unit]
 				if !ok {
 					continue
 				}
-				rolls := integer_map_get_int(&support_rolls_for_unit, rawptr(supported_unit))
+				rolls := integer_map_get_int(support_rolls_for_unit, rawptr(supported_unit))
 				without_support := unit_power_strength_and_rolls_subtract_rolls(
 					&strength_and_rolls,
 					rolls,

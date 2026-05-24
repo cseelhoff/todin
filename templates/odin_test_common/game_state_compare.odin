@@ -50,49 +50,57 @@ compare_game_states :: proc(actual: ^game.Game_Data, expected: ^game.Game_Data) 
 		}
 	}
 
-	// Units — pure shape-tally. UUID-aligned per-field comparison is too
-	// strict for AI-driven snapshots: Odin's `map[^Unit]X` iteration order
-	// varies with pointer addresses, so the AI's planning hot paths assign
-	// equivalent units to attacks in different orders than Java's
-	// LinkedHashMap. As long as the SET of unit shapes (type, owner,
-	// alreadyMoved, hits, etc.) matches, the post-step state is
-	// observationally equivalent.
+	// Purchase pool — units in `units_list` that are not yet placed in any
+	// territory's `unit_collection` (e.g. freshly purchased units between
+	// the purchase and placement phases). Treated as a synthetic territory
+	// so we get the same per-key tally we use for real territories.
 	if actual.units_list != nil && expected.units_list != nil {
-		act_tally := make(map[string]int)
-		defer delete(act_tally)
-		exp_tally := make(map[string]int)
-		defer delete(exp_tally)
-		for _, u in actual.units_list.units {
-			act_tally[unit_shape_signature(u)] += 1
-		}
-		for _, u in expected.units_list.units {
-			exp_tally[unit_shape_signature(u)] += 1
-		}
-		diffs: [dynamic]string
-		defer delete(diffs)
-		for sig, ec in exp_tally {
-			ac := act_tally[sig]
+		act_tally := pool_tally(actual);  defer delete(act_tally)
+		exp_tally := pool_tally(expected); defer delete(exp_tally)
+		diffs: [dynamic]string; defer delete(diffs)
+		for key, ec in exp_tally {
+			ac := act_tally[key]
 			if ac != ec {
-				append(&diffs, fmt.tprintf("[%s]: %d!=%d", sig, ac, ec))
+				append(&diffs, fmt.tprintf("[%s]: %d!=%d", territory_unit_key_format(key), ac, ec))
 			}
 		}
-		for sig, ac in act_tally {
-			if _, ok := exp_tally[sig]; !ok && ac > 0 {
-				append(&diffs, fmt.tprintf("[%s]: %d!=0", sig, ac))
+		for key, ac in act_tally {
+			if _, ok := exp_tally[key]; !ok && ac > 0 {
+				append(&diffs, fmt.tprintf("[%s]: %d!=0", territory_unit_key_format(key), ac))
 			}
 		}
 		if len(diffs) > 0 {
-			// Sort so the diff message is byte-identical across runs;
-			// Odin's map iteration is randomized.
 			slice.sort(diffs[:])
-			return fmt.tprintf("units: count %d != %d (diffs: %s)",
-				len(actual.units_list.units),
-				len(expected.units_list.units),
-				strings.join(diffs[:], "; "))
+			a_total := 0; for _, c in act_tally { a_total += c }
+			e_total := 0; for _, c in exp_tally { e_total += c }
+			return fmt.tprintf("territories.<purchase_pool>.units: count %d != %d (diffs: %s)",
+				a_total, e_total, strings.join(diffs[:], "; "))
 		}
 	}
 
 	return ""
+}
+
+// Tally of units that live in `units_list` but are not in any territory's
+// `unit_collection`. Mirrors a real territory's tally so the same
+// `Territory_Unit_Key` keys and formatter can be reused.
+pool_tally :: proc(gd: ^game.Game_Data) -> map[Territory_Unit_Key]int {
+	out := make(map[Territory_Unit_Key]int)
+	if gd == nil || gd.units_list == nil { return out }
+	placed := make(map[^game.Unit]struct{}); defer delete(placed)
+	if gd.game_map != nil {
+		for _, t in gd.game_map.territory_lookup {
+			if t == nil || t.unit_collection == nil { continue }
+			for u in t.unit_collection.units {
+				placed[u] = {}
+			}
+		}
+	}
+	for _, u in gd.units_list.units {
+		if _, in_terr := placed[u]; in_terr { continue }
+		out[territory_unit_key(u)] += 1
+	}
+	return out
 }
 
 // Returns a stable string signature of a unit's observable shape — the fields
@@ -163,7 +171,64 @@ compare_territory :: proc(a, e: ^game.Territory) -> string {
 	if a_owner != e_owner {
 		return fmt.tprintf("owner: '%s' != '%s'", a_owner, e_owner)
 	}
+
+	// Per-territory unit tally by (type, owner, alreadyMoved, unitDamage).
+	// Detects local divergences (e.g. wrong placement territory, wrong
+	// number of damaged battleships) that the game-wide shape tally hides.
+	a_tally := make(map[Territory_Unit_Key]int); defer delete(a_tally)
+	e_tally := make(map[Territory_Unit_Key]int); defer delete(e_tally)
+	if a.unit_collection != nil {
+		for u in a.unit_collection.units {
+			a_tally[territory_unit_key(u)] += 1
+		}
+	}
+	if e.unit_collection != nil {
+		for u in e.unit_collection.units {
+			e_tally[territory_unit_key(u)] += 1
+		}
+	}
+	t_diffs: [dynamic]string; defer delete(t_diffs)
+	for key, ec in e_tally {
+		ac := a_tally[key]
+		if ac != ec {
+			append(&t_diffs, fmt.tprintf("[%s]: %d!=%d", territory_unit_key_format(key), ac, ec))
+		}
+	}
+	for key, ac in a_tally {
+		if _, ok := e_tally[key]; !ok && ac > 0 {
+			append(&t_diffs, fmt.tprintf("[%s]: %d!=0", territory_unit_key_format(key), ac))
+		}
+	}
+	if len(t_diffs) > 0 {
+		slice.sort(t_diffs[:])
+		a_count := a.unit_collection != nil ? len(a.unit_collection.units) : 0
+		e_count := e.unit_collection != nil ? len(e.unit_collection.units) : 0
+		return fmt.tprintf("units: count %d != %d (diffs: %s)",
+			a_count, e_count, strings.join(t_diffs[:], "; "))
+	}
 	return ""
+}
+
+// Per-territory unit grouping key: type, owner, alreadyMoved, unitDamage.
+// Pointer-equality is sufficient for type/owner since both live in the
+// shared GameData and are interned.
+Territory_Unit_Key :: struct {
+	type:          ^game.Unit_Type,
+	owner:         ^game.Game_Player,
+	already_moved: f64,
+	unit_damage:   i32,
+}
+
+territory_unit_key :: proc(u: ^game.Unit) -> Territory_Unit_Key {
+	if u == nil { return {} }
+	return {u.type, u.owner, u.already_moved, u.unit_damage}
+}
+
+territory_unit_key_format :: proc(k: Territory_Unit_Key) -> string {
+	t := k.type != nil ? k.type.named.base.name : ""
+	o := k.owner != nil ? k.owner.named.base.name : ""
+	return fmt.tprintf("type=%s|owner=%s|alreadyMoved=%f|unitDamage=%d",
+		t, o, k.already_moved, k.unit_damage)
 }
 
 compare_unit :: proc(a, e: ^game.Unit) -> string {

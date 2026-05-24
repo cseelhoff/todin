@@ -56,6 +56,11 @@ battle_precache_config_is_enabled :: proc() -> bool {
 
 // Java: BattlePrecacheConfig.dbPath()
 //   sysProp -> ClientSetting -> $userRootFolder/battle_precalc.sqlite
+//
+// Java ClientFileSystemHelper.getUserRootFolder():
+//   Path rootDir = userHome/Documents/triplea
+//   return Files.exists(rootDir) ? rootDir : userHome/triplea
+// USER_ROOT_FOLDER_NAME = "triplea" (no leading dot).
 battle_precache_config_db_path :: proc(allocator := context.allocator) -> string {
 	v := os.get_env(ENV_VAR_DB_PATH, context.temp_allocator)
 	if v != "" {
@@ -66,7 +71,11 @@ battle_precache_config_db_path :: proc(allocator := context.allocator) -> string
 		// Last-resort fallback: pwd. Caller treats empty as "do not enable".
 		return strings.clone(BATTLE_PRECACHE_DEFAULT_DB_FILE, allocator)
 	}
-	return strings.concatenate({home, "/.triplea/", BATTLE_PRECACHE_DEFAULT_DB_FILE}, allocator)
+	documents_root := strings.concatenate({home, "/Documents/triplea"}, context.temp_allocator)
+	if os.is_dir(documents_root) {
+		return strings.concatenate({documents_root, "/", BATTLE_PRECACHE_DEFAULT_DB_FILE}, allocator)
+	}
+	return strings.concatenate({home, "/triplea/", BATTLE_PRECACHE_DEFAULT_DB_FILE}, allocator)
 }
 
 // Java: BattlePrecacheConfig.runCount()

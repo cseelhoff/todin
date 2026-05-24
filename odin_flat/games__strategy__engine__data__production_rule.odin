@@ -17,8 +17,8 @@ production_rule_new :: proc(name: string, data: ^Game_Data) -> ^Production_Rule 
 	base := default_named_new(name, data)
 	self.default_named = base^
 	free(base)
-	self.costs = Integer_Map{map_values = make(map[rawptr]i32)}
-	self.results = Integer_Map{map_values = make(map[rawptr]i32)}
+	self.costs = Integer_Map{map_values = make(map[rawptr]i32), keys_order = make([dynamic]rawptr)}
+	self.results = Integer_Map{map_values = make(map[rawptr]i32), keys_order = make([dynamic]rawptr)}
 	self.rule = Rule{
 		add_cost    = production_rule_rule_add_cost,
 		get_name    = production_rule_rule_get_name,
@@ -48,8 +48,11 @@ production_rule_rule_get_results :: proc(self: ^Rule) -> ^Integer_Map {
 production_rule_get_costs :: proc(self: ^Production_Rule) -> Integer_Map {
 	result := Integer_Map{}
 	result.map_values = make(map[rawptr]i32)
-	for k, v in self.costs.map_values {
+	result.keys_order = make([dynamic]rawptr)
+	for k in self.costs.keys_order {
+		v := self.costs.map_values[k]
 		result.map_values[k] = v
+		append(&result.keys_order, k)
 	}
 	return result
 }

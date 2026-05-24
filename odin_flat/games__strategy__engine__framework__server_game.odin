@@ -531,15 +531,20 @@ server_game_start_step :: proc(self: ^Server_Game, step_is_restored_from_saved_g
 // messenger using ClientGame's remote step-advancer name.
 server_game_wait_for_player_to_finish_step :: proc(self: ^Server_Game) {
 	game_player := game_step_get_player_id(server_game_get_current_step(self))
+	fmt.printf("WAIT_FOR_PLAYER step=%s gp=%p\n",
+		game_step_get_name(server_game_get_current_step(self)), game_player)
 	if game_player == nil {
 		return
 	}
-	if !i_delegate_delegate_currently_requires_user_input(
+	requires := i_delegate_delegate_currently_requires_user_input(
 		game_step_get_delegate(server_game_get_current_step(self)),
-	) {
+	)
+	fmt.printf("WAIT_FOR_PLAYER requires_user_input=%v\n", requires)
+	if !requires {
 		return
 	}
 	player, ok := self.game_players[game_player]
+	fmt.printf("WAIT_FOR_PLAYER player=%p ok=%v\n", player, ok)
 	if ok && player != nil {
 		player_start(player, game_step_get_name(server_game_get_current_step(self)))
 	} else {
