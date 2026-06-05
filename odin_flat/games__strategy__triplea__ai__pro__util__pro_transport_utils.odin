@@ -716,19 +716,51 @@ pro_transport_utils_get_units_to_transport_from_territories :: proc(
 	valid_unit_match: proc(rawptr, ^Unit) -> bool,
 	valid_unit_match_ctx: rawptr,
 ) -> [dynamic]^Unit {
+	// Iterate the load-from territories in Java's LinkedHashSet insertion
+	// order. In the Java oracle the transport's load set is a LinkedHashSet
+	// (ProTransport.transportMap value) populated by iterating the source
+	// `loadFromTerritories` HashSet built in
+	// ProTerritoryManager.findAmphibMoveOptions, so the iteration order is
+	// Java's HashMap bucket order over the territory names -- NOT
+	// alphabetical. A name sort breaks the armour/artillery cargo tie the
+	// wrong way (snap 0038): when two candidate cargo units tie on transport
+	// cost AND on decreasing attack, the stable cargo sort preserves this
+	// load-from territory order, so it must match Java's HashSet order.
+	sorted_load_from: [dynamic]^Territory
+	for t in territories_to_load_from {
+		append(&sorted_load_from, t)
+	}
+	defer delete(sorted_load_from)
+	java_hashmap_sort_territories_by_bucket(
+		sorted_load_from[:],
+		java_hashmap_capacity_for_size(len(sorted_load_from)),
+	)
+	return pro_transport_utils_get_units_to_transport_from_ordered_territories(
+		player, transport, sorted_load_from[:], units_to_ignore,
+		valid_unit_match, valid_unit_match_ctx,
+	)
+}
+
+// Same as `_from_territories` but with the caller supplying the
+// territory iteration order. Used at sites where the Java oracle's
+// HashSet bucket order (not name order) is the faithful sequence; the
+// caller computes that order via `java_hashmap_bucket_for_string`.
+pro_transport_utils_get_units_to_transport_from_ordered_territories :: proc(
+	player: ^Game_Player,
+	transport: ^Unit,
+	territories_to_load_from: []^Territory,
+	units_to_ignore: [dynamic]^Unit,
+	valid_unit_match: proc(rawptr, ^Unit) -> bool,
+	valid_unit_match_ctx: rawptr,
+) -> [dynamic]^Unit {
 	transporting := unit_get_transporting_no_args(transport)
 	if len(transporting) > 0 {
 		return transporting
 	}
 	delete(transporting)
 
-	// Get all units that can be transported. Iterate territories in name order so the
-	// candidate list is deterministic across runs (Odin map iter is pointer-hash random,
-	// matching Java's HashSet which is JVM-deterministic on a single run).
 	units: [dynamic]^Unit
-	sorted_load_from := pro_determinism_sorted_territory_keys(territories_to_load_from)
-	defer delete(sorted_load_from)
-	for load_from in sorted_load_from {
+	for load_from in territories_to_load_from {
 		matched := territory_get_matches(load_from, valid_unit_match, valid_unit_match_ctx)
 		for u in matched {
 			append(&units, u)
@@ -754,6 +786,30 @@ pro_transport_utils_get_units_to_transport_from_territories :: proc(
 		units = filtered
 	}
 
+	when PLAN_PROBE {
+		has_cargo_pre := false
+		for u in units {
+			nm := unit_type_get_name(unit_get_type(u))
+			if nm == "armour" || nm == "artillery" {
+				has_cargo_pre = true
+				break
+			}
+		}
+		if has_cargo_pre {
+			fmt.printf("CARGO_PRE owner=%s loadFrom=[", game_player_get_name(player))
+			for lf, idx in territories_to_load_from {
+				if idx > 0 { fmt.printf(",") }
+				fmt.printf("%s", territory_get_name(lf))
+			}
+			fmt.printf("] ignored=%d gather=[", len(units_to_ignore))
+			for u, idx in units {
+				if idx > 0 { fmt.printf(",") }
+				fmt.printf("%s", unit_type_get_name(unit_get_type(u)))
+			}
+			fmt.printf("]\n")
+		}
+	}
+
 	// Sort: transportCost asc, then decreasing attack.
 	decr_attack_pred, decr_attack_ctx :=
 		pro_transport_utils_get_decreasing_attack_comparator(player)
@@ -774,8 +830,59 @@ pro_transport_utils_get_units_to_transport_from_territories :: proc(
 	}
 	free(decr_attack_ctx)
 
+	when PLAN_PROBE {
+		has_cargo_combat := false
+		for u in units {
+			nm := unit_type_get_name(unit_get_type(u))
+			if nm == "armour" || nm == "artillery" {
+				has_cargo_combat = true
+				break
+			}
+		}
+		if has_cargo_combat {
+			fmt.printf("CARGO_CMP owner=%s sorted=[", game_player_get_name(player))
+			for u, idx in units {
+				ut := unit_get_type(u)
+				nm := unit_type_get_name(ut)
+				base := unit_attachment_get_attack(unit_get_unit_attachment(u), player)
+				sa := unit_support_attachment_get(ut)
+				ms: i32 = 0
+				for usa in sa {
+					if unit_support_attachment_get_allied(usa) &&
+					   unit_support_attachment_get_offence(usa) &&
+					   unit_support_attachment_get_bonus(usa) > ms {
+						ms = unit_support_attachment_get_bonus(usa)
+					}
+				}
+				delete(sa)
+				if idx > 0 {
+					fmt.printf(",")
+				}
+				fmt.printf("%s(base=%d+sup=%d=%d)", nm, base, ms, base + ms)
+			}
+			fmt.printf("]\n")
+		}
+	}
+
 	result := pro_transport_utils_select_units_to_transport_from_list(transport, units)
 	delete(units)
+	return result
+}
+
+// 4-arg wrapper for the ordered variant: same defaults as `_4`.
+pro_transport_utils_get_units_to_transport_from_ordered_territories_4 :: proc(
+	player: ^Game_Player,
+	transport: ^Unit,
+	territories_to_load_from: []^Territory,
+	units_to_ignore: [dynamic]^Unit,
+) -> [dynamic]^Unit {
+	pred, ctx := pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(
+		player, transport, true,
+	)
+	result := pro_transport_utils_get_units_to_transport_from_ordered_territories(
+		player, transport, territories_to_load_from, units_to_ignore, pred, ctx,
+	)
+	free(ctx)
 	return result
 }
 
@@ -1184,11 +1291,22 @@ pro_transport_utils_get_units_to_transport_that_cant_move_to_higher_value :: pro
 		can_be_loaded_pred, can_be_loaded_ctx :=
 			pro_matches_unit_is_owned_transportable_unit_and_can_be_loaded(player, transport, true)
 
-		// Gather candidate units across every load-from territory. Sort territories by
-		// name first so candidate-unit order is deterministic across runs.
+		// Gather candidate units across every load-from territory. Iterate the
+		// load-from set in Java HashSet bucket order (the load set is a
+		// LinkedHashSet fed from a HashSet, see the comment in
+		// `_get_units_to_transport_from_territories`). This only builds the
+		// better-land-move ignore set here (membership, order-independent), but
+		// we keep the order consistent with the real cargo path.
 		units: [dynamic]^Unit
-		sorted_load_from := pro_determinism_sorted_territory_keys(territories_to_load_from)
+		sorted_load_from: [dynamic]^Territory
+		for t in territories_to_load_from {
+			append(&sorted_load_from, t)
+		}
 		defer delete(sorted_load_from)
+		java_hashmap_sort_territories_by_bucket(
+			sorted_load_from[:],
+			java_hashmap_capacity_for_size(len(sorted_load_from)),
+		)
 		for load_from in sorted_load_from {
 			matched := territory_get_matches(load_from, can_be_loaded_pred, can_be_loaded_ctx)
 			for u in matched {

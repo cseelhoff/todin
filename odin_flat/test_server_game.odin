@@ -56,6 +56,16 @@ Test_Server_Game :: struct {
 	// JSON alone cannot reconstruct it: ProAi instance state lives on
 	// the AI object, not in the engine's serialized GameData graph).
 	proai_state_path: string,
+
+	// Names of territories conquered so far this turn (Java
+	// BattleTracker.conquered, serialized into before.json as
+	// `battleTracker.conquered`). Replayed into the freshly-registered
+	// battle delegate's tracker after delegate registration so
+	// Matches.airCanLandOnThisAlliedNonConqueredLandTerritory correctly
+	// excludes just-conquered territories during NCM air-move options.
+	// The GameData JSON alone cannot reconstruct it: this turn-scoped
+	// set lives on the BattleTracker, not in the serialized GameData graph.
+	conquered_territory_names: [dynamic]string,
 }
 
 @(private = "file")
@@ -341,6 +351,26 @@ test_server_game_run_next_step :: proc(self: ^Test_Server_Game) {
 	// game_data_get_delegate(name) resolves the same way XML-loaded
 	// games do.
 	test_server_game_register_ww2v5_delegates(self.data)
+
+	// Replay the turn-scoped BattleTracker.conquered set captured in
+	// before.json (`battleTracker.conquered`). The battle delegate (and
+	// its tracker) only exists after registration above, so this must run
+	// here rather than in the JSON loader. Without it, Odin's tracker is
+	// empty and Matches.airCanLandOnThisAlliedNonConqueredLandTerritory
+	// wrongly treats just-conquered territories (e.g. round-1 German
+	// Ukraine S.S.R.) as valid air-landing spots, over-populating NCM
+	// air defenders.
+	if len(self.conquered_territory_names) > 0 {
+		bt := abstract_move_delegate_get_battle_tracker(self.data)
+		gm := game_data_get_map(self.data)
+		if bt != nil && gm != nil {
+			for name in self.conquered_territory_names {
+				if terr, found := gm.territory_lookup[name]; found {
+					battle_tracker_add_to_conquered(bt, terr)
+				}
+			}
+		}
+	}
 
 	// Java's `InitializationDelegate.needToInitialize` defaults true and is
 	// flipped false the first time `start()` runs at round 1 / stepIndex 0;

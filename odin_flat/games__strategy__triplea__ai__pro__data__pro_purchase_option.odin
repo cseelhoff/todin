@@ -2,6 +2,8 @@ package game
 
 import "core:fmt"
 import "core:math"
+import "core:slice"
+import "core:strings"
 
 Pro_Purchase_Option :: struct {
 	production_rule:            ^Production_Rule,
@@ -376,6 +378,17 @@ pro_purchase_option_calculate_support_factor :: proc(
 	for r, _ in support_rules_set {
 		append(&rules_dyn, r)
 	}
+	// Sort by attachment name so SupportCalculator's per-rule pass and
+	// the LinkedHashMap insertion order it builds (support_rules_order,
+	// support_units_order) are reproducible across runs. Java reads
+	// `getSupportRules()` which is a HashSet (identity-hash bucket
+	// order, JVM-run-dependent); Odin's pointer-keyed map iteration is
+	// ASLR-dependent. Sorting at iteration time decouples Odin from
+	// both, at the cost of needing the Java side to be sorted too
+	// (handled by scripts/patch_triplea.py).
+	slice.sort_by(rules_dyn[:], proc(a, b: ^Unit_Support_Attachment) -> bool {
+		return strings.compare(a.name, b.name) < 0
+	})
 	side: Battle_State_Side = .OFFENSE
 	if defense {
 		side = .DEFENSE
@@ -385,7 +398,21 @@ pro_purchase_option_calculate_support_factor :: proc(
 	defer delete(bonus_types)
 
 	total_support_factor: f64 = 0
-	for usa, _ in self.unit_support_attachments {
+	// Sort outer iteration keys by attachment name. Java iterates
+	// `unitSupportAttachments` (HashSet) in identity-hash order; Odin's
+	// `map[^Unit_Support_Attachment]struct{}` iterates in ASLR-dependent
+	// pointer-hash order. Both are non-portable. Sorting by `name` makes
+	// the float-summation `total_support_factor += support_factor`
+	// deterministic — and identical between Odin and a name-sorted Java.
+	usa_keys: [dynamic]^Unit_Support_Attachment
+	defer delete(usa_keys)
+	for k, _ in self.unit_support_attachments {
+		append(&usa_keys, k)
+	}
+	slice.sort_by(usa_keys[:], proc(a, b: ^Unit_Support_Attachment) -> bool {
+		return strings.compare(a.name, b.name) < 0
+	})
+	for usa in usa_keys {
 		for bonus_type in bonus_types {
 			contains := false
 			for x in bonus_type {
@@ -440,6 +467,18 @@ pro_purchase_option_calculate_support_factor :: proc(
 			// Find support factor value.
 			support_factor := math.pow(f64(num_added_support) * 0.9, 0.9) * bonus * ratio
 			total_support_factor += support_factor
+			when #config(RPO_DUMP, false) {
+				fmt.eprintf(
+					"CSF self=%s def=%v usa=%s n_add=%d n_prov=%d n_supp=%d n_extra=%d ratio=%.20g bonus=%.20g sf=%.20g tot=%.20g units_n=%d\n",
+					default_named_get_name(&self.unit_type.named_attachable.default_named),
+					defense, usa.name, num_added_support, num_support_provided,
+					num_supportable_units, num_extra_supportable_units,
+					ratio, bonus, support_factor, total_support_factor, len(units),
+				)
+				for u, i in units {
+					fmt.eprintf("  u[%d] type=%s ptr=%p\n", i, unit_type_get_name(unit_get_type(u)), u)
+				}
+			}
 			pro_logger_trace(
 				fmt.tprintf(
 					"%s, bonusType=%v, supportFactor=%v, numSupportProvided=%d, numSupportableUnits=%d, numAddedSupport=%d, ratio=%v, bonus=%v",

@@ -653,7 +653,9 @@ move_performer_mark_movement_change :: proc(
 		if len(empty_neutral) != 0 || move_performer_has_conquered_non_blitzed(self, route) {
 			land_pred, land_ctx := matches_unit_is_land()
 			for unit in units {
-				if land_pred(land_ctx, unit) {
+				// Java: ChangeFactory.markNoMovementChange(Set.of(unit)) — the
+				// Collection overload only marks units whose getMovementLeft() >= 0.
+				if land_pred(land_ctx, unit) && unit_get_movement_left(unit) >= 0 {
 					composite_change_add(change, change_factory_mark_no_movement_change(unit))
 				}
 			}
@@ -676,7 +678,9 @@ move_performer_mark_movement_change :: proc(
 		if any_enemy_destroyer {
 			move_through_pred, move_through_ctx := matches_unit_can_move_through_enemies()
 			for unit in units {
-				if move_through_pred(move_through_ctx, unit) {
+				// Java: ChangeFactory.markNoMovementChange(Set.of(unit)) — the
+				// Collection overload only marks units whose getMovementLeft() >= 0.
+				if move_through_pred(move_through_ctx, unit) && unit_get_movement_left(unit) >= 0 {
 					composite_change_add(change, change_factory_mark_no_movement_change(unit))
 				}
 			}
@@ -779,12 +783,28 @@ move_performer_mark_transports_movement :: proc(
 	if route_is_load(route) || paratroops_landing {
 		// mark transports as having transported
 		for load_unit, transporter in transporting {
+			when AMPHIB_TRACE {
+				en := route_get_end(route)
+				enn := en != nil ? default_named_get_name(&en.named_attachable.default_named) : "?"
+				if enn == "60 Sea Zone" {
+					fmt.printf("MP_LOAD end=%s load_unit=%p(%s) transporter=%p\n",
+						enn, load_unit, default_named_get_name(&load_unit.type.named_attachable.default_named), transporter)
+				}
+			}
 			already_transport := unit_get_transported_by(load_unit)
 			if already_transport != transporter {
 				change := transport_tracker_load_transport_change(transporter, load_unit)
 				undoable_move_add_change(self.current_move, change)
 				undoable_move_load(self.current_move, transporter)
 				i_delegate_bridge_add_change(self.bridge, change)
+			}
+			when AMPHIB_TRACE {
+				en2 := route_get_end(route)
+				enn2 := en2 != nil ? default_named_get_name(&en2.named_attachable.default_named) : "?"
+				if enn2 == "60 Sea Zone" {
+					fmt.printf("MP_LOAD_POST load_unit=%p already=%p transporter=%p now_tb=%p\n",
+						load_unit, already_transport, transporter, unit_get_transported_by(load_unit))
+				}
 			}
 		}
 		if len(transporting) == 0 {
@@ -852,9 +872,15 @@ move_performer_mark_transports_movement :: proc(
 			undoable_move_unload(self.current_move, unit)
 			i_delegate_bridge_add_change(self.bridge, change1)
 			// set noMovement
-			change2 := change_factory_mark_no_movement_change(unit)
-			undoable_move_add_change(self.current_move, change2)
-			i_delegate_bridge_add_change(self.bridge, change2)
+			// Java: ChangeFactory.markNoMovementChange(Set.of(unit)) — the
+			// Collection overload only marks units whose getMovementLeft() >= 0.
+			// Amphib-unloaded cargo has already over-moved (movementLeft < 0), so
+			// Java leaves its already_moved unchanged here.
+			if unit_get_movement_left(unit) >= 0 {
+				change2 := change_factory_mark_no_movement_change(unit)
+				undoable_move_add_change(self.current_move, change2)
+				i_delegate_bridge_add_change(self.bridge, change2)
+			}
 		}
 	}
 }

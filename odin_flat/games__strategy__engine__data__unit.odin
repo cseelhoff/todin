@@ -565,19 +565,22 @@ unit_lambda_get_property_or_empty_0 :: proc(
 ) -> ^Mutable_Property {
 	switch unit_property_name {
 	case .Transported_By:
+		// Transported_By holds an object reference (^Unit). Mirroring Java's
+		// ChangeFactory.unitPropertyChange callers, the new value is passed as
+		// the raw Unit reference (or nil), not a heap-boxed pointer-to-pointer.
+		// The getter returns that same raw reference so old_value/undo round-trip
+		// through the setter unchanged.
 		return mutable_property_of_simple(
 			Mutable_Property_Setter_Slot{
 				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
-					unit_set_transported_by(cast(^Unit)ctx, (cast(^^Unit)v)^)
+					unit_set_transported_by(cast(^Unit)ctx, cast(^Unit)v)
 					return nil
 				},
 				ctx = self,
 			},
 			Mutable_Property_Getter_Slot{
 				fn = proc(ctx: rawptr) -> rawptr {
-					out := new(^Unit)
-					out^ = unit_get_transported_by(cast(^Unit)ctx)
-					return out
+					return rawptr(unit_get_transported_by(cast(^Unit)ctx))
 				},
 				ctx = self,
 			},
@@ -619,19 +622,19 @@ unit_lambda_get_property_or_empty_0 :: proc(
 			},
 		)
 	case .Unloaded_To:
+		// Object reference (^Territory): callers pass the raw Territory reference
+		// (or nil), matching the Java ChangeFactory call sites. See .Transported_By.
 		return mutable_property_of_simple(
 			Mutable_Property_Setter_Slot{
 				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
-					unit_set_unloaded_to(cast(^Unit)ctx, (cast(^^Territory)v)^)
+					unit_set_unloaded_to(cast(^Unit)ctx, cast(^Territory)v)
 					return nil
 				},
 				ctx = self,
 			},
 			Mutable_Property_Getter_Slot{
 				fn = proc(ctx: rawptr) -> rawptr {
-					out := new(^Territory)
-					out^ = unit_get_unloaded_to(cast(^Unit)ctx)
-					return out
+					return rawptr(unit_get_unloaded_to(cast(^Unit)ctx))
 				},
 				ctx = self,
 			},
@@ -763,19 +766,19 @@ unit_lambda_get_property_or_empty_0 :: proc(
 			},
 		)
 	case .Originated_From:
+		// Object reference (^Territory): callers pass the raw Territory reference
+		// (or nil), matching the Java ChangeFactory call sites. See .Transported_By.
 		return mutable_property_of_simple(
 			Mutable_Property_Setter_Slot{
 				fn = proc(ctx: rawptr, v: rawptr) -> Maybe(string) {
-					unit_set_originated_from(cast(^Unit)ctx, (cast(^^Territory)v)^)
+					unit_set_originated_from(cast(^Unit)ctx, cast(^Territory)v)
 					return nil
 				},
 				ctx = self,
 			},
 			Mutable_Property_Getter_Slot{
 				fn = proc(ctx: rawptr) -> rawptr {
-					out := new(^Territory)
-					out^ = unit_get_originated_from(cast(^Unit)ctx)
-					return out
+					return rawptr(unit_get_originated_from(cast(^Unit)ctx))
 				},
 				ctx = self,
 			},

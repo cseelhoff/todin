@@ -10,8 +10,30 @@ Pro_Move_Utils :: struct {}
 // pro_move_utils_calculate_amphib_routes. Mirrors `amphibUnitSortKey` in
 // ProMoveUtils.java.
 // Composite key: (currentTerritory.name, owner.name, type.name, hits,
-//                 alreadyMoved, transport_signature_of_loaded_units).
-// The returned string is heap-allocated; caller is responsible for `delete`.
+//                 alreadyMoved, transport_signature_of_loaded_units,
+//                 unit_uuid_hex).
+//
+// Iter 43: Java's amphibUnitSortKey omits the loaded-units signature
+// AND the UUID tie-break; for tied keys Java's stable TimSort
+// preserves HashMap-iteration order (which depends on
+// identityHashCode and is itself nondeterministic across JVM runs).
+// Odin's `map[^Unit]` iteration is ASLR-sensitive AND Odin's
+// `slice.sort_by` (pdqsort) is unstable. Snap 0089 had multiple
+// same-type Japanese transports loading from the same sea zone with
+// identical (terr, owner, type, hits, alreadyMoved) — different
+// transport iteration orders led to different units being loaded
+// (when two transports both targeted the same Japan-origin unit,
+// the first to process won, the others' load attempts failed
+// because the unit's territory had changed). Result: Japan's
+// post-NCM unit_collection.units count flaked n=2/3/5 across runs.
+//
+// Adding (a) the loaded-unit-types signature and (b) the unit's
+// own UUID hex (stable across runs because units are loaded from
+// the snapshot save state, never freshly minted during a snap run)
+// makes the key UNIQUE per transport — independent of pointer hash
+// order — so the resulting sort is deterministic across ASLR rolls.
+// The returned string is heap-allocated; caller is responsible for
+// `delete`.
 pro_move_utils_amphib_unit_sort_key :: proc(
 	pro_data: ^Pro_Data,
 	amphib_attack_map: map[^Unit][dynamic]^Unit,
@@ -29,25 +51,50 @@ pro_move_utils_amphib_unit_sort_key :: proc(
 	hits := unit_get_hits(u)
 	already := unit_get_already_moved(u)
 
-	// Build loaded-units signature into a builder we'll fully consume.
+	// Loaded-units signature: sorted type names joined by 0x02.
 	sig_sb := strings.builder_make()
 	defer strings.builder_destroy(&sig_sb)
-	// TEMP: skip loaded-units signature to isolate crash.
-	// loaded, has_loaded := amphib_attack_map[u]
-	// ...
+	if amphib_attack_map != nil {
+		loaded, has_loaded := amphib_attack_map[u]
+		if has_loaded {
+			loaded_types := make([dynamic]string)
+			defer delete(loaded_types)
+			for lu in loaded {
+				if lu == nil { continue }
+				ltp := unit_get_type(lu)
+				if ltp == nil { continue }
+				append(&loaded_types, unit_type_get_name(ltp))
+			}
+			slice.sort(loaded_types[:])
+			for s, i in loaded_types {
+				if i > 0 { strings.write_byte(&sig_sb, 0x02) }
+				strings.write_string(&sig_sb, s)
+			}
+		}
+	}
+
+	// Final UUID tie-break: 32-char hex of the unit's stable id.
+	id := unit_get_id(u)
+	uuid_buf: [32]u8
+	hex := "0123456789abcdef"
+	for b, i in id {
+		uuid_buf[i*2]   = hex[b >> 4]
+		uuid_buf[i*2+1] = hex[b & 0x0f]
+	}
+	uuid_hex := string(uuid_buf[:])
 
 	// Single allocation for the full key.
 	if already == f64(i64(already)) {
 		return fmt.aprintf(
-			"%s\x01%s\x01%s\x01%d\x01%d\x01%s",
+			"%s\x01%s\x01%s\x01%d\x01%d\x01%s\x01%s",
 			terr_name, owner_name, type_name, hits, i64(already),
-			strings.to_string(sig_sb),
+			strings.to_string(sig_sb), uuid_hex,
 		)
 	}
 	return fmt.aprintf(
-		"%s\x01%s\x01%s\x01%d\x01%v\x01%s",
+		"%s\x01%s\x01%s\x01%d\x01%v\x01%s\x01%s",
 		terr_name, owner_name, type_name, hits, already,
-		strings.to_string(sig_sb),
+		strings.to_string(sig_sb), uuid_hex,
 	)
 }
 
@@ -426,7 +473,7 @@ pro_move_utils_calculate_amphib_routes :: proc(
 				u = u,
 			})
 		}
-		slice.sort_by(pairs[:], proc(a, b: Pair) -> bool {
+		slice.stable_sort_by(pairs[:], proc(a, b: Pair) -> bool {
 			return strings.compare(a.key, b.key) < 0
 		})
 		for pair in pairs {
@@ -654,7 +701,36 @@ pro_move_utils_calculate_amphib_routes :: proc(
 				route := route_new_from_start_and_steps(transport_territory, t)
 				move_batcher_add_move_units_route(moves, loaded_units[:], route)
 			}
+			when AMPHIB_TRACE {
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				if tn == "Soviet Far East" {
+					tt_name := transport_territory != nil ? default_named_get_name(&transport_territory.named_attachable.default_named) : "<nil>"
+					lu_names: [dynamic]string
+					for u in loaded_units { append(&lu_names, default_named_get_name(&u.type.named_attachable.default_named)) }
+					rem_names: [dynamic]string
+					for u in remaining_units_to_load { append(&rem_names, default_named_get_name(&u.type.named_attachable.default_named)) }
+					fmt.printf("AMPHIB_RT_SFE tx=%p final_tt=%s loaded=%v remaining=%v water_t=%v\n",
+						transport, tt_name, lu_names, rem_names, territory_is_water(t))
+				}
+			}
 		}
+	}
+
+	when AMPHIB_TRACE {
+		batched := move_batcher_batch_moves(moves)
+		for md in batched {
+			rt := move_description_get_route(md)
+			if rt != nil {
+				endt := route_get_end(rt)
+				en := endt != nil ? default_named_get_name(&endt.named_attachable.default_named) : "<nil>"
+				if en == "Soviet Far East" {
+					startt := route_get_start(rt)
+					sn := startt != nil ? default_named_get_name(&startt.named_attachable.default_named) : "<nil>"
+					fmt.printf("AMPHIB_BATCH_SFE start=%s end=%s nunits=%d\n", sn, en, len(md.abstract_move_description.units))
+				}
+			}
+		}
+		return batched
 	}
 
 	return move_batcher_batch_moves(moves)
@@ -707,7 +783,7 @@ pro_move_utils_calculate_bombard_move_routes :: proc(
 				u = u,
 			})
 		}
-		slice.sort_by(bpairs[:], proc(a, b: BombPair) -> bool {
+		slice.stable_sort_by(bpairs[:], proc(a, b: BombPair) -> bool {
 			return strings.compare(a.key, b.key) < 0
 		})
 		for bp in bpairs {
@@ -903,6 +979,34 @@ pro_move_utils_do_move :: proc(
 		// IMoveDelegate; cast through the marker interface to invoke it.
 		md := cast(^Move_Delegate)move_del
 		result := move_delegate_perform_move(md, move)
+		when AMPHIB_TRACE {
+			rt := move_description_get_route(move)
+			if rt != nil {
+				endt := route_get_end(rt)
+				en := endt != nil ? default_named_get_name(&endt.named_attachable.default_named) : "<nil>"
+				startt := route_get_start(rt)
+				sn := startt != nil ? default_named_get_name(&startt.named_attachable.default_named) : "<nil>"
+				zones := sn == "60 Sea Zone" || sn == "61 Sea Zone" || sn == "63 Sea Zone" || sn == "Japan" || en == "60 Sea Zone" || en == "61 Sea Zone" || en == "63 Sea Zone" || en == "Soviet Far East"
+				if zones {
+					utn: [dynamic]string
+					for u in move.units { append(&utn, default_named_get_name(&u.type.named_attachable.default_named)) }
+					n_seatx := len(move_description_get_units_to_sea_transports(move))
+					fmt.printf("AMPHIB_PERFORM start=%s end=%s units=%v seatx=%d result='%s'\n",
+						sn, en, utn, n_seatx, result)
+					for u in move.units {
+						ua := unit_get_unit_attachment(u)
+						cap := unit_attachment_get_transport_capacity(ua)
+						cost := unit_attachment_get_transport_cost(ua)
+						tb := unit_get_transported_by(u)
+						fmt.printf("  AP_UNIT u=%p type=%s cap=%d cost=%d transported_by=%p\n",
+							u, default_named_get_name(&u.type.named_attachable.default_named), cap, cost, tb)
+					}
+					for k, v in move_description_get_units_to_sea_transports(move) {
+						fmt.printf("  AP_SEATX cargo=%p -> tx=%p\n", k, v)
+					}
+				}
+			}
+		}
 		if result != "" {
 			pro_logger_warn(
 				fmt.tprintf(

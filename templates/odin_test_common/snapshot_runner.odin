@@ -163,6 +163,13 @@ run_snapshot_tests_server_game :: proc(
 			server_game.math_random_present = true
 		}
 
+		// Replay the turn-scoped BattleTracker.conquered set (territory
+		// names) captured in before.json so just-conquered territories are
+		// excluded from NCM air-landing options. Populated into the tracker
+		// inside run_proc, after the battle delegate is registered.
+		server_game.conquered_territory_names =
+			load_conquered_territory_names(snapshot_dir, id, "before.json")
+
 		run_proc(server_game)
 
 		if filter != "" {

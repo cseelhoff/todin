@@ -509,11 +509,26 @@ pro_purchase_utils_get_unit_production :: proc(
 pro_purchase_utils_randomize_purchase_option :: proc(
 	purchase_efficiencies: map[^Pro_Purchase_Option]f64,
 	type_name: string,
+	insertion_order: []^Pro_Purchase_Option = nil,
 ) -> ^Pro_Purchase_Option {
 	pro_logger_trace(fmt.tprintf("Select purchase option for %s", type_name))
+	// Java sums `purchaseEfficiencies.values()` in LinkedHashMap iteration
+	// order, which equals the order the caller put entries in (typically
+	// the options-list order). Floating-point summation is order-sensitive;
+	// when the caller supplies `insertion_order`, sum in that order to
+	// match Java byte-for-byte. Otherwise fall back to map iteration
+	// (legacy callers).
 	total_efficiency: f64 = 0
-	for _, eff in purchase_efficiencies {
-		total_efficiency += eff
+	if insertion_order != nil {
+		for ppo in insertion_order {
+			if eff, ok := purchase_efficiencies[ppo]; ok {
+				total_efficiency += eff
+			}
+		}
+	} else {
+		for _, eff in purchase_efficiencies {
+			total_efficiency += eff
+		}
 	}
 	if total_efficiency == 0 {
 		return nil
@@ -553,10 +568,30 @@ pro_purchase_utils_randomize_purchase_option :: proc(
 	}
 	random_number := java_math_random() * 100
 	pro_logger_trace(fmt.tprintf("Random number: %v", random_number))
+	when #config(RPO_DUMP, false) {
+		fmt.eprintf("RPO label=%s n=%d total=%.20g rand=%.20g\n",
+			type_name, len(keys), total_efficiency, random_number)
+		for ppo, i in keys {
+			ut := pro_purchase_option_get_unit_type(ppo)
+			utn := default_named_get_name(&ut.named_attachable.default_named)
+			fmt.eprintf("  ut=%s eff=%.20g ub=%.20g\n",
+				utn, purchase_efficiencies[ppo], upper_bounds[i])
+		}
+	}
 	for ppo, i in keys {
 		if random_number <= upper_bounds[i] {
+			when #config(RPO_DUMP, false) {
+				ut := pro_purchase_option_get_unit_type(ppo)
+				utn := default_named_get_name(&ut.named_attachable.default_named)
+				fmt.eprintf("RPO_PICK label=%s ut=%s\n", type_name, utn)
+			}
 			return ppo
 		}
+	}
+	when #config(RPO_DUMP, false) {
+		ut := pro_purchase_option_get_unit_type(keys[len(keys) - 1])
+		utn := default_named_get_name(&ut.named_attachable.default_named)
+		fmt.eprintf("RPO_PICK_LAST label=%s ut=%s\n", type_name, utn)
 	}
 	return keys[len(keys) - 1]
 }

@@ -1,5 +1,8 @@
 package game
 
+import "core:slice"
+import "core:strings"
+
 // Java HashMap iteration-order helpers.
 //
 // Java's HashSet/LinkedHashSet are backed by HashMap. When AI code in
@@ -64,4 +67,38 @@ java_hashmap_bucket_for_string :: proc(s: string, capacity: int) -> int {
 	uh := u32(h)
 	mixed := i32(uh ~ (uh >> 16))
 	return int(mixed) & (capacity - 1)
+}
+
+Java_Bucket_Sort_Entry :: struct {
+	bucket: int,
+	name:   string,
+	t:      ^Territory,
+}
+
+// Sort a territory slice in place by (Java HashMap bucket, name). Used
+// when mirroring Java HashSet/LinkedHashSet iteration order over a
+// territory set whose effective capacity is known to the caller (e.g.
+// derived from the source set's pre-filter size via
+// `java_hashmap_capacity_for_size`).
+java_hashmap_sort_territories_by_bucket :: proc(
+	territories: []^Territory,
+	capacity: int,
+) {
+	entries := make([]Java_Bucket_Sort_Entry, len(territories))
+	defer delete(entries)
+	for t, i in territories {
+		nm := territory_get_name(t)
+		entries[i] = Java_Bucket_Sort_Entry{
+			bucket = java_hashmap_bucket_for_string(nm, capacity),
+			name   = nm,
+			t      = t,
+		}
+	}
+	slice.sort_by(entries, proc(a, b: Java_Bucket_Sort_Entry) -> bool {
+		if a.bucket != b.bucket { return a.bucket < b.bucket }
+		return strings.compare(a.name, b.name) < 0
+	})
+	for e, i in entries {
+		territories[i] = e.t
+	}
 }

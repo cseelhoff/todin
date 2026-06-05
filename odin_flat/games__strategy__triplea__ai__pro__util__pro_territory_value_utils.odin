@@ -901,9 +901,118 @@ pro_territory_value_utils_find_land_value :: proc(
 	when ARMOUR_TRACE {
 		if game_player_get_name(player) == "Germans" {
 			_tn := default_named_get_name(&t.named_attachable.default_named)
-			if _tn == "Ukraine S.S.R." || _tn == "Germany" || _tn == "Poland" || _tn == "West Russia" || _tn == "Belorussia" || _tn == "Russia" || _tn == "Karelia S.S.R." || _tn == "Caucasus" {
-				fmt.printf("TVAL t=%s nearby_enemy_value=%.3f land_mass_size=%d max_land_mass=%d cap_or_fac_value=%.3f nearby_enemy_caps_n=%d final=%.3f\n",
-					_tn, nearby_enemy_value, land_mass_size, max_land_mass_size, capital_or_factory_value, len(nearby_enemy_capitals_and_factories), value)
+			if _tn == "Ukraine S.S.R." || _tn == "Belorussia" {
+				caps_str := ""
+				for cap in nearby_enemy_capitals_and_factories {
+					d := game_map_get_distance_bipredicate(
+						game_map,
+						t,
+						cap,
+						pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+						rawptr(route_cond_ctx),
+					)
+					map_val := enemy_capitals_and_factories_map[cap]
+					contrib := d > 0 ? map_val / math.pow(2.0, f64(d)) : 0.0
+					caps_str = fmt.tprintf("%s[%s d=%d mapVal=%.3f contrib=%.3f]",
+						caps_str,
+						default_named_get_name(&cap.named_attachable.default_named),
+						d, map_val, contrib)
+				}
+				// sorted descending list (matches Java values.sort(reverseOrder))
+				sorted_str := "["
+				n_v := len(values)
+				for i in 0 ..< n_v {
+					sep := i > 0 ? ", " : ""
+					sorted_str = fmt.tprintf("%s%s%.3f", sorted_str, sep, values[n_v - 1 - i])
+				}
+				sorted_str = fmt.tprintf("%s]", sorted_str)
+				// nearbyEnemy breakdown (mirror Java nbe)
+				nbe_str := ""
+				for net in nearby_territories {
+					if !enemy_or_cant_pred(enemy_or_cant_ctx, net) {
+						continue
+					}
+					skip := false
+					for at in territories_to_attack {
+						if at == net {
+							skip = true
+							break
+						}
+					}
+					if skip {
+						continue
+					}
+					d := game_map_get_distance_bipredicate(
+						game_map,
+						t,
+						net,
+						pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+						rawptr(route_cond_ctx),
+					)
+					v := f64(territory_attachment_static_get_production(net))
+					kind := "enemy"
+					if pro_utils_is_neutral_land(net) {
+						v = pro_territory_value_utils_find_territory_attack_value(pro_data, player, net) / 3.0
+						kind = "neutral"
+					} else if allied_no_enemy_pred(allied_no_enemy_ctx, net) {
+						v *= 0.1
+						kind = "alliedAmphib"
+					}
+					contrib := (d > 0 && v > 0) ? v / math.pow(2.0, f64(d)) : 0.0
+					nbe_str = fmt.tprintf("%s[%s d=%d kind=%s v=%.3f contrib=%.3f]",
+						nbe_str,
+						default_named_get_name(&net.named_attachable.default_named),
+						d, kind, v, contrib)
+				}
+				fmt.printf("JAVA_TVAL t=%s nearbyEnemyValue=%.3f landMassSize=%d maxLandMass=%d cap_or_fac_value=%.3f sortedVals=%s caps=%s nbe=%s final=%.3f\n",
+					_tn, nearby_enemy_value, land_mass_size, max_land_mass_size, capital_or_factory_value,
+					sorted_str, caps_str, nbe_str, value)
+				if _tn == "Belorussia" {
+					probes := [2]string{"Finland", "Ukraine S.S.R."}
+					for probe in probes {
+						pt := game_map_get_territory_or_null(game_map, probe)
+						in_nbr := false
+						for nn in nearby_territories {
+							if nn == pt {
+								in_nbr = true
+								break
+							}
+						}
+						is_enemy_or_cant := pt != nil && enemy_or_cant_pred(enemy_or_cant_ctx, pt)
+						_ = is_enemy_or_cant
+						in_to_attack := false
+						for at in territories_to_attack {
+							if at == pt {
+								in_to_attack = true
+								break
+							}
+						}
+						d := pt == nil ? i32(-99) : game_map_get_distance_bipredicate(
+							game_map, t, pt,
+							pro_territory_value_utils_lambda_find_land_value_2_trampoline,
+							rawptr(route_cond_ctx),
+						)
+						is_enemy_raw := false
+						in_cant_be_held := false
+						owner_name := "?"
+						if pt != nil {
+							er_p, er_c := matches_is_territory_enemy_and_not_unowned_water(player)
+							is_enemy_raw = er_p(er_c, pt)
+							for cb in territories_that_cant_be_held {
+								if cb == pt {
+									in_cant_be_held = true
+									break
+								}
+							}
+							ow := territory_get_owner(pt)
+							if ow != nil {
+								owner_name = game_player_get_name(ow)
+							}
+						}
+						fmt.printf("JAVA_TVAL2 t=Belorussia probe=%s owner=%s inNbr2=%t isEnemyRaw=%t inCantBeHeld=%t inToAttack=%t dist=%d\n",
+							probe, owner_name, in_nbr, is_enemy_raw, in_cant_be_held, in_to_attack, d)
+					}
+				}
 			}
 		}
 	}

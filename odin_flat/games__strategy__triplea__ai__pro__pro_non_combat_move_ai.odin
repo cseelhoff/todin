@@ -955,6 +955,32 @@ pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
 			bombarding_list,
 		)
 		pro_territory_set_min_battle_result(patd, min_result)
+		when ARMOUR_TRACE {
+			tn_mr := default_named_get_name(&t.named_attachable.default_named)
+			if tn_mr == "Belorussia" || tn_mr == "Ukraine S.S.R." {
+				atk_tally := make(map[string]int); defer delete(atk_tally)
+				for u in enemy_attacking_units {
+					ut := unit_get_type(u); ow := unit_get_owner(u)
+					k := fmt.tprintf("%s/%s", ow == nil ? "?" : game_player_get_name(ow),
+						ut == nil ? "?" : default_named_get_name(&ut.named_attachable.default_named))
+					atk_tally[k] = atk_tally[k] + 1
+				}
+				def_tally := make(map[string]int); defer delete(def_tally)
+				for u in min_defending_units_and_not_aa {
+					ut := unit_get_type(u); ow := unit_get_owner(u)
+					k := fmt.tprintf("%s/%s", ow == nil ? "?" : game_player_get_name(ow),
+						ut == nil ? "?" : default_named_get_name(&ut.named_attachable.default_named))
+					def_tally[k] = def_tally[k] + 1
+				}
+				fmt.printf("ARMOUR_TRACE minres t=%s atkN=%d atk=%v minDefN=%d minDef=%v tuvSwing=%.3f winPct=%.3f hasLandRem=%v rounds=%.2f\n",
+					tn_mr, len(enemy_attacking_units), atk_tally,
+					len(min_defending_units_and_not_aa), def_tally,
+					pro_battle_result_get_tuv_swing(min_result),
+					pro_battle_result_get_win_percentage(min_result),
+					pro_battle_result_is_has_land_unit_remaining(min_result),
+					pro_battle_result_get_battle_rounds(min_result))
+			}
+		}
 		if pro_battle_result_get_tuv_swing(min_result) <= 0 &&
 		   len(min_defending_units_and_not_aa) > 0 {
 			pro_logger_debug(
@@ -987,6 +1013,37 @@ pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
 		for u, _ in def_set {
 			if !aa_p(aa_c, u) {
 				append(&defending_units_and_not_aa, u)
+			}
+		}
+		when ARMOUR_TRACE {
+			tn_dr := default_named_get_name(&t.named_attachable.default_named)
+			if game_player_get_name(self.player) == "Germans" && tn_dr == "Ukraine S.S.R." {
+				mx := make(map[string]int); defer delete(mx)
+				max_n := 0
+				for u, _ in pro_territory_get_max_units(patd) {
+					ut := unit_get_type(u); ow := unit_get_owner(u)
+					k := fmt.tprintf("%s/%s", ow == nil ? "?" : game_player_get_name(ow),
+						ut == nil ? "?" : default_named_get_name(&ut.named_attachable.default_named))
+					mx[k] = mx[k] + 1; max_n += 1
+				}
+				am := make(map[string]int); defer delete(am)
+				amphib_n := 0
+				for u in pro_territory_get_max_amphib_units(patd) {
+					ut := unit_get_type(u); ow := unit_get_owner(u)
+					k := fmt.tprintf("%s/%s", ow == nil ? "?" : game_player_get_name(ow),
+						ut == nil ? "?" : default_named_get_name(&ut.named_attachable.default_named))
+					am[k] = am[k] + 1; amphib_n += 1
+				}
+				cm := make(map[string]int); defer delete(cm)
+				cant_n := 0
+				for u, _ in pro_territory_get_cant_move_units(patd) {
+					ut := unit_get_type(u); ow := unit_get_owner(u)
+					k := fmt.tprintf("%s/%s", ow == nil ? "?" : game_player_get_name(ow),
+						ut == nil ? "?" : default_named_get_name(&ut.named_attachable.default_named))
+					cm[k] = cm[k] + 1; cant_n += 1
+				}
+				fmt.printf("JAVA_DEFROSTER t=%s maxN=%d max=%v amphibN=%d amphib=%v cantMoveN=%d cantMove=%v\n",
+					tn_dr, max_n, mx, amphib_n, am, cant_n, cm)
 			}
 		}
 		result := pro_odds_calculator_calculate_battle_results(
@@ -1024,6 +1081,28 @@ pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
 			extra_unit_value / 8.0 *
 			(1.0 + 0.5 * f64(is_factory)) *
 			(1.0 + 2.0 * f64(is_my_capital))
+		when ARMOUR_TRACE {
+			tn_ch := default_named_get_name(&t.named_attachable.default_named)
+			if game_player_get_name(self.player) == "Germans" &&
+			   (tn_ch == "Ukraine S.S.R." || tn_ch == "Finland" || tn_ch == "Belorussia") {
+				branch3 :=
+					len(min_defending_units_and_not_aa) != len(defending_units_and_not_aa) &&
+					(pro_battle_result_get_tuv_swing(result) - hold_value) <
+						pro_battle_result_get_tuv_swing(min_result)
+				fmt.printf("JAVA_CANHOLD3 t=%s minDefSize=%d defSize=%d resTuvSwing=%.3f resWinPct=%.3f holdValue=%.3f isFactory=%d isMyCapital=%d extraUnitValue=%.3f minTuvSwing=%.3f branch3=%t\n",
+					tn_ch,
+					len(min_defending_units_and_not_aa),
+					len(defending_units_and_not_aa),
+					pro_battle_result_get_tuv_swing(result),
+					pro_battle_result_get_win_percentage(result),
+					hold_value,
+					is_factory,
+					is_my_capital,
+					extra_unit_value,
+					pro_battle_result_get_tuv_swing(min_result),
+					branch3)
+			}
+		}
 		if len(min_defending_units_and_not_aa) != len(defending_units_and_not_aa) &&
 		   (pro_battle_result_get_tuv_swing(result) - hold_value) <
 			   pro_battle_result_get_tuv_swing(min_result) {
@@ -1058,6 +1137,32 @@ pro_non_combat_move_ai_determine_if_move_territories_can_be_held :: proc(
 				hold_value,
 			),
 		)
+	}
+
+	when ARMOUR_TRACE {
+		if game_player_get_name(self.player) == "Germans" {
+			for t, patd in move_map {
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				if tn != "Ukraine S.S.R." && tn != "Finland" && tn != "Belorussia" {
+					continue
+				}
+				eam := pro_other_move_options_get_max(enemy_attack_options, t)
+				mr := pro_territory_get_min_battle_result(patd)
+				ow := territory_get_owner(t)
+				owner_name := ow == nil ? "?" : game_player_get_name(ow)
+				if mr == nil {
+					fmt.printf("JAVA_CANHOLD t=%s owner=%s noAttackers=%t minTuvSwing=null minWinPct=null minHasLandRem=null isCanHold=%t\n",
+						tn, owner_name, eam == nil, pro_territory_is_can_hold(patd))
+				} else {
+					fmt.printf("JAVA_CANHOLD t=%s owner=%s noAttackers=%t minTuvSwing=%.3f minWinPct=%.3f minHasLandRem=%v isCanHold=%t\n",
+						tn, owner_name, eam == nil,
+						pro_battle_result_get_tuv_swing(mr),
+						pro_battle_result_get_win_percentage(mr),
+						pro_battle_result_is_has_land_unit_remaining(mr),
+						pro_territory_is_can_hold(patd))
+				}
+			}
+		}
 	}
 }
 
@@ -1235,6 +1340,11 @@ pro_non_combat_move_ai_do_move :: proc(
 	self.player = player
 
 	move_routes := pro_move_utils_calculate_move_routes(self.pro_data, player, move_map, is_combat_move)
+	when MOVE_ROUTES_DIGEST {
+		if default_named_get_name(&player.named_attachable.default_named) == "Japanese" {
+			pro_move_routes_digest("after_calc_move_routes", "Japanese", &move_routes)
+		}
+	}
 	when #config(NCM_MOVE_TRACE, false) {
 		pname_nm := default_named_get_name(&player.named_attachable.default_named)
 		if pname_nm == "Russians" {
@@ -1257,9 +1367,24 @@ pro_non_combat_move_ai_do_move :: proc(
 		}
 	}
 	pro_move_utils_do_move(self.pro_data, &move_routes, move_del)
+	when MOVE_ROUTES_DIGEST {
+		if default_named_get_name(&player.named_attachable.default_named) == "Japanese" {
+			pro_move_routes_digest("after_do_move_move", "Japanese", &move_routes)
+		}
+	}
 
 	amphib_routes := pro_move_utils_calculate_amphib_routes(self.pro_data, player, move_map, is_combat_move)
+	when MOVE_ROUTES_DIGEST {
+		if default_named_get_name(&player.named_attachable.default_named) == "Japanese" {
+			pro_move_routes_digest("after_calc_amphib_routes", "Japanese", &amphib_routes)
+		}
+	}
 	pro_move_utils_do_move(self.pro_data, &amphib_routes, move_del)
+	when MOVE_ROUTES_DIGEST {
+		if default_named_get_name(&player.named_attachable.default_named) == "Japanese" {
+			pro_move_routes_digest("after_do_move_amphib", "Japanese", &amphib_routes)
+		}
+	}
 }
 
 // Lambda: moveUnitsToBestTerritories  () -> calc.calculateBattleResults(proData, proTerritory, defendingUnits)
@@ -2631,6 +2756,19 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 	added_set := make(map[^Unit]struct {})
 	defer delete(added_set)
 
+	when ARMOUR_TRACE {
+		if game_player_get_name(self.player) == "Germans" {
+			for t, pt in move_map {
+				tn := default_named_get_name(&t.named_attachable.default_named)
+				if tn == "Belorussia" || tn == "Ukraine S.S.R." || tn == "Finland" ||
+				   tn == "Norway" || tn == "Libya" || tn == "Algeria" {
+					fmt.printf("ARMOUR_TRACE landloop_terr t=%s value=%.3f canHold=%v\n",
+						tn, pro_territory_get_value(pt), pro_territory_is_can_hold(pt))
+				}
+			}
+		}
+	}
+
 	land_p, land_c := matches_unit_is_land()
 	// Java's `for (Unit u : unitMoveMap.keySet())` iterates the
 	// LinkedHashMap in insertion order, and the inner
@@ -2706,6 +2844,20 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 			t_iter_list = t_iter_buf[:]
 		}
 		defer delete(t_iter_buf)
+		when ARMOUR_TRACE {
+			if game_player_get_name(self.player) == "Germans" {
+				ut_dbg := unit_get_type(u)
+				utn_dbg := ut_dbg == nil ? "?" : default_named_get_name(&ut_dbg.named_attachable.default_named)
+				cand_names := make([dynamic]string, 0, len(t_iter_list)); defer delete(cand_names)
+				for tc in t_iter_list {
+					ptc := move_map[tc]
+					append(&cand_names, fmt.tprintf("%s(v=%.3f,hold=%v)",
+						default_named_get_name(&tc.named_attachable.default_named),
+						pro_territory_get_value(ptc), pro_territory_is_can_hold(ptc)))
+				}
+				fmt.printf("ARMOUR_TRACE landloop_unit type=%s cands=%v\n", utn_dbg, cand_names[:])
+			}
+		}
 		for t in t_iter_list {
 			pro_territory := move_map[t]
 			if !pro_territory_is_can_hold(pro_territory) ||
@@ -2803,6 +2955,24 @@ pro_non_combat_move_ai_move_units_to_best_territories :: proc(
 				max_value = pro_territory_get_value(pro_territory)
 				max_need_amphib_unit_value = need_amphib_unit_value
 				max_value_t = t
+			}
+			when ARMOUR_TRACE {
+				if game_player_get_name(self.player) == "Germans" {
+					fmt.printf("ARMOUR_TRACE landloop_eval cand=%s value=%.3f needAmphib=%d -> maxNow=%s maxVal=%.3f\n",
+						default_named_get_name(&t.named_attachable.default_named),
+						pro_territory_get_value(pro_territory), need_amphib_unit_value,
+						max_value_t == nil ? "nil" : default_named_get_name(&max_value_t.named_attachable.default_named),
+						max_value)
+				}
+			}
+		}
+		when ARMOUR_TRACE {
+			if game_player_get_name(self.player) == "Germans" && max_value_t != nil {
+				ut_c := unit_get_type(u)
+				fmt.printf("ARMOUR_TRACE landloop_chosen type=%s -> %s (maxVal=%.3f maxNeedAmphib=%d)\n",
+					ut_c == nil ? "?" : default_named_get_name(&ut_c.named_attachable.default_named),
+					default_named_get_name(&max_value_t.named_attachable.default_named),
+					max_value, max_need_amphib_unit_value)
 			}
 		}
 		if max_value_t != nil {
@@ -4911,12 +5081,25 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		}
 	}
 
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("00_entry", "Japanese", "Japan", _jt)
+		}
+	}
+
 	// Find the max number of units that can move to each allied territory
 	cleared_for_defense := make([dynamic]^Territory, 0)
 	pro_territory_manager_populate_defense_options(self.territory_manager, cleared_for_defense)
 	delete(cleared_for_defense)
 	pro_ncm_trace_emit("01_after_populateDefenseOptions",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("01_after_populateDefenseOptions", "Japanese", "Japan", _jt)
+		}
+	}
 
 	// On maps that have a single move phase this can be true.
 	is_combat_move := game_step_properties_helper_is_combat_move(self.data)
@@ -4931,12 +5114,24 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	infra_unit_move_map := pro_non_combat_move_ai_find_infra_units_that_can_move(self)
 	pro_ncm_trace_emit("02_after_findUnitsThatCantMove",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("02_after_findUnitsThatCantMove", "Japanese", "Japan", _jt)
+		}
+	}
 
 	// Try to have one land unit in each territory bordering an enemy territory
 	moved_one_defender_to_territories :=
 		pro_non_combat_move_ai_move_one_defender_to_land_territories_bordering_enemy(self)
 	pro_ncm_trace_emit("03_after_moveOneDefender",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("03_after_moveOneDefender", "Japanese", "Japan", _jt)
+		}
+	}
 
 	// Determine max enemy attack units and if territories can be held
 	pro_territory_manager_populate_enemy_attack_options(
@@ -4949,6 +5144,12 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	pro_non_combat_move_ai_determine_if_move_territories_can_be_held(self)
 	pro_ncm_trace_emit("04_after_determineCanHold",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("04_after_determineCanHold", "Japanese", "Japan", _jt)
+		}
+	}
 
 	// Prioritize territories to defend
 	factory_move_map := initial_factory_move_map
@@ -4976,6 +5177,12 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		)
 		pro_ncm_trace_emit("06_after_moveUnitsToDefend",
 			pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+		when #config(RPO_DUMP, false) {
+			if game_player_get_name(self.player) == "Japanese" {
+				_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+				pro_ncm_units_dump("06_after_moveUnitsToDefend", "Japanese", "Japan", _jt)
+			}
+		}
 		armour_trace_dump_germans(self, "after_defend")
 	}
 
@@ -5042,6 +5249,12 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 
 			pro_non_combat_move_ai_move_units_to_best_territories(self, is_combat_move)
 			pro_ncm_trace_emit("07_after_moveUnitsToBest", move_map)
+			when #config(RPO_DUMP, false) {
+				if game_player_get_name(self.player) == "Japanese" {
+					_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+					pro_ncm_units_dump("07_after_moveUnitsToBest", "Japanese", "Japan", _jt)
+				}
+			}
 			armour_trace_dump_germans(self, "after_best")
 
 			// Check if capital has local land superiority
@@ -5084,6 +5297,12 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 	)
 	pro_ncm_trace_emit("08_after_moveInfra",
 		pro_my_move_options_get_territory_map(pro_territory_manager_get_defend_options(self.territory_manager)))
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("08_after_moveInfra", "Japanese", "Japan", _jt)
+		}
+	}
 
 	// Log a warning if any units not assigned to a territory (skip infrastructure for now)
 	infra_p, infra_c := matches_unit_is_infrastructure()
@@ -5106,6 +5325,57 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 
 	// Calculate move routes and perform moves
 	armour_trace_dump_germans(self, "pre_do_move")
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("08b_before_doMove", "Japanese", "Japan", _jt)
+			// Also dump move_map's per-destination units that ORIGINATE in Japan.
+			_dst_names := make([dynamic]string)
+			defer delete(_dst_names)
+			_dst_to_pt := make(map[string]^Pro_Territory)
+			defer delete(_dst_to_pt)
+			for _dst_t, _pt in move_map {
+				if _dst_t == nil { continue }
+				_nm := territory_get_name(_dst_t)
+				_us := pro_territory_get_units(_pt)
+				_has_japan_unit := false
+				for _u in _us {
+					if _u == nil { continue }
+					_src := pro_data_get_unit_territory(self.pro_data, _u)
+					if _src != nil && territory_get_name(_src) == "Japan" {
+						_has_japan_unit = true
+						break
+					}
+				}
+				if _has_japan_unit {
+					append(&_dst_names, _nm)
+					_dst_to_pt[_nm] = _pt
+				}
+			}
+			slice.sort(_dst_names[:])
+			for _nm in _dst_names {
+				_pt := _dst_to_pt[_nm]
+				_us := pro_territory_get_units(_pt)
+				_jpn_units := make([dynamic][2]string)
+				defer delete(_jpn_units)
+				for _u in _us {
+					if _u == nil { continue }
+					_src := pro_data_get_unit_territory(self.pro_data, _u)
+					if _src == nil || territory_get_name(_src) != "Japan" {
+						continue
+					}
+					_tn := unit_type_get_name(unit_get_type(_u))
+					_ptr := fmt.tprintf("%p", _u)
+					append(&_jpn_units, [2]string{_tn, _ptr})
+				}
+				fmt.eprintf("MOVE_PLAN dst=%s japan_units_n=%d", _nm, len(_jpn_units))
+				for _entry, _i in _jpn_units {
+					fmt.eprintf(" [%d]%s@%s", _i, _entry[0], _entry[1])
+				}
+				fmt.eprintf("\n")
+			}
+		}
+	}
 	pro_non_combat_move_ai_do_move(
 		self,
 		is_combat_move,
@@ -5114,6 +5384,17 @@ pro_non_combat_move_ai_do_non_combat_move :: proc(
 		self.data,
 		self.player,
 	)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_jt := game_map_get_territory_or_null(game_data_get_map(self.data), "Japan")
+			pro_ncm_units_dump("09_after_doMove", "Japanese", "Japan", _jt)
+		}
+	}
+	when NCM_END_STATE {
+		if game_player_get_name(self.player) == "Japanese" {
+			pro_ncm_end_state_dump("ncm_exit", "Japanese", self.data)
+		}
+	}
 
 	// Log results
 	pro_logger_info("Logging results")

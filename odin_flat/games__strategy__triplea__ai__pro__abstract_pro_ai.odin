@@ -837,6 +837,17 @@ abstract_pro_ai_purchase :: proc(
 				game_step_get_player_id(step),
 			)
 			step_name := step.name
+			when #config(RPO_DUMP, false) {
+				_pname_sb := default_named_get_name(&player.named_attachable.default_named)
+				if _pname_sb == "Japanese" {
+					_japan_sb := game_map_get_territory_or_null(
+						game_data_get_map(data_copy), "Japan")
+					if _japan_sb != nil && _japan_sb.unit_collection != nil {
+						fmt.eprintf("SIMSTEP_BEFORE step=%s japan_n=%d\n",
+							step_name, len(_japan_sb.unit_collection.units))
+					}
+				}
+			}
 			when NCM_HANG_PROBE {
 				_pn_sw_any := default_named_get_name(&player.named_attachable.default_named)
 				fmt.eprintf("NCM_HANG.simwalk_any player=%s step=%s START\n", _pn_sw_any, step_name)
@@ -1064,6 +1075,17 @@ abstract_pro_ai_purchase :: proc(
 					actions := pro_politics_ai_political_actions(self.politics_ai)
 					if self.stored_political_actions == nil {
 						self.stored_political_actions = actions
+					}
+				}
+			}
+			when #config(RPO_DUMP, false) {
+				_pname_sa := default_named_get_name(&player.named_attachable.default_named)
+				if _pname_sa == "Japanese" {
+					_japan_sa := game_map_get_territory_or_null(
+						game_data_get_map(data_copy), "Japan")
+					if _japan_sa != nil && _japan_sa.unit_collection != nil {
+						fmt.eprintf("SIMSTEP_AFTER step=%s japan_n=%d\n",
+							step_name, len(_japan_sa.unit_collection.units))
 					}
 				}
 			}

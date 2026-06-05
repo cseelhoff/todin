@@ -1623,6 +1623,7 @@ pro_purchase_ai_purchase_units_with_remaining_production :: proc(
 			selected_option := pro_purchase_utils_randomize_purchase_option(
 				defense_efficiencies,
 				"Defense",
+				purchase_options_for_territory[:],
 			)
 			if selected_option == nil {
 				break
@@ -1959,8 +1960,15 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 		self.territory_manager,
 	)
 
-	sea_place_territories := make(map[^Pro_Place_Territory]struct{})
-	defer delete(sea_place_territories)
+	// Java uses `LinkedHashSet<ProPlaceTerritory>` here — insertion-
+	// ordered + dedup. Odin `map[^Pro_Place_Territory]struct{}` is
+	// pointer-keyed → iteration is ASLR-dependent. Mirror Java's
+	// LinkedHashSet semantics with a parallel insertion-ordered list
+	// + dedup map (per /memories/java-hashmap-iteration-order.md).
+	sea_place_territories_list: [dynamic]^Pro_Place_Territory
+	defer delete(sea_place_territories_list)
+	sea_place_territories_seen: map[^Pro_Place_Territory]struct{}
+	defer delete(sea_place_territories_seen)
 	_sorted_pt_11 := pro_purchase_utils_sorted_purchase_territories(purchase_territories, self.data)
 	defer delete(_sorted_pt_11)
 	for ppt in _sorted_pt_11 {
@@ -1969,7 +1977,10 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 			if territory_is_water(t) &&
 			   pro_place_territory_get_strategic_value(place_territory) > 0 &&
 			   pro_place_territory_is_can_hold(place_territory) {
-				sea_place_territories[place_territory] = struct{}{}
+				if _, exists := sea_place_territories_seen[place_territory]; !exists {
+					sea_place_territories_seen[place_territory] = struct{}{}
+					append(&sea_place_territories_list, place_territory)
+				}
 			}
 		}
 	}
@@ -1978,7 +1989,7 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 	owned_pred, owned_ctx := matches_unit_is_owned_by(self.player)
 	transport_pred, transport_ctx := matches_unit_is_sea_transport()
 	not_transport_pred, not_transport_ctx := matches_unit_is_not_sea_transport()
-	for place_territory in sea_place_territories {
+	for place_territory in sea_place_territories_list {
 		t := pro_place_territory_get_territory(place_territory)
 
 		// Find number of local naval units.
@@ -2059,12 +2070,15 @@ pro_purchase_ai_prioritize_sea_territories :: proc(
 		delete(units)
 	}
 
-	// Sort territories by value (descending).
+	// Sort territories by value (descending). Java uses
+	// `List.sort(Comparator.comparingDouble(...).reversed())` which is
+	// STABLE — ties preserve LinkedHashSet insertion order. Mirror
+	// with `stable_sort_by` over the insertion-ordered list.
 	sorted_territories: [dynamic]^Pro_Place_Territory
-	for k in sea_place_territories {
+	for k in sea_place_territories_list {
 		append(&sorted_territories, k)
 	}
-	slice.sort_by(
+	slice.stable_sort_by(
 		sorted_territories[:],
 		pro_purchase_ai_lambda_purchase_units_with_remaining_production_strategic_desc,
 	)
@@ -2507,10 +2521,12 @@ pro_purchase_ai_purchase_defenders :: proc(
 		t := pro_place_territory_get_territory(place_territory)
 		max_terr := pro_other_move_options_get_max(enemy_attack_options, t)
 		max_units_set := pro_territory_get_max_units(max_terr)
+		max_units_sorted := pro_determinism_sorted_unit_keys_with_loc(max_units_set, self.pro_data)
 		max_units_list: [dynamic]^Unit
-		for u, _ in max_units_set {
+		for u in max_units_sorted {
 			append(&max_units_list, u)
 		}
+		delete(max_units_sorted)
 		max_amphib_list := pro_territory_get_max_amphib_units(max_terr)
 		when PUR_TRACE {
 			pname_pde := default_named_get_name(&self.player.named_attachable.default_named)
@@ -2680,6 +2696,7 @@ pro_purchase_ai_purchase_defenders :: proc(
 				}
 				selected_option := pro_purchase_utils_randomize_purchase_option(
 					defense_efficiencies, "Defense",
+					purchase_options_for_territory[:],
 				)
 				delete(defense_efficiencies)
 				if selected_option == nil {
@@ -2749,10 +2766,12 @@ pro_purchase_ai_purchase_defenders :: proc(
 					append(&defenders, u)
 				}
 				bombard_set := pro_territory_get_max_bombard_units(max_terr)
+				bombard_sorted := pro_determinism_sorted_unit_keys_with_loc(bombard_set, self.pro_data)
 				bombard_list: [dynamic]^Unit
-				for u, _ in bombard_set {
+				for u in bombard_sorted {
 					append(&bombard_list, u)
 				}
+				delete(bombard_sorted)
 				final_result = pro_odds_calculator_calculate_battle_results(
 					self.calc,
 					self.pro_data,
@@ -3025,13 +3044,20 @@ pro_purchase_ai_purchase_land_units :: proc(
 		neighbors[t] = {}
 		owned_p, owned_c := matches_unit_is_owned_by(self.player)
 		owned_local_units: [dynamic]^Unit
-		for nb, _ in neighbors {
+		// Iter-45: mirror of iter-44 fix at l.3654. Iterating
+		// `neighbors` (pointer-keyed `map[^Territory]struct{}`) in raw
+		// order produces ASLR-random `owned_local_units` order; this
+		// list later feeds `defense_efficiency`/`attack_efficiency`
+		// whose support-factor float sum is order-sensitive.
+		neighbors_sorted := pro_determinism_sorted_territory_keys(neighbors)
+		for nb in neighbors_sorted {
 			matched := territory_get_matches(nb, owned_p, owned_c)
 			for u in matched {
 				append(&owned_local_units, u)
 			}
 			delete(matched)
 		}
+		delete(neighbors_sorted)
 		delete(neighbors)
 
 		// Check for unplaced units
@@ -3097,6 +3123,7 @@ pro_purchase_ai_purchase_land_units :: proc(
 				}
 				selected_option = pro_purchase_utils_randomize_purchase_option(
 					defense_efficiencies, "Land Defense",
+					land_defense_options[:],
 				)
 				delete(defense_efficiencies)
 			} else if !select_fodder_unit && len(land_attack_options) > 0 {
@@ -3109,6 +3136,7 @@ pro_purchase_ai_purchase_land_units :: proc(
 				}
 				selected_option = pro_purchase_utils_randomize_purchase_option(
 					attack_efficiencies, "Land Attack",
+					land_attack_options[:],
 				)
 				delete(attack_efficiencies)
 			} else if len(land_fodder_options) > 0 {
@@ -3120,6 +3148,7 @@ pro_purchase_ai_purchase_land_units :: proc(
 				}
 				selected_option = pro_purchase_utils_randomize_purchase_option(
 					fodder_efficiencies, "Land Fodder",
+					land_fodder_options[:],
 				)
 				delete(fodder_efficiencies)
 				if selected_option != nil {
@@ -3282,14 +3311,16 @@ pro_purchase_ai_purchase_factory :: proc(
 			allied_p, allied_c := matches_is_unit_allied(self.player)
 			defenders := territory_get_matches(t, allied_p, allied_c)
 			max_units_set := pro_territory_get_max_units(max_terr)
+			max_units_sorted := pro_determinism_sorted_unit_keys_with_loc(max_units_set, self.pro_data)
 			enemy_attacking_units: [dynamic]^Unit
 			seen: map[^Unit]struct{}
-			for u, _ in max_units_set {
+			for u in max_units_sorted {
 				if _, ok := seen[u]; !ok {
 					seen[u] = {}
 					append(&enemy_attacking_units, u)
 				}
 			}
+			delete(max_units_sorted)
 			for u in pro_territory_get_max_amphib_units(max_terr) {
 				if _, ok := seen[u]; !ok {
 					seen[u] = {}
@@ -3298,10 +3329,12 @@ pro_purchase_ai_purchase_factory :: proc(
 			}
 			delete(seen)
 			bombard_set := pro_territory_get_max_bombard_units(max_terr)
+			bombard_sorted := pro_determinism_sorted_unit_keys_with_loc(bombard_set, self.pro_data)
 			bombard_list: [dynamic]^Unit
-			for u, _ in bombard_set {
+			for u in bombard_sorted {
 				append(&bombard_list, u)
 			}
+			delete(bombard_sorted)
 			result := pro_odds_calculator_estimate_defend_battle_results(
 				self.calc, self.pro_data, t, enemy_attacking_units, defenders, bombard_list,
 			)
@@ -3554,6 +3587,28 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 		fmt.tprintf("Purchase sea and amphib units with resources: %v", self.resource_tracker),
 	)
 
+	when #config(RPO_DUMP, false) {
+		_pname_entry := game_player_get_name(self.player)
+		if _pname_entry == "Japanese" {
+			_gm_entry := game_data_get_map(self.data)
+			_japan := game_map_get_territory_or_null(_gm_entry, "Japan")
+			if _japan != nil && _japan.unit_collection != nil {
+				fmt.eprintf("TERR_DUMP_JAPAN_ENTRY n=%d prioritized_n=%d\n",
+					len(_japan.unit_collection.units),
+					len(prioritized_sea_territories))
+				for _u, _i in _japan.unit_collection.units {
+					fmt.eprintf("  ju[%d] type=%s owner=%s ptr=%p\n", _i,
+						unit_type_get_name(unit_get_type(_u)),
+						game_player_get_name(unit_get_owner(_u)), _u)
+				}
+				for _pt, _pi in prioritized_sea_territories {
+					_pt_t := pro_place_territory_get_territory(_pt)
+					fmt.eprintf("  prio[%d] t=%s\n", _pi, territory_get_name(_pt_t))
+				}
+			}
+		}
+	}
+
 	enemy_attack_options := pro_territory_manager_get_enemy_attack_options(
 		self.territory_manager,
 	)
@@ -3568,15 +3623,18 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 	// Sort prioritized sea territories by territory name so the iteration
 	// order is content-addressable and matches the Java oracle (which
 	// applies the same sort in ProPurchaseAi.purchaseSeaAndAmphibUnits).
-	// The original priority-value order would tie-break via LinkedHashMap
-	// insertion order on the Java side, which the Odin port cannot
-	// reproduce.
+	// Use STABLE sort so equal-name ties preserve the upstream
+	// strategic-value-desc ordering (which in turn preserves
+	// LinkedHashSet insertion order from `prioritize_sea_territories`).
+	// A non-stable sort here re-introduces ASLR-dependent pointer-hash
+	// tiebreak for two `^Pro_Place_Territory` entries on the same sea
+	// zone.
 	sorted_prioritized_sea_territories: [dynamic]^Pro_Place_Territory
 	for p in prioritized_sea_territories {
 		append(&sorted_prioritized_sea_territories, p)
 	}
 	defer delete(sorted_prioritized_sea_territories)
-	slice.sort_by(
+	slice.stable_sort_by(
 		sorted_prioritized_sea_territories[:],
 		proc(a, b: ^Pro_Place_Territory) -> bool {
 			return strings.compare(
@@ -3588,6 +3646,12 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 
 	for place_territory in sorted_prioritized_sea_territories {
 		t := pro_place_territory_get_territory(place_territory)
+		when #config(RPO_DUMP, false) {
+			_pname := game_player_get_name(self.player)
+			if _pname == "Japanese" {
+				fmt.eprintf("AMPHIB_SEA_PT t=%s\n", territory_get_name(t))
+			}
+		}
 		pro_logger_debug(fmt.tprintf("Checking sea place for %s", territory_get_name(t)))
 
 		// Find all purchase territories for place territory
@@ -3595,20 +3659,29 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			place_territory, purchase_territories, self.data,
 		)
 
-		// Find local owned units
+		// Find local owned units. Iterate `neighbors` (a pointer-keyed
+		// `map[^Territory]struct{}`) in name-sorted order so
+		// `owned_local_units` is built deterministically; this list is
+		// later passed to `pro_purchase_option_get_sea_defense_efficiency`
+		// whose support-factor calc is order-sensitive across float
+		// summations. Without sorting, ASLR-randomised neighbor order
+		// perturbs efficiencies and downstream RPO upper-bound assignment.
+		// (iter-44 LEAK C fix.)
 		neighbors := game_map_get_neighbors_distance_predicate(
 			gm, t, 2, can_move_sea_p, can_move_sea_c,
 		)
 		neighbors[t] = {}
 		owned_p, owned_c := matches_unit_is_owned_by(self.player)
 		owned_local_units: [dynamic]^Unit
-		for nb, _ in neighbors {
+		neighbors_sorted := pro_determinism_sorted_territory_keys(neighbors)
+		for nb in neighbors_sorted {
 			matched := territory_get_matches(nb, owned_p, owned_c)
 			for u in matched {
 				append(&owned_local_units, u)
 			}
 			delete(matched)
 		}
+		delete(neighbors_sorted)
 		delete(neighbors)
 		empty_units: [dynamic]^Unit
 		unused_carrier_capacity := min(
@@ -3637,10 +3710,19 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 		)
 		if max_enemy_attack_territory != nil {
 			attackers_set := pro_territory_get_max_units(max_enemy_attack_territory)
+			// Iter-44 LEAK C: `attackers_set` is a `map[^Unit]struct{}`
+			// (pointer-keyed). Iterating it in raw order yields ASLR-random
+			// `attackers` lists, which feeds `calculate_battle_results`
+			// whose RNG-driven Monte Carlo is order-sensitive when the
+			// resulting battle estimate ties across alternative defender
+			// purchases. Sort by (owner, type, already_moved, UUID) so
+			// the resulting list is fully deterministic.
+			attackers_sorted := pro_determinism_sorted_unit_keys_with_loc(attackers_set, self.pro_data)
 			attackers: [dynamic]^Unit
-			for u, _ in attackers_set {
+			for u in attackers_sorted {
 				append(&attackers, u)
 			}
+			delete(attackers_sorted)
 			// Determine if need destroyer
 			sub_p, sub_c := matches_unit_has_sub_battle_abilities()
 			dest_p, dest_c := matches_unit_is_destroyer()
@@ -3679,10 +3761,12 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			}
 			delete(place_units)
 			bombard_set := pro_territory_get_max_bombard_units(max_enemy_attack_territory)
+			bombard_sorted := pro_determinism_sorted_unit_keys_with_loc(bombard_set, self.pro_data)
 			bombard_list: [dynamic]^Unit
-			for u, _ in bombard_set {
+			for u in bombard_sorted {
 				append(&bombard_list, u)
 			}
+			delete(bombard_sorted)
 			result := pro_odds_calculator_calculate_battle_results(
 				self.calc, self.pro_data, t, attackers, defending_units, bombard_list,
 			)
@@ -3767,6 +3851,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					}
 					selected_option := pro_purchase_utils_randomize_purchase_option(
 						defense_efficiencies, "Sea Defense",
+						sea_purchase_options_for_territory[:],
 					)
 					delete(defense_efficiencies)
 					if selected_option == nil {
@@ -3826,15 +3911,19 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						append(&defending_units, u)
 					}
 					mu_set := pro_territory_get_max_units(max_enemy_attack_territory)
+					mu_sorted := pro_determinism_sorted_unit_keys_with_loc(mu_set, self.pro_data)
 					mu_list: [dynamic]^Unit
-					for u, _ in mu_set {
+					for u in mu_sorted {
 						append(&mu_list, u)
 					}
+					delete(mu_sorted)
 					mb_set := pro_territory_get_max_bombard_units(max_enemy_attack_territory)
+					mb_sorted := pro_determinism_sorted_unit_keys_with_loc(mb_set, self.pro_data)
 					mb_list: [dynamic]^Unit
-					for u, _ in mb_set {
+					for u in mb_sorted {
 						append(&mb_list, u)
 					}
+					delete(mb_sorted)
 					result = pro_odds_calculator_estimate_defend_battle_results(
 						self.calc, self.pro_data, t, mu_list, defending_units, mb_list,
 					)
@@ -4077,6 +4166,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 				}
 				selected_option := pro_purchase_utils_randomize_purchase_option(
 					defense_efficiencies, "Sea Defense",
+					sea_purchase_options_for_territory[:],
 				)
 				delete(defense_efficiencies)
 				if selected_option == nil {
@@ -4193,6 +4283,19 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 			owned_local_amphib_units := territory_get_matches(
 				land_territory, ownland_p, ownland_c,
 			)
+			when #config(RPO_DUMP, false) {
+				_pname := game_player_get_name(self.player)
+				if _pname == "Japanese" {
+					fmt.eprintf("AMPHIB_OUTER t=%s land=%s spt_n=%d own_n=%d rem_prod=%d\n",
+						territory_get_name(t), territory_get_name(land_territory),
+						len(selected_purchase_territories), len(owned_local_amphib_units),
+						remaining_unit_production)
+					for _u, _i in owned_local_amphib_units {
+						fmt.eprintf("  own[%d] type=%s ptr=%p\n", _i,
+							unit_type_get_name(unit_get_type(_u)), _u)
+					}
+				}
+			}
 
 			sea_transport_purchase_options_for_territory :=
 				pro_purchase_validation_utils_find_purchase_options_for_territory(
@@ -4300,6 +4403,19 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 							}
 						}
 					}
+					// Java: `territoriesToLoadFrom = new HashSet<>(getNeighbors(...))`
+					// then `removeIf(...)`. Iter-31 reverted iter-30's
+					// LinkedHashSet bucket-order + LinkedHashMap insertion-
+					// order changes after empirical sweep showed they were
+					// net-zero (snap 0089 partial fix → snap 0025 new fail).
+					// Both must be applied TOGETHER to fix snap 0089 unit
+					// tally; reverting either alone falls back to OLD snap
+					// 0089 symptom. The bucket-sort apparently doesn't fully
+					// match Java's HashSet iteration order for Germany's
+					// territoriesToLoadFrom (different within-bucket order or
+					// capacity calc). Restoring alphabetical sort here for
+					// the iter-27 baseline; iter 32+ to revisit with a more
+					// faithful Java HashSet replica.
 					to_remove: [dynamic]^Territory
 					for pt, _ in territories_to_load_from {
 						val := territory_value_map[pt]
@@ -4311,12 +4427,14 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						delete_key(&territories_to_load_from, pt)
 					}
 					delete(to_remove)
+					tlf_ordered := pro_determinism_sorted_territory_keys(territories_to_load_from)
+					defer delete(tlf_ordered)
 					ignore_list: [dynamic]^Unit
 					for u in potential_units_to_load {
 						append(&ignore_list, u)
 					}
-					units := pro_transport_utils_get_units_to_transport_from_territories_4(
-						self.player, transport, territories_to_load_from, ignore_list,
+					units := pro_transport_utils_get_units_to_transport_from_ordered_territories_4(
+						self.player, transport, tlf_ordered[:], ignore_list,
 					)
 					when #config(AMPHIB_PROBE, false) {
 						if game_player_get_name(self.player) == "Japanese" {
@@ -4441,6 +4559,21 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					pro_utils_summarize_units(transports_that_need_units),
 				),
 			)
+			when #config(RPO_DUMP, false) {
+				if game_player_get_name(self.player) == "Japanese" {
+					fmt.eprintf("AMPHIB_GATHER_DONE t=%s land=%s ttnu_n=%d ptl_n=%d\n",
+						territory_get_name(t), territory_get_name(land_territory),
+						len(transports_that_need_units), len(potential_units_to_load))
+					for _u, _i in transports_that_need_units {
+						fmt.eprintf("  ttnu[%d] type=%s ptr=%p\n", _i,
+							unit_type_get_name(unit_get_type(_u)), _u)
+					}
+					for _u, _i in potential_units_to_load {
+						fmt.eprintf("  ptl[%d] type=%s ptr=%p\n", _i,
+							unit_type_get_name(unit_get_type(_u)), _u)
+					}
+				}
+			}
 
 			// Purchase transports and amphib units
 			amphib_units_to_place: [dynamic]^Unit
@@ -4565,6 +4698,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 						}
 						amphib_choice := pro_purchase_utils_randomize_purchase_option(
 							amphib_efficiencies, "Amphib",
+							amphib_purchase_options_for_territory[:],
 						)
 						delete(amphib_efficiencies)
 						when #config(AMPHIB_PROBE, false) {
@@ -4615,6 +4749,7 @@ pro_purchase_ai_purchase_sea_and_amphib_units :: proc(
 					}
 					transport_choice := pro_purchase_utils_randomize_purchase_option(
 						transport_efficiencies, "Sea Transport",
+						sea_transport_purchase_options_for_territory[:],
 					)
 					delete(transport_efficiencies)
 					if transport_choice == nil {
@@ -4905,6 +5040,28 @@ pro_purchase_ai_purchase :: proc(
 		os.flush(os.stderr)
 	}
 
+	when #config(RPO_DUMP, false) {
+		_pname_p := game_player_get_name(self.player)
+		if _pname_p == "Japanese" {
+			_gm_p := game_data_get_map(self.data)
+			_japan_p := game_map_get_territory_or_null(_gm_p, "Japan")
+			if _japan_p != nil && _japan_p.unit_collection != nil {
+				fmt.eprintf("TERR_DUMP_JAPAN_PURCHASE_ENTRY n=%d\n",
+					len(_japan_p.unit_collection.units))
+				for _u, _i in _japan_p.unit_collection.units {
+					fmt.eprintf("  ep[%d] type=%s owner=%s ptr=%p\n", _i,
+						unit_type_get_name(unit_get_type(_u)),
+						game_player_get_name(unit_get_owner(_u)), _u)
+				}
+			}
+		}
+	}
+	when NCM_END_STATE {
+		if game_player_get_name(self.player) == "Japanese" {
+			pro_ncm_end_state_dump("purchase_entry", "Japanese", self.data)
+		}
+	}
+
 	pro_logger_info(
 		fmt.tprintf("Starting purchase phase with resources: %v", self.resource_tracker),
 	)
@@ -4961,6 +5118,13 @@ pro_purchase_ai_purchase :: proc(
 		self, purchase_territories, true,
 	)
 	defer delete(need_to_defend_land_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P00_before_purchaseDefenders_land %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
 	pro_purchase_ai_purchase_defenders(
 		self,
 		purchase_territories,
@@ -4971,6 +5135,13 @@ pro_purchase_ai_purchase :: proc(
 		true,
 	)
 	pro_pur_trace_emit("P01_after_purchaseDefenders_land", &purchase_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P01_after_purchaseDefenders_land %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
 
 	// Find strategic value for each territory
 	pro_logger_info("Find strategic value for place territories")
@@ -5025,10 +5196,24 @@ pro_purchase_ai_purchase :: proc(
 		pro_purchase_option_map_get_aa_options(purchase_options),
 	)
 	pro_pur_trace_emit("P02_after_purchaseAa", &purchase_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P02_after_purchaseAa %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
 	pro_purchase_ai_purchase_land_units(
 		self, purchase_territories, prioritized_land_territories, purchase_options,
 	)
 	pro_pur_trace_emit("P03_after_purchaseLand", &purchase_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P03_after_purchaseLand %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
 
 	// Prioritize sea territories that need defended and purchase additional defenders
 	need_to_defend_sea_territories := pro_purchase_ai_prioritize_territories_to_defend(
@@ -5049,6 +5234,13 @@ pro_purchase_ai_purchase :: proc(
 		delete(empty_zero_move)
 	}
 	pro_pur_trace_emit("P04_after_purchaseDefenders_sea", &purchase_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P04_after_purchaseDefenders_sea %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
 
 	// Determine whether to purchase new land factory
 	factory_purchase_territories := make(map[^Territory]^Pro_Purchase_Territory)
@@ -5061,6 +5253,29 @@ pro_purchase_ai_purchase :: proc(
 		false,
 	)
 	pro_pur_trace_emit("P05_after_purchaseFactory_first", &purchase_territories)
+	when #config(RPO_DUMP, false) {
+		if game_player_get_name(self.player) == "Japanese" {
+			_pus_s := pro_resource_tracker_to_string(self.resource_tracker)
+			fmt.eprintf("PHASE_PUS P05_after_purchaseFactory_first %s\n", _pus_s)
+			delete(_pus_s)
+		}
+	}
+
+	when #config(RPO_DUMP, false) {
+		_pname_b := game_player_get_name(self.player)
+		if _pname_b == "Japanese" {
+			_gm_b := game_data_get_map(self.data)
+			_japan_b := game_map_get_territory_or_null(_gm_b, "Japan")
+			if _japan_b != nil && _japan_b.unit_collection != nil {
+				fmt.eprintf("TERR_DUMP_JAPAN_BEFORE_PRIO_SEA n=%d\n",
+					len(_japan_b.unit_collection.units))
+				for _u, _i in _japan_b.unit_collection.units {
+					fmt.eprintf("  bp[%d] type=%s ptr=%p\n", _i,
+						unit_type_get_name(unit_get_type(_u)), _u)
+				}
+			}
+		}
+	}
 
 	// Prioritize sea place options and purchase units
 	prioritized_sea_territories := pro_purchase_ai_prioritize_sea_territories(

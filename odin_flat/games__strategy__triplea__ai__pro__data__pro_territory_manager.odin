@@ -6,6 +6,7 @@ import "core:slice"
 import "core:strings"
 
 ENEMY_ATK_DUMP :: #config(ENEMY_ATK_DUMP, false)
+AMPHIB_TRACE :: #config(AMPHIB_TRACE, false)
 
 @(private="file")
 g_peao_call_seq: int = 0
@@ -1126,6 +1127,21 @@ pro_territory_manager_find_air_move_options :: proc(
 				}
 				pro_territory_add_max_unit(pt, my_air_unit)
 
+				when ARMOUR_TRACE {
+					pname_am := default_named_get_name(&player.named_attachable.default_named)
+					tn_am := default_named_get_name(&potential_territory.named_attachable.default_named)
+					if !is_combat_move && pname_am == "Germans" && tn_am == "Ukraine S.S.R." {
+						ut_am := unit_get_type(my_air_unit)
+						ow_am := unit_get_owner(my_air_unit)
+						fmt.printf("JAVA_AIRMOVE dest=Ukraine S.S.R. unit=%s owner=%s from=%s range=%v routeLen=%v remaining=%v alreadyMoved=%v\n",
+							ut_am == nil ? "?" : default_named_get_name(&ut_am.named_attachable.default_named),
+							ow_am == nil ? "?" : game_player_get_name(ow_am),
+							default_named_get_name(&my_unit_territory.named_attachable.default_named),
+							range, my_route_length, remaining_moves,
+							unit_get_already_moved(my_air_unit))
+					}
+				}
+
 				inner, ok := unit_move_map[my_air_unit]
 				if !ok {
 					inner = make(map[^Territory]struct {})
@@ -1522,11 +1538,26 @@ pro_territory_manager_find_amphib_move_options :: proc(
 							unload_territories[ut] = {}
 						}
 					}
+					// Sort this call's load-from set into Java's source-HashSet
+					// iteration order (HashMap bucket order at the set's own
+					// capacity) before handing it to add_territories, which
+					// accumulates it into the LinkedHashSet-ordered list. This
+					// reproduces Java's `linkedHashSet.addAll(loadFromTerritories)`
+					// where loadFromTerritories is a HashSet (snap 0038 cargo tie).
+					load_from_order: [dynamic]^Territory
+					for lf in load_from_territories {
+						append(&load_from_order, lf)
+					}
+					java_hashmap_sort_territories_by_bucket(
+						load_from_order[:],
+						java_hashmap_capacity_for_size(len(load_from_order)),
+					)
 					pro_transport_add_territories(
 						pro_transport_data,
 						unload_territories,
-						load_from_territories,
+						load_from_order[:],
 					)
+					delete(load_from_order)
 					pro_transport_add_sea_territories(
 						pro_transport_data,
 						sea_move_territories,
@@ -1661,6 +1692,20 @@ pro_territory_manager_find_amphib_move_options :: proc(
 			}
 			pt := pro_data_get_pro_territory(pro_data, move_map, move_territory)
 			pro_territory_add_max_amphib_units(pt, amphib_units)
+			when AMPHIB_TRACE {
+				if !is_checking_enemy_attacks {
+					pname := default_named_get_name(&player.default_named)
+					mtn := default_named_get_name(&move_territory.named_attachable.default_named)
+					if pname == "Japanese" && mtn == "Soviet Far East" {
+						load_names: [dynamic]string
+						for lt in territories_can_load_from {
+							append(&load_names, default_named_get_name(&lt.named_attachable.default_named))
+						}
+						fmt.printf("AMPHIB_SFE tx=%p loadable_terrs=%v added_amphib=%d already=%d\n",
+							transport, load_names, len(amphib_units), len(already_added))
+					}
+				}
+			}
 			when ENEMY_ATK_DUMP {
 				if is_checking_enemy_attacks {
 					mtn := default_named_get_name(&move_territory.named_attachable.default_named)

@@ -7,6 +7,7 @@ import "core:slice"
 import "core:strings"
 
 PLAN_PROBE :: #config(PLAN, false)
+AIR_PROBE :: #config(AIR_PROBE, false)
 
 // Ported from games.strategy.triplea.ai.pro.ProCombatMoveAi (Phase A: type only).
 
@@ -284,6 +285,15 @@ pro_combat_move_ai_can_air_safely_land_after_attack :: proc(
 		rawptr(adapter),
 	)
 	uses_more_than_half_of_range := distance > range_left / 2
+	when AIR_PROBE {
+		_csl_ut := default_named_get_name(&unit_get_type(unit).named_attachable.default_named)
+		_csl_home := pro_data_get_unit_territory(self.pro_data, unit)
+		_csl_hn := _csl_home != nil ? default_named_get_name(&_csl_home.named_attachable.default_named) : "<nil>"
+		_csl_tn := default_named_get_name(&t.named_attachable.default_named)
+		fmt.printf("CSL unit=%s home=%s t=%s adjAlliedFactory=%v range=%d distance=%d usesMoreThanHalf=%v safe=%v\n",
+			_csl_ut, _csl_hn, _csl_tn, is_adjacent_to_allied_factory, range_left, distance,
+			uses_more_than_half_of_range, is_adjacent_to_allied_factory || !uses_more_than_half_of_range)
+	}
 	return is_adjacent_to_allied_factory || !uses_more_than_half_of_range
 }
 
@@ -2195,6 +2205,25 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 		transport := pro_transport_get_transport(pro_transport_data_outer)
 		ts, in_amph := amphib_attack_options[transport]
 		if !in_amph { continue }
+		when PLAN_PROBE {
+			_pn_tx := default_named_get_name(&self.player.named_attachable.default_named)
+			_home := pro_data_get_unit_territory(self.pro_data, transport)
+			_home_name := _home != nil ? default_named_get_name(&_home.named_attachable.default_named) : "<nil>"
+			_tgt_sb := strings.builder_make()
+			defer strings.builder_destroy(&_tgt_sb)
+			_tf := true
+			for _atd in prioritized_territories {
+				_tt := pro_territory_get_territory(_atd)
+				if _, _ok := ts[_tt]; !_ok { continue }
+				if !_tf { strings.write_string(&_tgt_sb, ",") }
+				_tf = false
+				strings.write_string(&_tgt_sb, default_named_get_name(&_tt.named_attachable.default_named))
+			}
+			fmt.printf(
+				"AMPHIB_TX player=%s transport_home=%s targets=[%s]\n",
+				_pn_tx, _home_name, strings.to_string(_tgt_sb),
+			)
+		}
 		min_win_territory: ^Territory = nil
 		min_win_percentage := pro_data_get_win_percentage(self.pro_data)
 		min_amphib_units_to_add: [dynamic]^Unit
@@ -2232,11 +2261,16 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				if pro_transport_get_transport(inner_pt) != transport {
 					continue
 				}
-				territories_can_load_from := pro_transport_get_transport_map(inner_pt)[t]
-				amphib_units_to_add := pro_transport_utils_get_units_to_transport_from_territories_4(
+				// Iterate the load-from territories in Java's LinkedHashSet
+				// insertion order (tracked in transport_map_order), NOT the
+				// unordered membership map. The cargo sort is stable, so this
+				// order breaks the armour/artillery tie the same way Java does
+				// (snap 0038).
+				load_from_order := pro_transport_get_transport_map_order(inner_pt)[t]
+				amphib_units_to_add := pro_transport_utils_get_units_to_transport_from_ordered_territories_4(
 					self.player,
 					transport,
-					territories_can_load_from,
+					load_from_order[:],
 					already_attacked_units_dyn,
 				)
 				if len(amphib_units_to_add) == 0 {
@@ -2383,6 +2417,8 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 				if min_unload_from_territory != nil {
 					_uf_name = default_named_get_name(&min_unload_from_territory.named_attachable.default_named)
 				}
+				_th := pro_data_get_unit_territory(self.pro_data, transport)
+				_th_name := _th != nil ? default_named_get_name(&_th.named_attachable.default_named) : "<nil>"
 				_unit_summary := strings.builder_make()
 				defer strings.builder_destroy(&_unit_summary)
 				_first := true
@@ -2395,8 +2431,8 @@ pro_combat_move_ai_try_to_attack_territories :: proc(
 					}
 				}
 				fmt.printf(
-					"AMPHIB player=%s to=%s unloadFrom=%s win%%=%.4f units=%d types=[%s]\n",
-					_pn_amph, _to_name, _uf_name, min_win_percentage,
+					"AMPHIB player=%s transport_home=%s to=%s unloadFrom=%s win%%=%.4f units=%d types=[%s]\n",
+					_pn_amph, _th_name, _to_name, _uf_name, min_win_percentage,
 					len(min_amphib_units_to_add), strings.to_string(_unit_summary),
 				)
 			}
@@ -2958,6 +2994,20 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 			min_win_percentage := max(f64)
 			_ts_keys_1006 := pro_sort_move_options_utils_sorted_territory_keys_by_priority(sorted_unit_attack_options[unit], prioritized_territories^)
 			defer delete(_ts_keys_1006)
+			when AIR_PROBE {
+				_apn := default_named_get_name(&self.player.named_attachable.default_named)
+				_aut := default_named_get_name(&unit_get_type(unit).named_attachable.default_named)
+				_ahome := pro_data_get_unit_territory(self.pro_data, unit)
+				_ahn := _ahome != nil ? default_named_get_name(&_ahome.named_attachable.default_named) : "<nil>"
+				_torder: strings.Builder
+				strings.builder_init(&_torder)
+				defer strings.builder_destroy(&_torder)
+				for _tt in _ts_keys_1006 {
+					strings.write_string(&_torder, default_named_get_name(&_tt.named_attachable.default_named))
+					strings.write_string(&_torder, ";")
+				}
+				fmt.printf("AIRPROBE unit=%s home=%s iter=%d torder=[%s]\n", _aut, _ahn, _dua_iter, strings.to_string(_torder))
+			}
 			for t in _ts_keys_1006 {
 				patd := attack_map[t]
 
@@ -2968,6 +3018,9 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 				is_enemy_factory := ef_p(ef_c, t)
 				if !is_enemy_factory &&
 				   !pro_combat_move_ai_can_air_safely_land_after_attack(self, unit, t) {
+					when AIR_PROBE {
+						fmt.printf("AIRPROBE   t=%s SKIP land-unsafe\n", default_named_get_name(&t.named_attachable.default_named))
+					}
 					continue
 				}
 				if pro_territory_get_battle_result(patd) == nil {
@@ -2992,11 +3045,23 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 							break
 						}
 					}
+					when AIR_PROBE {
+						fmt.printf("AIRPROBE   t=%s win=%.4f hasLandRem=%v overwhelming=%v hasAa=%v\n",
+							default_named_get_name(&t.named_attachable.default_named),
+							pro_battle_result_get_win_percentage(result),
+							pro_battle_result_is_has_land_unit_remaining(result),
+							is_overwhelming_win, has_aa)
+					}
 					if !has_aa && !is_overwhelming_win {
 						min_win_percentage = pro_battle_result_get_win_percentage(result)
 						min_win_territory = t
 					}
 				}
+			}
+			when AIR_PROBE {
+				_mwn := min_win_territory != nil ? default_named_get_name(&min_win_territory.named_attachable.default_named) : "<none>"
+				_aut2 := default_named_get_name(&unit_get_type(unit).named_attachable.default_named)
+				fmt.printf("AIRPROBE unit=%s CHOSE=%s win=%.4f\n", _aut2, _mwn, min_win_percentage)
 			}
 			if min_win_territory != nil {
 				pro_territory_set_battle_result(attack_map[min_win_territory], nil)
@@ -3377,6 +3442,19 @@ pro_combat_move_ai_determine_units_to_attack_with :: proc(
 									   all_units_can_attack_other_territory ||
 									   pro_battle_result_get_battle_rounds(result) >= 4))) {
 				territory_to_remove = patd
+			}
+			when PLAN_PROBE {
+				_pn_dv := default_named_get_name(&self.player.named_attachable.default_named)
+				_tn_dv := default_named_get_name(&t.named_attachable.default_named)
+				fmt.printf(
+					"DUA_REMOVE_DECIDE player=%s t=%s strafing=%v win%%=%.4f hasLandRem=%v isNeutral=%v canHold=%v enemyCtrTuv=%.4f terrValue=%.4f tuvSwing=%.4f attackValue=%.4f prod=%d removed=%v\n",
+					_pn_dv, _tn_dv,
+					pro_territory_is_strafing(patd),
+					pro_battle_result_get_win_percentage(result),
+					pro_battle_result_is_has_land_unit_remaining(result),
+					is_neutral, can_hold, enemy_counter_tuv_swing, territory_value,
+					tuv_swing, attack_value, production, territory_to_remove == patd,
+				)
 			}
 			pro_logger_debug(
 				fmt.tprintf(
